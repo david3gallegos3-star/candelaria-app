@@ -10,9 +10,6 @@ import './App.css';
 const EMOJIS_CAT = {};
 const EMOJIS_OPCIONES = ['🥓','🌭','🍖','🍔','🥩','🫙','🔀','🧀','🧆','🍗','🥚','🫕','🥘','🍱','🥫','🏷️','📦','⭐','🆕'];
 
-// ══════════════════════════════════════════════
-// HELPER AUDITORÍA — registra todo para siempre
-// ══════════════════════════════════════════════
 export async function registrarAuditoria({ tipo, usuario_nombre, user_id, producto_nombre, campo_modificado, valor_antes, valor_despues, mensaje }) {
   try {
     await supabase.from('auditoria').insert([{
@@ -27,9 +24,6 @@ export async function registrarAuditoria({ tipo, usuario_nombre, user_id, produc
   } catch(e) { console.error('Error auditoría:', e); }
 }
 
-// ══════════════════════════════════════════════
-// HELPER NOTIFICACIÓN — aparece en campana 24h
-// ══════════════════════════════════════════════
 export async function crearNotificacion({ tipo, origen, usuario_nombre, user_id, producto_nombre, mensaje }) {
   try {
     const expires = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
@@ -38,7 +32,6 @@ export async function crearNotificacion({ tipo, origen, usuario_nombre, user_id,
       producto_nombre: producto_nombre || null,
       mensaje, leida: false, expires_at: expires
     }]).select().single();
-    // también va a auditoría
     await registrarAuditoria({ tipo, usuario_nombre, user_id, producto_nombre, mensaje });
     return data;
   } catch(e) { console.error('Error notificación:', e); }
@@ -51,7 +44,7 @@ function App() {
   const [email, setEmail]                 = useState('');
   const [password, setPassword]           = useState('');
   const [user, setUser]                   = useState(null);
-  const [userRol, setUserRol]             = useState(null); // objeto completo del rol
+  const [userRol, setUserRol]             = useState(null);
   const [loading, setLoading]             = useState(false);
   const [productos, setProductos]         = useState([]);
   const [materias, setMaterias]           = useState([]);
@@ -88,11 +81,9 @@ function App() {
   const [nuevaCatEmoji, setNuevaCatEmoji] = useState('📦');
   const [editandoCat, setEditandoCat]     = useState(null);
   const [confirmElimCat, setConfirmElimCat] = useState(null);
-  // NUEVO: notificaciones
   const [notificaciones, setNotificaciones] = useState([]);
   const [campanAbierta, setCampanaAbierta] = useState(false);
   const [notifNoLeidas, setNotifNoLeidas] = useState(0);
-  // NUEVO: gestión usuarios
   const [modalUsuarios, setModalUsuarios] = useState(false);
   const [usuariosRoles, setUsuariosRoles] = useState([]);
   const [editandoUsuario, setEditandoUsuario] = useState(null);
@@ -112,46 +103,54 @@ function App() {
     setPantalla(destino);
   }
 
-  // ══════════════════════════════════════════════
-  // NOTIFICACIONES
-  // ══════════════════════════════════════════════
+  // ── ID automático por categoría ──────────────────────────
+  function generarSiguienteId(categoria) {
+    const mpsCat = materias.filter(m => m.categoria === categoria);
+    if (mpsCat.length === 0) return '';
+    const ids = mpsCat.map(m => m.id).filter(Boolean);
+    if (ids.length === 0) return '';
+    const primerID = ids[0];
+    const prefixMatch = primerID.match(/^([A-Za-z]+)(\d+)$/);
+    if (!prefixMatch) return '';
+    const prefix = prefixMatch[1];
+    const numDigits = prefixMatch[2].length;
+    let maxNum = 0;
+    ids.forEach(id => {
+      const match = id.match(/^[A-Za-z]+(\d+)$/);
+      if (match) {
+        const num = parseInt(match[1]);
+        if (num > maxNum) maxNum = num;
+      }
+    });
+    return prefix + String(maxNum + 1).padStart(numDigits, '0');
+  }
+
+  // ── Notificaciones ───────────────────────────────────────
   async function cargarNotificaciones() {
     if (!user) return;
     const ahora = new Date().toISOString();
-    const { data } = await supabase
-      .from('notificaciones')
-      .select('*')
-      .eq('leida', false)
-      .gt('expires_at', ahora)
+    const { data } = await supabase.from('notificaciones').select('*')
+      .eq('leida', false).gt('expires_at', ahora)
       .order('created_at', { ascending: false });
     setNotificaciones(data || []);
     setNotifNoLeidas((data || []).length);
   }
 
   async function marcarLeida(id) {
-    await supabase.from('notificaciones')
-      .update({ leida: true, leida_at: new Date().toISOString() })
-      .eq('id', id);
-    // actualizar auditoría también
-    await supabase.from('auditoria')
-      .update({ leida: true, leida_at: new Date().toISOString() })
-      .eq('notificacion_id', id);
+    await supabase.from('notificaciones').update({ leida: true, leida_at: new Date().toISOString() }).eq('id', id);
+    await supabase.from('auditoria').update({ leida: true, leida_at: new Date().toISOString() }).eq('notificacion_id', id);
     cargarNotificaciones();
   }
 
   async function marcarTodasLeidas() {
     const ids = notificaciones.map(n => n.id);
     if (ids.length === 0) return;
-    await supabase.from('notificaciones')
-      .update({ leida: true, leida_at: new Date().toISOString() })
-      .in('id', ids);
+    await supabase.from('notificaciones').update({ leida: true, leida_at: new Date().toISOString() }).in('id', ids);
     cargarNotificaciones();
     setCampanaAbierta(false);
   }
 
-  // ══════════════════════════════════════════════
-  // USUARIOS Y ROLES
-  // ══════════════════════════════════════════════
+  // ── Usuarios y roles ─────────────────────────────────────
   async function cargarUsuariosRoles() {
     const { data } = await supabase.from('usuarios_roles').select('*').order('created_at');
     setUsuariosRoles(data || []);
@@ -168,15 +167,11 @@ function App() {
   }
 
   async function toggleActivoUsuario(u) {
-    await supabase.from('usuarios_roles')
-      .update({ activo: !u.activo })
-      .eq('id', u.id);
+    await supabase.from('usuarios_roles').update({ activo: !u.activo }).eq('id', u.id);
     await cargarUsuariosRoles();
   }
 
-  // ══════════════════════════════════════════════
-  // LOGIN / AUTH
-  // ══════════════════════════════════════════════
+  // ── Auth ─────────────────────────────────────────────────
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (session?.user) {
@@ -189,7 +184,7 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (user && (userRol?.rol === 'admin')) {
+    if (user && userRol?.rol === 'admin') {
       cargarNotificaciones();
       notifTimer.current = setInterval(cargarNotificaciones, 30000);
       return () => clearInterval(notifTimer.current);
@@ -197,12 +192,7 @@ function App() {
   }, [user, userRol]);
 
   async function cargarRolUsuario(uid) {
-    const { data } = await supabase
-      .from('usuarios_roles')
-      .select('*')
-      .eq('user_id', uid)
-      .eq('activo', true)
-      .single();
+    const { data } = await supabase.from('usuarios_roles').select('*').eq('user_id', uid).eq('activo', true).single();
     setUserRol(data);
     return data;
   }
@@ -232,9 +222,7 @@ function App() {
     await Promise.all([cargarCategorias(), cargarCategoriasMpDB(), cargarMaterias()]);
   }
 
-  // ══════════════════════════════════════════════
-  // COMPONENTE: CAMPANA DE NOTIFICACIONES
-  // ══════════════════════════════════════════════
+  // ── Campana ──────────────────────────────────────────────
   const CampanaNotif = () => {
     if (userRol?.rol !== 'admin') return null;
     const colorTipo = (tipo) => {
@@ -267,20 +255,15 @@ function App() {
             </span>
           )}
         </button>
-
         {campanAbierta && (
           <div style={{ position:'absolute', right:0, top:'44px', width:'380px', background:'white', borderRadius:'12px', boxShadow:'0 8px 30px rgba(0,0,0,0.25)', zIndex:2000, overflow:'hidden' }}>
             <div style={{ background:'#1a1a2e', padding:'12px 16px', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
               <span style={{ color:'white', fontWeight:'bold', fontSize:'13px' }}>🔔 Notificaciones</span>
               <div style={{ display:'flex', gap:8 }}>
                 {notificaciones.length > 0 && (
-                  <button onClick={marcarTodasLeidas}
-                    style={{ background:'rgba(255,255,255,0.15)', border:'none', color:'white', borderRadius:'6px', padding:'4px 10px', cursor:'pointer', fontSize:'11px' }}>
-                    Marcar todas leídas
-                  </button>
+                  <button onClick={marcarTodasLeidas} style={{ background:'rgba(255,255,255,0.15)', border:'none', color:'white', borderRadius:'6px', padding:'4px 10px', cursor:'pointer', fontSize:'11px' }}>Marcar todas leídas</button>
                 )}
-                <button onClick={() => setCampanaAbierta(false)}
-                  style={{ background:'none', border:'none', color:'white', cursor:'pointer', fontSize:'16px' }}>✕</button>
+                <button onClick={() => setCampanaAbierta(false)} style={{ background:'none', border:'none', color:'white', cursor:'pointer', fontSize:'16px' }}>✕</button>
               </div>
             </div>
             <div style={{ maxHeight:'400px', overflowY:'auto' }}>
@@ -297,26 +280,15 @@ function App() {
                     </div>
                     <div style={{ flex:1 }}>
                       <div style={{ display:'flex', justifyContent:'space-between', marginBottom:'3px' }}>
-                        <span style={{ fontSize:'12px', fontWeight:'700', color:'#1a1a2e' }}>
-                          {n.usuario_nombre} {n.producto_nombre ? `— ${n.producto_nombre}` : ''}
-                        </span>
-                        <span style={{ fontSize:'10px', color:'#aaa' }}>
-                          {new Date(n.created_at).toLocaleTimeString('es-EC', { hour:'2-digit', minute:'2-digit' })}
-                        </span>
+                        <span style={{ fontSize:'12px', fontWeight:'700', color:'#1a1a2e' }}>{n.usuario_nombre} {n.producto_nombre ? `— ${n.producto_nombre}` : ''}</span>
+                        <span style={{ fontSize:'10px', color:'#aaa' }}>{new Date(n.created_at).toLocaleTimeString('es-EC', { hour:'2-digit', minute:'2-digit' })}</span>
                       </div>
-                      <div style={{ fontSize:'12px', color:'#444', background:'#f8f9fa', borderRadius:'6px', padding:'6px 10px', borderLeft:`3px solid ${colorTipo(n.tipo)}`, marginBottom:'6px' }}>
-                        {n.mensaje}
-                      </div>
+                      <div style={{ fontSize:'12px', color:'#444', background:'#f8f9fa', borderRadius:'6px', padding:'6px 10px', borderLeft:`3px solid ${colorTipo(n.tipo)}`, marginBottom:'6px' }}>{n.mensaje}</div>
                       <div style={{ display:'flex', gap:'6px' }}>
-                        <button onClick={() => marcarLeida(n.id)}
-                          style={{ background:'#27ae60', color:'white', border:'none', borderRadius:'5px', padding:'3px 10px', cursor:'pointer', fontSize:'10px' }}>
-                          ✓ Marcar leída
-                        </button>
+                        <button onClick={() => marcarLeida(n.id)} style={{ background:'#27ae60', color:'white', border:'none', borderRadius:'5px', padding:'3px 10px', cursor:'pointer', fontSize:'10px' }}>✓ Marcar leída</button>
                         {n.producto_nombre && (
                           <button onClick={() => { marcarLeida(n.id); const p = productos.find(x => x.nombre === n.producto_nombre); if(p) abrirProducto(p); setCampanaAbierta(false); }}
-                            style={{ background:'#3498db', color:'white', border:'none', borderRadius:'5px', padding:'3px 10px', cursor:'pointer', fontSize:'10px' }}>
-                            Ir a fórmula
-                          </button>
+                            style={{ background:'#3498db', color:'white', border:'none', borderRadius:'5px', padding:'3px 10px', cursor:'pointer', fontSize:'10px' }}>Ir a fórmula</button>
                         )}
                       </div>
                     </div>
@@ -325,10 +297,7 @@ function App() {
               ))}
             </div>
             <div style={{ padding:'8px 14px', background:'#f8f9fa', borderTop:'1px solid #eee', textAlign:'center' }}>
-              <button onClick={() => { setCampanaAbierta(false); navegarA('auditoria'); }}
-                style={{ background:'none', border:'none', color:'#3498db', cursor:'pointer', fontSize:'12px' }}>
-                Ver historial completo de auditoría →
-              </button>
+              <button onClick={() => { setCampanaAbierta(false); navegarA('auditoria'); }} style={{ background:'none', border:'none', color:'#3498db', cursor:'pointer', fontSize:'12px' }}>Ver historial completo de auditoría →</button>
             </div>
           </div>
         )}
@@ -336,48 +305,32 @@ function App() {
     );
   };
 
-  // ══════════════════════════════════════════════
-  // MENÚ PRINCIPAL
-  // ══════════════════════════════════════════════
+  // ── Menú Principal ───────────────────────────────────────
   const MenuPrincipal = () => {
     const rol = userRol?.rol;
     const modulos = [];
-
-    if (rol === 'admin' || rol === 'formulador') {
-      modulos.push({ emoji:'🧪', titulo:'Fórmulas y costos', desc:'Ingredientes, precios, historial', color:'#27ae60', border:'rgba(39,174,96,0.4)', fn: () => navegarA('menu') });
-    }
-    if (rol === 'admin' || rol === 'produccion') {
-      modulos.push({ emoji:'🏭', titulo:'Producción', desc:'Paradas, lotes, descuentos', color:'#f39c12', border:'rgba(243,156,18,0.4)', fn: () => navegarA('produccion') });
-    }
-    if (rol === 'admin' || rol === 'bodeguero') {
-      modulos.push({ emoji:'📦', titulo:'Inventario', desc:'Stock, entradas, salidas', color:'#e74c3c', border:'rgba(231,76,60,0.4)', fn: () => navegarA('inventario') });
-    }
+    if (rol === 'admin' || rol === 'formulador') modulos.push({ emoji:'🧪', titulo:'Fórmulas y costos', desc:'Ingredientes, precios, historial', color:'#27ae60', border:'rgba(39,174,96,0.4)', fn: () => navegarA('menu') });
+    if (rol === 'admin' || rol === 'produccion') modulos.push({ emoji:'🏭', titulo:'Producción', desc:'Paradas, lotes, descuentos', color:'#f39c12', border:'rgba(243,156,18,0.4)', fn: () => navegarA('produccion') });
+    if (rol === 'admin' || rol === 'bodeguero') modulos.push({ emoji:'📦', titulo:'Inventario', desc:'Stock, entradas, salidas', color:'#e74c3c', border:'rgba(231,76,60,0.4)', fn: () => navegarA('inventario') });
     if (rol === 'admin') {
       modulos.push({ emoji:'👥', titulo:'Clientes', desc:'Precios y alertas de margen', color:'#3498db', border:'rgba(52,152,219,0.4)', fn: () => navegarA('clientes') });
       modulos.push({ emoji:'🗂️', titulo:'Auditoría', desc:'Historial permanente', color:'#8e44ad', border:'rgba(142,68,173,0.4)', fn: () => navegarA('auditoria') });
     }
-
     const rolLabel = { admin:'Administrador', formulador:'Formulador', produccion:'Producción', bodeguero:'Bodeguero' };
     const rolColor = { admin:'#8e44ad', formulador:'#1a5276', produccion:'#e67e22', bodeguero:'#27ae60' };
-
     return (
       <div style={{ minHeight:'100vh', background:'linear-gradient(135deg,#1a1a2e,#16213e)', fontFamily:'Arial,sans-serif', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:'20px' }}>
         <div style={{ width:'100%', maxWidth:'700px' }}>
-          {/* Logo y header */}
           <div style={{ textAlign:'center', marginBottom:'32px' }}>
             <img src="/LOGO_CANDELARIA_1.png" alt="Candelaria" style={{ height:'60px', background:'white', padding:'8px 16px', borderRadius:'10px', marginBottom:'16px' }}/>
             <div style={{ color:'white', fontSize:'22px', fontWeight:'bold', marginBottom:'6px' }}>Sistema de Gestión</div>
             <div style={{ color:'#aaa', fontSize:'13px' }}>Embutidos y Jamones Candelaria</div>
           </div>
-
-          {/* Campana solo para admin */}
           {rol === 'admin' && (
             <div style={{ display:'flex', justifyContent:'flex-end', marginBottom:'12px' }}>
               <CampanaNotif />
             </div>
           )}
-
-          {/* Tarjetas de módulos */}
           <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(190px, 1fr))', gap:'14px', marginBottom:'24px' }}>
             {modulos.map((m, i) => (
               <button key={i} onClick={m.fn}
@@ -391,8 +344,6 @@ function App() {
               </button>
             ))}
           </div>
-
-          {/* Info usuario */}
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', background:'rgba(255,255,255,0.06)', borderRadius:'10px', padding:'12px 16px' }}>
             <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
               <div style={{ background:rolColor[rol] || '#888', borderRadius:'50%', width:'36px', height:'36px', display:'flex', alignItems:'center', justifyContent:'center', color:'white', fontWeight:'bold', fontSize:'14px' }}>
@@ -410,15 +361,11 @@ function App() {
                   👥 Usuarios
                 </button>
               )}
-              <button onClick={logout}
-                style={{ background:'#e74c3c', border:'none', color:'white', borderRadius:'8px', padding:'8px 14px', cursor:'pointer', fontSize:'12px', fontWeight:'bold' }}>
-                Salir
-              </button>
+              <button onClick={logout} style={{ background:'#e74c3c', border:'none', color:'white', borderRadius:'8px', padding:'8px 14px', cursor:'pointer', fontSize:'12px', fontWeight:'bold' }}>Salir</button>
             </div>
           </div>
         </div>
 
-        {/* MODAL GESTIÓN DE USUARIOS */}
         {modalUsuarios && (
           <div style={{ position:'fixed', top:0, left:0, right:0, bottom:0, background:'rgba(0,0,0,0.6)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:3000 }}>
             <div style={{ background:'white', borderRadius:'14px', width:'580px', maxHeight:'85vh', display:'flex', flexDirection:'column', boxShadow:'0 20px 60px rgba(0,0,0,0.4)' }}>
@@ -486,9 +433,6 @@ function App() {
     );
   };
 
-  // ══════════════════════════════════════════════
-  // RESTO DE FUNCIONES (igual que antes)
-  // ══════════════════════════════════════════════
   function subirHistorialExcel() { fileRefHistorial.current.click(); }
 
   async function importarHistorialExcel(e) {
@@ -541,10 +485,12 @@ function App() {
   }
 
   async function cargarProductos() { await cargarCategorias(); }
+
   async function cargarCategoriasMpDB() {
     const { data } = await supabase.from('categorias_mp').select('*').order('orden');
     if (data&&data.length>0) { setCategoriasMp(data.map(c=>c.nombre)); setForm(prev=>({...prev,categoria:data[0].nombre})); }
   }
+
   async function cargarMaterias() {
     const { data } = await supabase.from('materias_primas').select('*').order('categoria').order('id');
     setMaterias(data||[]);
@@ -603,7 +549,6 @@ function App() {
     ventana.document.close();
   }
 
-  // Categorías productos
   async function crearCategoria() {
     const nombre=nuevaCatNombre.trim().toUpperCase();
     if(!nombre) return alert('Escribe un nombre');
@@ -655,7 +600,6 @@ function App() {
     mostrarExito(`🗑️ Categoría "${nombre}" eliminada`);
   }
 
-  // Categorías MP
   async function crearCategoriaMp() {
     const nombre=nuevaCatMpNombre.trim().toUpperCase();
     if(!nombre) return alert('Escribe un nombre');
@@ -698,7 +642,6 @@ function App() {
     await cargarCategoriasMpDB();
   }
 
-  // Productos
   async function crearProducto() {
     if(!nuevoNombre.trim()) return alert('Escribe el nombre del producto');
     const catSel=nuevaCategoria||Object.keys(categoriasConfig)[0];
@@ -751,7 +694,6 @@ function App() {
     }
   }
 
-  // Materias primas
   function calcularPrecios(precio_kg){
     const kg=parseFloat(precio_kg)||0;
     return {precio_lb:kg>0?(kg/2.20462).toFixed(4):'',precio_gr:kg>0?(kg/1000).toFixed(6):''};
@@ -762,7 +704,6 @@ function App() {
     const precios=calcularPrecios(form.precio_kg);
     const {error}=await supabase.from('materias_primas').insert([{id:form.id,categoria:form.categoria,nombre:form.nombre,nombre_producto:form.nombre_producto||form.nombre,proveedor:form.proveedor,precio_kg:parseFloat(form.precio_kg)||0,precio_lb:parseFloat(precios.precio_lb)||0,precio_gr:parseFloat(precios.precio_gr)||0,notas:form.notas,estado:form.estado,tipo:form.tipo}]);
     if(error) return alert('Error: '+error.message);
-    // Notificación y auditoría
     await crearNotificacion({ tipo:'nueva_mp', origen:'materias_primas', usuario_nombre: userRol?.nombre||'Admin', user_id: user?.id, mensaje:`Nueva materia prima creada: "${form.nombre_producto||form.nombre}" — $${form.precio_kg}/kg` });
     setModalAgregar(false);
     setForm({id:'',categoria:categoriasMp[0]||'',nombre:'',nombre_producto:'',proveedor:'',precio_kg:'',precio_lb:'',precio_gr:'',notas:'',estado:'ACTIVO',tipo:'MATERIAS PRIMAS'});
@@ -775,20 +716,16 @@ function App() {
     const viejoNombreProducto=mpAnterior?.nombre_producto;
     const nuevoNombreProducto=modalEditar.nombre_producto||modalEditar.nombre;
     const precios=calcularPrecios(modalEditar.precio_kg);
-    const {error}=await supabase.from('materias_primas').update({categoria:modalEditar.categoria,nombre:modalEditar.nombre,nombre_producto:nuevoNombreProducto,proveedor:modalEditar.proveedor,precio_kg:parseFloat(modalEditar.precio_kg)||0,precio_lb:parseFloat(precios.precio_lb)||0,precio_gr:parseFloat(precios.precio_gr)||0,notas:modalEditar.notas,estado:modalEditar.estado}).eq('id',modalEditar.id);
+    const {error}=await supabase.from('materias_primas').update({categoria:modalEditar.categoria,nombre:modalEditar.nombre,nombre_producto:nuevoNombreProducto,proveedor:modalEditar.proveedor,precio_kg:parseFloat(modalEditar.precio_kg)||0,precio_lb:parseFloat(precios.precio_lb)||0,precio_gr:parseFloat(precios.precio_gr)||0,notas:modalEditar.notas,estado:modalEditar.estado,tipo:modalEditar.tipo||'MATERIAS PRIMAS'}).eq('id',modalEditar.id);
     if(error) return alert('Error: '+error.message);
     if(viejoNombreProducto&&nuevoNombreProducto!==viejoNombreProducto)
       await supabase.from('formulaciones').update({ingrediente_nombre:nuevoNombreProducto}).eq('ingrediente_nombre',viejoNombreProducto);
-
-    // Notificación si cambió precio
     if (mpAnterior && parseFloat(mpAnterior.precio_kg) !== parseFloat(modalEditar.precio_kg)) {
       await crearNotificacion({ tipo:'cambio_precio', origen:'materias_primas', usuario_nombre: userRol?.nombre||'Admin', user_id: user?.id, mensaje:`Precio de "${nuevoNombreProducto}" cambió: $${parseFloat(mpAnterior.precio_kg).toFixed(2)} → $${parseFloat(modalEditar.precio_kg).toFixed(2)}/kg` });
     }
-    // Notificación si cambió nombre
     if (viejoNombreProducto && nuevoNombreProducto !== viejoNombreProducto) {
       await crearNotificacion({ tipo:'cambio_nombre', origen:'materias_primas', usuario_nombre: userRol?.nombre||'Admin', user_id: user?.id, mensaje:`Materia prima renombrada: "${viejoNombreProducto}" → "${nuevoNombreProducto}"` });
     }
-
     await supabase.from('historial_materias_primas').insert([{fecha:new Date().toISOString().split('T')[0],mp_id:modalEditar.id,categoria:modalEditar.categoria,nombre:modalEditar.nombre,proveedor:modalEditar.proveedor,precio_kg:parseFloat(modalEditar.precio_kg)||0,precio_gr:parseFloat(precios.precio_gr)||0,notas:modalEditar.notas}]);
     setModalEditar(null);
     await cargarMaterias();
@@ -880,24 +817,98 @@ function App() {
     return coincideBuscar&&coincideCat&&coincideEstado;
   });
 
+  // ── Formulario materias primas con ID auto y Tipo selector ─
   const camposForm=(data,setData)=>(
     <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px'}}>
-      {[['ID','id','text'],['Categoría','categoria','select'],['Nombre Ingrediente','nombre','text'],['Nombre en Producto','nombre_producto','text'],['Proveedor','proveedor','text'],['$ / KG','precio_kg','number'],['$ / LB (auto)','precio_lb','readonly'],['$ / GR (auto)','precio_gr','readonly'],['Estado','estado','select2'],['Tipo','tipo','text'],['Notas','notas','text']].map(([label,key,tipo])=>(
-        <div key={key} style={{display:'flex',flexDirection:'column',gap:'4px'}}>
-          <label style={{fontSize:'12px',fontWeight:'bold',color:tipo==='readonly'?'#27ae60':'#555'}}>{label}</label>
-          {tipo==='select'?(<select value={data[key]} onChange={e=>setData({...data,[key]:e.target.value})} style={{padding:'7px',borderRadius:'6px',border:'1px solid #ddd',fontSize:'13px'}}>{categoriasMp.map(c=><option key={c}>{c}</option>)}</select>)
-          :tipo==='select2'?(<select value={data[key]} onChange={e=>setData({...data,[key]:e.target.value})} style={{padding:'7px',borderRadius:'6px',border:'1px solid #ddd',fontSize:'13px'}}><option>ACTIVO</option><option>INACTIVO</option></select>)
-          :tipo==='readonly'?(<input readOnly value={key==='precio_lb'?(parseFloat(data.precio_kg)>0?(parseFloat(data.precio_kg)/2.20462).toFixed(4):'—'):(parseFloat(data.precio_kg)>0?(parseFloat(data.precio_kg)/1000).toFixed(6):'—')} style={{padding:'7px',borderRadius:'6px',border:'1px solid #c8e6c9',fontSize:'13px',background:'#f1f8f1',color:'#27ae60',fontWeight:'bold'}}/>)
-          :tipo==='number'&&key==='precio_kg'?(<input type="number" value={data[key]} onChange={e=>setData({...data,[key]:e.target.value})} style={{padding:'7px',borderRadius:'6px',border:'1.5px solid #3498db',fontSize:'13px',fontWeight:'bold'}}/>)
-          :(<input type="text" value={data[key]} onChange={e=>setData({...data,[key]:e.target.value})} style={{padding:'7px',borderRadius:'6px',border:'1px solid #ddd',fontSize:'13px'}}/>)}
-        </div>
-      ))}
+
+      {/* CATEGORÍA — va primero para que el ID se genere */}
+      <div style={{display:'flex',flexDirection:'column',gap:'4px'}}>
+        <label style={{fontSize:'12px',fontWeight:'bold',color:'#555'}}>Categoría</label>
+        <select value={data.categoria} onChange={e=>{
+          const nuevaCat = e.target.value;
+          const idSugerido = generarSiguienteId(nuevaCat);
+          setData({...data, categoria: nuevaCat, id: idSugerido || data.id});
+        }} style={{padding:'7px',borderRadius:'6px',border:'1px solid #ddd',fontSize:'13px'}}>
+          {categoriasMp.map(c=><option key={c}>{c}</option>)}
+        </select>
+      </div>
+
+      {/* ID — se sugiere automáticamente */}
+      <div style={{display:'flex',flexDirection:'column',gap:'4px'}}>
+        <label style={{fontSize:'12px',fontWeight:'bold',color:'#555'}}>
+          ID
+          {generarSiguienteId(data.categoria) && (
+            <span style={{marginLeft:6,fontSize:'10px',color:'#27ae60',fontWeight:'normal'}}>
+              ✓ sugerido: {generarSiguienteId(data.categoria)}
+            </span>
+          )}
+          {!generarSiguienteId(data.categoria) && (
+            <span style={{marginLeft:6,fontSize:'10px',color:'#f39c12',fontWeight:'normal'}}>
+              ⚠ categoría nueva — define el primer ID
+            </span>
+          )}
+        </label>
+        <input type="text" value={data.id} onChange={e=>setData({...data,id:e.target.value.toUpperCase()})}
+          style={{padding:'7px',borderRadius:'6px',border:'1.5px solid #3498db',fontSize:'13px',fontWeight:'bold'}}/>
+      </div>
+
+      <div style={{display:'flex',flexDirection:'column',gap:'4px'}}>
+        <label style={{fontSize:'12px',fontWeight:'bold',color:'#555'}}>Nombre Ingrediente</label>
+        <input type="text" value={data.nombre} onChange={e=>setData({...data,nombre:e.target.value})} style={{padding:'7px',borderRadius:'6px',border:'1px solid #ddd',fontSize:'13px'}}/>
+      </div>
+
+      <div style={{display:'flex',flexDirection:'column',gap:'4px'}}>
+        <label style={{fontSize:'12px',fontWeight:'bold',color:'#555'}}>Nombre en Producto</label>
+        <input type="text" value={data.nombre_producto} onChange={e=>setData({...data,nombre_producto:e.target.value})} style={{padding:'7px',borderRadius:'6px',border:'1px solid #ddd',fontSize:'13px'}}/>
+      </div>
+
+      <div style={{display:'flex',flexDirection:'column',gap:'4px'}}>
+        <label style={{fontSize:'12px',fontWeight:'bold',color:'#555'}}>Proveedor</label>
+        <input type="text" value={data.proveedor} onChange={e=>setData({...data,proveedor:e.target.value})} style={{padding:'7px',borderRadius:'6px',border:'1px solid #ddd',fontSize:'13px'}}/>
+      </div>
+
+      <div style={{display:'flex',flexDirection:'column',gap:'4px'}}>
+        <label style={{fontSize:'12px',fontWeight:'bold',color:'#3498db'}}>$ / KG</label>
+        <input type="number" value={data.precio_kg} onChange={e=>setData({...data,precio_kg:e.target.value})} style={{padding:'7px',borderRadius:'6px',border:'1.5px solid #3498db',fontSize:'13px',fontWeight:'bold'}}/>
+      </div>
+
+      <div style={{display:'flex',flexDirection:'column',gap:'4px'}}>
+        <label style={{fontSize:'12px',fontWeight:'bold',color:'#27ae60'}}>$ / LB (auto)</label>
+        <input readOnly value={parseFloat(data.precio_kg)>0?(parseFloat(data.precio_kg)/2.20462).toFixed(4):'—'} style={{padding:'7px',borderRadius:'6px',border:'1px solid #c8e6c9',fontSize:'13px',background:'#f1f8f1',color:'#27ae60',fontWeight:'bold'}}/>
+      </div>
+
+      <div style={{display:'flex',flexDirection:'column',gap:'4px'}}>
+        <label style={{fontSize:'12px',fontWeight:'bold',color:'#27ae60'}}>$ / GR (auto)</label>
+        <input readOnly value={parseFloat(data.precio_kg)>0?(parseFloat(data.precio_kg)/1000).toFixed(6):'—'} style={{padding:'7px',borderRadius:'6px',border:'1px solid #c8e6c9',fontSize:'13px',background:'#f1f8f1',color:'#27ae60',fontWeight:'bold'}}/>
+      </div>
+
+      <div style={{display:'flex',flexDirection:'column',gap:'4px'}}>
+        <label style={{fontSize:'12px',fontWeight:'bold',color:'#555'}}>Estado</label>
+        <select value={data.estado} onChange={e=>setData({...data,estado:e.target.value})} style={{padding:'7px',borderRadius:'6px',border:'1px solid #ddd',fontSize:'13px'}}>
+          <option>ACTIVO</option>
+          <option>INACTIVO</option>
+        </select>
+      </div>
+
+      {/* TIPO — selector en lugar de texto libre */}
+      <div style={{display:'flex',flexDirection:'column',gap:'4px'}}>
+        <label style={{fontSize:'12px',fontWeight:'bold',color:'#555'}}>Tipo</label>
+        <select value={data.tipo || 'MATERIAS PRIMAS'} onChange={e=>setData({...data,tipo:e.target.value})} style={{padding:'7px',borderRadius:'6px',border:'1px solid #ddd',fontSize:'13px'}}>
+          <option value="MATERIAS PRIMAS">MATERIAS PRIMAS</option>
+          <option value="CONDIMENTOS Y ADITIVOS">CONDIMENTOS Y ADITIVOS</option>
+          <option value="NINGUNO">NINGUNO</option>
+        </select>
+      </div>
+
+      <div style={{display:'flex',flexDirection:'column',gap:'4px',gridColumn:'1/-1'}}>
+        <label style={{fontSize:'12px',fontWeight:'bold',color:'#555'}}>Notas</label>
+        <input type="text" value={data.notas} onChange={e=>setData({...data,notas:e.target.value})} style={{padding:'7px',borderRadius:'6px',border:'1px solid #ddd',fontSize:'13px'}}/>
+      </div>
+
     </div>
   );
 
-  // ══════════════════════════════════════════════
-  // RENDERS ESPECIALES
-  // ══════════════════════════════════════════════
+  // ── Renders ──────────────────────────────────────────────
   if(pantalla==='login') return (
     <div style={{display:'flex',justifyContent:'center',alignItems:'center',height:'100vh',background:'linear-gradient(135deg,#1a1a2e,#16213e)'}}>
       <div style={{background:'white',padding:'40px',borderRadius:'16px',boxShadow:'0 20px 60px rgba(0,0,0,0.3)',width:'380px'}}>
@@ -918,18 +929,15 @@ function App() {
   if(pantalla==='modcif') return <ModCif onVolver={()=>setPantalla(pantallaAnterior)} onVolverMenu={()=>setPantalla('menuPrincipal')} mostrarExito={mostrarExito}/>;
   if(pantalla==='resumen') return <ResumenPrecios onVolver={()=>setPantalla(pantallaAnterior)} onVolverMenu={()=>setPantalla('menuPrincipal')} onAbrirProducto={abrirProducto}/>;
   if(pantalla==='historialmp') return <HistorialMP onVolver={()=>setPantalla(pantallaAnterior)} onVolverMenu={()=>setPantalla('menuPrincipal')} mostrarExito={mostrarExito}/>;
-  if(pantalla==='produccion') return <div style={{padding:40,color:'white',background:'#1a1a2e',minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center'}}><div style={{textAlign:'center'}}><div style={{fontSize:48,marginBottom:16}}>🏭</div><div style={{fontSize:20,marginBottom:8}}>Módulo de Producción</div><div style={{color:'#aaa',marginBottom:24}}>Próximamente en el siguiente paso</div><button onClick={()=>setPantalla('menuPrincipal')} style={{background:'#27ae60',color:'white',border:'none',borderRadius:8,padding:'10px 20px',cursor:'pointer'}}>← Volver al Menú</button></div></div>;
-  if(pantalla==='inventario') return <div style={{padding:40,color:'white',background:'#1a1a2e',minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center'}}><div style={{textAlign:'center'}}><div style={{fontSize:48,marginBottom:16}}>📦</div><div style={{fontSize:20,marginBottom:8}}>Módulo de Inventario</div><div style={{color:'#aaa',marginBottom:24}}>Próximamente en el siguiente paso</div><button onClick={()=>setPantalla('menuPrincipal')} style={{background:'#27ae60',color:'white',border:'none',borderRadius:8,padding:'10px 20px',cursor:'pointer'}}>← Volver al Menú</button></div></div>;
-  if(pantalla==='clientes') return <div style={{padding:40,color:'white',background:'#1a1a2e',minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center'}}><div style={{textAlign:'center'}}><div style={{fontSize:48,marginBottom:16}}>👥</div><div style={{fontSize:20,marginBottom:8}}>Módulo de Clientes</div><div style={{color:'#aaa',marginBottom:24}}>Próximamente en el siguiente paso</div><button onClick={()=>setPantalla('menuPrincipal')} style={{background:'#27ae60',color:'white',border:'none',borderRadius:8,padding:'10px 20px',cursor:'pointer'}}>← Volver al Menú</button></div></div>;
-  if(pantalla==='auditoria') return <div style={{padding:40,color:'white',background:'#1a1a2e',minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center'}}><div style={{textAlign:'center'}}><div style={{fontSize:48,marginBottom:16}}>🗂️</div><div style={{fontSize:20,marginBottom:8}}>Historial de Auditoría</div><div style={{color:'#aaa',marginBottom:24}}>Próximamente en el siguiente paso</div><button onClick={()=>setPantalla('menuPrincipal')} style={{background:'#27ae60',color:'white',border:'none',borderRadius:8,padding:'10px 20px',cursor:'pointer'}}>← Volver al Menú</button></div></div>;
+  if(pantalla==='produccion') return <div style={{padding:40,color:'white',background:'#1a1a2e',minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center'}}><div style={{textAlign:'center'}}><div style={{fontSize:48,marginBottom:16}}>🏭</div><div style={{fontSize:20,marginBottom:8}}>Módulo de Producción</div><div style={{color:'#aaa',marginBottom:24}}>Próximamente</div><button onClick={()=>setPantalla('menuPrincipal')} style={{background:'#27ae60',color:'white',border:'none',borderRadius:8,padding:'10px 20px',cursor:'pointer'}}>← Volver al Menú</button></div></div>;
+  if(pantalla==='inventario') return <div style={{padding:40,color:'white',background:'#1a1a2e',minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center'}}><div style={{textAlign:'center'}}><div style={{fontSize:48,marginBottom:16}}>📦</div><div style={{fontSize:20,marginBottom:8}}>Módulo de Inventario</div><div style={{color:'#aaa',marginBottom:24}}>Próximamente</div><button onClick={()=>setPantalla('menuPrincipal')} style={{background:'#27ae60',color:'white',border:'none',borderRadius:8,padding:'10px 20px',cursor:'pointer'}}>← Volver al Menú</button></div></div>;
+  if(pantalla==='clientes') return <div style={{padding:40,color:'white',background:'#1a1a2e',minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center'}}><div style={{textAlign:'center'}}><div style={{fontSize:48,marginBottom:16}}>👥</div><div style={{fontSize:20,marginBottom:8}}>Módulo de Clientes</div><div style={{color:'#aaa',marginBottom:24}}>Próximamente</div><button onClick={()=>setPantalla('menuPrincipal')} style={{background:'#27ae60',color:'white',border:'none',borderRadius:8,padding:'10px 20px',cursor:'pointer'}}>← Volver al Menú</button></div></div>;
+  if(pantalla==='auditoria') return <div style={{padding:40,color:'white',background:'#1a1a2e',minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center'}}><div style={{textAlign:'center'}}><div style={{fontSize:48,marginBottom:16}}>🗂️</div><div style={{fontSize:20,marginBottom:8}}>Historial de Auditoría</div><div style={{color:'#aaa',marginBottom:24}}>Próximamente</div><button onClick={()=>setPantalla('menuPrincipal')} style={{background:'#27ae60',color:'white',border:'none',borderRadius:8,padding:'10px 20px',cursor:'pointer'}}>← Volver al Menú</button></div></div>;
 
   if(pantalla==='formulacion'&&productoActivo) return (
     <><Formulacion producto={productoActivo} userRol={userRol} currentUser={user} onVolver={()=>{setPantalla(pantallaAnterior);setProductoActivo(null);cargarProductos();}} onVolverMenu={()=>{setPantalla('menuPrincipal');setProductoActivo(null);cargarProductos();}}/><GeminiChat/></>
   );
 
-  // ══════════════════════════════════════════════
-  // RENDER HISTORIAL GENERAL
-  // ══════════════════════════════════════════════
   if(pantalla==='historial') return (
     <div style={{minHeight:'100vh',background:'#f0f2f5',fontFamily:'Arial'}}>
       <div style={{background:'linear-gradient(135deg,#1a1a2e,#16213e)',padding:'14px 24px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
@@ -1001,9 +1009,6 @@ function App() {
     </div>
   );
 
-  // ══════════════════════════════════════════════
-  // RENDER MATERIAS PRIMAS
-  // ══════════════════════════════════════════════
   if(pantalla==='materias') return (
     <div style={{minHeight:'100vh',background:'#f0f2f5',fontFamily:'Arial'}}>
       <div style={{background:'linear-gradient(135deg,#1a1a2e,#16213e)',padding:'14px 24px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
@@ -1024,7 +1029,11 @@ function App() {
           <div style={{display:'flex',gap:10}}>
             <button onClick={()=>fileRefMP.current.click()} style={{padding:'9px 18px',background:'#8e44ad',color:'white',border:'none',borderRadius:'8px',cursor:'pointer',fontSize:'13px',fontWeight:'bold'}}>📤 Subir Excel</button>
             <input ref={fileRefMP} type="file" accept=".xlsx,.xlsm" style={{display:'none'}} onChange={subirExcel}/>
-            <button onClick={()=>setModalAgregar(true)} style={{padding:'9px 18px',background:'#27ae60',color:'white',border:'none',borderRadius:'8px',cursor:'pointer',fontSize:'13px',fontWeight:'bold'}}>➕ Agregar</button>
+            <button onClick={()=>{
+              const idSugerido = generarSiguienteId(categoriasMp[0]||'');
+              setForm({id:idSugerido,categoria:categoriasMp[0]||'',nombre:'',nombre_producto:'',proveedor:'',precio_kg:'',notas:'',estado:'ACTIVO',tipo:'MATERIAS PRIMAS'});
+              setModalAgregar(true);
+            }} style={{padding:'9px 18px',background:'#27ae60',color:'white',border:'none',borderRadius:'8px',cursor:'pointer',fontSize:'13px',fontWeight:'bold'}}>➕ Agregar</button>
           </div>
         </div>
         <div style={{background:'white',padding:14,borderRadius:10,marginBottom:14,display:'flex',gap:12,flexWrap:'wrap',boxShadow:'0 1px 4px rgba(0,0,0,0.08)'}}>
@@ -1036,7 +1045,7 @@ function App() {
         <div style={{background:'white',borderRadius:10,boxShadow:'0 1px 4px rgba(0,0,0,0.08)',overflow:'hidden'}}>
           <div style={{overflowX:'auto'}}>
             <table style={{width:'100%',borderCollapse:'collapse',fontSize:'13px'}}>
-              <thead><tr style={{background:'#1a1a2e',color:'white'}}>{['ID','CATEGORÍA','NOMBRE','NOMBRE EN PRODUCTO','PROVEEDOR','$/KG','$/LB','$/GR','ESTADO','NOTAS','ACCIONES'].map(h=>(<th key={h} style={{padding:'12px 10px',textAlign:'left',whiteSpace:'nowrap',fontSize:'12px'}}>{h}</th>))}</tr></thead>
+              <thead><tr style={{background:'#1a1a2e',color:'white'}}>{['ID','CATEGORÍA','NOMBRE','NOMBRE EN PRODUCTO','PROVEEDOR','$/KG','$/LB','$/GR','TIPO','ESTADO','NOTAS','ACCIONES'].map(h=>(<th key={h} style={{padding:'12px 10px',textAlign:'left',whiteSpace:'nowrap',fontSize:'12px'}}>{h}</th>))}</tr></thead>
               <tbody>
                 {materiasFiltradas.map((m,i)=>(
                   <tr key={m.id+i} style={{background:i%2===0?'#fafafa':'white',borderBottom:'1px solid #f0f0f0'}}>
@@ -1048,10 +1057,11 @@ function App() {
                     <td style={{padding:'10px',textAlign:'right',fontWeight:'bold',color:'#27ae60'}}>${parseFloat(m.precio_kg||0).toFixed(2)}</td>
                     <td style={{padding:'10px',textAlign:'right',color:'#555'}}>${parseFloat(m.precio_lb||0).toFixed(4)}</td>
                     <td style={{padding:'10px',textAlign:'right',color:'#555'}}>${parseFloat(m.precio_gr||0).toFixed(6)}</td>
+                    <td style={{padding:'10px'}}><span style={{background: m.tipo==='CONDIMENTOS Y ADITIVOS'?'#f3e5f5': m.tipo==='NINGUNO'?'#f5f5f5':'#e8f5e9',color: m.tipo==='CONDIMENTOS Y ADITIVOS'?'#6c3483': m.tipo==='NINGUNO'?'#888':'#1e8449',padding:'3px 8px',borderRadius:12,fontSize:'10px',fontWeight:'bold'}}>{m.tipo||'MP'}</span></td>
                     <td style={{padding:'10px'}}><span style={{background:m.estado==='ACTIVO'?'#d4edda':'#f8d7da',color:m.estado==='ACTIVO'?'#155724':'#721c24',padding:'3px 10px',borderRadius:12,fontSize:'11px',fontWeight:'bold'}}>{m.estado}</span></td>
                     <td style={{padding:'10px',color:'#888',fontSize:'12px'}}>{m.notas}</td>
                     <td style={{padding:'10px',whiteSpace:'nowrap'}}>
-                      <button onClick={()=>setModalEditar({...m})} style={{padding:'5px 10px',background:'#3498db',color:'white',border:'none',borderRadius:6,cursor:'pointer',fontSize:'12px',marginRight:6}}>✏️</button>
+                      <button onClick={()=>setModalEditar({...m,tipo:m.tipo||'MATERIAS PRIMAS'})} style={{padding:'5px 10px',background:'#3498db',color:'white',border:'none',borderRadius:6,cursor:'pointer',fontSize:'12px',marginRight:6}}>✏️</button>
                       <button onClick={()=>eliminarMP(m.id)} style={{padding:'5px 10px',background:'#e74c3c',color:'white',border:'none',borderRadius:6,cursor:'pointer',fontSize:'12px'}}>🗑️</button>
                     </td>
                   </tr>
@@ -1062,14 +1072,14 @@ function App() {
           </div>
         </div>
       </div>
-      {modalAgregar&&(<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.5)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:2000}}><div style={{background:'white',padding:28,borderRadius:12,width:600,maxHeight:'85vh',overflowY:'auto',boxShadow:'0 20px 60px rgba(0,0,0,0.3)'}}><h3 style={{margin:'0 0 8px',color:'#1a1a2e'}}>➕ Agregar Materia Prima</h3><div style={{background:'#e8f4fd',color:'#1a5276',padding:'8px 12px',borderRadius:6,fontSize:'12px',marginBottom:16}}>💡 $/LB y $/GR se calculan automáticamente</div>{camposForm(form,setForm)}<div style={{display:'flex',gap:10,marginTop:20,justifyContent:'flex-end'}}><button onClick={()=>setModalAgregar(false)} style={{padding:'10px 20px',background:'#95a5a6',color:'white',border:'none',borderRadius:8,cursor:'pointer'}}>Cancelar</button><button onClick={guardarNuevoMP} style={{padding:'10px 20px',background:'#27ae60',color:'white',border:'none',borderRadius:8,cursor:'pointer',fontWeight:'bold'}}>Guardar</button></div></div></div>)}
+      {modalAgregar&&(<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.5)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:2000}}><div style={{background:'white',padding:28,borderRadius:12,width:600,maxHeight:'85vh',overflowY:'auto',boxShadow:'0 20px 60px rgba(0,0,0,0.3)'}}><h3 style={{margin:'0 0 8px',color:'#1a1a2e'}}>➕ Agregar Materia Prima</h3><div style={{background:'#e8f4fd',color:'#1a5276',padding:'8px 12px',borderRadius:6,fontSize:'12px',marginBottom:16}}>💡 El ID se sugiere automáticamente · $/LB y $/GR se calculan solos</div>{camposForm(form,setForm)}<div style={{display:'flex',gap:10,marginTop:20,justifyContent:'flex-end'}}><button onClick={()=>setModalAgregar(false)} style={{padding:'10px 20px',background:'#95a5a6',color:'white',border:'none',borderRadius:8,cursor:'pointer'}}>Cancelar</button><button onClick={guardarNuevoMP} style={{padding:'10px 20px',background:'#27ae60',color:'white',border:'none',borderRadius:8,cursor:'pointer',fontWeight:'bold'}}>Guardar</button></div></div></div>)}
       {modalEditar&&(<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.5)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:2000}}><div style={{background:'white',padding:28,borderRadius:12,width:600,maxHeight:'85vh',overflowY:'auto',boxShadow:'0 20px 60px rgba(0,0,0,0.3)'}}><h3 style={{margin:'0 0 8px',color:'#1a1a2e'}}>✏️ Editar: {modalEditar.nombre}</h3><div style={{background:'#e8f4fd',color:'#1a5276',padding:'8px 12px',borderRadius:6,fontSize:'12px',marginBottom:16}}>💡 Si cambias "Nombre en Producto" se actualiza en todas las fórmulas.</div>{camposForm(modalEditar,setModalEditar)}<div style={{display:'flex',gap:10,marginTop:20,justifyContent:'flex-end'}}><button onClick={()=>setModalEditar(null)} style={{padding:'10px 20px',background:'#95a5a6',color:'white',border:'none',borderRadius:8,cursor:'pointer'}}>Cancelar</button><button onClick={guardarEdicionMP} style={{padding:'10px 20px',background:'#3498db',color:'white',border:'none',borderRadius:8,cursor:'pointer',fontWeight:'bold'}}>✅ Actualizar</button></div></div></div>)}
       {modalGestionarMp&&(<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.55)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:3000}}><div style={{background:'white',borderRadius:14,width:500,maxHeight:'85vh',display:'flex',flexDirection:'column',boxShadow:'0 20px 60px rgba(0,0,0,0.35)'}}><div style={{background:'#1a1a2e',padding:'16px 20px',borderRadius:'14px 14px 0 0',display:'flex',justifyContent:'space-between',alignItems:'center'}}><div><div style={{color:'white',fontWeight:'bold',fontSize:'16px'}}>🗂️ Categorías de Materias Primas</div><div style={{color:'#aaa',fontSize:'11px',marginTop:2}}>{categoriasMp.length} categorías</div></div><button onClick={()=>{setModalGestionarMp(false);setEditandoCatMp(null);setNuevaCatMpNombre('');}} style={{background:'rgba(255,255,255,0.15)',border:'none',color:'white',fontSize:'18px',cursor:'pointer',borderRadius:6,padding:'4px 10px'}}>✕</button></div><div style={{padding:'14px 16px',borderBottom:'1px solid #f0f0f0',background:'#f8f9fa'}}><div style={{display:'flex',gap:8}}><input value={nuevaCatMpNombre} onChange={e=>setNuevaCatMpNombre(e.target.value.toUpperCase())} onKeyPress={e=>e.key==='Enter'&&crearCategoriaMp()} placeholder="Nombre nueva categoría..." style={{flex:1,padding:'9px 12px',borderRadius:8,border:'1.5px solid #ddd',fontSize:'13px',fontWeight:'bold'}}/><button onClick={crearCategoriaMp} style={{padding:'9px 18px',background:'#27ae60',color:'white',border:'none',borderRadius:8,cursor:'pointer',fontSize:'13px',fontWeight:'bold',whiteSpace:'nowrap'}}>➕ Agregar</button></div></div><div style={{overflowY:'auto',padding:'12px 16px',flex:1}}>{categoriasMp.map((cat,idx)=>{const enUso=materias.filter(m=>m.categoria===cat).length;return(<div key={cat} style={{background:'white',border:'1.5px solid #e9ecef',borderRadius:10,padding:'10px 12px',marginBottom:8,display:'flex',alignItems:'center',gap:8}}>{editandoCatMp?.idx===idx?(<><input value={editandoCatMp.valor} onChange={e=>setEditandoCatMp({...editandoCatMp,valor:e.target.value.toUpperCase()})} onKeyPress={e=>e.key==='Enter'&&guardarEdicionCatMp()} style={{flex:1,padding:'7px 10px',borderRadius:7,border:'1.5px solid #3498db',fontSize:'13px',fontWeight:'bold'}} autoFocus/><button onClick={guardarEdicionCatMp} style={{padding:'6px 14px',background:'#27ae60',color:'white',border:'none',borderRadius:7,cursor:'pointer',fontSize:'13px',fontWeight:'bold'}}>✓</button><button onClick={()=>setEditandoCatMp(null)} style={{padding:'6px 12px',background:'#95a5a6',color:'white',border:'none',borderRadius:7,cursor:'pointer',fontSize:'13px'}}>✕</button></>):(<><div style={{display:'flex',flexDirection:'column',gap:2}}><button onClick={()=>moverCategoriaMp(idx,-1)} disabled={idx===0} style={{background:'none',border:'none',cursor:idx===0?'default':'pointer',color:idx===0?'#ddd':'#888',fontSize:'12px',padding:'1px 4px',lineHeight:1}}>▲</button><button onClick={()=>moverCategoriaMp(idx,1)} disabled={idx===categoriasMp.length-1} style={{background:'none',border:'none',cursor:idx===categoriasMp.length-1?'default':'pointer',color:idx===categoriasMp.length-1?'#ddd':'#888',fontSize:'12px',padding:'1px 4px',lineHeight:1}}>▼</button></div><div style={{flex:1}}><div style={{fontWeight:'bold',fontSize:'13px',color:'#1a1a2e'}}>{cat}</div><div style={{fontSize:'11px',color:enUso>0?'#27ae60':'#aaa'}}>{enUso>0?`${enUso} materia${enUso!==1?'s':''} asignada${enUso!==1?'s':''}`:'Sin asignaciones'}</div></div>{enUso>0&&<span style={{background:'#e8f5e9',color:'#2e7d32',padding:'2px 8px',borderRadius:10,fontSize:'11px',fontWeight:'bold'}}>{enUso}</span>}<button onClick={()=>setEditandoCatMp({idx,valor:cat})} style={{padding:'5px 10px',background:'#3498db',color:'white',border:'none',borderRadius:6,cursor:'pointer',fontSize:'12px'}}>✏️</button><button onClick={()=>eliminarCategoriaMp(idx)} style={{padding:'5px 10px',background:enUso>0?'#bdc3c7':'#e74c3c',color:'white',border:'none',borderRadius:6,cursor:'pointer',fontSize:'12px'}}>🗑️</button></>)}</div>);})}</div><div style={{padding:'10px 16px',borderTop:'1px solid #f0f0f0',background:'#f8f9fa',borderRadius:'0 0 14px 14px'}}><div style={{fontSize:'11px',color:'#888',textAlign:'center'}}>💡 Las categorías con materias asignadas no se pueden eliminar directamente.</div></div></div></div>)}
       <GeminiChat/>
     </div>
   );
 
-  // MENÚ ANTIGUO (fórmulas)
+  // ── Menú fórmulas (admin ve todo, formulador solo productos) ─
   return (
     <div style={{minHeight:'100vh',background:'#f0f2f5',fontFamily:'Arial,sans-serif'}}>
       <div style={{background:'linear-gradient(135deg,#1a1a2e,#16213e)',padding:'12px 16px',boxShadow:'0 2px 10px rgba(0,0,0,0.3)'}}>
@@ -1083,22 +1093,32 @@ function App() {
             <button onClick={logout} style={{padding:'7px 12px',background:'#e74c3c',color:'white',border:'none',borderRadius:'8px',cursor:'pointer',fontSize:'12px',fontWeight:'bold'}}>Salir</button>
           </div>
         </div>
-        <div style={{display:'flex',gap:6,overflowX:'auto',paddingBottom:2}}>
-          {[['💰 Precios',()=>navegarA('resumen'),'#27ae60','none'],['⚙️ MOD+CIF',()=>navegarA('modcif'),'rgba(255,255,255,0.15)','1px solid rgba(255,255,255,0.3)'],['📦 Materias',()=>navegarA('materias'),'rgba(255,255,255,0.15)','1px solid rgba(255,255,255,0.3)'],['📋 Historial',()=>{navegarA('historial');cargarHistorial();},'rgba(255,255,255,0.15)','1px solid rgba(255,255,255,0.3)']].map(([label,fn,bg,border])=>(
-            <button key={label} onClick={fn} style={{padding:'7px 12px',background:bg,color:'white',border:border,borderRadius:'7px',cursor:'pointer',fontSize:'12px',fontWeight:'bold',whiteSpace:'nowrap',flexShrink:0}}>{label}</button>
-          ))}
-        </div>
+
+        {/* Pestañas — solo admin */}
+        {userRol?.rol === 'admin' && (
+          <div style={{display:'flex',gap:6,overflowX:'auto',paddingBottom:2}}>
+            {[['💰 Precios',()=>navegarA('resumen'),'#27ae60','none'],['⚙️ MOD+CIF',()=>navegarA('modcif'),'rgba(255,255,255,0.15)','1px solid rgba(255,255,255,0.3)'],['📦 Materias',()=>navegarA('materias'),'rgba(255,255,255,0.15)','1px solid rgba(255,255,255,0.3)'],['📋 Historial',()=>{navegarA('historial');cargarHistorial();},'rgba(255,255,255,0.15)','1px solid rgba(255,255,255,0.3)']].map(([label,fn,bg,border])=>(
+              <button key={label} onClick={fn} style={{padding:'7px 12px',background:bg,color:'white',border:border,borderRadius:'7px',cursor:'pointer',fontSize:'12px',fontWeight:'bold',whiteSpace:'nowrap',flexShrink:0}}>{label}</button>
+            ))}
+          </div>
+        )}
       </div>
+
       <div style={{padding:'12px 16px'}}>
         {msgExito&&<div style={{background:'#d4edda',color:'#155724',padding:'10px 16px',borderRadius:'8px',marginBottom:12,fontWeight:'bold',fontSize:'13px'}}>{msgExito}</div>}
         {importando&&<div style={{background:'#cce5ff',color:'#004085',padding:'10px 16px',borderRadius:'8px',marginBottom:12,fontWeight:'bold',fontSize:'13px'}}>⏳ {progreso}</div>}
-        <div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap'}}>
-          <button onClick={()=>fileRefProductos.current.click()} disabled={importando} style={{padding:'9px 14px',background:'#8e44ad',color:'white',border:'none',borderRadius:8,cursor:'pointer',fontSize:'13px',fontWeight:'bold'}}>📤 Importar Excel</button>
-          <input ref={fileRefProductos} type="file" accept=".xlsx,.xlsm" style={{display:'none'}} onChange={importarProductosExcel}/>
-          <button onClick={()=>setModalNuevo(true)} style={{padding:'9px 14px',background:'#27ae60',color:'white',border:'none',borderRadius:8,cursor:'pointer',fontSize:'13px',fontWeight:'bold'}}>➕ Nuevo producto</button>
-          <button onClick={()=>{setModalGestionar(true);setTabGestionar('productos');}} style={{padding:'9px 14px',background:'#2980b9',color:'white',border:'none',borderRadius:8,cursor:'pointer',fontSize:'13px',fontWeight:'bold'}}>⚙️ Gestionar</button>
-          <div style={{marginLeft:'auto',background:'white',padding:'9px 14px',borderRadius:8,fontSize:'13px',color:'#555',boxShadow:'0 1px 4px rgba(0,0,0,0.08)'}}><strong>{productos.length}</strong> prods · <strong>{Object.keys(categoriasConfig).length}</strong> cats</div>
-        </div>
+
+        {/* Botones acción — solo admin */}
+        {userRol?.rol === 'admin' && (
+          <div style={{display:'flex',gap:8,marginBottom:16,flexWrap:'wrap'}}>
+            <button onClick={()=>fileRefProductos.current.click()} disabled={importando} style={{padding:'9px 14px',background:'#8e44ad',color:'white',border:'none',borderRadius:8,cursor:'pointer',fontSize:'13px',fontWeight:'bold'}}>📤 Importar Excel</button>
+            <input ref={fileRefProductos} type="file" accept=".xlsx,.xlsm" style={{display:'none'}} onChange={importarProductosExcel}/>
+            <button onClick={()=>setModalNuevo(true)} style={{padding:'9px 14px',background:'#27ae60',color:'white',border:'none',borderRadius:8,cursor:'pointer',fontSize:'13px',fontWeight:'bold'}}>➕ Nuevo producto</button>
+            <button onClick={()=>{setModalGestionar(true);setTabGestionar('productos');}} style={{padding:'9px 14px',background:'#2980b9',color:'white',border:'none',borderRadius:8,cursor:'pointer',fontSize:'13px',fontWeight:'bold'}}>⚙️ Gestionar</button>
+            <div style={{marginLeft:'auto',background:'white',padding:'9px 14px',borderRadius:8,fontSize:'13px',color:'#555',boxShadow:'0 1px 4px rgba(0,0,0,0.08)'}}><strong>{productos.length}</strong> prods · <strong>{Object.keys(categoriasConfig).length}</strong> cats</div>
+          </div>
+        )}
+
         {Object.entries(categoriasConfig).map(([categoria,nombresProductos])=>(
           nombresProductos.length===0?null:
           <div key={categoria} style={{marginBottom:24}}>
@@ -1125,6 +1145,7 @@ function App() {
           </div>
         ))}
       </div>
+
       {modalNuevo&&(<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.5)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:2000}}><div style={{background:'white',padding:28,borderRadius:12,width:420,boxShadow:'0 20px 60px rgba(0,0,0,0.3)'}}><h3 style={{margin:'0 0 20px',color:'#1a1a2e'}}>➕ Nuevo Producto</h3><label style={{fontSize:'13px',fontWeight:'bold',color:'#555'}}>Nombre del producto</label><input value={nuevoNombre} onChange={e=>setNuevoNombre(e.target.value)} placeholder="Ej: Salchicha Cocktail" style={{width:'100%',padding:10,borderRadius:8,border:'1px solid #ddd',fontSize:'14px',marginTop:6,marginBottom:14,boxSizing:'border-box'}}/><label style={{fontSize:'13px',fontWeight:'bold',color:'#555'}}>Categoría</label><select value={nuevaCategoria} onChange={e=>setNuevaCategoria(e.target.value)} style={{width:'100%',padding:10,borderRadius:8,border:'1px solid #ddd',fontSize:'14px',marginTop:6,boxSizing:'border-box'}}>{Object.keys(categoriasConfig).map(c=><option key={c}>{c}</option>)}</select><div style={{display:'flex',gap:10,marginTop:20,justifyContent:'flex-end'}}><button onClick={()=>setModalNuevo(false)} style={{padding:'10px 20px',background:'#95a5a6',color:'white',border:'none',borderRadius:8,cursor:'pointer'}}>Cancelar</button><button onClick={crearProducto} style={{padding:'10px 20px',background:'#27ae60',color:'white',border:'none',borderRadius:8,cursor:'pointer',fontWeight:'bold'}}>Crear y abrir</button></div></div></div>)}
       {modalGestionar&&(<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.5)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:2000}}><div style={{background:'white',borderRadius:14,width:680,maxHeight:'85vh',display:'flex',flexDirection:'column',boxShadow:'0 20px 60px rgba(0,0,0,0.3)'}}><div style={{background:'#1a1a2e',padding:'16px 20px',borderRadius:'14px 14px 0 0',display:'flex',justifyContent:'space-between',alignItems:'center'}}><h3 style={{margin:0,color:'white',fontSize:'16px'}}>⚙️ Gestionar</h3><button onClick={()=>setModalGestionar(false)} style={{background:'rgba(255,255,255,0.15)',border:'none',fontSize:'18px',cursor:'pointer',color:'white',borderRadius:6,padding:'4px 10px'}}>✕</button></div><div style={{display:'flex',borderBottom:'2px solid #f0f0f0',padding:'0 20px'}}>{[['productos','📦 Productos'],['categorias','🗂️ Categorías']].map(([key,label])=>(<button key={key} onClick={()=>setTabGestionar(key)} style={{padding:'12px 20px',border:'none',borderBottom:tabGestionar===key?'3px solid #2980b9':'3px solid transparent',background:'transparent',cursor:'pointer',fontSize:'14px',fontWeight:tabGestionar===key?'bold':'normal',color:tabGestionar===key?'#2980b9':'#888',marginBottom:'-2px'}}>{label}</button>))}</div><div style={{overflowY:'auto',padding:'16px 20px',flex:1}}>{tabGestionar==='productos'&&(<div>{Object.entries(categoriasConfig).map(([categoria,nombresProductos])=>(<div key={categoria} style={{marginBottom:20}}><div style={{background:'#1a1a2e',color:'white',padding:'8px 14px',borderRadius:8,fontWeight:'bold',fontSize:'14px',marginBottom:8,display:'flex',alignItems:'center',gap:8}}><span>{EMOJIS_CAT[categoria]||'📋'}</span>{categoria}<span style={{marginLeft:'auto',background:'rgba(255,255,255,0.15)',padding:'2px 10px',borderRadius:10,fontSize:'12px'}}>{nombresProductos.length}</span></div>{nombresProductos.length===0&&<div style={{padding:'10px 14px',color:'#aaa',fontSize:'13px',fontStyle:'italic'}}>Sin productos</div>}{nombresProductos.map(nombre=>(<div key={nombre} style={{display:'flex',alignItems:'center',gap:8,padding:'8px 10px',background:'#f8f9fa',borderRadius:8,marginBottom:6}}>{editando?.nombre===nombre?(<><input value={editando.nuevoNombre} onChange={e=>setEditando({...editando,nuevoNombre:e.target.value})} style={{flex:1,padding:6,borderRadius:6,border:'1px solid #3498db',fontSize:'13px'}}/><button onClick={guardarEdicionProducto} style={{padding:'5px 12px',background:'#27ae60',color:'white',border:'none',borderRadius:6,cursor:'pointer',fontSize:'12px'}}>✓</button><button onClick={()=>setEditando(null)} style={{padding:'5px 12px',background:'#95a5a6',color:'white',border:'none',borderRadius:6,cursor:'pointer',fontSize:'12px'}}>✕</button></>):(<><span style={{flex:1,fontSize:'13px',fontWeight:'bold',color:'#2c3e50'}}>{nombre}</span><select onChange={e=>moverCategoria(nombre,categoria,e.target.value)} value={categoria} style={{padding:'4px 6px',borderRadius:6,border:'1px solid #ddd',fontSize:'12px'}}>{Object.keys(categoriasConfig).map(c=><option key={c} value={c}>{EMOJIS_CAT[c]||'📋'} {c}</option>)}</select><button onClick={()=>setEditando({nombre,nuevoNombre:nombre})} style={{padding:'5px 10px',background:'#3498db',color:'white',border:'none',borderRadius:6,cursor:'pointer',fontSize:'12px'}}>✏️</button><button onClick={()=>eliminarProducto(nombre)} style={{padding:'5px 10px',background:'#e74c3c',color:'white',border:'none',borderRadius:6,cursor:'pointer',fontSize:'12px'}}>🗑️</button></>)}</div>))}</div>))}</div>)}{tabGestionar==='categorias'&&(<div><button onClick={()=>setModalNuevaCat(true)} style={{width:'100%',padding:12,background:'#27ae60',color:'white',border:'none',borderRadius:10,cursor:'pointer',fontSize:'14px',fontWeight:'bold',marginBottom:16}}>➕ Nueva categoría</button>{Object.entries(categoriasConfig).map(([categoria,prods])=>(<div key={categoria} style={{background:'#f8f9fa',border:'1.5px solid #e9ecef',borderRadius:10,padding:'12px 14px',marginBottom:10}}>{editandoCat?.nombre===categoria?(<div><div style={{display:'flex',gap:8,marginBottom:10,alignItems:'center'}}><select value={editandoCat.emoji} onChange={e=>setEditandoCat({...editandoCat,emoji:e.target.value})} style={{padding:7,borderRadius:7,border:'1px solid #ddd',fontSize:'18px',background:'white'}}>{EMOJIS_OPCIONES.map(em=><option key={em} value={em}>{em}</option>)}</select><input value={editandoCat.nuevoNombre} onChange={e=>setEditandoCat({...editandoCat,nuevoNombre:e.target.value})} style={{flex:1,padding:'8px 12px',borderRadius:7,border:'1.5px solid #3498db',fontSize:'14px',fontWeight:'bold',textTransform:'uppercase'}}/></div><div style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button onClick={()=>setEditandoCat(null)} style={{padding:'7px 16px',background:'#95a5a6',color:'white',border:'none',borderRadius:7,cursor:'pointer',fontSize:'13px'}}>Cancelar</button><button onClick={guardarEdicionCategoria} style={{padding:'7px 16px',background:'#27ae60',color:'white',border:'none',borderRadius:7,cursor:'pointer',fontSize:'13px',fontWeight:'bold'}}>✓ Guardar</button></div></div>):(<div style={{display:'flex',alignItems:'center',gap:10}}><span style={{fontSize:'22px'}}>{EMOJIS_CAT[categoria]||'📋'}</span><div style={{flex:1}}><div style={{fontWeight:'bold',fontSize:'14px',color:'#1a1a2e'}}>{categoria}</div><div style={{fontSize:'12px',color:'#888'}}>{prods.length} producto{prods.length!==1?'s':''}</div></div><button onClick={()=>setEditandoCat({nombre:categoria,nuevoNombre:categoria,emoji:EMOJIS_CAT[categoria]||'📦'})} style={{padding:'6px 12px',background:'#3498db',color:'white',border:'none',borderRadius:7,cursor:'pointer',fontSize:'12px'}}>✏️ Editar</button><button onClick={()=>eliminarCategoria(categoria)} style={{padding:'6px 12px',background:'#e74c3c',color:'white',border:'none',borderRadius:7,cursor:'pointer',fontSize:'12px'}}>🗑️</button></div>)}</div>))}</div>)}</div></div></div>)}
       {modalNuevaCat&&(<div style={{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,0.55)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:3000}}><div style={{background:'white',padding:28,borderRadius:14,width:400,boxShadow:'0 20px 60px rgba(0,0,0,0.35)'}}><h3 style={{margin:'0 0 20px',color:'#1a1a2e'}}>🗂️ Nueva Categoría</h3><label style={{fontSize:'13px',fontWeight:'bold',color:'#555',display:'block',marginBottom:6}}>Emoji</label><div style={{display:'flex',flexWrap:'wrap',gap:8,marginBottom:16}}>{EMOJIS_OPCIONES.map(em=>(<button key={em} onClick={()=>setNuevaCatEmoji(em)} style={{fontSize:'22px',padding:6,borderRadius:8,border:nuevaCatEmoji===em?'2.5px solid #27ae60':'2px solid #eee',background:nuevaCatEmoji===em?'#e8f5e9':'white',cursor:'pointer'}}>{em}</button>))}</div><label style={{fontSize:'13px',fontWeight:'bold',color:'#555',display:'block',marginBottom:6}}>Nombre</label><input value={nuevaCatNombre} onChange={e=>setNuevaCatNombre(e.target.value.toUpperCase())} placeholder="Ej: AHUMADOS" style={{width:'100%',padding:11,borderRadius:8,border:'1.5px solid #ddd',fontSize:'15px',fontWeight:'bold',boxSizing:'border-box'}}/><div style={{display:'flex',gap:10,marginTop:20,justifyContent:'flex-end'}}><button onClick={()=>{setModalNuevaCat(false);setNuevaCatNombre('');setNuevaCatEmoji('📦');}} style={{padding:'10px 20px',background:'#95a5a6',color:'white',border:'none',borderRadius:8,cursor:'pointer'}}>Cancelar</button><button onClick={crearCategoria} style={{padding:'10px 20px',background:'#27ae60',color:'white',border:'none',borderRadius:8,cursor:'pointer',fontWeight:'bold'}}>{nuevaCatEmoji} Crear</button></div></div></div>)}
