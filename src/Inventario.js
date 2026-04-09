@@ -291,10 +291,10 @@ function Inventario({ onVolver, onVolverMenu, userRol, currentUser }) {
     await cargarTodo();
   }
 
-  // ── Cámara IA ──────────────────────────────────────────
+// ── Cámara IA ──────────────────────────────────────────
   function abrirCamara() { fileRef.current.click(); }
 
-async function procesarImagen(e) {
+  async function procesarImagen(e) {
     const file = e.target.files[0];
     if (!file) return;
     setAnalizandoIA(true);
@@ -303,15 +303,27 @@ async function procesarImagen(e) {
 
     const reader = new FileReader();
     reader.onload = async (ev) => {
-      const base64 = ev.target.result.split(',')[1];
-      setImagenBase64(ev.target.result);
       try {
+        // Comprimir imagen antes de enviar
+        const img = new Image();
+        img.src = ev.target.result;
+        await new Promise(r => img.onload = r);
+        const canvas = document.createElement('canvas');
+        const MAX = 1200;
+        const ratio = Math.min(MAX / img.width, MAX / img.height, 1);
+        canvas.width = img.width * ratio;
+        canvas.height = img.height * ratio;
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+        const comprimida = canvas.toDataURL('image/jpeg', 0.7);
+        const base64 = comprimida.split(',')[1];
+        setImagenBase64(comprimida);
+
         const response = await fetch('/api/analyze-image', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             imageBase64: base64,
-            mediaType: file.type || 'image/jpeg'
+            mediaType: 'image/jpeg'
           })
         });
         const data = await response.json();
