@@ -6,6 +6,7 @@ import ModCif from './ModCif';
 import ResumenPrecios from './ResumenPrecios';
 import HistorialMP from './HistorialMP';
 import './App.css';
+import Inventario from './Inventario';
 
 const EMOJIS_CAT = {};
 const EMOJIS_OPCIONES = ['🥓','🌭','🍖','🍔','🥩','🫙','🔀','🧀','🧆','🍗','🥚','🫕','🥘','🍱','🥫','🏷️','📦','⭐','🆕'];
@@ -930,7 +931,7 @@ function App() {
   if(pantalla==='resumen') return <ResumenPrecios onVolver={()=>setPantalla(pantallaAnterior)} onVolverMenu={()=>setPantalla('menuPrincipal')} onAbrirProducto={abrirProducto}/>;
   if(pantalla==='historialmp') return <HistorialMP onVolver={()=>setPantalla(pantallaAnterior)} onVolverMenu={()=>setPantalla('menuPrincipal')} mostrarExito={mostrarExito}/>;
   if(pantalla==='produccion') return <div style={{padding:40,color:'white',background:'#1a1a2e',minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center'}}><div style={{textAlign:'center'}}><div style={{fontSize:48,marginBottom:16}}>🏭</div><div style={{fontSize:20,marginBottom:8}}>Módulo de Producción</div><div style={{color:'#aaa',marginBottom:24}}>Próximamente</div><button onClick={()=>setPantalla('menuPrincipal')} style={{background:'#27ae60',color:'white',border:'none',borderRadius:8,padding:'10px 20px',cursor:'pointer'}}>← Volver al Menú</button></div></div>;
-  if(pantalla==='inventario') return <div style={{padding:40,color:'white',background:'#1a1a2e',minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center'}}><div style={{textAlign:'center'}}><div style={{fontSize:48,marginBottom:16}}>📦</div><div style={{fontSize:20,marginBottom:8}}>Módulo de Inventario</div><div style={{color:'#aaa',marginBottom:24}}>Próximamente</div><button onClick={()=>setPantalla('menuPrincipal')} style={{background:'#27ae60',color:'white',border:'none',borderRadius:8,padding:'10px 20px',cursor:'pointer'}}>← Volver al Menú</button></div></div>;
+  if(pantalla==='inventario') return <Inventario onVolver={()=>setPantalla(pantallaAnterior)} onVolverMenu={()=>setPantalla('menuPrincipal')} userRol={userRol} currentUser={user}/>;
   if(pantalla==='clientes') return <div style={{padding:40,color:'white',background:'#1a1a2e',minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center'}}><div style={{textAlign:'center'}}><div style={{fontSize:48,marginBottom:16}}>👥</div><div style={{fontSize:20,marginBottom:8}}>Módulo de Clientes</div><div style={{color:'#aaa',marginBottom:24}}>Próximamente</div><button onClick={()=>setPantalla('menuPrincipal')} style={{background:'#27ae60',color:'white',border:'none',borderRadius:8,padding:'10px 20px',cursor:'pointer'}}>← Volver al Menú</button></div></div>;
   if(pantalla==='auditoria') return <div style={{padding:40,color:'white',background:'#1a1a2e',minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center'}}><div style={{textAlign:'center'}}><div style={{fontSize:48,marginBottom:16}}>🗂️</div><div style={{fontSize:20,marginBottom:8}}>Historial de Auditoría</div><div style={{color:'#aaa',marginBottom:24}}>Próximamente</div><button onClick={()=>setPantalla('menuPrincipal')} style={{background:'#27ae60',color:'white',border:'none',borderRadius:8,padding:'10px 20px',cursor:'pointer'}}>← Volver al Menú</button></div></div>;
 
