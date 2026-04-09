@@ -15,6 +15,9 @@ function Inventario({ onVolver, onVolverMenu, userRol, currentUser }) {
   const [mermas, setMermas] = useState([]);
   const [movimientos, setMovimientos] = useState([]);
   const mobile = window.innerWidth < 700;
+  const [modalNota, setModalNota] = useState(false);
+    const [textoNota, setTextoNota] = useState('');
+    const [enviandoNota, setEnviandoNota] = useState(false);
 
   // Modales
   const [modalEntrada, setModalEntrada] = useState(null); // { inv, tipo: 'manual' | 'camara' }
@@ -24,6 +27,7 @@ function Inventario({ onVolver, onVolverMenu, userRol, currentUser }) {
   const [resultadosIA, setResultadosIA] = useState([]);
   const [analizandoIA, setAnalizandoIA] = useState(false);
   const [imagenBase64, setImagenBase64] = useState(null);
+  
 
   // Forms
   const [entradaKg, setEntradaKg] = useState('');
@@ -75,6 +79,24 @@ function Inventario({ onVolver, onVolverMenu, userRol, currentUser }) {
     setCategorias(cats);
     setLoading(false);
   }
+    async function enviarNota() {
+  if (!textoNota.trim()) return;
+  setEnviandoNota(true);
+  try {
+    await crearNotificacion({
+      tipo: 'nota_produccion',
+      origen: 'inventario',
+      usuario_nombre: userRol?.nombre || 'Bodeguero',
+      user_id: currentUser?.id,
+      producto_nombre: null,
+      mensaje: textoNota.trim()
+    });
+    setModalNota(false);
+    setTextoNota('');
+    mostrarExito('✅ Nota enviada al administrador');
+  } catch (e) { alert('Error al enviar nota'); }
+  setEnviandoNota(false);
+    }
 
   function combinarDatos(mps, inv) {
     const combinado = mps.map(mp => {
@@ -477,16 +499,20 @@ Si no puedes leer bien un valor, pon null. Si no hay precio/cantidad, pon null.`
           </div>
           {puedeEditar && (
             <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={() => setModalMerma(true)}
-                style={{ background: '#c0392b', color: 'white', border: 'none', borderRadius: '8px', padding: mobile ? '8px 10px' : '8px 16px', cursor: 'pointer', fontSize: mobile ? '12px' : '13px', fontWeight: 'bold' }}>
-                🗑️ {mobile ? '' : 'Registrar pérdida'}
-              </button>
-              <button onClick={abrirCamara}
-                style={{ background: '#8e44ad', color: 'white', border: 'none', borderRadius: '8px', padding: mobile ? '8px 10px' : '8px 16px', cursor: 'pointer', fontSize: mobile ? '12px' : '13px', fontWeight: 'bold' }}>
-                📷 {mobile ? '' : 'Escanear factura'}
-              </button>
-            </div>
-          )}
+             <button onClick={() => setModalNota(true)}
+               style={{ background: '#e67e22', color: 'white', border: 'none', borderRadius: '8px', padding: mobile ? '8px 10px' : '8px 16px', cursor: 'pointer', fontSize: mobile ? '12px' : '13px', fontWeight: 'bold' }}>
+                  ✉️ {mobile ? '' : 'Enviar nota'}
+                  </button>
+                     <button onClick={() => setModalMerma(true)}
+                       style={{ background: '#c0392b', color: 'white', border: 'none', borderRadius: '8px', padding: mobile ? '8px 10px' : '8px 16px', cursor: 'pointer', fontSize: mobile ? '12px' : '13px', fontWeight: 'bold' }}>
+                         🗑️ {mobile ? '' : 'Registrar pérdida'}
+                           </button>
+                           <button onClick={abrirCamara}
+                             style={{ background: '#8e44ad', color: 'white', border: 'none', borderRadius: '8px', padding: mobile ? '8px 10px' : '8px 16px', cursor: 'pointer', fontSize: mobile ? '12px' : '13px', fontWeight: 'bold' }}>
+                                    📷 {mobile ? '' : 'Escanear factura'}
+                                  </button>
+                            </div>
+              )}
         </div>
       </div>
 
@@ -957,6 +983,31 @@ Si no puedes leer bien un valor, pon null. Si no hay precio/cantidad, pon null.`
           </div>
         </div>
       )}
+        {modalNota && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: mobile ? 'flex-end' : 'center', justifyContent: 'center', zIndex: 3000 }}>
+          <div style={{ background: 'white', borderRadius: mobile ? '16px 16px 0 0' : '12px', width: mobile ? '100%' : '480px', padding: '20px', boxShadow: '0 -4px 30px rgba(0,0,0,0.25)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+              <h3 style={{ margin: 0, color: '#1a1a2e', fontSize: '15px' }}>✉️ Enviar nota al Administrador</h3>
+              <button onClick={() => { setModalNota(false); setTextoNota(''); }} style={{ background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer', color: '#aaa' }}>✕</button>
+            </div>
+            <div style={{ fontSize: '12px', color: '#888', marginBottom: '10px' }}>Módulo: <strong>Inventario</strong></div>
+            <textarea value={textoNota} onChange={e => setTextoNota(e.target.value)}
+              placeholder="Ej: Llegó nueva mercadería sin registrar, falta revisar la pechuga..."
+              rows={4}
+              style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1.5px solid #e67e22', fontSize: '14px', resize: 'vertical', boxSizing: 'border-box', fontFamily: 'Arial' }}
+            />
+            <div style={{ display: 'flex', gap: '8px', marginTop: '12px', justifyContent: 'flex-end' }}>
+              <button onClick={() => { setModalNota(false); setTextoNota(''); }} style={{ padding: '10px 18px', background: '#95a5a6', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '13px' }}>Cancelar</button>
+              <button onClick={enviarNota} disabled={enviandoNota || !textoNota.trim()}
+                style={{ padding: '10px 20px', background: '#e67e22', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold' }}>
+                {enviandoNota ? 'Enviando...' : '✉️ Enviar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+
     </div>
   );
 }
