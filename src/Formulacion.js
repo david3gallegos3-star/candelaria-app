@@ -125,11 +125,9 @@ function Formulacion({ producto, onVolver, onVolverMenu, userRol, currentUser })
     cargarCIF();
     const onResize = () => setMobile(isMobile());
     window.addEventListener('resize', onResize);
-    window.addEventListener('beforeunload', guardarSilencioso);
-    return () => {
+       return () => {
       window.removeEventListener('resize', onResize);
-      window.removeEventListener('beforeunload', guardarSilencioso);
-      if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+          if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
     };
   }, [producto]);
 
@@ -147,8 +145,12 @@ function Formulacion({ producto, onVolver, onVolverMenu, userRol, currentUser })
   }
 
   function programarAutoGuardado() {
+    // Solo auto-guardar si está en modo edición Y hay datos
+    if (!modoRef.current) return;
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
-    autoSaveTimer.current = setTimeout(() => guardarSilencioso(), 4000);
+    autoSaveTimer.current = setTimeout(() => {
+      if (modoRef.current) guardarSilencioso();
+    }, 10000); // 10 segundos — suficiente tiempo para no interrumpir
   }
 
   function obtenerPrecioLive(fila, mpList) {
@@ -200,11 +202,19 @@ function Formulacion({ producto, onVolver, onVolverMenu, userRol, currentUser })
   }
 
   async function guardarSilencioso() {
+    // PROTECCIÓN: nunca guardar si los ingredientes están vacíos
+    const mpActuales = ingMPRef.current.filter(f => f.ingrediente_nombre);
+    const adActuales = ingADRef.current.filter(f => f.ingrediente_nombre);
+    if (mpActuales.length === 0 && adActuales.length === 0) return;
+    
+    // PROTECCIÓN: cancelar cualquier auto-guardado pendiente
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    
     try {
       setAutoGuardando(true);
-      await supabase.from('formulaciones').delete().eq('producto_nombre', producto.nombre);
+      
       const filas = [
-        ...ingMPRef.current.map((f, i) => ({
+        ...mpActuales.map((f, i) => ({
           producto_nombre: producto.nombre, producto_id: producto.id,
           seccion: 'MP', orden: i,
           ingrediente_nombre: f.ingrediente_nombre,
@@ -214,7 +224,7 @@ function Formulacion({ producto, onVolver, onVolverMenu, userRol, currentUser })
           nota_cambio: f.nota_cambio || '',
           especificacion: f.especificacion || ''
         })),
-        ...ingADRef.current.map((f, i) => ({
+        ...adActuales.map((f, i) => ({
           producto_nombre: producto.nombre, producto_id: producto.id,
           seccion: 'AD', orden: i,
           ingrediente_nombre: f.ingrediente_nombre,
@@ -224,10 +234,18 @@ function Formulacion({ producto, onVolver, onVolverMenu, userRol, currentUser })
           nota_cambio: f.nota_cambio || '',
           especificacion: f.especificacion || ''
         }))
-      ].filter(f => f.ingrediente_nombre);
-      if (filas.length > 0) await supabase.from('formulaciones').insert(filas);
+      ];
+
+      // Borrar e insertar solo si hay filas válidas
+      if (filas.length > 0) {
+        await supabase.from('formulaciones').delete().eq('producto_nombre', producto.nombre);
+        await supabase.from('formulaciones').insert(filas);
+      }
+
       const { precioVentaKg: pvk, costoTotalKg: ctk } = calcularPrecioConRefs();
       const cfg = configRef.current;
+      
+      // Usar upsert con onConflict para evitar duplicados
       await supabase.from('config_productos').upsert([{
         producto_nombre: producto.nombre,
         producto_id: producto.id,
@@ -247,8 +265,12 @@ function Formulacion({ producto, onVolver, onVolverMenu, userRol, currentUser })
         precio_venta_kg: pvk,
         costo_total_kg: ctk
       }], { onConflict: 'producto_nombre' });
+
       setAutoGuardando(false);
-    } catch (e) { setAutoGuardando(false); }
+    } catch (e) { 
+      console.error('Error guardando:', e);
+      setAutoGuardando(false); 
+    }
   }
 
   async function cargarDatos() {
@@ -440,6 +462,9 @@ function Formulacion({ producto, onVolver, onVolverMenu, userRol, currentUser })
   }
 
   async function guardar() {
+    // Cancelar cualquier auto-guardado pendiente
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    
     setGuardando(true);
     await guardarSilencioso();
     setGuardando(false);
