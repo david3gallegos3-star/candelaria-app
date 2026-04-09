@@ -85,7 +85,7 @@ function Produccion({ onVolver, onVolverMenu, userRol, currentUser }) {
       };
     });
 
-    const kgProducidos = kgTotalCrudo * (1 - merma / 100);
+    const kgProducidos = kgTotalCrudo * (1 - merma);
     const alertas = ingredientes.filter(i => !i.suficiente);
 
     return { ingredientes, kgTotalCrudo, kgProducidos, costoTotal, merma, paradas, alertas };
@@ -424,7 +424,7 @@ function Produccion({ onVolver, onVolverMenu, userRol, currentUser }) {
                       {[
                         { label: 'Paradas', val: resumen.paradas },
                         { label: 'Kg crudo total', val: resumen.kgTotalCrudo.toFixed(2)+' kg' },
-                        { label: 'Merma ('+resumen.merma+'%)', val: '-'+(resumen.kgTotalCrudo * resumen.merma / 100).toFixed(2)+' kg' },
+                        { label: 'Merma ('+(resumen.merma*100).toFixed(0)+'%)', val: '-'+(resumen.kgTotalCrudo * resumen.merma).toFixed(2)+' kg' },
                         { label: 'KG PRODUCIDOS', val: resumen.kgProducidos.toFixed(2)+' kg' },
                       ].map(s => (
                         <div key={s.label} style={{ background: 'rgba(255,255,255,0.08)', borderRadius: '8px', padding: '10px 12px' }}>
