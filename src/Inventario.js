@@ -294,7 +294,7 @@ function Inventario({ onVolver, onVolverMenu, userRol, currentUser }) {
   // ── Cámara IA ──────────────────────────────────────────
   function abrirCamara() { fileRef.current.click(); }
 
-  async function procesarImagen(e) {
+async function procesarImagen(e) {
     const file = e.target.files[0];
     if (!file) return;
     setAnalizandoIA(true);
@@ -306,30 +306,12 @@ function Inventario({ onVolver, onVolverMenu, userRol, currentUser }) {
       const base64 = ev.target.result.split(',')[1];
       setImagenBase64(ev.target.result);
       try {
-        const response = await fetch('https://api.anthropic.com/v1/messages', {
+        const response = await fetch('/api/analyze-image', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            model: 'claude-sonnet-4-20250514',
-            max_tokens: 1500,
-            messages: [{
-              role: 'user',
-              content: [
-                {
-                  type: 'image',
-                  source: { type: 'base64', media_type: file.type || 'image/jpeg', data: base64 }
-                },
-                {
-                  type: 'text',
-                  text: `Analiza esta imagen de una factura o lista de precios de materias primas para una empresa de embutidos.
-Extrae TODOS los productos que encuentres con su precio por kg.
-Responde SOLO en JSON válido, sin texto adicional, sin markdown, sin backticks.
-Formato exacto:
-{"productos": [{"nombre": "nombre del producto", "precio_kg": 4.50, "cantidad_kg": 120, "confianza": "alta|media|baja"}]}
-Si no puedes leer bien un valor, pon null. Si no hay precio/cantidad, pon null.`
-                }
-              ]
-            }]
+            imageBase64: base64,
+            mediaType: file.type || 'image/jpeg'
           })
         });
         const data = await response.json();
@@ -337,13 +319,12 @@ Si no puedes leer bien un valor, pon null. Si no hay precio/cantidad, pon null.`
         const parsed = JSON.parse(texto);
         const productosIA = parsed.productos || [];
 
-        // Comparar con materias primas existentes
         const resultados = productosIA.map(p => {
           const match = buscarMPSimilar(p.nombre, materiasPrimas);
           return {
             ...p,
             match,
-            accion: match ? 'mismo' : 'nuevo', // 'mismo' | 'nuevo' | 'renombrar'
+            accion: match ? 'mismo' : 'nuevo',
             nombre_editado: p.nombre,
             precio_editado: p.precio_kg,
             cantidad_editada: p.cantidad_kg,
@@ -360,7 +341,6 @@ Si no puedes leer bien un valor, pon null. Si no hay precio/cantidad, pon null.`
     reader.readAsDataURL(file);
     e.target.value = '';
   }
-
   function buscarMPSimilar(nombre, mps) {
     const norm = s => (s || '').toLowerCase().trim()
       .replace(/[áà]/g, 'a').replace(/[éè]/g, 'e').replace(/[íì]/g, 'i')
