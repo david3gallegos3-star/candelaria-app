@@ -9,6 +9,14 @@ import './App.css';
 import Inventario from './Inventario';
 import Produccion from './Produccion';
 
+function norm(s) {
+  return (s || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+}
+
 const EMOJIS_CAT = {};
 const EMOJIS_OPCIONES = ['🥓','🌭','🍖','🍔','🥩','🫙','🔀','🧀','🧆','🍗','🥚','🫕','🥘','🍱','🥫','🏷️','📦','⭐','🆕'];
 
@@ -812,12 +820,17 @@ function App() {
   }
 
   const materiasFiltradas=materias.filter(m=>{
-    const b=buscar.toLowerCase();
-    const coincideBuscar=!buscar||m.nombre?.toLowerCase().includes(b)||m.id?.toLowerCase().includes(b)||m.proveedor?.toLowerCase().includes(b);
-    const coincideCat=catFiltro==='TODAS'||m.categoria===catFiltro;
-    const coincideEstado=estadoFiltro==='TODOS'||m.estado===estadoFiltro;
-    return coincideBuscar&&coincideCat&&coincideEstado;
+  const b=norm(buscar);
+  const coincideBuscar=!buscar||
+    norm(m.nombre).includes(b)||
+    norm(m.id).includes(b)||
+    norm(m.proveedor).includes(b)||
+    norm(m.nombre_producto).includes(b);
+  const coincideCat=catFiltro==='TODAS'||m.categoria===catFiltro;
+  const coincideEstado=estadoFiltro==='TODOS'||m.estado===estadoFiltro;
+  return coincideBuscar&&coincideCat&&coincideEstado;
   });
+
 
   // ── Formulario materias primas con ID auto y Tipo selector ─
   const camposForm=(data,setData)=>(
@@ -936,9 +949,16 @@ function App() {
   if(pantalla==='clientes') return <div style={{padding:40,color:'white',background:'#1a1a2e',minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center'}}><div style={{textAlign:'center'}}><div style={{fontSize:48,marginBottom:16}}>👥</div><div style={{fontSize:20,marginBottom:8}}>Módulo de Clientes</div><div style={{color:'#aaa',marginBottom:24}}>Próximamente</div><button onClick={()=>setPantalla('menuPrincipal')} style={{background:'#27ae60',color:'white',border:'none',borderRadius:8,padding:'10px 20px',cursor:'pointer'}}>← Volver al Menú</button></div></div>;
   if(pantalla==='auditoria') return <div style={{padding:40,color:'white',background:'#1a1a2e',minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center'}}><div style={{textAlign:'center'}}><div style={{fontSize:48,marginBottom:16}}>🗂️</div><div style={{fontSize:20,marginBottom:8}}>Historial de Auditoría</div><div style={{color:'#aaa',marginBottom:24}}>Próximamente</div><button onClick={()=>setPantalla('menuPrincipal')} style={{background:'#27ae60',color:'white',border:'none',borderRadius:8,padding:'10px 20px',cursor:'pointer'}}>← Volver al Menú</button></div></div>;
 
-  if(pantalla==='formulacion'&&productoActivo) return (
-    <><Formulacion producto={productoActivo} userRol={userRol} currentUser={user} onVolver={()=>{setPantalla(pantallaAnterior);setProductoActivo(null);cargarProductos();}} onVolverMenu={()=>{setPantalla('menuPrincipal');setProductoActivo(null);cargarProductos();}}/><GeminiChat/></>
-  );
+ if(pantalla==='formulacion'&&productoActivo) return (
+  <><Formulacion
+    producto={productoActivo}
+    userRol={userRol}
+    currentUser={user}
+    onAbrirMaterias={() => { setPantallaAnterior('formulacion'); setPantalla('materias'); }}
+    onVolver={()=>{setPantalla(pantallaAnterior);setProductoActivo(null);cargarProductos();}}
+    onVolverMenu={()=>{setPantalla('menuPrincipal');setProductoActivo(null);cargarProductos();}}
+  /><GeminiChat/></>
+);
 
   if(pantalla==='historial') return (
     <div style={{minHeight:'100vh',background:'#f0f2f5',fontFamily:'Arial'}}>

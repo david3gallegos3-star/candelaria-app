@@ -1,23 +1,30 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from './supabase';
 import { crearNotificacion, registrarAuditoria } from './App';
+import * as XLSX from 'xlsx';
 
 const isMobile = () => window.innerWidth < 700;
 
-// ── Input de gramos sin scroll jump ──────────────────────────
+// ── Normalizar texto: quita tildes y pasa a minúsculas ─────────
+function norm(s) {
+  return (s || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+}
+
+// ── Input de gramos — SIN onFocus que causa el bug de scroll ───
 function GramosInput({ value, onCommit, disabled, mobile }) {
   const [local, setLocal] = useState(String(value ?? 0));
-  const ref = useRef();
   useEffect(() => { setLocal(String(value ?? 0)); }, [value]);
   return (
     <input
-      ref={ref}
       type="number"
       inputMode="numeric"
       value={local}
       onChange={e => setLocal(e.target.value)}
       onBlur={e => onCommit(e.target.value)}
-      onFocus={e => { e.preventDefault(); }}
       disabled={disabled}
       style={{
         width: '100%', padding: mobile ? '6px 4px' : '4px',
@@ -31,7 +38,7 @@ function GramosInput({ value, onCommit, disabled, mobile }) {
   );
 }
 
-// ── Input de nota sin scroll jump ────────────────────────────
+// ── Input de nota — SIN onFocus que causa el bug ───────────────
 function NoteInput({ value, onCommit, disabled, placeholder, style }) {
   const [local, setLocal] = useState(value ?? '');
   useEffect(() => { setLocal(value ?? ''); }, [value]);
@@ -40,7 +47,6 @@ function NoteInput({ value, onCommit, disabled, placeholder, style }) {
       value={local}
       onChange={e => setLocal(e.target.value)}
       onBlur={e => onCommit(e.target.value)}
-      onFocus={e => e.preventDefault()}
       disabled={disabled}
       placeholder={disabled ? '' : placeholder}
       style={style}
@@ -48,7 +54,23 @@ function NoteInput({ value, onCommit, disabled, placeholder, style }) {
   );
 }
 
-// ── Input numérico general sin scroll jump ───────────────────
+// ── Input de especificación — CORREGIDO sin onFocus preventDefault ──
+function EspecInput({ value, onCommit, disabled, placeholder, style }) {
+  const [local, setLocal] = useState(value ?? '');
+  useEffect(() => { setLocal(value ?? ''); }, [value]);
+  return (
+    <input
+      value={local}
+      onChange={e => setLocal(e.target.value)}
+      onBlur={e => onCommit(e.target.value)}
+      disabled={disabled}
+      placeholder={disabled ? '' : placeholder}
+      style={style}
+    />
+  );
+}
+
+// ── Input numérico general — CORREGIDO sin onFocus preventDefault ──
 function NumInput({ value, onChange, disabled, style, step, placeholder }) {
   const [local, setLocal] = useState(String(value ?? ''));
   useEffect(() => { setLocal(String(value ?? '')); }, [value]);
@@ -61,14 +83,30 @@ function NumInput({ value, onChange, disabled, style, step, placeholder }) {
       placeholder={placeholder}
       onChange={e => setLocal(e.target.value)}
       onBlur={e => onChange(e.target.value)}
-      onFocus={e => e.preventDefault()}
       disabled={disabled}
       style={style}
     />
   );
 }
 
-function Formulacion({ producto, onVolver, onVolverMenu, userRol, currentUser }) {
+// ── Input de texto general — CORREGIDO sin onFocus preventDefault ──
+function TextInput({ value, onChange, disabled, style, placeholder }) {
+  const [local, setLocal] = useState(value ?? '');
+  useEffect(() => { setLocal(value ?? ''); }, [value]);
+  return (
+    <input
+      type="text"
+      value={local}
+      placeholder={placeholder}
+      onChange={e => setLocal(e.target.value)}
+      onBlur={e => onChange(e.target.value)}
+      disabled={disabled}
+      style={style}
+    />
+  );
+}
+
+function Formulacion({ producto, onVolver, onVolverMenu, onAbrirMaterias, userRol, currentUser }) {
   const [ingredientesMP, setIngredientesMP] = useState([]);
   const [ingredientesAD, setIngredientesAD] = useState([]);
   const [materiasPrimas, setMateriasPrimas] = useState([]);
@@ -89,17 +127,14 @@ function Formulacion({ producto, onVolver, onVolverMenu, userRol, currentUser })
   const [modalNota, setModalNota] = useState(false);
   const [textoNota, setTextoNota] = useState('');
   const [enviandoNota, setEnviandoNota] = useState(false);
-  // Drag & Drop
   const [dragIdx, setDragIdx] = useState(null);
   const [dragSec, setDragSec] = useState(null);
   const [dragOverIdx, setDragOverIdx] = useState(null);
-  // Comparador
   const [comparadorAbierto, setComparadorAbierto] = useState(false);
   const [fechasDisponibles, setFechasDisponibles] = useState([]);
   const [fechaComparar, setFechaComparar] = useState('');
   const [formulaAnterior, setFormulaAnterior] = useState(null);
   const [cargandoCompar, setCargandoCompar] = useState(false);
-  // CIF data
   const [cifItems, setCifItems] = useState([]);
   const [produccionKg, setProduccionKg] = useState(13600);
 
@@ -111,7 +146,6 @@ function Formulacion({ producto, onVolver, onVolverMenu, userRol, currentUser })
   const mpRef = useRef([]);
 
   const esFormulador = userRol?.rol === 'formulador';
-  const esAdmin = userRol?.rol === 'admin';
 
   useEffect(() => { ingMPRef.current = ingredientesMP; }, [ingredientesMP]);
   useEffect(() => { ingADRef.current = ingredientesAD; }, [ingredientesAD]);
@@ -125,9 +159,9 @@ function Formulacion({ producto, onVolver, onVolverMenu, userRol, currentUser })
     cargarCIF();
     const onResize = () => setMobile(isMobile());
     window.addEventListener('resize', onResize);
-       return () => {
+    return () => {
       window.removeEventListener('resize', onResize);
-          if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+      if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
     };
   }, [producto]);
 
@@ -139,40 +173,34 @@ function Formulacion({ producto, onVolver, onVolverMenu, userRol, currentUser })
   }
 
   function getPrecioAgua() {
-    const agua = cifItems.find(c => c.detalle?.toLowerCase().trim() === 'agua');
+    const agua = cifItems.find(c => norm(c.detalle) === 'agua');
     if (!agua || !produccionKg) return 0;
     return (parseFloat(agua.valor_mes) || 0) / produccionKg;
   }
 
   function programarAutoGuardado() {
-    // Solo auto-guardar si está en modo edición Y hay datos
     if (!modoRef.current) return;
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
     autoSaveTimer.current = setTimeout(() => {
       if (modoRef.current) guardarSilencioso();
-    }, 10000); // 10 segundos — suficiente tiempo para no interrumpir
+    }, 10000);
   }
 
   function obtenerPrecioLive(fila, mpList) {
-    // Verificar si es categoría AGUA/HIELO → precio desde CIF
     if (fila.materia_prima_id) {
       const mp = (mpList || mpRef.current).find(m => m.id === fila.materia_prima_id);
       if (mp) {
-        if (mp.categoria?.toUpperCase().includes('AGUA')) {
-          return getPrecioAgua();
-        }
+        if (mp.categoria?.toUpperCase().includes('AGUA')) return getPrecioAgua();
         return parseFloat(mp.precio_kg) || 0;
       }
     }
-    const norm = s => (s || '').toLowerCase().trim()
-      .replace(/[áà]/g, 'a').replace(/[éè]/g, 'e').replace(/[íì]/g, 'i')
-      .replace(/[óò]/g, 'o').replace(/[úù]/g, 'u').replace(/ñ/g, 'n')
-      .replace(/\s+/g, ' ').replace(/[\/\-\.]/g, '').trim() || '';
     const n = norm(fila.ingrediente_nombre);
     const mpList2 = mpList || mpRef.current;
-    const mp = mpList2.find(m => norm(m.nombre_producto) === n || norm(m.nombre) === n ||
+    const mp = mpList2.find(m =>
+      norm(m.nombre_producto) === n || norm(m.nombre) === n ||
       (norm(m.nombre_producto) && n.includes(norm(m.nombre_producto)) && norm(m.nombre_producto).length > 4) ||
-      (n.length > 4 && norm(m.nombre).includes(n)));
+      (n.length > 4 && norm(m.nombre).includes(n))
+    );
     if (mp) {
       if (mp.categoria?.toUpperCase().includes('AGUA')) return getPrecioAgua();
       return parseFloat(mp.precio_kg) || 0;
@@ -202,17 +230,12 @@ function Formulacion({ producto, onVolver, onVolverMenu, userRol, currentUser })
   }
 
   async function guardarSilencioso() {
-    // PROTECCIÓN: nunca guardar si los ingredientes están vacíos
     const mpActuales = ingMPRef.current.filter(f => f.ingrediente_nombre);
     const adActuales = ingADRef.current.filter(f => f.ingrediente_nombre);
     if (mpActuales.length === 0 && adActuales.length === 0) return;
-    
-    // PROTECCIÓN: cancelar cualquier auto-guardado pendiente
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
-    
     try {
       setAutoGuardando(true);
-      
       const filas = [
         ...mpActuales.map((f, i) => ({
           producto_nombre: producto.nombre, producto_id: producto.id,
@@ -235,42 +258,24 @@ function Formulacion({ producto, onVolver, onVolverMenu, userRol, currentUser })
           especificacion: f.especificacion || ''
         }))
       ];
-
-      // Borrar e insertar solo si hay filas válidas
       if (filas.length > 0) {
         await supabase.from('formulaciones').delete().eq('producto_nombre', producto.nombre);
         await supabase.from('formulaciones').insert(filas);
       }
-
       const { precioVentaKg: pvk, costoTotalKg: ctk } = calcularPrecioConRefs();
       const cfg = configRef.current;
-      
-      // Usar upsert con onConflict para evitar duplicados
       await supabase.from('config_productos').upsert([{
-        producto_nombre: producto.nombre,
-        producto_id: producto.id,
-        fecha: cfg.fecha,
-        num_paradas: cfg.num_paradas,
-        merma: cfg.merma,
-        margen: cfg.margen,
-        mod_cif_kg: cfg.mod_cif_kg,
-        empaque_nombre: cfg.empaque_nombre,
-        empaque_precio_kg: cfg.empaque_precio_kg,
-        empaque_cantidad: cfg.empaque_cantidad,
-        empaque_unidad: cfg.empaque_unidad,
-        hilo_nombre: cfg.hilo_nombre,
-        hilo_precio_kg: cfg.hilo_precio_kg,
-        hilo_kg: cfg.hilo_kg,
-        fundas: cfg.fundas || [],
-        precio_venta_kg: pvk,
-        costo_total_kg: ctk
+        producto_nombre: producto.nombre, producto_id: producto.id,
+        fecha: cfg.fecha, num_paradas: cfg.num_paradas,
+        merma: cfg.merma, margen: cfg.margen, mod_cif_kg: cfg.mod_cif_kg,
+        empaque_nombre: cfg.empaque_nombre, empaque_precio_kg: cfg.empaque_precio_kg,
+        empaque_cantidad: cfg.empaque_cantidad, empaque_unidad: cfg.empaque_unidad,
+        hilo_nombre: cfg.hilo_nombre, hilo_precio_kg: cfg.hilo_precio_kg,
+        hilo_kg: cfg.hilo_kg, fundas: cfg.fundas || [],
+        precio_venta_kg: pvk, costo_total_kg: ctk
       }], { onConflict: 'producto_nombre' });
-
       setAutoGuardando(false);
-    } catch (e) { 
-      console.error('Error guardando:', e);
-      setAutoGuardando(false); 
-    }
+    } catch (e) { setAutoGuardando(false); }
   }
 
   async function cargarDatos() {
@@ -361,16 +366,8 @@ function Formulacion({ producto, onVolver, onVolverMenu, userRol, currentUser })
   }
 
   // ── Drag & Drop ───────────────────────────────────────────
-  function handleDragStart(sec, idx) {
-    setDragIdx(idx);
-    setDragSec(sec);
-  }
-
-  function handleDragOver(e, sec, idx) {
-    e.preventDefault();
-    if (sec === dragSec) setDragOverIdx(idx);
-  }
-
+  function handleDragStart(sec, idx) { setDragIdx(idx); setDragSec(sec); }
+  function handleDragOver(e, sec, idx) { e.preventDefault(); if (sec === dragSec) setDragOverIdx(idx); }
   function handleDrop(sec, idx) {
     if (dragSec !== sec || dragIdx === null || dragIdx === idx) {
       setDragIdx(null); setDragSec(null); setDragOverIdx(null); return;
@@ -379,8 +376,7 @@ function Formulacion({ producto, onVolver, onVolverMenu, userRol, currentUser })
     const [item] = lista.splice(dragIdx, 1);
     lista.splice(idx, 0, item);
     const reordenado = lista.map((f, i) => ({ ...f, orden: i }));
-    if (sec === 'MP') setIngredientesMP(reordenado);
-    else setIngredientesAD(reordenado);
+    if (sec === 'MP') setIngredientesMP(reordenado); else setIngredientesAD(reordenado);
     setDragIdx(null); setDragSec(null); setDragOverIdx(null);
     programarAutoGuardado();
   }
@@ -405,14 +401,12 @@ function Formulacion({ producto, onVolver, onVolverMenu, userRol, currentUser })
     const { tipo, indice } = buscador;
     const esAgua = mp.categoria?.toUpperCase().includes('AGUA');
     const precio = esAgua ? getPrecioAgua() : (parseFloat(mp.precio_kg) || 0);
-
     if (tipo === 'MP' || tipo === 'AD') {
       const lista = tipo === 'MP' ? [...ingredientesMP] : [...ingredientesAD];
       lista[indice] = {
         ...lista[indice],
         ingrediente_nombre: mp.nombre_producto || mp.nombre,
-        materia_prima_id: mp.id,
-        precio_kg: precio,
+        materia_prima_id: mp.id, precio_kg: precio,
         costo: (parseFloat(lista[indice].gramos) / 1000) * precio
       };
       tipo === 'MP' ? setIngredientesMP(lista) : setIngredientesAD(lista);
@@ -462,9 +456,7 @@ function Formulacion({ producto, onVolver, onVolverMenu, userRol, currentUser })
   }
 
   async function guardar() {
-    // Cancelar cualquier auto-guardado pendiente
     if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
-    
     setGuardando(true);
     await guardarSilencioso();
     setGuardando(false);
@@ -503,28 +495,106 @@ function Formulacion({ producto, onVolver, onVolverMenu, userRol, currentUser })
     setTimeout(() => setMsgExito(''), 4000);
   }
 
-  // ── Enviar nota al admin (formulador y producción) ────────
   async function enviarNota() {
     if (!textoNota.trim()) return;
     setEnviandoNota(true);
     try {
       await crearNotificacion({
-        tipo: 'nota_formulador',
-        origen: 'formulacion',
+        tipo: 'nota_formulador', origen: 'formulacion',
         usuario_nombre: userRol?.nombre || 'Formulador',
-        user_id: currentUser?.id,
-        producto_nombre: producto.nombre,
+        user_id: currentUser?.id, producto_nombre: producto.nombre,
         mensaje: textoNota.trim()
       });
-      setModalNota(false);
-      setTextoNota('');
+      setModalNota(false); setTextoNota('');
       setMsgExito('✅ Nota enviada al administrador');
       setTimeout(() => setMsgExito(''), 4000);
     } catch (e) { alert('Error al enviar nota'); }
     setEnviandoNota(false);
   }
 
-  // ── Impresión mejorada ────────────────────────────────────
+  // ── DESCARGAR EXCEL ────────────────────────────────────────
+  function descargarExcel() {
+    const nombreConEspec = (ing) => {
+      const spec = ing.especificacion?.trim();
+      return ing.ingrediente_nombre + (spec ? ` (${spec})` : '');
+    };
+
+    const datosMP = ingredientesMP.filter(i => i.ingrediente_nombre).map(ing => {
+      const g = parseFloat(ing.gramos) || 0;
+      const p = obtenerPrecioLive(ing, materiasPrimas);
+      return {
+        'SECCIÓN': 'MATERIAS PRIMAS',
+        'INGREDIENTE': nombreConEspec(ing),
+        'GRAMOS': Math.round(g),
+        'KILOS': parseFloat((g / 1000).toFixed(3)),
+        '% DEL TOTAL': totalCrudoG > 0 ? parseFloat(((g / totalCrudoG) * 100).toFixed(2)) : 0,
+        '$/KG': parseFloat(p.toFixed(4)),
+        'COSTO $': parseFloat(((g / 1000) * p).toFixed(4)),
+        'NOTA': ing.nota_cambio || ''
+      };
+    });
+
+    const subtotalMP = {
+      'SECCIÓN': '', 'INGREDIENTE': 'SUB-TOTAL',
+      'GRAMOS': Math.round(totMP.gramos),
+      'KILOS': parseFloat((totMP.gramos / 1000).toFixed(3)),
+      '% DEL TOTAL': '', '$/KG': '',
+      'COSTO $': parseFloat(totMP.costo.toFixed(4)), 'NOTA': ''
+    };
+
+    const datosAD = ingredientesAD.filter(i => i.ingrediente_nombre).map(ing => {
+      const g = parseFloat(ing.gramos) || 0;
+      const p = obtenerPrecioLive(ing, materiasPrimas);
+      return {
+        'SECCIÓN': 'CONDIMENTOS Y ADITIVOS',
+        'INGREDIENTE': nombreConEspec(ing),
+        'GRAMOS': Math.round(g),
+        'KILOS': parseFloat((g / 1000).toFixed(3)),
+        '% DEL TOTAL': totalCrudoG > 0 ? parseFloat(((g / totalCrudoG) * 100).toFixed(2)) : 0,
+        '$/KG': parseFloat(p.toFixed(4)),
+        'COSTO $': parseFloat(((g / 1000) * p).toFixed(4)),
+        'NOTA': ing.nota_cambio || ''
+      };
+    });
+
+    const subtotalAD = {
+      'SECCIÓN': '', 'INGREDIENTE': 'SUB-TOTAL',
+      'GRAMOS': Math.round(totAD.gramos),
+      'KILOS': parseFloat((totAD.gramos / 1000).toFixed(3)),
+      '% DEL TOTAL': '', '$/KG': '',
+      'COSTO $': parseFloat(totAD.costo.toFixed(4)), 'NOTA': ''
+    };
+
+    const totalCrudo = {
+      'SECCIÓN': '', 'INGREDIENTE': 'TOTAL CRUDO',
+      'GRAMOS': Math.round(totalCrudoG),
+      'KILOS': parseFloat(totalCrudoKg.toFixed(3)),
+      '% DEL TOTAL': '', '$/KG': '',
+      'COSTO $': parseFloat(totalCostoMP.toFixed(4)), 'NOTA': ''
+    };
+
+    const costos = [
+      { 'SECCIÓN': '', 'INGREDIENTE': '', 'GRAMOS': '', 'KILOS': '', '% DEL TOTAL': '', '$/KG': '', 'COSTO $': '', 'NOTA': '' },
+      { 'SECCIÓN': 'COSTOS', 'INGREDIENTE': 'Merma %', 'GRAMOS': '', 'KILOS': '', '% DEL TOTAL': ((merma || 0) * 100).toFixed(0) + '%', '$/KG': '', 'COSTO $': '', 'NOTA': '' },
+      { 'SECCIÓN': '', 'INGREDIENTE': 'Margen ganancia %', 'GRAMOS': '', 'KILOS': '', '% DEL TOTAL': ((margen || 0) * 100).toFixed(0) + '%', '$/KG': '', 'COSTO $': '', 'NOTA': '' },
+      { 'SECCIÓN': '', 'INGREDIENTE': 'MOD+CIF $/kg', 'GRAMOS': '', 'KILOS': '', '% DEL TOTAL': '', '$/KG': modCif.toFixed(4), 'COSTO $': '', 'NOTA': '' },
+      { 'SECCIÓN': '', 'INGREDIENTE': 'Costo MP/kg', 'GRAMOS': '', 'KILOS': '', '% DEL TOTAL': '', '$/KG': costoMPkg.toFixed(4), 'COSTO $': '', 'NOTA': '' },
+      { 'SECCIÓN': '', 'INGREDIENTE': 'Con merma', 'GRAMOS': '', 'KILOS': '', '% DEL TOTAL': '', '$/KG': costoConMerma.toFixed(4), 'COSTO $': '', 'NOTA': '' },
+      { 'SECCIÓN': '', 'INGREDIENTE': 'Empaque/kg', 'GRAMOS': '', 'KILOS': '', '% DEL TOTAL': '', '$/KG': costoEmpaqueKg.toFixed(4), 'COSTO $': '', 'NOTA': '' },
+      { 'SECCIÓN': '', 'INGREDIENTE': 'Amarre/kg', 'GRAMOS': '', 'KILOS': '', '% DEL TOTAL': '', '$/KG': costoAmarreKg.toFixed(4), 'COSTO $': '', 'NOTA': '' },
+      { 'SECCIÓN': '', 'INGREDIENTE': 'COSTO TOTAL/KG', 'GRAMOS': '', 'KILOS': '', '% DEL TOTAL': '', '$/KG': costoTotalKg.toFixed(4), 'COSTO $': '', 'NOTA': '' },
+      { 'SECCIÓN': '', 'INGREDIENTE': 'PRECIO VENTA/KG', 'GRAMOS': '', 'KILOS': '', '% DEL TOTAL': '', '$/KG': precioVentaKg.toFixed(4), 'COSTO $': '', 'NOTA': '' },
+    ];
+
+    const datos = [...datosMP, subtotalMP, ...datosAD, subtotalAD, totalCrudo, ...costos];
+
+    const ws = XLSX.utils.json_to_sheet(datos);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, producto.nombre.substring(0, 31));
+    XLSX.writeFile(wb, `${producto.nombre}_formula_${config.fecha || new Date().toISOString().split('T')[0]}.xlsx`);
+  }
+
+  // ── IMPRIMIR mejorado ─────────────────────────────────────
   function imprimir() {
     const ventana = window.open('', '_blank');
     const nombreConEspec = (ing) => {
@@ -542,25 +612,63 @@ function Formulacion({ producto, onVolver, onVolverMenu, userRol, currentUser })
     const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${producto.nombre}</title>
     <style>
       *{margin:0;padding:0;box-sizing:border-box}
-      body{font-family:Arial,sans-serif;font-size:11px;padding:18px;color:#222}
+      body{font-family:Arial,sans-serif;font-size:11px;padding:18px;color:#000}
       .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px}
-      .empresa{font-size:18px;font-weight:bold;color:#1a3a5c}
-      .meta{font-size:11px;color:#555;text-align:right;line-height:1.6}
-      .titulo{text-align:center;font-size:14px;font-weight:bold;color:#1a3a5c;margin-bottom:14px}
+      .meta{font-size:11px;color:#333;text-align:right;line-height:1.6}
+      .titulo{text-align:center;font-size:14px;font-weight:bold;color:#000;margin-bottom:14px}
       table{width:100%;border-collapse:collapse;margin-bottom:12px}
-      th{padding:6px 8px;font-size:10px;font-weight:700;color:#555;border:1.5px solid #bbb;text-align:left;background:#f0f0f0}
-      th.r{text-align:right}
-      td{padding:5px 8px;font-size:11px;border:1.5px solid #ccc}
-      td.r{text-align:right}
-      tr:nth-child(even) td{background:#f9f9f9}
-      .sec th{color:#fff;background:#1a3a5c;border:1.5px solid #1a3a5c;font-size:10px;letter-spacing:1px;text-transform:uppercase}
-      .sub td{font-weight:bold;color:#1a5276;background:#e8f5fb!important;border:2px solid #1a5276}
-      .sub-ad td{font-weight:bold;color:#5b2d8e;background:#f8f0ff!important;border:2px solid #6c3483}
-      .ttl td{font-weight:bold;background:#1a3a5c!important;color:white;padding:9px 8px;border:2px solid #1a3a5c;font-size:13px}
+
+      /* Cabeceras de sección: solo línea inferior gruesa + divisiones verticales, SIN fondo ni marco */
+      .sec th{
+        padding:6px 8px;
+        font-size:10px;
+        font-weight:800;
+        color:#000;
+        text-align:left;
+        border-bottom:2.5px solid #000;
+        border-right:1px solid #888;
+        text-transform:uppercase;
+        letter-spacing:0.8px;
+        background:none;
+      }
+      .sec th:last-child{border-right:none;}
+      .sec th.r{text-align:right;}
+
+      /* Filas normales: solo divisiones verticales */
+      td{padding:5px 8px;font-size:11px;border-right:1px solid #bbb;border-bottom:1px solid #e8e8e8;}
+      td:last-child{border-right:none;}
+      td.r{text-align:right;}
+      tr:nth-child(even) td{background:#f9f9f9;}
+
+      /* SUB-TOTAL: letras negras intensas, líneas arriba/abajo, sin fondo */
+      .sub td{
+        font-weight:800;
+        color:#000;
+        border-top:2px solid #000;
+        border-bottom:2px solid #000;
+        border-right:1px solid #888;
+        background:none!important;
+        padding:6px 8px;
+      }
+      .sub td:last-child{border-right:none;}
+
+      /* TOTAL CRUDO: letras negras, línea triple arriba y abajo, sin fondo oscuro */
+      .ttl td{
+        font-weight:800;
+        color:#000;
+        border-top:3px solid #000;
+        border-bottom:3px solid #000;
+        border-right:1px solid #888;
+        background:none!important;
+        padding:9px 8px;
+        font-size:13px;
+      }
+      .ttl td:last-child{border-right:none;}
+
       @media print{body{padding:8px}}
     </style></head><body>
     <div class="header">
-      <div class="empresa">
+      <div>
         <img src="/LOGO_CANDELARIA_1.png" alt="Candelaria" style="height:55px;width:auto;background:white;padding:4px 8px;border-radius:6px"/>
       </div>
       <div class="meta">
@@ -596,7 +704,7 @@ function Formulacion({ producto, onVolver, onVolverMenu, userRol, currentUser })
       </thead>
       <tbody>
         ${ingredientesAD.filter(i => i.ingrediente_nombre).map(i => fila(i)).join('')}
-        <tr class="sub-ad">
+        <tr class="sub">
           <td>SUB-TOTAL</td>
           <td class="r">${Math.round(totAD.gramos)}</td>
           <td class="r">${(totAD.gramos / 1000).toFixed(3)}</td>
@@ -618,8 +726,20 @@ function Formulacion({ producto, onVolver, onVolverMenu, userRol, currentUser })
     ventana.document.close();
   }
 
+  // ── Búsqueda con normalización (tildes + mayúsculas) ──────
+  const mpFiltradas = materiasPrimas.filter(m => {
+    const txt = norm(buscador.texto);
+    const coincide = !txt ||
+      norm(m.nombre)?.includes(txt) ||
+      norm(m.nombre_producto)?.includes(txt) ||
+      norm(m.id)?.includes(txt);
+    if (['empaque', 'funda', 'hilo'].includes(buscador.tipo)) return coincide && (m.categoria?.toUpperCase().includes('EMPAQUE') || !buscador.texto);
+    if (buscador.tipo === 'etiqueta') return coincide && (m.categoria?.toUpperCase().includes('ETIQUETA') || m.categoria?.toUpperCase().includes('EMPAQUE') || !buscador.texto);
+    return coincide;
+  });
+
   // ══════════════════════════════════════════════
-  // VISTA FORMULADOR — solo lectura limpia
+  // VISTA FORMULADOR
   // ══════════════════════════════════════════════
   if (esFormulador) {
     const thS = { padding: '8px 12px', fontSize: '11px', color: '#888', fontWeight: '700', textAlign: 'left', borderBottom: '1px solid #ddd', textTransform: 'uppercase', letterSpacing: '0.8px' };
@@ -637,7 +757,6 @@ function Formulacion({ producto, onVolver, onVolverMenu, userRol, currentUser })
     };
     return (
       <div style={{ minHeight: '100vh', background: '#f0f2f5', fontFamily: '"Segoe UI", system-ui, sans-serif' }}>
-        {/* Header formulador */}
         <div style={{ background: 'linear-gradient(135deg,#1a1a2e,#16213e)', padding: mobile ? '10px 12px' : '12px 20px', position: 'sticky', top: 0, zIndex: 100, boxShadow: '0 2px 12px rgba(0,0,0,0.3)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -648,21 +767,15 @@ function Formulacion({ producto, onVolver, onVolverMenu, userRol, currentUser })
                 <div style={{ color: '#aaa', fontSize: '10px' }}>🔒 Solo lectura — Formulador</div>
               </div>
             </div>
-            <button onClick={() => setModalNota(true)}
-              style={{ background: '#e67e22', color: 'white', border: 'none', borderRadius: '8px', padding: mobile ? '8px 12px' : '8px 16px', cursor: 'pointer', fontSize: mobile ? '12px' : '13px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <button onClick={() => setModalNota(true)} style={{ background: '#e67e22', color: 'white', border: 'none', borderRadius: '8px', padding: mobile ? '8px 12px' : '8px 16px', cursor: 'pointer', fontSize: mobile ? '12px' : '13px', fontWeight: 'bold' }}>
               ✉️ {mobile ? 'Nota' : 'Enviar nota al Ingeniero'}
             </button>
           </div>
         </div>
-
         {msgExito && <div style={{ background: '#d4edda', color: '#155724', padding: '10px 16px', fontWeight: 'bold', fontSize: '13px', textAlign: 'center' }}>{msgExito}</div>}
-
         <div style={{ padding: mobile ? '10px' : '16px 20px' }}>
-          {/* Tabla MP limpia */}
           <div style={{ background: 'white', borderRadius: '10px', overflow: 'hidden', marginBottom: '10px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
-            <div style={{ background: '#1a5276', padding: '8px 14px' }}>
-              <span style={{ color: 'white', fontWeight: 'bold', fontSize: '13px' }}>🥩 MATERIAS PRIMAS</span>
-            </div>
+            <div style={{ background: '#1a5276', padding: '8px 14px' }}><span style={{ color: 'white', fontWeight: 'bold', fontSize: '13px' }}>🥩 MATERIAS PRIMAS</span></div>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead><tr><th style={thS}>INGREDIENTE</th><th style={thR}>GRAMOS</th><th style={thR}>KILOS</th></tr></thead>
               <tbody>
@@ -675,11 +788,8 @@ function Formulacion({ producto, onVolver, onVolverMenu, userRol, currentUser })
               </tbody>
             </table>
           </div>
-          {/* Tabla AD limpia */}
           <div style={{ background: 'white', borderRadius: '10px', overflow: 'hidden', marginBottom: '10px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
-            <div style={{ background: '#6c3483', padding: '8px 14px' }}>
-              <span style={{ color: 'white', fontWeight: 'bold', fontSize: '13px' }}>🧂 CONDIMENTOS Y ADITIVOS</span>
-            </div>
+            <div style={{ background: '#6c3483', padding: '8px 14px' }}><span style={{ color: 'white', fontWeight: 'bold', fontSize: '13px' }}>🧂 CONDIMENTOS Y ADITIVOS</span></div>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead><tr><th style={thS}>INGREDIENTE</th><th style={thR}>GRAMOS</th><th style={thR}>KILOS</th></tr></thead>
               <tbody>
@@ -692,7 +802,6 @@ function Formulacion({ producto, onVolver, onVolverMenu, userRol, currentUser })
               </tbody>
             </table>
           </div>
-          {/* Total crudo */}
           <div style={{ background: '#1a3a5c', borderRadius: '10px', padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ color: 'white', fontWeight: 'bold', fontSize: '14px' }}>TOTAL CRUDO</span>
             <div style={{ display: 'flex', gap: 28 }}>
@@ -701,27 +810,19 @@ function Formulacion({ producto, onVolver, onVolverMenu, userRol, currentUser })
             </div>
           </div>
         </div>
-
-        {/* Modal nota formulador */}
         {modalNota && (
           <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: mobile ? 'flex-end' : 'center', justifyContent: 'center', zIndex: 3000 }}>
-            <div style={{ background: 'white', borderRadius: mobile ? '16px 16px 0 0' : '12px', width: mobile ? '100%' : '480px', padding: '20px', boxShadow: '0 -4px 30px rgba(0,0,0,0.25)' }}>
+            <div style={{ background: 'white', borderRadius: mobile ? '16px 16px 0 0' : '12px', width: mobile ? '100%' : '480px', padding: '20px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
                 <h3 style={{ margin: 0, color: '#1a1a2e', fontSize: '15px' }}>✉️ Enviar nota al Ingeniero</h3>
                 <button onClick={() => { setModalNota(false); setTextoNota(''); }} style={{ background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer', color: '#aaa' }}>✕</button>
               </div>
               <div style={{ fontSize: '12px', color: '#888', marginBottom: '10px' }}>Producto: <strong>{producto.nombre}</strong></div>
-              <textarea
-                value={textoNota}
-                onChange={e => setTextoNota(e.target.value)}
-                placeholder="Escribe tu nota aquí... ej: Se olvidó la Sal en esta fórmula"
-                rows={4}
-                style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1.5px solid #e67e22', fontSize: '14px', resize: 'vertical', boxSizing: 'border-box', fontFamily: 'Arial' }}
-              />
+              <textarea value={textoNota} onChange={e => setTextoNota(e.target.value)} placeholder="Escribe tu nota aquí..." rows={4}
+                style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1.5px solid #e67e22', fontSize: '14px', resize: 'vertical', boxSizing: 'border-box', fontFamily: 'Arial' }} />
               <div style={{ display: 'flex', gap: '8px', marginTop: '12px', justifyContent: 'flex-end' }}>
-                <button onClick={() => { setModalNota(false); setTextoNota(''); }} style={{ padding: '10px 18px', background: '#95a5a6', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '13px' }}>Cancelar</button>
-                <button onClick={enviarNota} disabled={enviandoNota || !textoNota.trim()}
-                  style={{ padding: '10px 20px', background: '#e67e22', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold' }}>
+                <button onClick={() => { setModalNota(false); setTextoNota(''); }} style={{ padding: '10px 18px', background: '#95a5a6', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer' }}>Cancelar</button>
+                <button onClick={enviarNota} disabled={enviandoNota || !textoNota.trim()} style={{ padding: '10px 20px', background: '#e67e22', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>
                   {enviandoNota ? 'Enviando...' : '✉️ Enviar'}
                 </button>
               </div>
@@ -733,7 +834,7 @@ function Formulacion({ producto, onVolver, onVolverMenu, userRol, currentUser })
   }
 
   // ══════════════════════════════════════════════
-  // VISTA LIMPIA (admin/no edición)
+  // VISTA LIMPIA (admin / no edición)
   // ══════════════════════════════════════════════
   const VistaLimpia = () => {
     const thS = { padding: mobile ? '7px 8px' : '7px 10px', fontSize: '10px', color: '#888', fontWeight: '700', letterSpacing: '0.8px', textTransform: 'uppercase', borderBottom: '1px solid #ddd', textAlign: 'left', whiteSpace: 'nowrap' };
@@ -771,11 +872,7 @@ function Formulacion({ producto, onVolver, onVolverMenu, userRol, currentUser })
           <div style={{ background: '#1a5276', padding: '8px 14px' }}><span style={{ color: 'white', fontWeight: 'bold', fontSize: mobile ? '12px' : '13px' }}>🥩 MATERIAS PRIMAS</span></div>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: mobile ? 400 : 600 }}>
-              <thead><tr>
-                <th style={thS}>Ingrediente</th><th style={thR}>Gramos</th><th style={thR}>Kilos</th>
-                {!mobile && <th style={thR}>%</th>}{!mobile && <th style={thS}>Nota</th>}
-                <th style={thR}>$/KG</th><th style={thR}>Costo</th>
-              </tr></thead>
+              <thead><tr><th style={thS}>Ingrediente</th><th style={thR}>Gramos</th><th style={thR}>Kilos</th>{!mobile && <th style={thR}>%</th>}{!mobile && <th style={thS}>Nota</th>}<th style={thR}>$/KG</th><th style={thR}>Costo</th></tr></thead>
               <tbody>
                 {ingredientesMP.filter(i => i.ingrediente_nombre).map((ing, i) => <Row key={i} ing={ing} i={i} />)}
                 <tr style={{ background: '#e8f5fb', borderTop: '2px solid #aed6f1' }}>
@@ -795,11 +892,7 @@ function Formulacion({ producto, onVolver, onVolverMenu, userRol, currentUser })
           <div style={{ background: '#6c3483', padding: '8px 14px' }}><span style={{ color: 'white', fontWeight: 'bold', fontSize: mobile ? '12px' : '13px' }}>🧂 CONDIMENTOS Y ADITIVOS</span></div>
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: mobile ? 400 : 600 }}>
-              <thead><tr>
-                <th style={thS}>Ingrediente</th><th style={thR}>Gramos</th><th style={thR}>Kilos</th>
-                {!mobile && <th style={thR}>%</th>}{!mobile && <th style={thS}>Nota</th>}
-                <th style={thR}>$/KG</th><th style={thR}>Costo</th>
-              </tr></thead>
+              <thead><tr><th style={thS}>Ingrediente</th><th style={thR}>Gramos</th><th style={thR}>Kilos</th>{!mobile && <th style={thR}>%</th>}{!mobile && <th style={thS}>Nota</th>}<th style={thR}>$/KG</th><th style={thR}>Costo</th></tr></thead>
               <tbody>
                 {ingredientesAD.filter(i => i.ingrediente_nombre).map((ing, i) => <Row key={i} ing={ing} i={i} />)}
                 <tr style={{ background: '#f5eef8', borderTop: '2px solid #d2b4de' }}>
@@ -883,17 +976,9 @@ function Formulacion({ producto, onVolver, onVolverMenu, userRol, currentUser })
     );
   };
 
-  const mpFiltradas = materiasPrimas.filter(m => {
-    const txt = buscador.texto.toLowerCase();
-    const coincide = !txt || m.nombre?.toLowerCase().includes(txt) || m.nombre_producto?.toLowerCase().includes(txt) || m.id?.toLowerCase().includes(txt);
-    if (['empaque', 'funda', 'hilo'].includes(buscador.tipo)) return coincide && (m.categoria?.toUpperCase().includes('EMPAQUE') || !buscador.texto);
-    if (buscador.tipo === 'etiqueta') return coincide && (m.categoria?.toUpperCase().includes('ETIQUETA') || m.categoria?.toUpperCase().includes('EMPAQUE') || !buscador.texto);
-    return coincide;
-  });
-
   // ── Columnas tabla edición ─────────────────────────────────
   const COLS = [
-    { label: 'INGREDIENTE', w: '25%', align: 'left' },
+    { label: 'INGREDIENTE', w: '24%', align: 'left' },
     { label: 'ESPECIFICACIÓN', w: '14%', align: 'left' },
     { label: 'GRAMOS', w: '10%', align: 'right' },
     { label: 'KILOS', w: '7%', align: 'right' },
@@ -901,7 +986,7 @@ function Formulacion({ producto, onVolver, onVolverMenu, userRol, currentUser })
     { label: 'NOTA', w: '12%', align: 'left' },
     { label: '$/KG', w: '9%', align: 'right' },
     { label: 'COSTO', w: '9%', align: 'right' },
-    { label: '', w: '4%', align: 'center' },
+    { label: '', w: '5%', align: 'center' },
     { label: '⠿', w: '4%', align: 'center' }
   ];
   const sTh = { padding: '9px 8px', textAlign: 'left', fontSize: '11px', fontWeight: '700', color: 'white' };
@@ -927,12 +1012,11 @@ function Formulacion({ producto, onVolver, onVolverMenu, userRol, currentUser })
               const vinculado = !!ing.materia_prima_id;
               const esAgua = materiasPrimas.find(m => m.id === ing.materia_prima_id)?.categoria?.toUpperCase().includes('AGUA');
               return (
-                <div key={i} style={{ background: 'white', borderRadius: '12px', marginBottom: '10px', border: `1.5px solid ${vinculado ? '#c8e6c9' : '#fce4ec'}`, overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', opacity: modoEdicion ? 1 : 0.85 }}
+                <div key={i} style={{ background: 'white', borderRadius: '12px', marginBottom: '10px', border: `1.5px solid ${vinculado ? '#c8e6c9' : '#fce4ec'}`, overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.06)' }}
                   draggable={modoEdicion}
                   onDragStart={() => handleDragStart(seccion, i)}
                   onDragOver={e => handleDragOver(e, seccion, i)}
-                  onDrop={() => handleDrop(seccion, i)}
-                >
+                  onDrop={() => handleDrop(seccion, i)}>
                   <div style={{ padding: '10px 12px 6px', borderBottom: '1px solid #f5f5f5' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                       <div onClick={() => modoEdicion && setBuscador({ abierto: true, tipo: seccion, indice: i, texto: '' })}
@@ -943,12 +1027,15 @@ function Formulacion({ producto, onVolver, onVolverMenu, userRol, currentUser })
                       {modoEdicion && <button onClick={() => eliminarFila(seccion, i)} style={{ background: '#ffebee', border: '1px solid #ef9a9a', borderRadius: '8px', padding: '9px 11px', cursor: 'pointer', fontSize: '15px', flexShrink: 0 }}>🗑️</button>}
                     </div>
                     {modoEdicion && (
-                      <input
+                      <EspecInput
                         value={ing.especificacion || ''}
-                        onChange={e => actualizarIng(seccion, i, 'especificacion', e.target.value)}
+                        onCommit={v => actualizarIng(seccion, i, 'especificacion', v)}
                         placeholder="Especificación (opcional)..."
-                        style={{ marginTop: '6px', width: '100%', padding: '5px 8px', border: ing.especificacion?.trim() ? '1.5px solid #3498db' : '1px dashed #ddd', borderRadius: '6px', fontSize: '11px', color: '#1a5276', background: ing.especificacion?.trim() ? '#e8f4fd' : '#fafafa', boxSizing: 'border-box' }}
+                        style={{ marginTop: '6px', width: '100%', padding: '7px 8px', border: ing.especificacion?.trim() ? '1.5px solid #3498db' : '1px dashed #ddd', borderRadius: '6px', fontSize: '12px', color: '#1a5276', background: ing.especificacion?.trim() ? '#e8f4fd' : '#fafafa', boxSizing: 'border-box' }}
                       />
+                    )}
+                    {!modoEdicion && ing.especificacion?.trim() && (
+                      <div style={{ marginTop: '4px', fontSize: '11px', color: '#1a5276' }}>({ing.especificacion.trim()})</div>
                     )}
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 0 }}>
@@ -1003,19 +1090,19 @@ function Formulacion({ producto, onVolver, onVolverMenu, userRol, currentUser })
                       onDragStart={() => handleDragStart(seccion, i)}
                       onDragOver={e => handleDragOver(e, seccion, i)}
                       onDrop={() => handleDrop(seccion, i)}
-                      style={{ background: isDragOver ? '#e8f4fd' : (i % 2 === 0 ? '#fafafa' : 'white'), borderBottom: isDragOver ? '2px solid #3498db' : '1px solid #f0f0f0', cursor: modoEdicion ? 'default' : 'default' }}>
+                      style={{ background: isDragOver ? '#e8f4fd' : (i % 2 === 0 ? '#fafafa' : 'white'), borderBottom: isDragOver ? '2px solid #3498db' : '1px solid #f0f0f0' }}>
                       <td style={sTd}>
                         <div onClick={() => modoEdicion && setBuscador({ abierto: true, tipo: seccion, indice: i, texto: '' })}
                           style={{ padding: '4px 7px', background: ing.materia_prima_id ? '#e8f8f0' : '#eaf4fb', border: ing.materia_prima_id ? '1px solid #27ae60' : '1px solid #aed6f1', borderRadius: '5px', cursor: modoEdicion ? 'pointer' : 'default', fontSize: '11px', color: ing.ingrediente_nombre ? (ing.materia_prima_id ? '#1e8449' : '#1a5276') : '#aaa', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {ing.ingrediente_nombre || '—'}{ing.materia_prima_id && <span style={{ fontSize: '9px', marginLeft: '4px', color: '#27ae60' }}>✓</span>}
                         </div>
                       </td>
+                      {/* ESPECIFICACIÓN — usa EspecInput sin preventDefault en onFocus */}
                       <td style={sTd}>
                         {modoEdicion ? (
-                          <input
+                          <EspecInput
                             value={ing.especificacion || ''}
-                            onChange={e => actualizarIng(seccion, i, 'especificacion', e.target.value)}
-                            onFocus={e => e.preventDefault()}
+                            onCommit={v => actualizarIng(seccion, i, 'especificacion', v)}
                             placeholder="opcional..."
                             style={{ ...sIn, border: ing.especificacion?.trim() ? '1.5px solid #3498db' : '1px dashed #ddd', background: ing.especificacion?.trim() ? '#e8f4fd' : '#fafafa', color: '#1a5276' }}
                           />
@@ -1092,6 +1179,7 @@ function Formulacion({ producto, onVolver, onVolverMenu, userRol, currentUser })
             </div>
           ))}
         </div>
+        {/* EMPAQUE — usa TextInput en lugar de input directo */}
         <div style={{ background: 'white', borderRadius: '12px', padding: '14px', boxShadow: '0 1px 4px rgba(0,0,0,0.08)' }}>
           <h4 style={{ margin: '0 0 12px', color: '#1a1a2e', borderBottom: '2px solid #8e44ad', paddingBottom: '6px', fontSize: '13px' }}>📦 Empaque / Tripa</h4>
           <div style={{ marginBottom: '10px' }}>
@@ -1099,18 +1187,26 @@ function Formulacion({ producto, onVolver, onVolverMenu, userRol, currentUser })
             <BtnBuscar valor={config.empaque_nombre} tipo="empaque" color="#8e44ad" />
             {config.empaque_precio_kg > 0 && <div style={{ fontSize: '11px', color: '#27ae60', marginTop: '4px' }}>💰 ${parseFloat(config.empaque_precio_kg).toFixed(2)}/kg</div>}
           </div>
-          {[['Cantidad usada', 'empaque_cantidad'], ['Unidad', 'empaque_unidad']].map(([l, k]) => (
-            <div key={k} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-              <label style={{ fontSize: '12px', color: '#555' }}>{l}</label>
-              <input
-                value={config[k] || ''}
-                onChange={e => { if (!modoEdicion) return; setConfig(prev => ({ ...prev, [k]: e.target.value })); programarAutoGuardado(); }}
-                onFocus={e => e.preventDefault()}
-                disabled={!modoEdicion}
-                style={{ width: mobile ? 120 : 110, padding: mobile ? '9px' : '6px', borderRadius: '7px', border: '1.5px solid #ddd', fontSize: '13px', textAlign: 'right', background: modoEdicion ? 'white' : '#f0f0f0' }}
-              />
-            </div>
-          ))}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <label style={{ fontSize: '12px', color: '#555' }}>Cantidad usada</label>
+            <NumInput
+              value={config.empaque_cantidad || ''}
+              onChange={v => { if (!modoEdicion) return; setConfig(prev => ({ ...prev, empaque_cantidad: v })); programarAutoGuardado(); }}
+              disabled={!modoEdicion}
+              style={{ width: mobile ? 120 : 110, padding: mobile ? '9px' : '6px', borderRadius: '7px', border: '1.5px solid #ddd', fontSize: '13px', textAlign: 'right', background: modoEdicion ? 'white' : '#f0f0f0' }}
+            />
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+            <label style={{ fontSize: '12px', color: '#555' }}>Unidad</label>
+            {/* CORREGIDO: TextInput sin preventDefault */}
+            <TextInput
+              value={config.empaque_unidad || ''}
+              onChange={v => { if (!modoEdicion) return; setConfig(prev => ({ ...prev, empaque_unidad: v })); programarAutoGuardado(); }}
+              disabled={!modoEdicion}
+              placeholder="Madejas"
+              style={{ width: mobile ? 120 : 110, padding: mobile ? '9px' : '6px', borderRadius: '7px', border: '1.5px solid #ddd', fontSize: '13px', textAlign: 'right', background: modoEdicion ? 'white' : '#f0f0f0' }}
+            />
+          </div>
           <div style={{ fontSize: '11px', color: '#666', background: '#f8f9fa', borderRadius: '8px', padding: '8px', marginTop: '6px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}><span>Costo total empaque:</span><span style={{ fontWeight: 'bold' }}>${(empPrecio * empCantidad).toFixed(4)}</span></div>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}><span>Costo empaque/kg:</span><span style={{ fontWeight: 'bold', color: '#8e44ad' }}>${costoEmpaqueKg.toFixed(4)}</span></div>
@@ -1174,7 +1270,6 @@ function Formulacion({ producto, onVolver, onVolverMenu, userRol, currentUser })
               <div style={{ marginBottom: '8px' }}>
                 <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#555', display: 'block', marginBottom: '4px' }}>Funda / Envase</label>
                 <BtnBuscar valor={funda.nombre_funda} tipo="funda" indice={idx} color="#17a589" />
-                {funda.precio_funda > 0 && <div style={{ fontSize: '10px', color: '#27ae60', marginTop: '3px' }}>💰 ${parseFloat(funda.precio_funda).toFixed(4)}</div>}
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                 <label style={{ fontSize: '12px', color: '#555' }}>Kg por funda</label>
@@ -1189,7 +1284,6 @@ function Formulacion({ producto, onVolver, onVolverMenu, userRol, currentUser })
               <div style={{ marginBottom: '8px' }}>
                 <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#555', display: 'block', marginBottom: '4px' }}>Etiqueta</label>
                 <BtnBuscar valor={funda.nombre_etiqueta} tipo="etiqueta" indice={idx} color="#7f8c8d" />
-                {funda.precio_etiqueta > 0 && <div style={{ fontSize: '10px', color: '#27ae60', marginTop: '3px' }}>💰 ${parseFloat(funda.precio_etiqueta).toFixed(4)}</div>}
               </div>
               <div style={{ background: '#17a589', borderRadius: '8px', padding: '10px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ color: 'white', fontSize: '12px', fontWeight: 'bold' }}>💰 Precio sugerido</span>
@@ -1223,7 +1317,7 @@ function Formulacion({ producto, onVolver, onVolverMenu, userRol, currentUser })
           </tr></thead>
           <tbody>
             {listaAct.map((ing, i) => {
-              const ant = listaAnt.find(a => a.ingrediente_nombre?.toLowerCase() === ing.ingrediente_nombre?.toLowerCase());
+              const ant = listaAnt.find(a => norm(a.ingrediente_nombre) === norm(ing.ingrediente_nombre));
               const gAct = parseFloat(ing.gramos) || 0;
               const gAnt = ant ? parseFloat(ant.gramos) || 0 : null;
               return (
@@ -1238,7 +1332,7 @@ function Formulacion({ producto, onVolver, onVolverMenu, userRol, currentUser })
                 </tr>
               );
             })}
-            {listaAnt.filter(a => !listaAct.find(act => act.ingrediente_nombre?.toLowerCase() === a.ingrediente_nombre?.toLowerCase())).map((ant, i) => (
+            {listaAnt.filter(a => !listaAct.find(act => norm(act.ingrediente_nombre) === norm(a.ingrediente_nombre))).map((ant, i) => (
               <tr key={'del' + i} style={{ background: '#fde8e8', borderBottom: '1px solid #f0f0f0' }}>
                 <td style={{ padding: '7px 10px', color: '#e74c3c' }}>{ant.ingrediente_nombre}<span style={{ marginLeft: 6, fontSize: '10px', background: '#e74c3c', color: 'white', padding: '1px 6px', borderRadius: 8 }}>ELIMINADO</span></td>
                 <td style={{ padding: '7px 10px', textAlign: 'right', color: '#aaa' }}>—</td>
@@ -1246,12 +1340,6 @@ function Formulacion({ producto, onVolver, onVolverMenu, userRol, currentUser })
                 <td style={{ padding: '7px 10px', textAlign: 'right', color: '#e74c3c' }}>▼ {parseFloat(ant.gramos || 0).toLocaleString()}</td>
               </tr>
             ))}
-            <tr style={{ background: colorH + '22', fontWeight: 'bold' }}>
-              <td style={{ padding: '7px 10px' }}>SUBTOTAL</td>
-              <td style={{ padding: '7px 10px', textAlign: 'right', color: '#1a5276' }}>{listaAct.reduce((s, f) => s + (parseFloat(f.gramos) || 0), 0).toLocaleString()}</td>
-              <td style={{ padding: '7px 10px', textAlign: 'right', color: '#6c3483' }}>{listaAnt.reduce((s, f) => s + (parseFloat(f.gramos) || 0), 0).toLocaleString()}</td>
-              <td></td>
-            </tr>
           </tbody>
         </table>
       </div>
@@ -1293,18 +1381,27 @@ function Formulacion({ producto, onVolver, onVolverMenu, userRol, currentUser })
   };
 
   // ══════════════════════════════════════════════
-  // RENDER PRINCIPAL (admin/producción)
+  // RENDER PRINCIPAL
   // ══════════════════════════════════════════════
-  const btnBase = { border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: mobile ? '13px' : '13px', minHeight: mobile ? 40 : 0 };
+  const btnBase = { border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', fontSize: '13px', minHeight: mobile ? 40 : 0 };
 
   return (
     <div style={{ minHeight: '100vh', background: '#f0f2f5', fontFamily: '"Segoe UI", system-ui, sans-serif' }}>
       {/* HEADER */}
       <div style={{ background: modoEdicion ? 'linear-gradient(135deg,#1a3a1a,#1e5c1e)' : 'linear-gradient(135deg,#1a1a2e,#16213e)', padding: mobile ? '10px 12px' : '12px 20px', position: 'sticky', top: 0, zIndex: 100, boxShadow: '0 2px 12px rgba(0,0,0,0.3)', transition: 'background 0.3s' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: mobile ? 8 : 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: mobile ? 6 : 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: mobile ? 6 : 8 }}>
             <button onClick={onVolverMenu} style={{ ...btnBase, background: 'rgba(255,200,0,0.25)', color: '#ffd700', padding: mobile ? '8px 10px' : '7px 12px', border: '1px solid rgba(255,200,0,0.4)', fontSize: '12px' }}>🏠 Menú</button>
             <button onClick={onVolver} style={{ ...btnBase, background: 'rgba(255,255,255,0.15)', color: 'white', padding: mobile ? '8px 12px' : '7px 14px', border: '1px solid rgba(255,255,255,0.25)' }}>← Volver</button>
+            {/* BOTÓN MATERIAS PRIMAS — punto 3 */}
+            {onAbrirMaterias && (
+              <button
+                onClick={onAbrirMaterias}
+                title="Abrir Materias Primas"
+                style={{ ...btnBase, background: 'rgba(255,255,255,0.15)', color: 'white', padding: mobile ? '8px 10px' : '7px 12px', border: '1px solid rgba(255,255,255,0.25)', fontSize: '12px' }}>
+                📦 {mobile ? '' : 'Materias'}
+              </button>
+            )}
             <div>
               <div style={{ color: 'white', fontWeight: 'bold', fontSize: mobile ? '14px' : '17px', lineHeight: 1.2 }}>
                 🧪 {producto.nombre}
@@ -1320,8 +1417,9 @@ function Formulacion({ producto, onVolver, onVolverMenu, userRol, currentUser })
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
               <input type="date" value={config.fecha || ''} onChange={e => setConfig({ ...config, fecha: e.target.value })} style={{ padding: '6px', borderRadius: '7px', border: 'none', fontSize: '12px' }} />
               <button onClick={imprimir} style={{ ...btnBase, padding: '8px 14px', background: '#2980b9', color: 'white' }}>🖨️ Imprimir</button>
+              {/* BOTÓN DESCARGAR EXCEL — punto 3 */}
+              <button onClick={descargarExcel} style={{ ...btnBase, padding: '8px 14px', background: '#27ae60', color: 'white' }}>📥 Excel</button>
               <button onClick={() => setComparadorAbierto(!comparadorAbierto)} style={{ ...btnBase, padding: '8px 14px', background: comparadorAbierto ? '#f39c12' : '#95a5a6', color: 'white' }}>🔍 Comparar</button>
-              {/* Botón nota para producción también */}
               {userRol?.rol === 'produccion' && (
                 <button onClick={() => setModalNota(true)} style={{ ...btnBase, padding: '8px 14px', background: '#e67e22', color: 'white' }}>✉️ Nota</button>
               )}
@@ -1337,9 +1435,10 @@ function Formulacion({ producto, onVolver, onVolverMenu, userRol, currentUser })
           )}
         </div>
         {mobile && (
-          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
             <input type="date" value={config.fecha || ''} onChange={e => setConfig({ ...config, fecha: e.target.value })} style={{ flex: 1, padding: '8px', borderRadius: '8px', border: 'none', fontSize: '13px', minHeight: 40 }} />
             <button onClick={imprimir} style={{ ...btnBase, padding: '8px 10px', background: '#2980b9', color: 'white' }}>🖨️</button>
+            <button onClick={descargarExcel} style={{ ...btnBase, padding: '8px 10px', background: '#27ae60', color: 'white' }}>📥</button>
             <button onClick={() => setComparadorAbierto(!comparadorAbierto)} style={{ ...btnBase, padding: '8px 10px', background: comparadorAbierto ? '#f39c12' : '#95a5a6', color: 'white' }}>🔍</button>
             {userRol?.rol === 'produccion' && <button onClick={() => setModalNota(true)} style={{ ...btnBase, padding: '8px 10px', background: '#e67e22', color: 'white' }}>✉️</button>}
             {modoEdicion ? (
@@ -1357,7 +1456,6 @@ function Formulacion({ producto, onVolver, onVolverMenu, userRol, currentUser })
       {msgExito && <div style={{ background: '#d4edda', color: '#155724', padding: '10px 16px', fontWeight: 'bold', fontSize: '13px', textAlign: 'center' }}>{msgExito}</div>}
 
       <div style={{ padding: mobile ? '10px' : '16px 20px' }}>
-        {/* RESUMEN RÁPIDO */}
         {modoEdicion && (
           <div style={{ background: 'white', borderRadius: '12px', padding: mobile ? '10px' : '12px 16px', marginBottom: '12px', boxShadow: '0 1px 4px rgba(0,0,0,0.08)', display: 'flex', gap: mobile ? 6 : 12, alignItems: 'center', flexWrap: 'wrap' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -1378,7 +1476,6 @@ function Formulacion({ producto, onVolver, onVolverMenu, userRol, currentUser })
           </div>
         )}
 
-        {/* TABS MÓVIL */}
         {modoEdicion && mobile && (
           <div style={{ display: 'flex', background: 'white', borderRadius: '10px', padding: '4px', marginBottom: '10px', boxShadow: '0 1px 4px rgba(0,0,0,0.08)', gap: 4 }}>
             {[['formula', '🧪 Fórmula'], ['costos', '📊 Costos'], ['empaques', '🛍️ Empaques'], ['comparar', '🔍 Comparar']].map(([key, label]) => (
@@ -1388,10 +1485,8 @@ function Formulacion({ producto, onVolver, onVolverMenu, userRol, currentUser })
           </div>
         )}
 
-        {/* COMPARADOR */}
         {(comparadorAbierto || (mobile && seccionActiva === 'comparar')) && <PanelComparador />}
 
-        {/* FÓRMULA */}
         {(!mobile || seccionActiva === 'formula') && (
           <>
             {!modoEdicion && <VistaLimpia />}
@@ -1418,7 +1513,7 @@ function Formulacion({ producto, onVolver, onVolverMenu, userRol, currentUser })
         {modoEdicion && (!mobile || seccionActiva === 'costos' || seccionActiva === 'empaques') && <PanelCostos />}
       </div>
 
-      {/* MODAL BUSCADOR */}
+      {/* MODAL BUSCADOR — búsqueda con tildes ignoradas */}
       {buscador.abierto && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: mobile ? 'flex-end' : 'center', justifyContent: 'center', zIndex: 3000 }}>
           <div style={{ background: 'white', borderRadius: mobile ? '16px 16px 0 0' : '12px', width: mobile ? '100%' : '520px', maxHeight: mobile ? '85vh' : '72vh', display: 'flex', flexDirection: 'column', boxShadow: '0 -4px 30px rgba(0,0,0,0.25)' }}>
@@ -1429,7 +1524,7 @@ function Formulacion({ producto, onVolver, onVolverMenu, userRol, currentUser })
               <button onClick={() => setBuscador({ abierto: false, tipo: '', indice: null, texto: '' })} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', color: 'white', fontSize: '18px', cursor: 'pointer', borderRadius: '6px', padding: '4px 10px' }}>✕</button>
             </div>
             <div style={{ padding: '12px' }}>
-              <input autoFocus placeholder="Escribe para buscar..." value={buscador.texto} onChange={e => setBuscador({ ...buscador, texto: e.target.value })}
+              <input autoFocus placeholder="Buscar... (ej: oregano = orégano)" value={buscador.texto} onChange={e => setBuscador({ ...buscador, texto: e.target.value })}
                 style={{ width: '100%', padding: mobile ? '12px' : '9px', borderRadius: '9px', border: '1.5px solid #ddd', fontSize: mobile ? '16px' : '13px', boxSizing: 'border-box' }} />
             </div>
             <div style={{ overflowY: 'auto', padding: '0 12px 12px' }}>
@@ -1453,24 +1548,20 @@ function Formulacion({ producto, onVolver, onVolverMenu, userRol, currentUser })
         </div>
       )}
 
-      {/* MODAL NOTA (admin/producción) */}
+      {/* MODAL NOTA */}
       {modalNota && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: mobile ? 'flex-end' : 'center', justifyContent: 'center', zIndex: 3000 }}>
-          <div style={{ background: 'white', borderRadius: mobile ? '16px 16px 0 0' : '12px', width: mobile ? '100%' : '480px', padding: '20px', boxShadow: '0 -4px 30px rgba(0,0,0,0.25)' }}>
+          <div style={{ background: 'white', borderRadius: mobile ? '16px 16px 0 0' : '12px', width: mobile ? '100%' : '480px', padding: '20px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
               <h3 style={{ margin: 0, color: '#1a1a2e', fontSize: '15px' }}>✉️ Enviar nota al Administrador</h3>
               <button onClick={() => { setModalNota(false); setTextoNota(''); }} style={{ background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer', color: '#aaa' }}>✕</button>
             </div>
             <div style={{ fontSize: '12px', color: '#888', marginBottom: '10px' }}>Producto: <strong>{producto.nombre}</strong></div>
-            <textarea value={textoNota} onChange={e => setTextoNota(e.target.value)}
-              placeholder="Escribe tu nota aquí..."
-              rows={4}
-              style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1.5px solid #e67e22', fontSize: '14px', resize: 'vertical', boxSizing: 'border-box', fontFamily: 'Arial' }}
-            />
+            <textarea value={textoNota} onChange={e => setTextoNota(e.target.value)} placeholder="Escribe tu nota aquí..." rows={4}
+              style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1.5px solid #e67e22', fontSize: '14px', resize: 'vertical', boxSizing: 'border-box', fontFamily: 'Arial' }} />
             <div style={{ display: 'flex', gap: '8px', marginTop: '12px', justifyContent: 'flex-end' }}>
-              <button onClick={() => { setModalNota(false); setTextoNota(''); }} style={{ padding: '10px 18px', background: '#95a5a6', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '13px' }}>Cancelar</button>
-              <button onClick={enviarNota} disabled={enviandoNota || !textoNota.trim()}
-                style={{ padding: '10px 20px', background: '#e67e22', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold' }}>
+              <button onClick={() => { setModalNota(false); setTextoNota(''); }} style={{ padding: '10px 18px', background: '#95a5a6', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer' }}>Cancelar</button>
+              <button onClick={enviarNota} disabled={enviandoNota || !textoNota.trim()} style={{ padding: '10px 20px', background: '#e67e22', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>
                 {enviandoNota ? 'Enviando...' : '✉️ Enviar'}
               </button>
             </div>

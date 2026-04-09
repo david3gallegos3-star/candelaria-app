@@ -3,6 +3,15 @@ import { supabase } from './supabase';
 
 const isMobile = () => window.innerWidth < 700;
 
+// Normalizar: quita tildes y pasa a minúsculas
+function norm(s) {
+  return (s || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+}
+
 export default function ModCif({ onVolver, onVolverMenu, mostrarExito }) {
   const [produccionKg, setProduccionKg] = useState(13600);
   const [modDirecta, setModDirecta]     = useState([]);
@@ -12,7 +21,7 @@ export default function ModCif({ onVolver, onVolverMenu, mostrarExito }) {
   const [guardando, setGuardando]       = useState(false);
   const [modalFila, setModalFila]       = useState(null);
   const [mobile, setMobile]             = useState(isMobile());
-  const [tabMobile, setTabMobile]       = useState('directa'); // 'directa' | 'indirecta' | 'cif'
+  const [tabMobile, setTabMobile]       = useState('directa');
 
   useEffect(() => {
     cargar();
@@ -75,41 +84,96 @@ export default function ModCif({ onVolver, onVolverMenu, mostrarExito }) {
       }).eq('id', r.id);
     }
 
-    // Sincronizar en config_productos
     await supabase.from('config_productos').update({ mod_cif_kg: costoMOCIF_kg });
     setGuardando(false);
     if (mostrarExito) mostrarExito(`✅ MOD+CIF = $${costoMOCIF_kg.toFixed(4)}/kg sincronizado en todas las fórmulas`);
   }
 
+  // ── CORREGIDO: guardarFila con manejo explícito de errores ──
   async function guardarFila() {
     const d = modalFila.data;
-    const tabla = modalFila.tipo === 'directa' ? 'mod_directa' : modalFila.tipo === 'indirecta' ? 'mod_indirecta' : 'cif_items';
-    if (modalFila.modo === 'nuevo') {
-      const payload = modalFila.tipo === 'cif'
-        ? { detalle: d.detalle, valor_mes: parseFloat(d.valor_mes)||0, porcentaje_merma: parseFloat(d.porcentaje_merma)||0, costo_kg: 0, orden: cifItems.length }
-        : { nombre: d.nombre, horas_mes: parseFloat(d.horas_mes)||240, sueldo_mes: parseFloat(d.sueldo_mes)||0, costo_kg: 0, orden: (modalFila.tipo==='directa'?modDirecta:modIndirecta).length };
-      await supabase.from(tabla).insert([payload]);
-    } else {
-      const payload = modalFila.tipo === 'cif'
-        ? { detalle: d.detalle, valor_mes: parseFloat(d.valor_mes)||0, porcentaje_merma: parseFloat(d.porcentaje_merma)||0 }
-        : { nombre: d.nombre, horas_mes: parseFloat(d.horas_mes)||0, sueldo_mes: parseFloat(d.sueldo_mes)||0 };
-      await supabase.from(tabla).update(payload).eq('id', d.id);
+    const tabla = modalFila.tipo === 'directa' ? 'mod_directa'
+      : modalFila.tipo === 'indirecta' ? 'mod_indirecta'
+      : 'cif_items';
+
+    try {
+      if (modalFila.modo === 'nuevo') {
+        let payload;
+        if (modalFila.tipo === 'cif') {
+          // Calcular el siguiente orden
+          const maxOrden = cifItems.length > 0 ? Math.max(...cifItems.map(c => c.orden || 0)) + 1 : 0;
+          payload = {
+            detalle: d.detalle || '',
+            valor_mes: parseFloat(d.valor_mes) || 0,
+            porcentaje_merma: parseFloat(d.porcentaje_merma) || 0,
+            costo_kg: produccionKg > 0 ? (parseFloat(d.valor_mes) || 0) / produccionKg : 0,
+            orden: maxOrden
+          };
+        } else {
+          const lista = modalFila.tipo === 'directa' ? modDirecta : modIndirecta;
+          const maxOrden = lista.length > 0 ? Math.max(...lista.map(c => c.orden || 0)) + 1 : 0;
+          payload = {
+            nombre: d.nombre || '',
+            horas_mes: parseFloat(d.horas_mes) || 240,
+            sueldo_mes: parseFloat(d.sueldo_mes) || 0,
+            costo_kg: calcKg(d.sueldo_mes, produccionKg),
+            orden: maxOrden
+          };
+        }
+
+        const { error } = await supabase.from(tabla).insert([payload]);
+        if (error) {
+          console.error('Error insertando:', error);
+          alert('Error al guardar: ' + error.message);
+          return;
+        }
+      } else {
+        // Modo editar
+        let payload;
+        if (modalFila.tipo === 'cif') {
+          payload = {
+            detalle: d.detalle,
+            valor_mes: parseFloat(d.valor_mes) || 0,
+            porcentaje_merma: parseFloat(d.porcentaje_merma) || 0,
+            costo_kg: produccionKg > 0 ? (parseFloat(d.valor_mes) || 0) / produccionKg : 0
+          };
+        } else {
+          payload = {
+            nombre: d.nombre,
+            horas_mes: parseFloat(d.horas_mes) || 0,
+            sueldo_mes: parseFloat(d.sueldo_mes) || 0,
+            costo_kg: calcKg(d.sueldo_mes, produccionKg)
+          };
+        }
+        const { error } = await supabase.from(tabla).update(payload).eq('id', d.id);
+        if (error) {
+          console.error('Error actualizando:', error);
+          alert('Error al actualizar: ' + error.message);
+          return;
+        }
+      }
+    } catch (e) {
+      console.error('Error en guardarFila:', e);
+      alert('Error inesperado: ' + e.message);
+      return;
     }
+
     setModalFila(null);
     await cargar();
+    if (mostrarExito) mostrarExito('✅ Guardado correctamente');
   }
 
   async function eliminarFila(tipo, id) {
     if (!window.confirm('¿Eliminar esta fila?')) return;
     const tabla = tipo === 'directa' ? 'mod_directa' : tipo === 'indirecta' ? 'mod_indirecta' : 'cif_items';
-    await supabase.from(tabla).delete().eq('id', id);
+    const { error } = await supabase.from(tabla).delete().eq('id', id);
+    if (error) { alert('Error al eliminar: ' + error.message); return; }
     await cargar();
   }
 
   const inp  = { padding: mobile ? '10px' : '8px', borderRadius:7, border:'1.5px solid #ddd', fontSize:13, width:'100%', boxSizing:'border-box' };
   const btnS = { border:'none', borderRadius:7, cursor:'pointer', fontWeight:'bold', fontSize:13 };
 
-  /* ══ Tabla Personal (MOD/MOI) ══ */
   const TablaPersonal = ({ titulo, color, lista, tipo }) => (
     <div style={{ background:'white', borderRadius:12, overflow:'hidden', boxShadow:'0 1px 6px rgba(0,0,0,0.08)', marginBottom:14 }}>
       <div style={{ background:color, padding:'10px 14px', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
@@ -180,7 +244,6 @@ export default function ModCif({ onVolver, onVolverMenu, mostrarExito }) {
     </div>
   );
 
-  /* ══ Tabla CIF ══ */
   const TablaCIF = () => (
     <div style={{ background:'white', borderRadius:12, overflow:'hidden', boxShadow:'0 1px 6px rgba(0,0,0,0.08)', marginBottom:14 }}>
       <div style={{ background:'#c0392b', padding:'10px 14px', display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'nowrap', gap:8 }}>
@@ -226,6 +289,9 @@ export default function ModCif({ onVolver, onVolverMenu, mostrarExito }) {
             ))}
           </tr></thead>
           <tbody>
+            {cifItems.length === 0 && (
+              <tr><td colSpan={5} style={{ textAlign:'center', padding:30, color:'#aaa', fontSize:13 }}>Sin ítems CIF. Presiona + Agregar para agregar el primero.</td></tr>
+            )}
             {cifItems.map((r,i)=>(
               <tr key={r.id} style={{ background:i%2===0?'#fdf2f2':'white', borderBottom:'1px solid #f0f0f0' }}>
                 <td style={{ padding:'7px 10px', fontSize:12 }}>{r.detalle}</td>
@@ -259,15 +325,11 @@ export default function ModCif({ onVolver, onVolverMenu, mostrarExito }) {
 
   return (
     <div style={{ minHeight:'100vh', background:'#f0f2f5', fontFamily:'Arial' }}>
-
-      {/* ══ HEADER ══ */}
       <div style={{ background:'linear-gradient(135deg,#1a1a2e,#16213e)', padding:mobile?'10px 12px':'14px 24px', position:'sticky', top:0, zIndex:100, boxShadow:'0 2px 10px rgba(0,0,0,0.3)' }}>
         <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'nowrap' }}>
-          {/* 🏠 MENÚ PRINCIPAL */}
           <button onClick={onVolverMenu} style={{ ...btnS, background:'rgba(255,200,0,0.3)', border:'1px solid rgba(255,200,0,0.5)', color:'#ffd700', padding:mobile?'8px 10px':'7px 14px', fontSize:mobile?11:13, flexShrink:0 }}>
             🏠{mobile?'':' Menú'}
           </button>
-          {/* ← VOLVER */}
           <button onClick={onVolver} style={{ ...btnS, background:'rgba(255,255,255,0.15)', border:'1px solid rgba(255,255,255,0.3)', color:'white', padding:mobile?'8px 10px':'7px 14px', fontSize:mobile?11:13, flexShrink:0 }}>
             ←{mobile?'':' Volver'}
           </button>
@@ -282,8 +344,6 @@ export default function ModCif({ onVolver, onVolverMenu, mostrarExito }) {
       </div>
 
       <div style={{ padding:mobile?'10px':'20px 24px' }}>
-
-        {/* PRODUCCIÓN + RESUMEN */}
         <div style={{ background:'linear-gradient(135deg,#1a1a2e,#16213e)', borderRadius:12, padding:mobile?12:16, marginBottom:14, boxShadow:'0 2px 10px rgba(0,0,0,0.15)' }}>
           <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:12 }}>
             <label style={{ color:'#aaa', fontSize:12, whiteSpace:'nowrap' }}>🏭 Producción (kg/mes):</label>
@@ -309,35 +369,26 @@ export default function ModCif({ onVolver, onVolverMenu, mostrarExito }) {
           </div>
         </div>
 
-        {/* ══ MÓVIL: tabs para navegar entre secciones ══ */}
         {mobile && (
           <div style={{ display:'flex', background:'white', borderRadius:10, padding:4, marginBottom:12, boxShadow:'0 1px 4px rgba(0,0,0,0.08)', gap:4 }}>
-            {[
-              ['directa',   '👷 MOD'],
-              ['indirecta', '👔 MOI'],
-              ['cif',       '🏭 CIF'],
-            ].map(([key,label])=>(
+            {[['directa','👷 MOD'],['indirecta','👔 MOI'],['cif','🏭 CIF']].map(([key,label])=>(
               <button key={key} onClick={()=>setTabMobile(key)}
                 style={{ flex:1, padding:'9px 4px', border:'none', borderRadius:8, cursor:'pointer', fontSize:12, fontWeight:'bold',
                   background: tabMobile===key ? '#1a1a2e' : 'transparent',
-                  color: tabMobile===key ? 'white' : '#666',
-                  transition:'all 0.2s' }}>
+                  color: tabMobile===key ? 'white' : '#666', transition:'all 0.2s' }}>
                 {label}
               </button>
             ))}
           </div>
         )}
 
-        {/* ══ CONTENIDO ══ */}
         {mobile ? (
-          /* MÓVIL: una sección a la vez */
           <>
             {tabMobile === 'directa'   && <TablaPersonal titulo="👷 Mano de Obra Directa"   color="#1a5276" lista={modDirecta}   tipo="directa"/>}
             {tabMobile === 'indirecta' && <TablaPersonal titulo="👔 Mano de Obra Indirecta" color="#6c3483" lista={modIndirecta} tipo="indirecta"/>}
             {tabMobile === 'cif'       && <TablaCIF/>}
           </>
         ) : (
-          /* ESCRITORIO: dos columnas */
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
             <div>
               <TablaPersonal titulo="👷 Mano de Obra Directa"   color="#1a5276" lista={modDirecta}   tipo="directa"/>
@@ -359,21 +410,45 @@ export default function ModCif({ onVolver, onVolverMenu, mostrarExito }) {
             </h3>
             {modalFila.tipo === 'cif' ? (
               <>
-                <label style={{ fontSize:12, fontWeight:'bold', color:'#555', display:'block', marginBottom:4 }}>Detalle</label>
-                <input value={modalFila.data.detalle} onChange={e=>setModalFila(p=>({...p,data:{...p.data,detalle:e.target.value}}))} style={{ ...inp, marginBottom:12 }}/>
-                <label style={{ fontSize:12, fontWeight:'bold', color:'#555', display:'block', marginBottom:4 }}>$/Mes</label>
-                <input type="number" value={modalFila.data.valor_mes} onChange={e=>setModalFila(p=>({...p,data:{...p.data,valor_mes:e.target.value}}))} style={{ ...inp, marginBottom:12 }}/>
+                <label style={{ fontSize:12, fontWeight:'bold', color:'#555', display:'block', marginBottom:4 }}>Detalle / Concepto *</label>
+                <input
+                  value={modalFila.data.detalle}
+                  onChange={e=>setModalFila(p=>({...p,data:{...p.data,detalle:e.target.value}}))}
+                  placeholder="Ej: Electricidad, Gas, Agua..."
+                  style={{ ...inp, marginBottom:12, border: '1.5px solid #3498db' }}
+                  autoFocus
+                />
+                <label style={{ fontSize:12, fontWeight:'bold', color:'#555', display:'block', marginBottom:4 }}>$ / Mes *</label>
+                <input type="number" value={modalFila.data.valor_mes}
+                  onChange={e=>setModalFila(p=>({...p,data:{...p.data,valor_mes:e.target.value}}))}
+                  style={{ ...inp, marginBottom:12 }}/>
                 <label style={{ fontSize:12, fontWeight:'bold', color:'#555', display:'block', marginBottom:4 }}>% Merma</label>
-                <input type="number" value={modalFila.data.porcentaje_merma} onChange={e=>setModalFila(p=>({...p,data:{...p.data,porcentaje_merma:e.target.value}}))} style={inp}/>
+                <input type="number" value={modalFila.data.porcentaje_merma}
+                  onChange={e=>setModalFila(p=>({...p,data:{...p.data,porcentaje_merma:e.target.value}}))}
+                  style={inp}/>
+                {modalFila.data.valor_mes > 0 && (
+                  <div style={{ marginTop:10, padding:10, background:'#fde8e8', borderRadius:8, fontSize:12, color:'#c0392b' }}>
+                    $/KG calculado: <strong>${(parseFloat(modalFila.data.valor_mes) / (produccionKg||1)).toFixed(4)}</strong>
+                  </div>
+                )}
               </>
             ) : (
               <>
-                <label style={{ fontSize:12, fontWeight:'bold', color:'#555', display:'block', marginBottom:4 }}>Nombre / Rol</label>
-                <input value={modalFila.data.nombre} onChange={e=>setModalFila(p=>({...p,data:{...p.data,nombre:e.target.value}}))} style={{ ...inp, marginBottom:12 }}/>
+                <label style={{ fontSize:12, fontWeight:'bold', color:'#555', display:'block', marginBottom:4 }}>Nombre / Rol *</label>
+                <input value={modalFila.data.nombre}
+                  onChange={e=>setModalFila(p=>({...p,data:{...p.data,nombre:e.target.value}}))}
+                  placeholder="Ej: Operario de producción"
+                  style={{ ...inp, marginBottom:12, border:'1.5px solid #3498db' }}
+                  autoFocus
+                />
                 <label style={{ fontSize:12, fontWeight:'bold', color:'#555', display:'block', marginBottom:4 }}>Horas/mes</label>
-                <input type="number" value={modalFila.data.horas_mes} onChange={e=>setModalFila(p=>({...p,data:{...p.data,horas_mes:e.target.value}}))} style={{ ...inp, marginBottom:12 }}/>
-                <label style={{ fontSize:12, fontWeight:'bold', color:'#555', display:'block', marginBottom:4 }}>$/Mes</label>
-                <input type="number" value={modalFila.data.sueldo_mes} onChange={e=>setModalFila(p=>({...p,data:{...p.data,sueldo_mes:e.target.value}}))} style={inp}/>
+                <input type="number" value={modalFila.data.horas_mes}
+                  onChange={e=>setModalFila(p=>({...p,data:{...p.data,horas_mes:e.target.value}}))}
+                  style={{ ...inp, marginBottom:12 }}/>
+                <label style={{ fontSize:12, fontWeight:'bold', color:'#555', display:'block', marginBottom:4 }}>$ / Mes</label>
+                <input type="number" value={modalFila.data.sueldo_mes}
+                  onChange={e=>setModalFila(p=>({...p,data:{...p.data,sueldo_mes:e.target.value}}))}
+                  style={inp}/>
                 <div style={{ marginTop:10, padding:10, background:'#e8f5e9', borderRadius:8, fontSize:12, color:'#27ae60' }}>
                   $/KG calculado: <strong>${calcKg(modalFila.data.sueldo_mes, produccionKg).toFixed(4)}</strong>
                 </div>
@@ -381,7 +456,9 @@ export default function ModCif({ onVolver, onVolverMenu, mostrarExito }) {
             )}
             <div style={{ display:'flex', gap:10, marginTop:18, justifyContent:'flex-end' }}>
               <button onClick={()=>setModalFila(null)} style={{ ...btnS, padding:'10px 20px', background:'#95a5a6', color:'white' }}>Cancelar</button>
-              <button onClick={guardarFila} style={{ ...btnS, padding:'10px 20px', background:'#27ae60', color:'white' }}>Guardar</button>
+              <button onClick={guardarFila} style={{ ...btnS, padding:'10px 20px', background:'#27ae60', color:'white' }}>
+                {modalFila.modo === 'nuevo' ? '✅ Agregar' : '✅ Guardar'}
+              </button>
             </div>
           </div>
         </div>
