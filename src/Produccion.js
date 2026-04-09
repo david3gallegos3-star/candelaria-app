@@ -357,7 +357,7 @@ function Produccion({ onVolver, onVolverMenu, userRol, currentUser }) {
                   <div style={{ background: '#e8f5e9', borderRadius: '8px', padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div>
                       <div style={{ fontWeight: 'bold', color: '#1a1a2e', fontSize: '13px' }}>{productoSel.nombre}</div>
-                      <div style={{ fontSize: '11px', color: '#555' }}>{formulacion.length} ingredientes · Merma: {configProd?.merma || 0}%</div>
+                      <div style={{ fontSize: '11px', color: '#555' }}>{formulacion.length} ingredientes · Merma: {((configProd?.merma || 0) * 100).toFixed(0)}%</div>
                     </div>
                     <button onClick={() => { setProductoSel(null); setBuscarProd(''); setFormulacion([]); setConfigProd(null); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#e74c3c', fontSize: '16px' }}>✕</button>
                   </div>

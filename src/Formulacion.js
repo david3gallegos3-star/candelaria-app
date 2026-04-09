@@ -246,7 +246,7 @@ function Formulacion({ producto, onVolver, onVolverMenu, userRol, currentUser })
         fundas: cfg.fundas || [],
         precio_venta_kg: pvk,
         costo_total_kg: ctk
-      }]);
+      }], { onConflict: 'producto_nombre' });
       setAutoGuardando(false);
     } catch (e) { setAutoGuardando(false); }
   }
