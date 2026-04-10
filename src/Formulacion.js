@@ -169,7 +169,7 @@ function Formulacion({ producto, onVolver, onVolverMenu, onAbrirMaterias, userRo
     // Suscripción realtime — cuando cambia materias_primas en otra pestaña,
     // recarga automáticamente sin necesidad de F5
     const channel = supabase
-      .channel(`materias-realtime-${producto?.id || 'global'}`)
+      .channel('materias-primas-changes')
       .on('postgres_changes', {
         event: '*',
         schema: 'public',
@@ -492,35 +492,95 @@ function Formulacion({ producto, onVolver, onVolverMenu, onAbrirMaterias, userRo
     setTimeout(() => setMsgExito(''), 4000);
   }
 
-  async function guardarHistorial() {
-    setGuardandoHistorial(true);
-    const fecha = config.fecha || new Date().toISOString().split('T')[0];
-    const filas = [
-      ...ingredientesMP.map(f => ({
-        fecha, producto_nombre: producto.nombre,
-        ingrediente_nombre: f.ingrediente_nombre,
-        materia_prima_id: f.materia_prima_id || null,
-        gramos: parseFloat(f.gramos) || 0,
-        kilos: (parseFloat(f.gramos) || 0) / 1000,
-        nota_cambio: f.nota_cambio || '',
-        seccion: 'MATERIAS PRIMAS'
-      })),
-      ...ingredientesAD.map(f => ({
-        fecha, producto_nombre: producto.nombre,
-        ingrediente_nombre: f.ingrediente_nombre,
-        materia_prima_id: f.materia_prima_id || null,
-        gramos: parseFloat(f.gramos) || 0,
-        kilos: (parseFloat(f.gramos) || 0) / 1000,
-        nota_cambio: f.nota_cambio || '',
-        seccion: 'CONDIMENTOS Y ADITIVOS'
-      }))
-    ].filter(f => f.ingrediente_nombre);
-    if (filas.length > 0) await supabase.from('historial_general').insert(filas);
-    setGuardandoHistorial(false);
-    await cargarFechasHistorial();
-    setMsgExito(`✅ Guardado en historial (${fecha})`);
-    setTimeout(() => setMsgExito(''), 4000);
-  }
+    async function guardarHistorial() {
+      setGuardandoHistorial(true);
+      const fecha = config.fecha || new Date().toISOString().split('T')[0];
+
+      // Verificar si ya existen datos para este producto y fecha
+      const { data: existentes } = await supabase
+        .from('historial_general')
+        .select('id, ingrediente_nombre, gramos')
+        .eq('producto_nombre', producto.nombre)
+        .eq('fecha', fecha);
+
+      const hayExistentes = existentes && existentes.length > 0;
+
+      // Preparar filas nuevas
+      const filasNuevas = [
+        ...ingredientesMP.map(f => ({
+          fecha, producto_nombre: producto.nombre,
+          ingrediente_nombre: f.ingrediente_nombre,
+          materia_prima_id: f.materia_prima_id || null,
+          gramos: parseFloat(f.gramos) || 0,
+          kilos: (parseFloat(f.gramos) || 0) / 1000,
+          nota_cambio: f.nota_cambio || '',
+          seccion: 'MATERIAS PRIMAS'
+        })),
+        ...ingredientesAD.map(f => ({
+          fecha, producto_nombre: producto.nombre,
+          ingrediente_nombre: f.ingrediente_nombre,
+          materia_prima_id: f.materia_prima_id || null,
+          gramos: parseFloat(f.gramos) || 0,
+          kilos: (parseFloat(f.gramos) || 0) / 1000,
+          nota_cambio: f.nota_cambio || '',
+          seccion: 'CONDIMENTOS Y ADITIVOS'
+        }))
+      ].filter(f => f.ingrediente_nombre);
+
+      if (filasNuevas.length === 0) {
+        setGuardandoHistorial(false);
+        return;
+      }
+
+      if (hayExistentes) {
+        // Detectar cuáles son realmente nuevos (diferente ingrediente O diferente gramos)
+        const soloNuevos = filasNuevas.filter(nueva =>
+          !existentes.some(ex =>
+            ex.ingrediente_nombre === nueva.ingrediente_nombre &&
+            parseFloat(ex.gramos) === parseFloat(nueva.gramos)
+          )
+        );
+
+        const msg = soloNuevos.length > 0
+          ? `Ya hay ${existentes.length} ingrediente(s) guardados para "${producto.nombre}" en ${fecha}.\n\n` +
+            `Se detectaron ${soloNuevos.length} cambio(s).\n\n` +
+            `¿Qué deseas hacer?\n\n` +
+            `• OK = Reemplazar todo (borra los anteriores y guarda los actuales)\n` +
+            `• Cancelar = Agregar solo los ${soloNuevos.length} ingrediente(s) nuevos/modificados`
+          : `Ya hay ${existentes.length} ingrediente(s) guardados para "${producto.nombre}" en ${fecha}.\n\n` +
+            `No se detectaron cambios nuevos.\n\n` +
+            `• OK = Reemplazar todo de todas formas\n` +
+            `• Cancelar = No guardar nada`;
+
+        const reemplazar = window.confirm(msg);
+
+        if (reemplazar) {
+          // Reemplazar todo: borrar los de esa fecha y producto, insertar todos
+          await supabase.from('historial_general')
+            .delete()
+            .eq('producto_nombre', producto.nombre)
+            .eq('fecha', fecha);
+          await supabase.from('historial_general').insert(filasNuevas);
+          setMsgExito(`✅ Historial reemplazado (${fecha}) — ${filasNuevas.length} ingredientes`);
+        } else {
+          // Agregar solo los nuevos/modificados
+          if (soloNuevos.length > 0) {
+            await supabase.from('historial_general').insert(soloNuevos);
+            setMsgExito(`✅ Se agregaron ${soloNuevos.length} ingrediente(s) nuevo(s) al historial`);
+          } else {
+            setMsgExito('ℹ️ No hay datos nuevos para agregar');
+          }
+        }
+      } else {
+        // No hay duplicados — guardar directo
+        await supabase.from('historial_general').insert(filasNuevas);
+        setMsgExito(`✅ Guardado en historial (${fecha}) — ${filasNuevas.length} ingredientes`);
+      }
+
+      setGuardandoHistorial(false);
+      await cargarFechasHistorial();
+      setTimeout(() => setMsgExito(''), 5000);
+}
 
   async function enviarNota() {
     if (!textoNota.trim()) return;
@@ -725,6 +785,7 @@ function Formulacion({ producto, onVolver, onVolverMenu, onAbrirMaterias, userRo
           .titulo{text-align:center;font-size:14px;font-weight:bold;color:#000;margin-bottom:14px}
 
           table{width:100%;border-collapse:collapse;table-layout:fixed;margin-bottom:0}
+          .sep{height:2px;}
 
           /* Cabecera de sección: solo línea inferior, sin fondo */
           .sec th{
@@ -758,10 +819,7 @@ function Formulacion({ producto, onVolver, onVolverMenu, onAbrirMaterias, userRo
             padding:9px 8px;font-size:13px;
           }
           .ttl td:last-child{border-right:none;}
-
-          /* Separador entre tablas */
-          .sep{height:10px;}
-
+  
           @media print{body{padding:8px}}
         </style></head><body>
         <div class="header">

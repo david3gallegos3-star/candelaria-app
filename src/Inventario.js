@@ -87,27 +87,96 @@ function Inventario({ onVolver, onVolverMenu, userRol, currentUser }) {
     return 'OK';
   }
 
-  async function guardarEntrada() {
-    if (!modalEntrada || !entradaKg || parseFloat(entradaKg) <= 0) return;
-    setGuardando(true);
-    const { inv } = modalEntrada;
-    const kg = parseFloat(entradaKg);
-    const precio = parseFloat(entradaPrecio) || 0;
-    const nuevoStock = inv.stock_kg + kg;
-    await supabase.from('inventario_mp').update({ stock_kg: nuevoStock, updated_at: new Date().toISOString() }).eq('id', inv.inv_id);
-    await supabase.from('inventario_movimientos').insert([{ materia_prima_id: inv.id, nombre_mp: inv.nombre_producto || inv.nombre, tipo: 'entrada', kg, precio_kg_nuevo: precio || null, precio_kg_anterior: parseFloat(inv.precio_kg) || null, motivo: entradaNota || 'Entrada manual', usuario_nombre: userRol?.nombre || 'Bodeguero', user_id: currentUser?.id, via: 'manual', fecha: new Date().toISOString().split('T')[0] }]);
-    if (precio > 0 && precio !== parseFloat(inv.precio_kg)) {
-      await supabase.from('materias_primas').update({ precio_kg: precio }).eq('id', inv.id);
-      await crearNotificacion({ tipo: 'cambio_precio', origen: 'inventario', usuario_nombre: userRol?.nombre || 'Bodeguero', user_id: currentUser?.id, producto_nombre: inv.nombre_producto || inv.nombre, mensaje: `Entrada de inventario: "${inv.nombre_producto || inv.nombre}" +${kg}kg · precio actualizado $${parseFloat(inv.precio_kg).toFixed(2)} → $${precio.toFixed(2)}/kg` });
-    } else {
-      await registrarAuditoria({ tipo: 'entrada_inventario', usuario_nombre: userRol?.nombre || 'Bodeguero', user_id: currentUser?.id, producto_nombre: inv.nombre_producto || inv.nombre, campo_modificado: 'stock_kg', valor_antes: inv.stock_kg.toString(), valor_despues: nuevoStock.toString(), mensaje: `Entrada manual: +${kg}kg · ${entradaNota || ''}` });
+    async function guardarEntrada() {
+      if (!modalEntrada || !entradaKg || parseFloat(entradaKg) <= 0) return;
+      setGuardando(true);
+      const { inv } = modalEntrada;
+      const kg = parseFloat(entradaKg);
+      const precio = parseFloat(entradaPrecio) || 0;
+
+      // ── Verificar duplicado: misma MP + mismo precio en los últimos 7 días ──
+      if (precio > 0) {
+        const hace7dias = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+          .toISOString().split('T')[0];
+        const { data: movRecientes } = await supabase
+          .from('inventario_movimientos')
+          .select('id, fecha, kg, precio_kg_nuevo')
+          .eq('materia_prima_id', inv.id)
+          .eq('tipo', 'entrada')
+          .gte('fecha', hace7dias)
+          .order('fecha', { ascending: false })
+          .limit(5);
+
+        const duplicado = movRecientes?.find(m =>
+          parseFloat(m.precio_kg_nuevo) === precio
+        );
+
+        if (duplicado) {
+          const continuar = window.confirm(
+            `⚠️ Ya existe una entrada de "${inv.nombre_producto || inv.nombre}" ` +
+            `con precio $${precio.toFixed(2)}/kg registrada el ${duplicado.fecha} (+${parseFloat(duplicado.kg).toFixed(1)}kg).\n\n` +
+            `• OK = Guardar esta entrada de todas formas\n` +
+            `• Cancelar = No guardar (posible duplicado)`
+          );
+          if (!continuar) {
+            setGuardando(false);
+            return;
+          }
+        }
+      }
+
+      // ── Guardar normalmente ──
+      const nuevoStock = inv.stock_kg + kg;
+      await supabase.from('inventario_mp')
+        .update({ stock_kg: nuevoStock, updated_at: new Date().toISOString() })
+        .eq('id', inv.inv_id);
+
+      await supabase.from('inventario_movimientos').insert([{
+        materia_prima_id: inv.id,
+        nombre_mp: inv.nombre_producto || inv.nombre,
+        tipo: 'entrada',
+        kg,
+        precio_kg_nuevo: precio || null,
+        precio_kg_anterior: parseFloat(inv.precio_kg) || null,
+        motivo: entradaNota || 'Entrada manual',
+        usuario_nombre: userRol?.nombre || 'Bodeguero',
+        user_id: currentUser?.id,
+        via: 'manual',
+        fecha: new Date().toISOString().split('T')[0]
+      }]);
+
+      if (precio > 0 && precio !== parseFloat(inv.precio_kg)) {
+        await supabase.from('materias_primas')
+          .update({ precio_kg: precio })
+          .eq('id', inv.id);
+        await crearNotificacion({
+          tipo: 'cambio_precio', origen: 'inventario',
+          usuario_nombre: userRol?.nombre || 'Bodeguero',
+          user_id: currentUser?.id,
+          producto_nombre: inv.nombre_producto || inv.nombre,
+          mensaje: `Entrada de inventario: "${inv.nombre_producto || inv.nombre}" +${kg}kg · precio actualizado $${parseFloat(inv.precio_kg).toFixed(2)} → $${precio.toFixed(2)}/kg`
+        });
+      } else {
+        await registrarAuditoria({
+          tipo: 'entrada_inventario',
+          usuario_nombre: userRol?.nombre || 'Bodeguero',
+          user_id: currentUser?.id,
+          producto_nombre: inv.nombre_producto || inv.nombre,
+          campo_modificado: 'stock_kg',
+          valor_antes: inv.stock_kg.toString(),
+          valor_despues: nuevoStock.toString(),
+          mensaje: `Entrada manual: +${kg}kg · ${entradaNota || ''}`
+        });
+      }
+
+      await verificarAlertaStock(inv, nuevoStock);
+      setModalEntrada(null);
+      setEntradaKg(''); setEntradaPrecio(''); setEntradaNota('');
+      setGuardando(false);
+      mostrarExito(`✅ +${kg}kg agregados a ${inv.nombre_producto || inv.nombre}`);
+      await cargarTodo();
     }
-    await verificarAlertaStock(inv, nuevoStock);
-    setModalEntrada(null); setEntradaKg(''); setEntradaPrecio(''); setEntradaNota('');
-    setGuardando(false);
-    mostrarExito(`✅ +${kg}kg agregados a ${inv.nombre_producto || inv.nombre}`);
-    await cargarTodo();
-  }
+
 
   async function guardarStockInicial(inv, nuevoValor) {
     const kg = parseFloat(nuevoValor);
