@@ -762,9 +762,9 @@ function Formulacion({ producto, onVolver, onVolverMenu, onAbrirMaterias, userRo
 
         // Anchos fijos compartidos por TODAS las tablas — esto alinea las columnas
         const COLGROUP = `<colgroup>
-          <col style="width:45%"/>
-          <col style="width:27.5%"/>
-          <col style="width:27.5%"/>
+          <col style="width:38%"/>
+          <col style="width:31%"/>
+          <col style="width:31%"/>
         </colgroup>`;
 
         const fila = (ing) => {
@@ -779,7 +779,7 @@ function Formulacion({ producto, onVolver, onVolverMenu, onAbrirMaterias, userRo
         const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${producto.nombre}</title>
         <style>
           *{margin:0;padding:0;box-sizing:border-box}
-          body{font-family:Arial,sans-serif;font-size:11px;padding:18px;color:#000}
+          body{font-family:Arial,sans-serif;font-size:13px;padding:18px;color:#000}
           .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px}
           .meta{font-size:11px;color:#333;text-align:right;line-height:1.6}
           .titulo{text-align:center;font-size:14px;font-weight:bold;color:#000;margin-bottom:14px}
