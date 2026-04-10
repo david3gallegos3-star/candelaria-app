@@ -49,7 +49,7 @@ export async function crearNotificacion({ tipo, origen, usuario_nombre, user_id,
 
 function App() {
   const [pantalla, setPantalla]           = useState('login');
-  const [pantallaAnterior, setPantallaAnterior] = useState('menu');
+  const [historialNav, setHistorialNav] = useState([]);
   const [productoActivo, setProductoActivo] = useState(null);
   const [email, setEmail]                 = useState('');
   const [password, setPassword]           = useState('');
@@ -109,8 +109,16 @@ function App() {
   const notifTimer       = useRef();
 
   function navegarA(destino) {
-    setPantallaAnterior(pantalla);
+    setHistorialNav(prev => [...prev, pantalla]);
     setPantalla(destino);
+  }
+
+  function volverAtras() {
+  if (historialNav.length === 0) { setPantalla('menu'); return; }
+  const nuevo = [...historialNav];
+  const anterior = nuevo.pop();
+  setHistorialNav(nuevo);
+  setPantalla(anterior);
   }
 
   // ── ID automático por categoría ──────────────────────────
@@ -660,7 +668,7 @@ function App() {
     setModalNuevo(false);setNuevoNombre('');
     await cargarCategorias();
     mostrarExito('✅ Producto creado');
-    setProductoActivo(data);setPantallaAnterior(pantalla);setPantalla('formulacion');
+    setProductoActivo(data);navegarA('formulacion');
   }
 
   async function eliminarProducto(nombre) {
@@ -694,13 +702,13 @@ function App() {
   function abrirProducto(prod) {
     if(typeof prod==='string'){
       const p=productos.find(x=>x.nombre===prod);
-      if(p){setProductoActivo(p);setPantallaAnterior(pantalla);setPantalla('formulacion');}
+      if(p){setProductoActivo(p); navegarA('formulacion');}
       else {
         const cat=Object.keys(categoriasConfig)[0]||'OTROS';
-        supabase.from('productos').insert([{nombre:prod,categoria:cat,estado:'ACTIVO'}]).select().single().then(({data})=>{if(data){cargarCategorias();setProductoActivo(data);setPantalla('formulacion');}});
+        supabase.from('productos').insert([{nombre:prod,categoria:cat,estado:'ACTIVO'}]).select().single().then(({data})=>{if(data){cargarCategorias();setProductoActivo(data);navegarA('formulacion');}});
       }
     } else {
-      setProductoActivo(prod);setPantalla('formulacion');
+      setProductoActivo(prod); navegarA('formulacion');
     }
   }
 
@@ -1013,11 +1021,11 @@ function App() {
   );
 
   if(pantalla==='menuPrincipal') return <MenuPrincipal/>;
-  if(pantalla==='modcif') return <ModCif onVolver={()=>setPantalla(pantallaAnterior)} onVolverMenu={()=>setPantalla('menuPrincipal')} mostrarExito={mostrarExito}/>;
-  if(pantalla==='resumen') return <ResumenPrecios onVolver={()=>setPantalla(pantallaAnterior)} onVolverMenu={()=>setPantalla('menuPrincipal')} onAbrirProducto={abrirProducto}/>;
-  if(pantalla==='historialmp') return <HistorialMP onVolver={()=>setPantalla(pantallaAnterior)} onVolverMenu={()=>setPantalla('menuPrincipal')} mostrarExito={mostrarExito}/>;
-  if(pantalla==='produccion') return <Produccion onVolver={()=>setPantalla(pantallaAnterior)} onVolverMenu={()=>setPantalla('menuPrincipal')} userRol={userRol} currentUser={user}/>;
-  if(pantalla==='inventario') return <Inventario onVolver={()=>setPantalla(pantallaAnterior)} onVolverMenu={()=>setPantalla('menuPrincipal')} userRol={userRol} currentUser={user}/>;
+  if(pantalla==='modcif') return <ModCif onVolver={()=>volverAtras()} onVolverMenu={()=>setPantalla('menuPrincipal')} mostrarExito={mostrarExito}/>;
+  if(pantalla==='resumen') return <ResumenPrecios onVolver={()=>volverAtras()} onVolverMenu={()=>setPantalla('menuPrincipal')} onAbrirProducto={abrirProducto}/>;
+  if(pantalla==='historialmp') return <HistorialMP onVolver={()=>volverAtras()} onVolverMenu={()=>setPantalla('menuPrincipal')} mostrarExito={mostrarExito}/>;
+  if(pantalla==='produccion') return <Produccion onVolver={()=>volverAtras()} onVolverMenu={()=>setPantalla('menuPrincipal')} userRol={userRol} currentUser={user}/>;
+  if(pantalla==='inventario') return <Inventario onVolver={()=>volverAtras()} onVolverMenu={()=>setPantalla('menuPrincipal')} userRol={userRol} currentUser={user}/>;
   if(pantalla==='clientes') return <div style={{padding:40,color:'white',background:'#1a1a2e',minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center'}}><div style={{textAlign:'center'}}><div style={{fontSize:48,marginBottom:16}}>👥</div><div style={{fontSize:20,marginBottom:8}}>Módulo de Clientes</div><div style={{color:'#aaa',marginBottom:24}}>Próximamente</div><button onClick={()=>setPantalla('menuPrincipal')} style={{background:'#27ae60',color:'white',border:'none',borderRadius:8,padding:'10px 20px',cursor:'pointer'}}>← Volver al Menú</button></div></div>;
   if(pantalla==='auditoria') return <div style={{padding:40,color:'white',background:'#1a1a2e',minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center'}}><div style={{textAlign:'center'}}><div style={{fontSize:48,marginBottom:16}}>🗂️</div><div style={{fontSize:20,marginBottom:8}}>Historial de Auditoría</div><div style={{color:'#aaa',marginBottom:24}}>Próximamente</div><button onClick={()=>setPantalla('menuPrincipal')} style={{background:'#27ae60',color:'white',border:'none',borderRadius:8,padding:'10px 20px',cursor:'pointer'}}>← Volver al Menú</button></div></div>;
 
@@ -1026,8 +1034,8 @@ function App() {
     producto={productoActivo}
     userRol={userRol}
     currentUser={user}
-    onAbrirMaterias={() => { setPantallaAnterior('formulacion'); setPantalla('materias'); }}
-    onVolver={()=>{setPantalla(pantallaAnterior);setProductoActivo(null);cargarProductos();}}
+    onAbrirMaterias={() => navegarA('materias')}
+    onVolver={()=>{volverAtras();setProductoActivo(null);cargarProductos();}}
     onVolverMenu={()=>{setPantalla('menuPrincipal');setProductoActivo(null);cargarProductos();}}
   /><GeminiChat/></>
 );
@@ -1037,7 +1045,7 @@ function App() {
       <div style={{background:'linear-gradient(135deg,#1a1a2e,#16213e)',padding:'14px 24px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
         <div style={{display:'flex',alignItems:'center',gap:10}}>
           <button onClick={()=>setPantalla('menuPrincipal')} style={{background:'rgba(255,200,0,0.25)',border:'1px solid rgba(255,200,0,0.4)',color:'#ffd700',padding:'8px 12px',borderRadius:'8px',cursor:'pointer',fontSize:'12px',fontWeight:'bold'}}>🏠 Menú</button>
-          <button onClick={()=>setPantalla(pantallaAnterior)} style={{background:'rgba(255,255,255,0.2)',border:'none',color:'white',padding:'8px 14px',borderRadius:'8px',cursor:'pointer',fontSize:'13px'}}>← Volver</button>
+          <button onClick={()=>volverAtras()} style={{background:'rgba(255,255,255,0.2)',border:'none',color:'white',padding:'8px 14px',borderRadius:'8px',cursor:'pointer',fontSize:'13px'}}>← Volver</button>
           <div><div style={{color:'white',fontWeight:'bold',fontSize:'18px'}}>📋 Historial General</div><div style={{color:'#aaa',fontSize:'12px'}}>{historial.length} registros</div></div>
         </div>
         <div style={{display:'flex',gap:10}}>
@@ -1108,7 +1116,7 @@ function App() {
       <div style={{background:'linear-gradient(135deg,#1a1a2e,#16213e)',padding:'14px 24px',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
         <div style={{display:'flex',alignItems:'center',gap:10}}>
           <button onClick={()=>setPantalla('menuPrincipal')} style={{background:'rgba(255,200,0,0.25)',border:'1px solid rgba(255,200,0,0.4)',color:'#ffd700',padding:'8px 12px',borderRadius:'8px',cursor:'pointer',fontSize:'12px',fontWeight:'bold'}}>🏠 Menú</button>
-          <button onClick={()=>setPantalla(pantallaAnterior)} style={{background:'rgba(255,255,255,0.2)',border:'none',color:'white',padding:'8px 14px',borderRadius:'8px',cursor:'pointer',fontSize:'13px'}}>← Volver</button>
+          <button onClick={()=>volverAtras()} style={{background:'rgba(255,255,255,0.2)',border:'none',color:'white',padding:'8px 14px',borderRadius:'8px',cursor:'pointer',fontSize:'13px'}}>← Volver</button>
           <div><div style={{color:'white',fontWeight:'bold',fontSize:'18px'}}>📦 Materias Primas</div><div style={{color:'#aaa',fontSize:'12px'}}>Gestión de ingredientes · {categoriasMp.length} categorías</div></div>
         </div>
         <div style={{display:'flex',gap:10}}>
