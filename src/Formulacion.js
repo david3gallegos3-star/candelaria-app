@@ -165,6 +165,33 @@ function Formulacion({ producto, onVolver, onVolverMenu, onAbrirMaterias, userRo
     };
   }, [producto]);
 
+  useEffect(() => {
+    // Suscripción realtime — cuando cambia materias_primas en otra pestaña,
+    // recarga automáticamente sin necesidad de F5
+    const channel = supabase
+      .channel(`materias-realtime-${producto?.id || 'global'}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'materias_primas'
+      }, () => {
+        // Recargar solo las materias primas, sin tocar la fórmula actual
+        supabase.from('materias_primas').select('*').order('nombre').then(({ data }) => {
+          if (data) {
+            setMateriasPrimas(data);
+            mpRef.current = data;
+          }
+        });
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [producto]);
+
+
+
   async function cargarCIF() {
     const { data: cif } = await supabase.from('cif_items').select('*');
     const { data: cfg } = await supabase.from('costos_mod_cif').select('*').single();
@@ -512,219 +539,303 @@ function Formulacion({ producto, onVolver, onVolverMenu, onAbrirMaterias, userRo
     setEnviandoNota(false);
   }
 
-  // ── DESCARGAR EXCEL ────────────────────────────────────────
-  function descargarExcel() {
-    const nombreConEspec = (ing) => {
-      const spec = ing.especificacion?.trim();
-      return ing.ingrediente_nombre + (spec ? ` (${spec})` : '');
-    };
-
-    const datosMP = ingredientesMP.filter(i => i.ingrediente_nombre).map(ing => {
-      const g = parseFloat(ing.gramos) || 0;
-      const p = obtenerPrecioLive(ing, materiasPrimas);
-      return {
-        'SECCIÓN': 'MATERIAS PRIMAS',
-        'INGREDIENTE': nombreConEspec(ing),
-        'GRAMOS': Math.round(g),
-        'KILOS': parseFloat((g / 1000).toFixed(3)),
-        '% DEL TOTAL': totalCrudoG > 0 ? parseFloat(((g / totalCrudoG) * 100).toFixed(2)) : 0,
-        '$/KG': parseFloat(p.toFixed(4)),
-        'COSTO $': parseFloat(((g / 1000) * p).toFixed(4)),
-        'NOTA': ing.nota_cambio || ''
+      // ── DESCARGAR EXCEL ────────────────────────────────────────
+    function descargarExcel() {
+      const nombreConEspec = (ing) => {
+        const spec = ing.especificacion?.trim();
+        return ing.ingrediente_nombre + (spec ? ` (${spec})` : '');
       };
-    });
 
-    const subtotalMP = {
-      'SECCIÓN': '', 'INGREDIENTE': 'SUB-TOTAL',
-      'GRAMOS': Math.round(totMP.gramos),
-      'KILOS': parseFloat((totMP.gramos / 1000).toFixed(3)),
-      '% DEL TOTAL': '', '$/KG': '',
-      'COSTO $': parseFloat(totMP.costo.toFixed(4)), 'NOTA': ''
-    };
+      const filaVaciaXL = () => ({
+        'SECCIÓN': '', 'DETALLE': '', 'GRAMOS': '', 'KILOS': '',
+        '% TOTAL': '', '$/KG': '', 'COSTO $': '', 'NOTA': ''
+      });
 
-    const datosAD = ingredientesAD.filter(i => i.ingrediente_nombre).map(ing => {
-      const g = parseFloat(ing.gramos) || 0;
-      const p = obtenerPrecioLive(ing, materiasPrimas);
-      return {
-        'SECCIÓN': 'CONDIMENTOS Y ADITIVOS',
-        'INGREDIENTE': nombreConEspec(ing),
-        'GRAMOS': Math.round(g),
-        'KILOS': parseFloat((g / 1000).toFixed(3)),
-        '% DEL TOTAL': totalCrudoG > 0 ? parseFloat(((g / totalCrudoG) * 100).toFixed(2)) : 0,
-        '$/KG': parseFloat(p.toFixed(4)),
-        'COSTO $': parseFloat(((g / 1000) * p).toFixed(4)),
-        'NOTA': ing.nota_cambio || ''
+      const separador = (titulo) => ({
+        'SECCIÓN': `── ${titulo} ──`, 'DETALLE': '', 'GRAMOS': '', 'KILOS': '',
+        '% TOTAL': '', '$/KG': '', 'COSTO $': '', 'NOTA': ''
+      });
+
+      // ── Ingredientes MP ──
+      const datosMP = ingredientesMP.filter(i => i.ingrediente_nombre).map(ing => {
+        const g = parseFloat(ing.gramos) || 0;
+        const p = obtenerPrecioLive(ing, materiasPrimas);
+        return {
+          'SECCIÓN': 'MATERIAS PRIMAS',
+          'DETALLE': nombreConEspec(ing),
+          'GRAMOS': Math.round(g),
+          'KILOS': parseFloat((g / 1000).toFixed(3)),
+          '% TOTAL': totalCrudoG > 0 ? parseFloat(((g / totalCrudoG) * 100).toFixed(2)) : 0,
+          '$/KG': parseFloat(p.toFixed(4)),
+          'COSTO $': parseFloat(((g / 1000) * p).toFixed(4)),
+          'NOTA': ing.nota_cambio || ''
+        };
+      });
+
+      const subtotalMP = {
+        'SECCIÓN': '', 'DETALLE': 'SUB-TOTAL MATERIAS PRIMAS',
+        'GRAMOS': Math.round(totMP.gramos),
+        'KILOS': parseFloat((totMP.gramos / 1000).toFixed(3)),
+        '% TOTAL': totalCrudoG > 0 ? parseFloat(((totMP.gramos / totalCrudoG) * 100).toFixed(2)) : 0,
+        '$/KG': '', 'COSTO $': parseFloat(totMP.costo.toFixed(4)), 'NOTA': ''
       };
-    });
 
-    const subtotalAD = {
-      'SECCIÓN': '', 'INGREDIENTE': 'SUB-TOTAL',
-      'GRAMOS': Math.round(totAD.gramos),
-      'KILOS': parseFloat((totAD.gramos / 1000).toFixed(3)),
-      '% DEL TOTAL': '', '$/KG': '',
-      'COSTO $': parseFloat(totAD.costo.toFixed(4)), 'NOTA': ''
-    };
+      // ── Ingredientes AD ──
+      const datosAD = ingredientesAD.filter(i => i.ingrediente_nombre).map(ing => {
+        const g = parseFloat(ing.gramos) || 0;
+        const p = obtenerPrecioLive(ing, materiasPrimas);
+        return {
+          'SECCIÓN': 'CONDIMENTOS Y ADITIVOS',
+          'DETALLE': nombreConEspec(ing),
+          'GRAMOS': Math.round(g),
+          'KILOS': parseFloat((g / 1000).toFixed(3)),
+          '% TOTAL': totalCrudoG > 0 ? parseFloat(((g / totalCrudoG) * 100).toFixed(2)) : 0,
+          '$/KG': parseFloat(p.toFixed(4)),
+          'COSTO $': parseFloat(((g / 1000) * p).toFixed(4)),
+          'NOTA': ing.nota_cambio || ''
+        };
+      });
 
-    const totalCrudo = {
-      'SECCIÓN': '', 'INGREDIENTE': 'TOTAL CRUDO',
-      'GRAMOS': Math.round(totalCrudoG),
-      'KILOS': parseFloat(totalCrudoKg.toFixed(3)),
-      '% DEL TOTAL': '', '$/KG': '',
-      'COSTO $': parseFloat(totalCostoMP.toFixed(4)), 'NOTA': ''
-    };
+      const subtotalAD = {
+        'SECCIÓN': '', 'DETALLE': 'SUB-TOTAL CONDIMENTOS Y ADITIVOS',
+        'GRAMOS': Math.round(totAD.gramos),
+        'KILOS': parseFloat((totAD.gramos / 1000).toFixed(3)),
+        '% TOTAL': totalCrudoG > 0 ? parseFloat(((totAD.gramos / totalCrudoG) * 100).toFixed(2)) : 0,
+        '$/KG': '', 'COSTO $': parseFloat(totAD.costo.toFixed(4)), 'NOTA': ''
+      };
 
-    const costos = [
-      { 'SECCIÓN': '', 'INGREDIENTE': '', 'GRAMOS': '', 'KILOS': '', '% DEL TOTAL': '', '$/KG': '', 'COSTO $': '', 'NOTA': '' },
-      { 'SECCIÓN': 'COSTOS', 'INGREDIENTE': 'Merma %', 'GRAMOS': '', 'KILOS': '', '% DEL TOTAL': ((merma || 0) * 100).toFixed(0) + '%', '$/KG': '', 'COSTO $': '', 'NOTA': '' },
-      { 'SECCIÓN': '', 'INGREDIENTE': 'Margen ganancia %', 'GRAMOS': '', 'KILOS': '', '% DEL TOTAL': ((margen || 0) * 100).toFixed(0) + '%', '$/KG': '', 'COSTO $': '', 'NOTA': '' },
-      { 'SECCIÓN': '', 'INGREDIENTE': 'MOD+CIF $/kg', 'GRAMOS': '', 'KILOS': '', '% DEL TOTAL': '', '$/KG': modCif.toFixed(4), 'COSTO $': '', 'NOTA': '' },
-      { 'SECCIÓN': '', 'INGREDIENTE': 'Costo MP/kg', 'GRAMOS': '', 'KILOS': '', '% DEL TOTAL': '', '$/KG': costoMPkg.toFixed(4), 'COSTO $': '', 'NOTA': '' },
-      { 'SECCIÓN': '', 'INGREDIENTE': 'Con merma', 'GRAMOS': '', 'KILOS': '', '% DEL TOTAL': '', '$/KG': costoConMerma.toFixed(4), 'COSTO $': '', 'NOTA': '' },
-      { 'SECCIÓN': '', 'INGREDIENTE': 'Empaque/kg', 'GRAMOS': '', 'KILOS': '', '% DEL TOTAL': '', '$/KG': costoEmpaqueKg.toFixed(4), 'COSTO $': '', 'NOTA': '' },
-      { 'SECCIÓN': '', 'INGREDIENTE': 'Amarre/kg', 'GRAMOS': '', 'KILOS': '', '% DEL TOTAL': '', '$/KG': costoAmarreKg.toFixed(4), 'COSTO $': '', 'NOTA': '' },
-      { 'SECCIÓN': '', 'INGREDIENTE': 'COSTO TOTAL/KG', 'GRAMOS': '', 'KILOS': '', '% DEL TOTAL': '', '$/KG': costoTotalKg.toFixed(4), 'COSTO $': '', 'NOTA': '' },
-      { 'SECCIÓN': '', 'INGREDIENTE': 'PRECIO VENTA/KG', 'GRAMOS': '', 'KILOS': '', '% DEL TOTAL': '', '$/KG': precioVentaKg.toFixed(4), 'COSTO $': '', 'NOTA': '' },
-    ];
+      const totalCrudo = {
+        'SECCIÓN': '', 'DETALLE': 'TOTAL CRUDO',
+        'GRAMOS': Math.round(totalCrudoG),
+        'KILOS': parseFloat(totalCrudoKg.toFixed(3)),
+        '% TOTAL': 100, '$/KG': '',
+        'COSTO $': parseFloat(totalCostoMP.toFixed(4)), 'NOTA': ''
+      };
 
-    const datos = [...datosMP, subtotalMP, ...datosAD, subtotalAD, totalCrudo, ...costos];
+      // ── Bloque costos ──
+      const bloqueVacio = filaVaciaXL();
+      const costos = [
+        bloqueVacio,
+        separador('COSTOS Y AJUSTES'),
+        { 'SECCIÓN': 'COSTOS', 'DETALLE': 'Fecha', 'GRAMOS': '', 'KILOS': '', '% TOTAL': config.fecha || '', '$/KG': '', 'COSTO $': '', 'NOTA': '' },
+        { 'SECCIÓN': 'COSTOS', 'DETALLE': 'N° de Paradas', 'GRAMOS': '', 'KILOS': '', '% TOTAL': config.num_paradas || 1, '$/KG': '', 'COSTO $': '', 'NOTA': '' },
+        { 'SECCIÓN': 'COSTOS', 'DETALLE': 'Merma %', 'GRAMOS': '', 'KILOS': '', '% TOTAL': ((merma || 0) * 100).toFixed(0) + '%', '$/KG': '', 'COSTO $': '', 'NOTA': '' },
+        { 'SECCIÓN': 'COSTOS', 'DETALLE': 'Margen ganancia %', 'GRAMOS': '', 'KILOS': '', '% TOTAL': ((margen || 0) * 100).toFixed(0) + '%', '$/KG': '', 'COSTO $': '', 'NOTA': '' },
+        { 'SECCIÓN': 'COSTOS', 'DETALLE': 'MOD+CIF $/kg', 'GRAMOS': '', 'KILOS': '', '% TOTAL': '', '$/KG': modCif.toFixed(4), 'COSTO $': '', 'NOTA': '' },
+        { 'SECCIÓN': 'COSTOS', 'DETALLE': 'Costo MP/kg', 'GRAMOS': '', 'KILOS': '', '% TOTAL': '', '$/KG': costoMPkg.toFixed(4), 'COSTO $': '', 'NOTA': '' },
+        { 'SECCIÓN': 'COSTOS', 'DETALLE': 'Con merma', 'GRAMOS': '', 'KILOS': '', '% TOTAL': '', '$/KG': costoConMerma.toFixed(4), 'COSTO $': '', 'NOTA': '' },
+        { 'SECCIÓN': 'COSTOS', 'DETALLE': 'Empaque/kg', 'GRAMOS': '', 'KILOS': '', '% TOTAL': '', '$/KG': costoEmpaqueKg.toFixed(4), 'COSTO $': '', 'NOTA': '' },
+        { 'SECCIÓN': 'COSTOS', 'DETALLE': 'Amarre/kg', 'GRAMOS': '', 'KILOS': '', '% TOTAL': '', '$/KG': costoAmarreKg.toFixed(4), 'COSTO $': '', 'NOTA': '' },
+        { 'SECCIÓN': 'COSTOS', 'DETALLE': 'COSTO TOTAL/KG', 'GRAMOS': '', 'KILOS': '', '% TOTAL': '', '$/KG': costoTotalKg.toFixed(4), 'COSTO $': '', 'NOTA': '' },
+        { 'SECCIÓN': 'COSTOS', 'DETALLE': 'PRECIO VENTA/KG', 'GRAMOS': '', 'KILOS': '', '% TOTAL': '', '$/KG': precioVentaKg.toFixed(4), 'COSTO $': '', 'NOTA': '' },
+      ];
 
-    const ws = XLSX.utils.json_to_sheet(datos);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, producto.nombre.substring(0, 31));
-    XLSX.writeFile(wb, `${producto.nombre}_formula_${config.fecha || new Date().toISOString().split('T')[0]}.xlsx`);
-  }
+      // ── Bloque empaque/tripa ──
+      const empaque = [];
+      if (config.empaque_nombre) {
+        empaque.push(bloqueVacio);
+        empaque.push(separador('EMPAQUE / TRIPA'));
+        empaque.push({ 'SECCIÓN': 'EMPAQUE', 'DETALLE': config.empaque_nombre, 'GRAMOS': '', 'KILOS': '', '% TOTAL': '', '$/KG': parseFloat(config.empaque_precio_kg || 0).toFixed(2), 'COSTO $': (empPrecio * empCantidad).toFixed(4), 'NOTA': '' });
+        empaque.push({ 'SECCIÓN': 'EMPAQUE', 'DETALLE': 'Cantidad usada', 'GRAMOS': '', 'KILOS': '', '% TOTAL': (config.empaque_cantidad || 0) + ' ' + (config.empaque_unidad || ''), '$/KG': '', 'COSTO $': '', 'NOTA': '' });
+        empaque.push({ 'SECCIÓN': 'EMPAQUE', 'DETALLE': 'Costo empaque/kg', 'GRAMOS': '', 'KILOS': '', '% TOTAL': '', '$/KG': costoEmpaqueKg.toFixed(4), 'COSTO $': '', 'NOTA': '' });
+      }
+
+      // ── Bloque amarre/hilo ──
+      const amarre = [];
+      if (config.hilo_nombre) {
+        amarre.push(bloqueVacio);
+        amarre.push(separador('AMARRE / HILO'));
+        amarre.push({ 'SECCIÓN': 'AMARRE', 'DETALLE': config.hilo_nombre, 'GRAMOS': '', 'KILOS': config.hilo_kg || 0, '% TOTAL': '', '$/KG': parseFloat(config.hilo_precio_kg || 0).toFixed(2), 'COSTO $': (hiloPrecio * hiloKg).toFixed(4), 'NOTA': '' });
+        amarre.push({ 'SECCIÓN': 'AMARRE', 'DETALLE': 'Costo amarre/kg', 'GRAMOS': '', 'KILOS': '', '% TOTAL': '', '$/KG': costoAmarreKg.toFixed(4), 'COSTO $': '', 'NOTA': '' });
+      }
+
+      // ── Bloque fundas ──
+      const fundas = [];
+      if (config.fundas && config.fundas.length > 0) {
+        fundas.push(bloqueVacio);
+        fundas.push(separador('EMPAQUES DE DISTRIBUCIÓN'));
+        config.fundas.forEach((f, idx) => {
+          const precioF = (costoTotalKg * (parseFloat(f.kg_por_funda) || 1) +
+            (parseFloat(f.precio_funda) || 0) + (parseFloat(f.precio_etiqueta) || 0)) * (1 + margen);
+          const nFundas = f.kg_por_funda > 0 ? Math.ceil(totalCrudoKg / f.kg_por_funda) : '-';
+          fundas.push({ 'SECCIÓN': `FUNDA ${idx + 1}`, 'DETALLE': f.nombre_funda || 'Sin nombre', 'GRAMOS': '', 'KILOS': parseFloat(f.kg_por_funda || 1), '% TOTAL': '', '$/KG': parseFloat(f.precio_funda || 0).toFixed(4), 'COSTO $': precioF.toFixed(4), 'NOTA': `N° fundas: ${nFundas}` });
+          if (f.nombre_etiqueta) {
+            fundas.push({ 'SECCIÓN': `FUNDA ${idx + 1}`, 'DETALLE': `Etiqueta: ${f.nombre_etiqueta}`, 'GRAMOS': '', 'KILOS': '', '% TOTAL': '', '$/KG': parseFloat(f.precio_etiqueta || 0).toFixed(4), 'COSTO $': '', 'NOTA': '' });
+          }
+          fundas.push({ 'SECCIÓN': `FUNDA ${idx + 1}`, 'DETALLE': 'PRECIO SUGERIDO/FUNDA', 'GRAMOS': '', 'KILOS': '', '% TOTAL': '', '$/KG': '', 'COSTO $': precioF.toFixed(4), 'NOTA': '' });
+        });
+      }
+
+      const datos = [
+        ...datosMP, subtotalMP,
+        bloqueVacio,
+        ...datosAD, subtotalAD,
+        bloqueVacio,
+        totalCrudo,
+        ...costos,
+        ...empaque,
+        ...amarre,
+        ...fundas
+      ];
+
+      const ws = XLSX.utils.json_to_sheet(datos);
+
+      // Ajustar ancho de columnas
+      ws['!cols'] = [
+        { wch: 22 }, { wch: 35 }, { wch: 10 }, { wch: 10 },
+        { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 25 }
+      ];
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, producto.nombre.substring(0, 31));
+      XLSX.writeFile(wb, `${producto.nombre}_formula_${config.fecha || new Date().toISOString().split('T')[0]}.xlsx`);
+    }
+
 
   // ── IMPRIMIR mejorado ─────────────────────────────────────
-  function imprimir() {
-    const ventana = window.open('', '_blank');
-    const nombreConEspec = (ing) => {
-      const spec = ing.especificacion?.trim();
-      return ing.ingrediente_nombre + (spec ? ` (${spec})` : '');
-    };
-    const fila = (ing) => {
-      const g = parseFloat(ing.gramos) || 0;
-      return `<tr>
-        <td>${nombreConEspec(ing)}</td>
-        <td class="r">${Math.round(g)}</td>
-        <td class="r">${(g / 1000).toFixed(3)}</td>
-      </tr>`;
-    };
-    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${producto.nombre}</title>
-    <style>
-      *{margin:0;padding:0;box-sizing:border-box}
-      body{font-family:Arial,sans-serif;font-size:11px;padding:18px;color:#000}
-      .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px}
-      .meta{font-size:11px;color:#333;text-align:right;line-height:1.6}
-      .titulo{text-align:center;font-size:14px;font-weight:bold;color:#000;margin-bottom:14px}
-      table{width:100%;border-collapse:collapse;margin-bottom:12px}
+        function imprimir() {
+        const ventana = window.open('', '_blank');
+        const nombreConEspec = (ing) => {
+          const spec = ing.especificacion?.trim();
+          return ing.ingrediente_nombre + (spec ? ` (${spec})` : '');
+        };
 
-      /* Cabeceras de sección: solo línea inferior gruesa + divisiones verticales, SIN fondo ni marco */
-      .sec th{
-        padding:6px 8px;
-        font-size:10px;
-        font-weight:800;
-        color:#000;
-        text-align:left;
-        border-bottom:2.5px solid #000;
-        border-right:1px solid #888;
-        text-transform:uppercase;
-        letter-spacing:0.8px;
-        background:none;
+        // Anchos fijos compartidos por TODAS las tablas — esto alinea las columnas
+        const COLGROUP = `<colgroup>
+          <col style="width:62%"/>
+          <col style="width:19%"/>
+          <col style="width:19%"/>
+        </colgroup>`;
+
+        const fila = (ing) => {
+          const g = parseFloat(ing.gramos) || 0;
+          return `<tr>
+            <td>${nombreConEspec(ing)}</td>
+            <td class="r">${Math.round(g)}</td>
+            <td class="r">${(g / 1000).toFixed(3)}</td>
+          </tr>`;
+        };
+
+        const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${producto.nombre}</title>
+        <style>
+          *{margin:0;padding:0;box-sizing:border-box}
+          body{font-family:Arial,sans-serif;font-size:11px;padding:18px;color:#000}
+          .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px}
+          .meta{font-size:11px;color:#333;text-align:right;line-height:1.6}
+          .titulo{text-align:center;font-size:14px;font-weight:bold;color:#000;margin-bottom:14px}
+
+          table{width:100%;border-collapse:collapse;table-layout:fixed;margin-bottom:0}
+
+          /* Cabecera de sección: solo línea inferior, sin fondo */
+          .sec th{
+            padding:6px 8px;font-size:10px;font-weight:800;color:#000;
+            text-align:left;border-bottom:2.5px solid #000;
+            border-right:1px solid #888;text-transform:uppercase;
+            letter-spacing:0.8px;background:none;
+          }
+          .sec th:last-child{border-right:none;}
+          .sec th.r{text-align:right;}
+
+          /* Filas normales */
+          td{padding:5px 8px;font-size:11px;border-right:1px solid #bbb;border-bottom:1px solid #ececec;}
+          td:last-child{border-right:none;}
+          td.r{text-align:right;}
+          tr:nth-child(even) td{background:#f9f9f9;}
+
+          /* SUB-TOTAL: negrita, líneas arriba/abajo, sin fondo */
+          .sub td{
+            font-weight:800;color:#000;
+            border-top:2px solid #000;border-bottom:2px solid #000;
+            border-right:1px solid #888;background:none!important;padding:6px 8px;
+          }
+          .sub td:last-child{border-right:none;}
+
+          /* TOTAL CRUDO: negrita, triple línea, sin fondo oscuro */
+          .ttl td{
+            font-weight:800;color:#000;
+            border-top:3px solid #000;border-bottom:3px solid #000;
+            border-right:1px solid #888;background:none!important;
+            padding:9px 8px;font-size:13px;
+          }
+          .ttl td:last-child{border-right:none;}
+
+          /* Separador entre tablas */
+          .sep{height:10px;}
+
+          @media print{body{padding:8px}}
+        </style></head><body>
+        <div class="header">
+          <div>
+            <img src="/LOGO_CANDELARIA_1.png" alt="Candelaria"
+              style="height:55px;width:auto;background:white;padding:4px 8px;border-radius:6px"/>
+          </div>
+          <div class="meta">
+            Fecha: <b>${config.fecha || new Date().toLocaleDateString()}</b><br>
+            N° de Paradas: <b>${config.num_paradas || 1}</b>
+          </div>
+        </div>
+        <div class="titulo">${producto.nombre}</div>
+
+        <table>
+          ${COLGROUP}
+          <thead>
+            <tr class="sec">
+              <th>MATERIAS PRIMAS</th>
+              <th class="r">GRAMOS</th>
+              <th class="r">KILOS</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${ingredientesMP.filter(i => i.ingrediente_nombre).map(i => fila(i)).join('')}
+            <tr class="sub">
+              <td>SUB-TOTAL</td>
+              <td class="r">${Math.round(totMP.gramos)}</td>
+              <td class="r">${(totMP.gramos / 1000).toFixed(3)}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="sep"></div>
+
+        <table>
+          ${COLGROUP}
+          <thead>
+            <tr class="sec">
+              <th>CONDIMENTOS Y ADITIVOS</th>
+              <th class="r">GRAMOS</th>
+              <th class="r">KILOS</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${ingredientesAD.filter(i => i.ingrediente_nombre).map(i => fila(i)).join('')}
+            <tr class="sub">
+              <td>SUB-TOTAL</td>
+              <td class="r">${Math.round(totAD.gramos)}</td>
+              <td class="r">${(totAD.gramos / 1000).toFixed(3)}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="sep"></div>
+
+        <table>
+          ${COLGROUP}
+          <tbody>
+            <tr class="ttl">
+              <td>TOTAL CRUDO</td>
+              <td class="r">${Math.round(totalCrudoG)}</td>
+              <td class="r">${totalCrudoKg.toFixed(3)}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <script>window.onload=function(){window.print();}<\/script>
+        </body></html>`;
+
+        ventana.document.write(html);
+        ventana.document.close();
       }
-      .sec th:last-child{border-right:none;}
-      .sec th.r{text-align:right;}
 
-      /* Filas normales: solo divisiones verticales */
-      td{padding:5px 8px;font-size:11px;border-right:1px solid #bbb;border-bottom:1px solid #e8e8e8;}
-      td:last-child{border-right:none;}
-      td.r{text-align:right;}
-      tr:nth-child(even) td{background:#f9f9f9;}
-
-      /* SUB-TOTAL: letras negras intensas, líneas arriba/abajo, sin fondo */
-      .sub td{
-        font-weight:800;
-        color:#000;
-        border-top:2px solid #000;
-        border-bottom:2px solid #000;
-        border-right:1px solid #888;
-        background:none!important;
-        padding:6px 8px;
-      }
-      .sub td:last-child{border-right:none;}
-
-      /* TOTAL CRUDO: letras negras, línea triple arriba y abajo, sin fondo oscuro */
-      .ttl td{
-        font-weight:800;
-        color:#000;
-        border-top:3px solid #000;
-        border-bottom:3px solid #000;
-        border-right:1px solid #888;
-        background:none!important;
-        padding:9px 8px;
-        font-size:13px;
-      }
-      .ttl td:last-child{border-right:none;}
-
-      @media print{body{padding:8px}}
-    </style></head><body>
-    <div class="header">
-      <div>
-        <img src="/LOGO_CANDELARIA_1.png" alt="Candelaria" style="height:55px;width:auto;background:white;padding:4px 8px;border-radius:6px"/>
-      </div>
-      <div class="meta">
-        Fecha: <b>${config.fecha || new Date().toLocaleDateString()}</b><br>
-        N° de Paradas: <b>${config.num_paradas || 1}</b>
-      </div>
-    </div>
-    <div class="titulo">${producto.nombre}</div>
-    <table>
-      <thead>
-        <tr class="sec">
-          <th>MATERIAS PRIMAS</th>
-          <th class="r">GRAMOS</th>
-          <th class="r">KILOS</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${ingredientesMP.filter(i => i.ingrediente_nombre).map(i => fila(i)).join('')}
-        <tr class="sub">
-          <td>SUB-TOTAL</td>
-          <td class="r">${Math.round(totMP.gramos)}</td>
-          <td class="r">${(totMP.gramos / 1000).toFixed(3)}</td>
-        </tr>
-      </tbody>
-    </table>
-    <table>
-      <thead>
-        <tr class="sec">
-          <th>CONDIMENTOS Y ADITIVOS</th>
-          <th class="r">GRAMOS</th>
-          <th class="r">KILOS</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${ingredientesAD.filter(i => i.ingrediente_nombre).map(i => fila(i)).join('')}
-        <tr class="sub">
-          <td>SUB-TOTAL</td>
-          <td class="r">${Math.round(totAD.gramos)}</td>
-          <td class="r">${(totAD.gramos / 1000).toFixed(3)}</td>
-        </tr>
-      </tbody>
-    </table>
-    <table>
-      <tbody>
-        <tr class="ttl">
-          <td>TOTAL CRUDO</td>
-          <td class="r">${Math.round(totalCrudoG)}</td>
-          <td class="r">${totalCrudoKg.toFixed(3)}</td>
-        </tr>
-      </tbody>
-    </table>
-    <script>window.onload=function(){window.print();}<\/script>
-    </body></html>`;
-    ventana.document.write(html);
-    ventana.document.close();
-  }
 
   // ── Búsqueda con normalización (tildes + mayúsculas) ──────
   const mpFiltradas = materiasPrimas.filter(m => {
