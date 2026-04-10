@@ -796,7 +796,6 @@ function Formulacion({ producto, onVolver, onVolverMenu, onAbrirMaterias, userRo
           }
           .sec th:last-child{border-right:none;}
           .sec th.r{text-align:right;}
-
           /* Filas normales */
           td{padding:5px 8px;font-size:11px;border-right:1px solid #bbb;border-bottom:1px solid #ececec;}
           td:last-child{border-right:none;}
