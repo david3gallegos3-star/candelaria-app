@@ -748,6 +748,78 @@ function App() {
     await cargarMaterias();
     mostrarExito('🗑️ Eliminado correctamente');
   }
+  async function guardarHistorialPrecios() {
+    if (materias.length === 0) return;
+
+    const fecha = new Date().toISOString().split('T')[0];
+
+    // Cargar historial existente para detectar duplicados
+    const { data: histExistente } = await supabase
+      .from('historial_materias_primas')
+      .select('mp_id, nombre, precio_kg');
+
+    const existentes = histExistente || [];
+
+    // Separar: cuáles son nuevos/cambiaron vs cuáles son duplicados exactos
+    const nuevos = [];
+    const duplicados = [];
+
+    for (const mp of materias.filter(m => m.estado === 'ACTIVO')) {
+      const precio = parseFloat(mp.precio_kg) || 0;
+      const nombre = mp.nombre_producto || mp.nombre;
+
+      const esDuplicadoExacto = existentes.some(h =>
+        h.mp_id === mp.id &&
+        h.nombre === nombre &&
+        parseFloat(h.precio_kg) === precio
+      );
+
+      if (esDuplicadoExacto) {
+        duplicados.push(mp);
+      } else {
+        nuevos.push({
+          fecha,
+          mp_id: mp.id,
+          categoria: mp.categoria || '',
+          nombre: nombre,
+          proveedor: mp.proveedor || '',
+          precio_kg: precio,
+          precio_gr: parseFloat(mp.precio_gr) || 0,
+          notas: mp.notas || ''
+        });
+      }
+    }
+
+    // Si todos son duplicados exactos
+    if (nuevos.length === 0) {
+      mostrarExito('ℹ️ No hay cambios nuevos — todos los precios ya están en el historial');
+      return;
+    }
+
+    // Si hay algunos duplicados, informar cuántos se saltaron
+    let mensaje = '';
+    if (duplicados.length > 0) {
+      const continuar = window.confirm(
+        `📋 Guardar Historial MP — ${fecha}\n\n` +
+        `✅ ${nuevos.length} materia(s) con precios nuevos o cambiados → SE GUARDARÁN\n` +
+        `⏭️ ${duplicados.length} materia(s) sin cambios (mismo ID, nombre y precio) → SE SALTARÁN\n\n` +
+        `• OK = Guardar solo las ${nuevos.length} con cambios\n` +
+        `• Cancelar = No guardar nada`
+      );
+      if (!continuar) return;
+      mensaje = `✅ ${nuevos.length} precio(s) guardados · ${duplicados.length} sin cambios omitidos`;
+    } else {
+      mensaje = `✅ ${nuevos.length} precio(s) guardados en historial (${fecha})`;
+    }
+
+    // Insertar en lotes de 50
+    for (let i = 0; i < nuevos.length; i += 50) {
+      await supabase.from('historial_materias_primas').insert(nuevos.slice(i, i + 50));
+    }
+
+    mostrarExito(mensaje);
+  }
+
 
   async function importarProductosExcel(e) {
     const file=e.target.files[0];if(!file) return;
@@ -1049,7 +1121,7 @@ function App() {
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16,flexWrap:'wrap',gap:10}}>
           <h2 style={{margin:0,color:'#1a1a2e',fontSize:'20px'}}>📦 Materias Primas</h2>
           <div style={{display:'flex',gap:10}}>
-            <button onClick={()=>fileRefMP.current.click()} style={{padding:'9px 18px',background:'#8e44ad',color:'white',border:'none',borderRadius:'8px',cursor:'pointer',fontSize:'13px',fontWeight:'bold'}}>📤 Subir Excel</button>
+            <button onClick={guardarHistorialPrecios} style={{padding:'9px 18px',background:'#e67e22',color:'white',border:'none',borderRadius:'8px',cursor:'pointer',fontSize:'13px',fontWeight:'bold'}}>📋 Guardar Historial MP</button>
             <input ref={fileRefMP} type="file" accept=".xlsx,.xlsm" style={{display:'none'}} onChange={subirExcel}/>
             <button onClick={()=>{
               const idSugerido = generarSiguienteId(categoriasMp[0]||'');
