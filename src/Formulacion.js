@@ -762,9 +762,9 @@ function Formulacion({ producto, onVolver, onVolverMenu, onAbrirMaterias, userRo
 
         // Anchos fijos compartidos por TODAS las tablas — esto alinea las columnas
         const COLGROUP = `<colgroup>
-          <col style="width:62%"/>
-          <col style="width:19%"/>
-          <col style="width:19%"/>
+          <col style="width:45%"/>
+          <col style="width:27.5%"/>
+          <col style="width:27.5%"/>
         </colgroup>`;
 
         const fila = (ing) => {
