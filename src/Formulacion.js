@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabase } from './supabase';
-import { crearNotificacion, registrarAuditoria } from './App';
+import { crearNotificacion, registrarAuditoria } from './utils/helpers';
 import * as XLSX from 'xlsx';
 
 const isMobile = () => window.innerWidth < 700;

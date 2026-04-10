@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from './supabase';
-import { crearNotificacion, registrarAuditoria } from './App';
+import { crearNotificacion, registrarAuditoria } from './utils/helpers';
 
 function Produccion({ onVolver, onVolverMenu, userRol, currentUser }) {
   const [productos, setProductos] = useState([]);
