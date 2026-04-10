@@ -795,11 +795,12 @@ function Formulacion({ producto, onVolver, onVolverMenu, onAbrirMaterias, userRo
             letter-spacing:0.8px;background:none;
           }
           .sec th:last-child{border-right:none;}
-          .sec th.r{text-align:right;}
+          .sec th.r{text-align:left;}
+
           /* Filas normales */
           td{padding:5px 8px;font-size:11px;border-right:1px solid #bbb;border-bottom:1px solid #ececec;}
           td:last-child{border-right:none;}
-          td.r{text-align:right;}
+          td.r{text-align:left;}
           tr:nth-child(even) td{background:#f9f9f9;}
 
           /* SUB-TOTAL: negrita, líneas arriba/abajo, sin fondo */
@@ -818,7 +819,7 @@ function Formulacion({ producto, onVolver, onVolverMenu, onAbrirMaterias, userRo
             padding:9px 8px;font-size:13px;
           }
           .ttl td:last-child{border-right:none;}
-  
+
           @media print{body{padding:8px}}
         </style></head><body>
         <div class="header">
