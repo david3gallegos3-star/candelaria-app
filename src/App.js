@@ -1122,6 +1122,7 @@ function App() {
           <h2 style={{margin:0,color:'#1a1a2e',fontSize:'20px'}}>📦 Materias Primas</h2>
           <div style={{display:'flex',gap:10}}>
             <button onClick={guardarHistorialPrecios} style={{padding:'9px 18px',background:'#e67e22',color:'white',border:'none',borderRadius:'8px',cursor:'pointer',fontSize:'13px',fontWeight:'bold'}}>📋 Guardar Historial MP</button>
+            <button onClick={()=>fileRefMP.current.click()} style={{padding:'9px 18px',background:'#8e44ad',color:'white',border:'none',borderRadius:'8px',cursor:'pointer',fontSize:'13px',fontWeight:'bold'}}>📤 Subir Excel</button>
             <input ref={fileRefMP} type="file" accept=".xlsx,.xlsm" style={{display:'none'}} onChange={subirExcel}/>
             <button onClick={()=>{
               const idSugerido = generarSiguienteId(categoriasMp[0]||'');
