@@ -157,12 +157,17 @@ function PantallaMaterias({
   }
 
   // ── Eliminar MP ───────────────────────────────────────
-  async function eliminarMP(id) {
-    if (!window.confirm('¿Eliminar esta materia prima?')) return;
-    await supabase.from('materias_primas').delete().eq('id', id);
-    await cargarMaterias();
-    mostrarExito('🗑️ Eliminado correctamente');
-  }
+    async function eliminarMP(id) {
+      if (!window.confirm('¿Eliminar esta materia prima?')) return;
+      await supabase.from('materias_primas').update({
+        eliminado:     true,
+        eliminado_at:  new Date().toISOString(),
+        eliminado_por: userRol?.nombre || 'Admin',
+        estado:        'INACTIVO'
+      }).eq('id', id);
+      await cargarMaterias();
+      mostrarExito('🗑️ Eliminada — recupérala en Historial MP → Eliminadas');
+    }
 
   // ── Subir Excel ───────────────────────────────────────
   async function subirExcel(e) {

@@ -138,7 +138,9 @@ function App() {
     const { data: cats  } = await supabase
       .from('categorias_productos').select('*').order('orden');
     const { data: prods } = await supabase
-      .from('productos').select('*').order('nombre');
+    .from('productos').select('*')
+    .eq('eliminado', false)
+    .order('nombre');
     const config = {};
     (cats||[]).forEach(cat => {
       config[cat.nombre] = [];
@@ -164,6 +166,7 @@ function App() {
   async function cargarMaterias() {
     const { data } = await supabase
       .from('materias_primas').select('*')
+      .eq('eliminado', false)        // ← agrega solo esta línea
       .order('categoria').order('id');
     setMaterias(data||[]);
   }
@@ -242,17 +245,20 @@ function App() {
   }
 
   async function eliminarProducto(nombre) {
-    if (!window.confirm(`¿Eliminar "${nombre}" y toda su formulación?`)) return;
+    if (!window.confirm(`¿Eliminar "${nombre}"?`)) return;
     const prod = productos.find(p => p.nombre === nombre);
     if (prod) {
-      await supabase.from('formulaciones').delete().eq('producto_nombre', nombre);
-      await supabase.from('config_productos').delete().eq('producto_nombre', nombre);
-      await supabase.from('productos').delete().eq('id', prod.id);
+      await supabase.from('productos').update({
+        eliminado:     true,
+        eliminado_at:  new Date().toISOString(),
+        eliminado_por: userRol?.nombre || 'Admin',
+        estado:        'INACTIVO'
+      }).eq('id', prod.id);
     }
     await cargarCategorias();
-    mostrarExito('🗑️ Producto eliminado');
+    mostrarExito('🗑️ Eliminado — recupéralo en Gestionar → Eliminados');
   }
-
+  
   async function guardarEdicionProducto() {
     if (!editando?.nuevoNombre?.trim()) return;
     await supabase.from('productos')

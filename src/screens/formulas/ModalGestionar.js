@@ -1,10 +1,9 @@
 // ============================================
 // ModalGestionar.js
-// Modal gestionar productos/categorías
-// + Modal nueva categoría
-// + Modal confirmar eliminar categoría
+// Modal gestionar productos/categorías + Eliminados
 // ============================================
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import { supabase } from '../../supabase';
 
 const EMOJIS_OPCIONES = [
   '🥓','🌭','🍖','🍔','🥩','🫙','🔀','🧀',
@@ -13,34 +12,67 @@ const EMOJIS_OPCIONES = [
 ];
 
 export default function ModalGestionar({
-  // gestionar
   modalGestionar, setModalGestionar,
   tabGestionar, setTabGestionar,
   categoriasConfig, EMOJIS_CAT,
-  // productos
   editando, setEditando,
   guardarEdicionProducto,
   eliminarProducto,
   moverCategoria,
   productos,
-  // categorías
   editandoCat, setEditandoCat,
   guardarEdicionCategoria,
   eliminarCategoria,
-  // nueva categoría
   modalNuevaCat, setModalNuevaCat,
   nuevaCatNombre, setNuevaCatNombre,
   nuevaCatEmoji, setNuevaCatEmoji,
   crearCategoria,
-  // confirmar eliminar
   confirmElimCat, setConfirmElimCat,
   confirmarElimCategoria,
 }) {
+  const [productosEliminados, setProductosEliminados] = useState([]);
+  const [restaurando, setRestaurando] = useState(false);
+
+  useEffect(() => {
+    if (modalGestionar) cargarEliminados();
+  }, [modalGestionar]);
+
+  async function cargarEliminados() {
+    const { data } = await supabase
+      .from('productos').select('*')
+      .eq('eliminado', true)
+      .order('eliminado_at', { ascending: false });
+    setProductosEliminados(data || []);
+  }
+
+  async function restaurarProducto(prod) {
+    if (!window.confirm(`¿Restaurar "${prod.nombre}"?`)) return;
+    setRestaurando(true);
+    await supabase.from('productos').update({
+      eliminado:     false,
+      eliminado_at:  null,
+      eliminado_por: null,
+      estado:        'ACTIVO'
+    }).eq('id', prod.id);
+    await cargarEliminados();
+    setRestaurando(false);
+  }
+
+  async function eliminarDefinitivo(prod) {
+    if (!window.confirm(
+      `⚠️ ELIMINAR PERMANENTEMENTE "${prod.nombre}" y toda su formulación?\n\nEsto NO se puede deshacer.`
+    )) return;
+    await supabase.from('formulaciones').delete().eq('producto_nombre', prod.nombre);
+    await supabase.from('config_productos').delete().eq('producto_nombre', prod.nombre);
+    await supabase.from('productos').delete().eq('id', prod.id);
+    await cargarEliminados();
+  }
+
   if (!modalGestionar) return null;
 
   return (
     <>
-      {/* ── Modal principal gestionar ── */}
+      {/* ── Modal principal ── */}
       <div style={{
         position:'fixed', top:0, left:0, right:0, bottom:0,
         background:'rgba(0,0,0,0.5)',
@@ -66,15 +98,21 @@ export default function ModalGestionar({
           </div>
 
           {/* Tabs */}
-          <div style={{ display:'flex', borderBottom:'2px solid #f0f0f0', padding:'0 20px' }}>
-            {[['productos','📦 Productos'],['categorias','🗂️ Categorías']].map(([key,label]) => (
+          <div style={{
+            display:'flex', borderBottom:'2px solid #f0f0f0', padding:'0 20px'
+          }}>
+            {[
+              ['productos',  '📦 Productos'],
+              ['categorias', '🗂️ Categorías'],
+              ['eliminados', `🗑️ Eliminados${productosEliminados.length > 0 ? ` (${productosEliminados.length})` : ''}`],
+            ].map(([key, label]) => (
               <button key={key} onClick={() => setTabGestionar(key)} style={{
                 padding:'12px 20px', border:'none',
                 borderBottom: tabGestionar===key ? '3px solid #2980b9' : '3px solid transparent',
                 background:'transparent', cursor:'pointer', fontSize:'14px',
                 fontWeight: tabGestionar===key ? 'bold' : 'normal',
                 color: tabGestionar===key ? '#2980b9' : '#888',
-                marginBottom:'-2px'
+                marginBottom:'-2px', whiteSpace:'nowrap'
               }}>{label}</button>
             ))}
           </div>
@@ -102,9 +140,10 @@ export default function ModalGestionar({
                     </div>
 
                     {nombresProductos.length === 0 && (
-                      <div style={{ padding:'10px 14px', color:'#aaa', fontSize:'13px', fontStyle:'italic' }}>
-                        Sin productos
-                      </div>
+                      <div style={{
+                        padding:'10px 14px', color:'#aaa',
+                        fontSize:'13px', fontStyle:'italic'
+                      }}>Sin productos</div>
                     )}
 
                     {nombresProductos.map(nombre => (
@@ -135,7 +174,8 @@ export default function ModalGestionar({
                         ) : (
                           <>
                             <span style={{
-                              flex:1, fontSize:'13px', fontWeight:'bold', color:'#2c3e50'
+                              flex:1, fontSize:'13px',
+                              fontWeight:'bold', color:'#2c3e50'
                             }}>{nombre}</span>
                             <select
                               onChange={e => moverCategoria(nombre, categoria, e.target.value)}
@@ -213,7 +253,9 @@ export default function ModalGestionar({
                       <div style={{ display:'flex', alignItems:'center', gap:10 }}>
                         <span style={{ fontSize:'22px' }}>{EMOJIS_CAT[categoria]||'📋'}</span>
                         <div style={{ flex:1 }}>
-                          <div style={{ fontWeight:'bold', fontSize:'14px', color:'#1a1a2e' }}>{categoria}</div>
+                          <div style={{ fontWeight:'bold', fontSize:'14px', color:'#1a1a2e' }}>
+                            {categoria}
+                          </div>
                           <div style={{ fontSize:'12px', color:'#888' }}>
                             {prods.length} producto{prods.length!==1?'s':''}
                           </div>
@@ -235,6 +277,79 @@ export default function ModalGestionar({
                 ))}
               </div>
             )}
+
+            {/* ── Tab eliminados ── */}
+            {tabGestionar === 'eliminados' && (
+              <div>
+                <div style={{
+                  background:'#fff3cd', border:'1px solid #ffc107',
+                  borderRadius:'10px', padding:'12px 16px',
+                  marginBottom:'14px',
+                  display:'flex', alignItems:'center', gap:10
+                }}>
+                  <span style={{ fontSize:'20px' }}>♻️</span>
+                  <div>
+                    <div style={{ fontWeight:'bold', color:'#856404', fontSize:'13px' }}>
+                      Productos eliminados
+                    </div>
+                    <div style={{ fontSize:'12px', color:'#856404' }}>
+                      Sus fórmulas se conservan — puedes restaurarlos cuando quieras
+                    </div>
+                  </div>
+                </div>
+
+                {productosEliminados.length === 0 ? (
+                  <div style={{
+                    textAlign:'center', padding:'40px', color:'#aaa'
+                  }}>
+                    <div style={{ fontSize:'40px', marginBottom:'10px' }}>✅</div>
+                    <div>No hay productos eliminados</div>
+                  </div>
+                ) : (
+                  productosEliminados.map((prod, i) => (
+                    <div key={prod.id} style={{
+                      background: i%2===0 ? '#fff5f5' : 'white',
+                      border:'1.5px solid #f5c6c6',
+                      borderRadius:10, padding:'12px 14px',
+                      marginBottom:8,
+                      display:'flex', alignItems:'center', gap:10
+                    }}>
+                      <div style={{ flex:1 }}>
+                        <div style={{ fontWeight:'bold', color:'#1a1a2e', fontSize:'13px' }}>
+                          {prod.nombre}
+                        </div>
+                        <div style={{ fontSize:'11px', color:'#888', marginTop:'2px' }}>
+                          {prod.categoria} · Eliminado por: {prod.eliminado_por || '—'} ·{' '}
+                          {prod.eliminado_at
+                            ? new Date(prod.eliminado_at).toLocaleString('es-EC', {
+                                day:'2-digit', month:'2-digit', year:'numeric',
+                                hour:'2-digit', minute:'2-digit'
+                              })
+                            : '—'}
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() => restaurarProducto(prod)}
+                        disabled={restaurando}
+                        style={{
+                          padding:'6px 14px', background:'#27ae60',
+                          color:'white', border:'none', borderRadius:7,
+                          cursor:'pointer', fontSize:'12px', fontWeight:'bold'
+                        }}>♻️ Restaurar</button>
+
+                      <button
+                        onClick={() => eliminarDefinitivo(prod)}
+                        style={{
+                          padding:'6px 12px', background:'#e74c3c',
+                          color:'white', border:'none', borderRadius:7,
+                          cursor:'pointer', fontSize:'12px'
+                        }}>🗑️ Borrar</button>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -251,9 +366,10 @@ export default function ModalGestionar({
             width:400, boxShadow:'0 20px 60px rgba(0,0,0,0.35)'
           }}>
             <h3 style={{ margin:'0 0 20px', color:'#1a1a2e' }}>🗂️ Nueva Categoría</h3>
-            <label style={{ fontSize:'13px', fontWeight:'bold', color:'#555', display:'block', marginBottom:6 }}>
-              Emoji
-            </label>
+            <label style={{
+              fontSize:'13px', fontWeight:'bold',
+              color:'#555', display:'block', marginBottom:6
+            }}>Emoji</label>
             <div style={{ display:'flex', flexWrap:'wrap', gap:8, marginBottom:16 }}>
               {EMOJIS_OPCIONES.map(em => (
                 <button key={em} onClick={() => setNuevaCatEmoji(em)} style={{
@@ -264,9 +380,10 @@ export default function ModalGestionar({
                 }}>{em}</button>
               ))}
             </div>
-            <label style={{ fontSize:'13px', fontWeight:'bold', color:'#555', display:'block', marginBottom:6 }}>
-              Nombre
-            </label>
+            <label style={{
+              fontSize:'13px', fontWeight:'bold',
+              color:'#555', display:'block', marginBottom:6
+            }}>Nombre</label>
             <input
               value={nuevaCatNombre}
               onChange={e => setNuevaCatNombre(e.target.value.toUpperCase())}
@@ -315,9 +432,10 @@ export default function ModalGestionar({
               {(categoriasConfig[confirmElimCat]||[]).length} producto(s).<br/>
               ¿Qué deseas hacer?
             </p>
-            <label style={{ fontSize:'13px', fontWeight:'bold', color:'#555', display:'block', marginBottom:6 }}>
-              Mover productos a:
-            </label>
+            <label style={{
+              fontSize:'13px', fontWeight:'bold',
+              color:'#555', display:'block', marginBottom:6
+            }}>Mover productos a:</label>
             <select id="catDestino" style={{
               width:'100%', padding:10, borderRadius:8,
               border:'1px solid #ddd', fontSize:'14px', marginBottom:20
