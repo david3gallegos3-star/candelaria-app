@@ -14,6 +14,7 @@ import Inventario     from './Inventario';
 import Produccion     from './Produccion';
 import GeminiChat     from './GeminiChat';
 import Clientes from './Clientes';
+import Auditoria from './Auditoria';
 import './App.css';
 
 // Componentes
@@ -607,23 +608,12 @@ function App() {
       currentUser={user}
     />;
 
-  if (pantalla === 'auditoria') return (
-    <div style={{
-      padding:40, color:'white', background:'#1a1a2e',
-      minHeight:'100vh', display:'flex',
-      alignItems:'center', justifyContent:'center'
-    }}>
-      <div style={{ textAlign:'center' }}>
-        <div style={{ fontSize:48, marginBottom:16 }}>🗂️</div>
-        <div style={{ fontSize:20, marginBottom:8 }}>Historial de Auditoría</div>
-        <div style={{ color:'#aaa', marginBottom:24 }}>Próximamente</div>
-        <button onClick={() => setPantalla('menuPrincipal')} style={{
-          background:'#27ae60', color:'white', border:'none',
-          borderRadius:8, padding:'10px 20px', cursor:'pointer'
-        }}>← Volver al Menú</button>
-      </div>
-    </div>
-  );
+if (pantalla === 'auditoria')
+  return <Auditoria
+    onVolver={volverAtras}
+    onVolverMenu={() => setPantalla('menuPrincipal')}
+    userRol={userRol}
+  />;
 
   if (pantalla === 'formulacion' && productoActivo) return (
     <>
