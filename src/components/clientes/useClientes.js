@@ -63,7 +63,7 @@ export function useClientes({ userRol, currentUser }) {
       { data: cfg  },
     ] = await Promise.all([
       supabase.from('clientes').select('*')
-        .or('eliminado.eq.false,eliminado.is.null')
+        .not('eliminado', 'eq', true)
         .order('nombre'),
       supabase.from('precios_clientes').select('*').order('cliente_nombre'),
       supabase.from('productos').select('*').eq('estado','ACTIVO').order('nombre'),
@@ -107,33 +107,39 @@ export function useClientes({ userRol, currentUser }) {
   }
 
   // ── CRUD Clientes ─────────────────────────────────────────
-  async function guardarCliente() {
-    if (!formCliente.nombre.trim()) return alert('El nombre es obligatorio');
-    setGuardando(true);
-    if (editandoCliente) {
-      await supabase.from('clientes')
-        .update({ ...formCliente })
-        .eq('id', editandoCliente.id);
-      // Actualizar nombre en precios si cambió
-      if (editandoCliente.nombre !== formCliente.nombre) {
-        await supabase.from('precios_clientes')
-          .update({ cliente_nombre: formCliente.nombre })
-          .eq('cliente_id', editandoCliente.id);
+    async function guardarCliente() {
+      if (!formCliente.nombre.trim()) return alert('El nombre es obligatorio');
+      setGuardando(true);
+      if (editandoCliente) {
+        await supabase.from('clientes')
+          .update({ ...formCliente })
+          .eq('id', editandoCliente.id);
+        if (editandoCliente.nombre !== formCliente.nombre) {
+          await supabase.from('precios_clientes')
+            .update({ cliente_nombre: formCliente.nombre })
+            .eq('cliente_id', editandoCliente.id);
+        }
+        mostrarExito('✅ Cliente actualizado');
+      } else {
+        const { error } = await supabase.from('clientes').insert([{
+          ...formCliente,
+          eliminado: false,
+          activo:    true
+        }]);
+        if (error) {
+          console.error('Error creando cliente:', error);
+          alert('Error: ' + error.message);
+          setGuardando(false);
+          return;
+        }
+        mostrarExito('✅ Cliente creado');
       }
-      mostrarExito('✅ Cliente actualizado');
-    } else {
-            await supabase.from('clientes').insert([{ 
-        ...formCliente,
-        eliminado: false
-      }]);
-      mostrarExito('✅ Cliente creado');
+      setModalCliente(false);
+      setEditandoCliente(null);
+      setFormCliente(formVacio);
+      setGuardando(false);
+      await cargarTodo();
     }
-    setModalCliente(false);
-    setEditandoCliente(null);
-    setFormCliente(formVacio);
-    setGuardando(false);
-    await cargarTodo();
-  }
 
     async function eliminarCliente(id) {
       const cli = clientes.find(c => c.id === id);
