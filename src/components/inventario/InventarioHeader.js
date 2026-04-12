@@ -10,6 +10,7 @@ export default function InventarioHeader({
   setModalNota,
   setModalMerma,
   abrirCamara,
+  abrirPDF,
   onVolverMenu,
 }) {
   return (
@@ -73,6 +74,15 @@ export default function InventarioHeader({
               fontSize: mobile ? '12px' : '13px',
               fontWeight:'bold'
             }}>📷 {mobile ? '' : 'Escanear factura'}</button>
+
+            <button onClick={abrirPDF} style={{
+              background:'#2980b9', color:'white', border:'none',
+              borderRadius:'8px',
+              padding: mobile ? '8px 10px' : '8px 16px',
+              cursor:'pointer',
+              fontSize: mobile ? '12px' : '13px',
+              fontWeight:'bold'
+            }}>📄 {mobile ? '' : 'Subir PDF'}</button>
           </div>
         )}
       </div>

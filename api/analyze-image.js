@@ -1,9 +1,72 @@
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
 
-  const { imageBase64, mediaType } = req.body;
+  const { imageBase64, mediaType, esPDF, pdfBase64 } = req.body;
+
+  // ── Prompt unificado para imagen y PDF ──
+  const promptTexto = `Analiza esta factura o lista de precios de materias primas para una empresa de embutidos.
+
+Extrae TODOS los productos con su precio y cantidad. 
+MUY IMPORTANTE: detecta y devuelve la unidad de medida EXACTA que aparece en el documento.
+
+Unidades posibles: kg, g, gr, gramos, lb, libras, lbs, oz, onzas, t, tonelada, unidad, litro, l, metro, m
+
+Responde SOLO en JSON válido, sin texto adicional, sin markdown, sin backticks.
+
+Formato exacto:
+{
+  "productos": [
+    {
+      "nombre": "nombre del producto",
+      "precio_unitario": 4.50,
+      "cantidad": 120,
+      "unidad_original": "lb",
+      "precio_kg": null,
+      "cantidad_kg": null,
+      "confianza": "alta|media|baja"
+    }
+  ]
+}
+
+Reglas:
+- precio_unitario: el precio tal como aparece en la factura (por lb, por kg, por unidad, etc.)
+- cantidad: la cantidad tal como aparece en la factura
+- unidad_original: la unidad EXACTA que aparece (lb, kg, g, oz, t, etc.)
+- precio_kg y cantidad_kg: déjalos en null, el sistema los calculará
+- Si no puedes leer bien un valor pon null
+- Si la unidad no es clara pon "desconocida"`;
 
   try {
+    let mensajeContent = [];
+
+    if (esPDF && pdfBase64) {
+      // ── Modo PDF ──
+      mensajeContent = [
+        {
+          type: 'document',
+          source: {
+            type: 'base64',
+            media_type: 'application/pdf',
+            data: pdfBase64
+          }
+        },
+        { type: 'text', text: promptTexto }
+      ];
+    } else {
+      // ── Modo imagen/cámara ──
+      mensajeContent = [
+        {
+          type: 'image',
+          source: {
+            type: 'base64',
+            media_type: mediaType || 'image/jpeg',
+            data: imageBase64
+          }
+        },
+        { type: 'text', text: promptTexto }
+      ];
+    }
+
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -13,20 +76,8 @@ module.exports = async function handler(req, res) {
       },
       body: JSON.stringify({
         model: 'claude-opus-4-5-20251101',
-        max_tokens: 1500,
-        messages: [{
-          role: 'user',
-          content: [
-            {
-              type: 'image',
-              source: { type: 'base64', media_type: mediaType || 'image/jpeg', data: imageBase64 }
-            },
-            {
-              type: 'text',
-              text: `Analiza esta imagen de una factura o lista de precios de materias primas para una empresa de embutidos. Extrae TODOS los productos con su precio por kg y cantidad si aparece. Responde SOLO en JSON válido, sin texto adicional, sin markdown, sin backticks. Formato exacto: {"productos": [{"nombre": "nombre del producto", "precio_kg": 4.50, "cantidad_kg": 120, "confianza": "alta|media|baja"}]}. Si no puedes leer bien un valor pon null.`
-            }
-          ]
-        }]
+        max_tokens: 2000,
+        messages: [{ role: 'user', content: mensajeContent }]
       })
     });
 

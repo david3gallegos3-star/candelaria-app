@@ -44,8 +44,9 @@ export function useInventario({ userRol, currentUser }) {
   const [minimoKg,     setMinimoKg]     = useState('');
   const [guardando,    setGuardando]    = useState(false);
 
-  const fileRef = useRef();
-
+  const fileRef    = useRef();
+  const fileRefPDF = useRef();
+  
   // ── Helpers ───────────────────────────────────────────────
   function mostrarExito(msg) {
     setMsgExito(msg);
@@ -352,59 +353,190 @@ export function useInventario({ userRol, currentUser }) {
     ) || null;
   }
 
-  async function procesarImagen(e) {
-    const file = e.target.files[0];
-    if (!file) return;
-    setAnalizandoIA(true); setModalCamara(true); setResultadosIA([]);
+      // ── Conversión de unidades a KG ───────────────────────────
+  function convertirAKg(cantidad, unidad) {
+    if (!cantidad || !unidad) return { kg: cantidad || 0, necesitaConversion: false };
+    const u = unidad.toLowerCase().trim();
+    const c = parseFloat(cantidad) || 0;
 
-    const reader = new FileReader();
-    reader.onload = async (ev) => {
-      try {
-        const img = new Image();
-        img.src = ev.target.result;
-        await new Promise(r => img.onload = r);
-        const canvas = document.createElement('canvas');
-        const MAX    = 1200;
-        const ratio  = Math.min(MAX/img.width, MAX/img.height, 1);
-        canvas.width  = img.width  * ratio;
-        canvas.height = img.height * ratio;
-        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-        const comprimida = canvas.toDataURL('image/jpeg', 0.7);
-        const base64     = comprimida.split(',')[1];
-        setImagenBase64(comprimida);
+    if (['kg', 'kilo', 'kilos', 'kilogramo', 'kilogramos'].includes(u))
+      return { kg: c, necesitaConversion: false, factor: 1 };
+    if (['g', 'gr', 'gramo', 'gramos', 'gram'].includes(u))
+      return { kg: c / 1000, necesitaConversion: true, factor: 1/1000,
+              label: `${c} gr = ${(c/1000).toFixed(4)} kg` };
+    if (['lb', 'lbs', 'libra', 'libras', 'pound', 'pounds'].includes(u))
+      return { kg: c / 2.20462, necesitaConversion: true, factor: 1/2.20462,
+              label: `${c} lb = ${(c/2.20462).toFixed(3)} kg` };
+    if (['oz', 'onza', 'onzas', 'ounce'].includes(u))
+      return { kg: c / 35.274, necesitaConversion: true, factor: 1/35.274,
+              label: `${c} oz = ${(c/35.274).toFixed(4)} kg` };
+    if (['t', 'ton', 'tonelada', 'toneladas'].includes(u))
+      return { kg: c * 1000, necesitaConversion: true, factor: 1000,
+              label: `${c} t = ${(c*1000).toFixed(2)} kg` };
 
-        const response = await fetch('/api/analyze-image', {
-          method:'POST',
-          headers:{ 'Content-Type':'application/json' },
-          body: JSON.stringify({ imageBase64: base64, mediaType:'image/jpeg' })
-        });
-        const data    = await response.json();
-        const texto   = data.content?.[0]?.text || '{"productos":[]}';
-        const parsed  = JSON.parse(texto);
-        const productosIA = parsed.productos || [];
-
-        const resultados = productosIA.map(p => {
-          const match = buscarMPSimilar(p.nombre, materiasPrimas);
-          return {
-            ...p, match,
-            accion:           match ? 'mismo' : 'nuevo',
-            nombre_editado:   p.nombre,
-            precio_editado:   p.precio_kg,
-            cantidad_editada: p.cantidad_kg,
-            incluir:          true,
-            vincular_a:       ''
-          };
-        });
-        setResultadosIA(resultados);
-      } catch(err) {
-        alert('Error al analizar imagen: ' + err.message);
-        setModalCamara(false);
-      }
-      setAnalizandoIA(false);
-    };
-    reader.readAsDataURL(file);
-    e.target.value = '';
+    // Unidad no convertible (litros, metros, unidades, etc.)
+    return { kg: c, necesitaConversion: false, esOtraUnidad: true };
   }
+
+  // ── Opciones de unidad para selector ─────────────────────
+  function getOpcionesUnidad(unidadOriginal, cantidadOriginal) {
+    const c = parseFloat(cantidadOriginal) || 0;
+    const u = (unidadOriginal || '').toLowerCase().trim();
+    const opciones = [];
+
+    // Siempre ofrece KG como opción principal
+    if (['lb','lbs','libra','libras'].includes(u))
+      opciones.push({ val:'kg', label:`KG = ${(c/2.20462).toFixed(3)} kg`, recomendado:true  });
+    else if (['g','gr','gramo','gramos'].includes(u))
+      opciones.push({ val:'kg', label:`KG = ${(c/1000).toFixed(4)} kg`,   recomendado:true  });
+    else if (['oz','onza','onzas'].includes(u))
+      opciones.push({ val:'kg', label:`KG = ${(c/35.274).toFixed(4)} kg`, recomendado:true  });
+    else if (['t','ton','tonelada','toneladas'].includes(u))
+      opciones.push({ val:'kg', label:`KG = ${(c*1000).toFixed(2)} kg`,   recomendado:true  });
+    else
+      opciones.push({ val:'kg', label:`KG = ${c} kg`, recomendado:true });
+
+    // Opción: dejar en unidad original
+    if (!['kg','kilo','kilos'].includes(u))
+      opciones.push({ val:unidadOriginal, label:`${unidadOriginal?.toUpperCase()} = ${c} ${unidadOriginal}`, recomendado:false });
+
+    // Opción GR si viene en libras
+    if (['lb','lbs','libra','libras'].includes(u))
+      opciones.push({ val:'gr', label:`GR = ${(c/2.20462*1000).toFixed(1)} gr`, recomendado:false });
+
+    return opciones;
+  }
+
+
+async function procesarImagen(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  setAnalizandoIA(true); setModalCamara(true); setResultadosIA([]);
+
+  const reader = new FileReader();
+  reader.onload = async (ev) => {
+    try {
+      const img = new Image();
+      img.src = ev.target.result;
+      await new Promise(r => img.onload = r);
+      const canvas = document.createElement('canvas');
+      const MAX    = 1200;
+      const ratio  = Math.min(MAX/img.width, MAX/img.height, 1);
+      canvas.width  = img.width  * ratio;
+      canvas.height = img.height * ratio;
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      const comprimida = canvas.toDataURL('image/jpeg', 0.7);
+      const base64     = comprimida.split(',')[1];
+      setImagenBase64(comprimida);
+
+      const response = await fetch('/api/analyze-image', {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json' },
+        body: JSON.stringify({ imageBase64: base64, mediaType:'image/jpeg' })
+      });
+      const data    = await response.json();
+      const texto   = data.content?.[0]?.text || '{"productos":[]}';
+      const parsed  = JSON.parse(texto);
+      const productosIA = parsed.productos || [];
+
+      const resultados = productosIA.map(p => {
+        const match           = buscarMPSimilar(p.nombre, materiasPrimas);
+        const unidadOriginal  = p.unidad_original || 'kg';
+        const cantidadOrig    = p.cantidad || 0;
+        const conversion      = convertirAKg(cantidadOrig, unidadOriginal);
+        const opcionesUnidad  = getOpcionesUnidad(unidadOriginal, cantidadOrig);
+        const unidadSeleccionada = conversion.necesitaConversion ? 'kg' : unidadOriginal;
+
+        return {
+          ...p,
+          match,
+          accion:              match ? 'mismo' : 'nuevo',
+          nombre_editado:      p.nombre,
+          precio_editado:      p.precio_unitario,
+          cantidad_original:   cantidadOrig,
+          unidad_original:     unidadOriginal,
+          unidad_seleccionada: unidadSeleccionada,
+          cantidad_editada:    conversion.necesitaConversion
+                                 ? conversion.kg.toFixed(3)
+                                 : cantidadOrig,
+          conversion,
+          opciones_unidad:     opcionesUnidad,
+          incluir:             true,
+          vincular_a:          ''
+        };
+      });
+      setResultadosIA(resultados);
+    } catch(err) {
+      alert('Error al analizar imagen: ' + err.message);
+      setModalCamara(false);
+    }
+    setAnalizandoIA(false);
+  };
+  reader.readAsDataURL(file);
+  e.target.value = '';
+}
+
+async function procesarPDF(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  if (file.type !== 'application/pdf') {
+    alert('Solo se aceptan archivos PDF');
+    return;
+  }
+  setAnalizandoIA(true); setModalCamara(true); setResultadosIA([]);
+  setImagenBase64(null);
+
+  const reader = new FileReader();
+  reader.onload = async (ev) => {
+    try {
+      const base64 = ev.target.result.split(',')[1];
+
+      const response = await fetch('/api/analyze-image', {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json' },
+        body: JSON.stringify({ pdfBase64: base64, esPDF: true })
+      });
+      const data    = await response.json();
+      const texto   = data.content?.[0]?.text || '{"productos":[]}';
+      const parsed  = JSON.parse(texto);
+      const productosIA = parsed.productos || [];
+
+      const resultados = productosIA.map(p => {
+        const match           = buscarMPSimilar(p.nombre, materiasPrimas);
+        const unidadOriginal  = p.unidad_original || 'kg';
+        const cantidadOrig    = p.cantidad || 0;
+        const conversion      = convertirAKg(cantidadOrig, unidadOriginal);
+        const opcionesUnidad  = getOpcionesUnidad(unidadOriginal, cantidadOrig);
+        const unidadSeleccionada = conversion.necesitaConversion ? 'kg' : unidadOriginal;
+
+        return {
+          ...p,
+          match,
+          accion:              match ? 'mismo' : 'nuevo',
+          nombre_editado:      p.nombre,
+          precio_editado:      p.precio_unitario,
+          cantidad_original:   cantidadOrig,
+          unidad_original:     unidadOriginal,
+          unidad_seleccionada: unidadSeleccionada,
+          cantidad_editada:    conversion.necesitaConversion
+                                 ? conversion.kg.toFixed(3)
+                                 : cantidadOrig,
+          conversion,
+          opciones_unidad:     opcionesUnidad,
+          incluir:             true,
+          vincular_a:          ''
+        };
+      });
+      setResultadosIA(resultados);
+    } catch(err) {
+      alert('Error al analizar PDF: ' + err.message);
+      setModalCamara(false);
+    }
+    setAnalizandoIA(false);
+  };
+  reader.readAsDataURL(file);
+  e.target.value = '';
+}
 
   function actualizarNombreIA(i, nuevoNombre) {
     const nuevo = [...resultadosIA];
@@ -611,6 +743,7 @@ export function useInventario({ userRol, currentUser }) {
     guardando,
     // Refs
     fileRef,
+    fileRefPDF,
     // Helpers
     puedeEditar, esAdmin, esBodeguero,
     badgeStock, getPrecioSistema,
@@ -620,7 +753,7 @@ export function useInventario({ userRol, currentUser }) {
     cargarTodo, enviarNota,
     guardarEntrada, guardarStockInicial,
     guardarMinimo, guardarMerma,
-    abrirCamara, procesarImagen,
+    abrirCamara, procesarImagen, procesarPDF,
     actualizarNombreIA, confirmarResultadosIA,
   };
 }
