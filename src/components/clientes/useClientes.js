@@ -122,7 +122,10 @@ export function useClientes({ userRol, currentUser }) {
       }
       mostrarExito('✅ Cliente actualizado');
     } else {
-      await supabase.from('clientes').insert([{ ...formCliente }]);
+            await supabase.from('clientes').insert([{ 
+        ...formCliente,
+        eliminado: false
+      }]);
       mostrarExito('✅ Cliente creado');
     }
     setModalCliente(false);
