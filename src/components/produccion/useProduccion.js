@@ -140,7 +140,11 @@ export function useProduccion({ userRol, currentUser }) {
     const ingredientes = formulacion.map(f => {
       const gramos          = parseFloat(f.gramos || 0);
       const kgIngrediente   = (gramos / 1000) * paradas;
-      const precioKg        = parseFloat(f.precio_kg || 0);
+      const invItem2 = inventario.find(i => i.materia_prima_id === f.materia_prima_id);
+      const precioKg = parseFloat(
+        invItem2?.materias_primas?.precio_kg ||
+        f.precio_kg || 0
+      );
       const costoIngrediente = kgIngrediente * precioKg;
       kgTotalCrudo += kgIngrediente;
       costoTotal   += costoIngrediente;
