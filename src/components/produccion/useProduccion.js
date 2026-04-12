@@ -148,8 +148,11 @@ export function useProduccion({ userRol, currentUser }) {
     const ingredientes = formulacion.map(f => {
       const gramos           = parseFloat(f.gramos || 0);
       const kgIngrediente    = (gramos / 1000) * paradas;
-      const mp               = mps.find(m => String(m.id) === String(f.materia_prima_id));
-      const precioKg         = parseFloat(mp?.precio_kg || f.precio_kg || 0);
+      const nombreIng = (f.ingrediente_nombre || '').toLowerCase().trim();
+      const mp = mps.find(m =>
+        (m.nombre_producto || m.nombre || '').toLowerCase().trim() === nombreIng
+      );
+      const precioKg = parseFloat(mp?.precio_kg || f.precio_kg || 0);
       const costoIngrediente = kgIngrediente * precioKg;
 
       kgTotalCrudo += kgIngrediente;
