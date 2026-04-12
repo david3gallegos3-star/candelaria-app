@@ -179,8 +179,10 @@ function DetalleProducto({ item, resumen, mobile }) {
         {[
           ['costo ingredientes', `$${resumen.costoTotal.toFixed(2)}`,                                            '#1a1a2e'],
           ['costo / kg crudo',   `$${resumen.kgTotalCrudo > 0 ? (resumen.costoTotal / resumen.kgTotalCrudo).toFixed(3) : '0.000'}`, '#555'],
-          ['costo / kg final',   `$${resumen.kgProducidos > 0 ? (resumen.costoTotal / resumen.kgProducidos).toFixed(3) : '0.000'}`,  '#27ae60'],
-        ].map(([label, val, color]) => (
+          ['costo / kg final (rend.)', `$${resumen.kgProducidos > 0 
+               ? (resumen.costoTotal / resumen.kgProducidos).toFixed(3) 
+                : '0.000'}`,  '#27ae60'],
+                   ].map(([label, val, color]) => (
           <div key={label} style={{
             background:'#f8f9fa', borderRadius:'8px',
             padding:'7px 10px', textAlign:'center'

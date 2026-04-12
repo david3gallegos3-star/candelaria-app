@@ -30,6 +30,7 @@ export function useProduccion({ userRol, currentUser }) {
 
   // ── Inventario compartido ─────────────────────────────────
   const [inventario,   setInventario]   = useState([]);
+  const [materiasPrimas, setMateriasPrimas] = useState([]);
 
   // ── Modales ───────────────────────────────────────────────
   const [modalNota,     setModalNota]     = useState(false);
@@ -59,6 +60,9 @@ export function useProduccion({ userRol, currentUser }) {
     const { data: inv } = await supabase
       .from('inventario_mp')
       .select('*, materias_primas(id, nombre, nombre_producto, precio_kg)');
+    const { data: mps } = await supabase
+      .from('materias_primas').select('id, precio_kg');
+    setMateriasPrimas(mps || []);
     setProductos(prods    || []);
     setProduccionDiaria(prod || []);
     setInventario(inv     || []);
@@ -140,11 +144,8 @@ export function useProduccion({ userRol, currentUser }) {
     const ingredientes = formulacion.map(f => {
       const gramos          = parseFloat(f.gramos || 0);
       const kgIngrediente   = (gramos / 1000) * paradas;
-      const invItem2 = inventario.find(i => i.materia_prima_id === f.materia_prima_id);
-      const precioKg = parseFloat(
-        invItem2?.materias_primas?.precio_kg ||
-        f.precio_kg || 0
-      );
+      const mp = materiasPrimas.find(m => m.id === f.materia_prima_id);
+      const precioKg = parseFloat(mp?.precio_kg || f.precio_kg || 0);
       const costoIngrediente = kgIngrediente * precioKg;
       kgTotalCrudo += kgIngrediente;
       costoTotal   += costoIngrediente;
