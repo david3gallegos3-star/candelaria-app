@@ -29,6 +29,7 @@ export default function ModalGestionar({
   crearCategoria,
   confirmElimCat, setConfirmElimCat,
   confirmarElimCategoria,
+  cargarCategorias,
 }) {
   const [productosEliminados, setProductosEliminados] = useState([]);
   const [restaurando, setRestaurando] = useState(false);
@@ -55,6 +56,8 @@ export default function ModalGestionar({
       estado:        'ACTIVO'
     }).eq('id', prod.id);
     await cargarEliminados();
+    await cargarCategorias();    // ← agrega esto
+    setTabGestionar('productos'); // ← va al tab productos
     setRestaurando(false);
   }
 

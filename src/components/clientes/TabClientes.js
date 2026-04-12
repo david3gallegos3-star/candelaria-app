@@ -16,6 +16,7 @@ export default function TabClientes({
   eliminarCliente,
   toggleActivoCliente,
   setTab,
+  cargarTodo, 
 }) {
   const [subTab,             setSubTab]             = useState('activos');
   const [eliminados,         setEliminados]         = useState([]);
@@ -41,10 +42,12 @@ export default function TabClientes({
       eliminado_at:  null,
       eliminado_por: null,
       activo:        true
-    }).eq('id', cli.id);
-    await cargarEliminados();
-    setRestaurando(false);
-  }
+      }).eq('id', cli.id);
+      await cargarEliminados();
+      await cargarTodo();        // ← agrega esto
+      setSubTab('activos');      // ← cambia al tab activos
+      setRestaurando(false);
+    }
 
   async function eliminarDefinitivo(cli) {
     if (!window.confirm(

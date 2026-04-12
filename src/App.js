@@ -663,7 +663,7 @@ if (pantalla === 'auditoria')
       nuevaCategoria={nuevaCategoria} setNuevaCategoria={setNuevaCategoria}
       crearProducto={crearProducto}
       // modal gestionar
-      modalGestionar={modalGestionar} setModalGestionar={setModalGestionar}
+      modalGestionar={modalGestionar} setModalGestionar={setModalGestionar}  cargarCategorias={cargarCategorias}
       tabGestionar={tabGestionar}     setTabGestionar={setTabGestionar}
       editando={editando}             setEditando={setEditando}
       guardarEdicionProducto={guardarEdicionProducto}

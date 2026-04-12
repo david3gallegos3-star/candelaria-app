@@ -110,6 +110,7 @@ function Clientes({ onVolver, onVolverMenu, userRol, currentUser }) {
                 eliminarCliente={c.eliminarCliente}
                 toggleActivoCliente={c.toggleActivoCliente}
                 setTab={c.setTab}
+                cargarTodo={c.cargarTodo}
               />
             )}
 
