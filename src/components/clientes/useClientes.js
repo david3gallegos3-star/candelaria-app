@@ -62,7 +62,8 @@ export function useClientes({ userRol, currentUser }) {
       { data: prod },
       { data: cfg  },
     ] = await Promise.all([
-      supabase.from('clientes').select('*').order('nombre'),
+      supabase.from('clientes').select('*')
+      .eq('eliminado', false).order('nombre'),
       supabase.from('precios_clientes').select('*').order('cliente_nombre'),
       supabase.from('productos').select('*').eq('estado','ACTIVO').order('nombre'),
       supabase.from('config_productos').select('*'),
@@ -130,19 +131,23 @@ export function useClientes({ userRol, currentUser }) {
     await cargarTodo();
   }
 
-  async function eliminarCliente(id) {
-    const cli = clientes.find(c => c.id === id);
-    const preciosCliente = precios.filter(p => p.cliente_id === id);
-    const msg = preciosCliente.length > 0
-      ? `¿Eliminar "${cli?.nombre}" y sus ${preciosCliente.length} precio(s) configurado(s)?`
-      : `¿Eliminar el cliente "${cli?.nombre}"?`;
-    if (!window.confirm(msg)) return;
-    await supabase.from('precios_clientes').delete().eq('cliente_id', id);
-    await supabase.from('clientes').delete().eq('id', id);
-    mostrarExito('🗑️ Cliente eliminado');
-    if (clienteSel?.id === id) setClienteSel(null);
-    await cargarTodo();
-  }
+    async function eliminarCliente(id) {
+      const cli = clientes.find(c => c.id === id);
+      const preciosCliente = precios.filter(p => p.cliente_id === id);
+      const msg = preciosCliente.length > 0
+        ? `¿Eliminar "${cli?.nombre}" y sus ${preciosCliente.length} precio(s)?`
+        : `¿Eliminar el cliente "${cli?.nombre}"?`;
+      if (!window.confirm(msg)) return;
+      await supabase.from('clientes').update({
+        eliminado:     true,
+        eliminado_at:  new Date().toISOString(),
+        eliminado_por: userRol?.nombre || 'Admin',
+        activo:        false
+      }).eq('id', id);
+      mostrarExito('🗑️ Eliminado — recupéralo en la pestaña Eliminados');
+      if (clienteSel?.id === id) setClienteSel(null);
+      await cargarTodo();
+    }
 
   async function toggleActivoCliente(cli) {
     await supabase.from('clientes')
