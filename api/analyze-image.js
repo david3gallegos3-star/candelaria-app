@@ -82,6 +82,13 @@ Reglas:
     });
 
     const data = await response.json();
+    // Limpiar backticks markdown que a veces devuelve el modelo
+    if (data.content?.[0]?.text) {
+      data.content[0].text = data.content[0].text
+        .replace(/```json/g, '')
+        .replace(/```/g, '')
+        .trim();
+    }
     res.status(200).json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });

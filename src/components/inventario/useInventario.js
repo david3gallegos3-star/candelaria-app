@@ -826,5 +826,6 @@ async function confirmarResultadosIA() {
     guardarMinimo, guardarMerma,
     abrirCamara, procesarImagen, procesarPDF,
     actualizarNombreIA, confirmarResultadosIA,
-  };
+    generarIdPorCategoria: (cat) => generarIdPorCategoria(cat, materiasPrimas),
+};
 }
