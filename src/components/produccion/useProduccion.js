@@ -60,7 +60,7 @@ export function useProduccion({ userRol, currentUser }) {
         .order('created_at',{ascending:false}).limit(100),
       supabase.from('inventario_mp')
         .select('*, materias_primas(id,nombre,nombre_producto,precio_kg)'),
-      supabase.from('materias_primas').select('id, precio_kg'),
+      supabase.from('materias_primas').select('id, nombre, nombre_producto, precio_kg'),
     ]);
     setProductos(prods   || []);
     setProduccionDiaria(prod || []);
@@ -87,7 +87,7 @@ export function useProduccion({ userRol, currentUser }) {
         .eq('producto_nombre', prod.nombre).order('orden'),
       supabase.from('config_productos').select('*')
         .eq('producto_nombre', prod.nombre).maybeSingle(),
-      supabase.from('materias_primas').select('id, precio_kg'),
+      supabase.from('materias_primas').select('id, nombre, nombre_producto, precio_kg'),
     ]);
 
     const nuevo = {
