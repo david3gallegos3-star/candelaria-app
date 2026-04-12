@@ -52,55 +52,29 @@ function GeminiChat() {
   }, [drag, dragStart]);
 
   // ── Enviar mensaje ────────────────────────────────────────
-  async function enviar() {
-    if (!mensaje.trim() || cargando) return;
-    const pregunta = mensaje.trim();
-    setMensaje('');
-    setChat(prev => [...prev, { rol:'tu', texto:pregunta }]);
-    setCargando(true);
+    async function enviar() {
+      if (!mensaje.trim() || cargando) return;
+      const pregunta = mensaje.trim();
+      setMensaje('');
+      setChat(prev => [...prev, { rol:'tu', texto:pregunta }]);
+      setCargando(true);
 
-    try {
-      const apiKey = process.env.REACT_APP_GEMINI_KEY;
-      if (!apiKey) throw new Error('Falta REACT_APP_GEMINI_KEY en variables de entorno');
-
-      // Construir historial para Gemini
-      const historial = chat.map(m => ({
-        role:  m.rol === 'tu' ? 'user' : 'model',
-        parts: [{ text: m.texto }]
-      }));
-
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+      try {
+        const response = await fetch('/api/chat', {
+          method:  'POST',
+          headers: { 'Content-Type':'application/json' },
           body: JSON.stringify({
-            system_instruction: {
-              parts: [{ text: SYSTEM_PROMPT }]
-            },
-            contents: [
-              ...historial,
-              { role:'user', parts:[{ text: pregunta }] }
-            ],
-            generationConfig: {
-              temperature:     0.7,
-              maxOutputTokens: 1000,
-            }
+            mensaje:   pregunta,
+            historial: chat
           })
-        }
-      );
-
-      const data      = await response.json();
-      const respuesta = data.candidates?.[0]?.content?.parts?.[0]?.text
-                     || 'Sin respuesta';
-      setChat(prev => [...prev, { rol:'ia', texto:respuesta }]);
-
-    } catch(e) {
-      setChat(prev => [...prev, { rol:'ia', texto:'Error: ' + e.message }]);
+        });
+        const data = await response.json();
+        setChat(prev => [...prev, { rol:'ia', texto: data.texto || 'Sin respuesta' }]);
+      } catch(e) {
+        setChat(prev => [...prev, { rol:'ia', texto:'Error: ' + e.message }]);
+      }
+      setCargando(false);
     }
-    setCargando(false);
-  }
-
   // ── Render ────────────────────────────────────────────────
   return (
     <div style={{
