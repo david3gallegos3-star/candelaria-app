@@ -68,7 +68,7 @@ export function useProduccion({ userRol, currentUser }) {
   // ── Agregar producto al día ───────────────────────────────
   async function agregarProducto(productoId) {
     if (!productoId) return;
-    const prod = productos.find(p => p.id === productoId);
+    const prod = productos.find(p => String(p.id) === String(productoId));
     if (!prod) return;
 
     // No agregar duplicado
