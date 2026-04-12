@@ -17,6 +17,7 @@ import ModalNotaInv         from './components/inventario/ModalNotaInv';
 function Inventario({ onVolver, onVolverMenu, userRol, currentUser }) {
 
   const inv = useInventario({ userRol, currentUser });
+  function abrirPDF() { inv.fileRefPDF.current.click(); }
 
   return (
     <div style={{ minHeight:'100vh', background:'#f0f2f5', fontFamily:'Arial, sans-serif' }}>
@@ -30,6 +31,7 @@ function Inventario({ onVolver, onVolverMenu, userRol, currentUser }) {
         setModalNota={inv.setModalNota}
         setModalMerma={inv.setModalMerma}
         abrirCamara={inv.abrirCamara}
+        abrirPDF={abrirPDF}
         onVolverMenu={onVolverMenu}
       />
 
@@ -41,6 +43,14 @@ function Inventario({ onVolver, onVolverMenu, userRol, currentUser }) {
         capture="environment"
         style={{ display:'none' }}
         onChange={inv.procesarImagen}
+      />
+
+      <input
+        ref={inv.fileRefPDF}
+        type="file"
+        accept="application/pdf"
+        style={{ display:'none' }}
+        onChange={inv.procesarPDF}
       />
 
       {/* Mensaje éxito */}
