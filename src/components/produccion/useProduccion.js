@@ -239,7 +239,6 @@ export function useProduccion({ userRol, currentUser }) {
         fecha,
         turno:               'mañana',
         producto_nombre:     item.producto.nombre,
-        productos_id:        item.producto.id,
         num_paradas:         resumen.paradas,
         kg_total_crudo:      resumen.kgTotalCrudo,
         porcentaje_merma:    resumen.mermaPorc,
