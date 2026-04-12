@@ -63,7 +63,8 @@ export function useClientes({ userRol, currentUser }) {
       { data: cfg  },
     ] = await Promise.all([
       supabase.from('clientes').select('*')
-      .eq('eliminado', false).order('nombre'),
+        .or('eliminado.eq.false,eliminado.is.null')
+        .order('nombre'),
       supabase.from('precios_clientes').select('*').order('cliente_nombre'),
       supabase.from('productos').select('*').eq('estado','ACTIVO').order('nombre'),
       supabase.from('config_productos').select('*'),
