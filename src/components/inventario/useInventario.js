@@ -66,6 +66,28 @@ export function useInventario({ userRol, currentUser }) {
     return 'OK';
   }
 
+  function generarIdPorCategoria(categoria, materiasPrimas) {
+    const mpsCat = (materiasPrimas || []).filter(m => m.categoria === categoria);
+    if (mpsCat.length === 0) return '';
+    const ids = mpsCat.map(m => m.id).filter(Boolean);
+    if (ids.length === 0) return '';
+    const primer = ids[0];
+    const match  = primer.match(/^([A-Za-z]+)(\d+)$/);
+    if (!match) return '';
+    const prefix    = match[1];
+    const numDigits = match[2].length;
+    let maxNum = 0;
+    ids.forEach(id => {
+      const m2 = id.match(/^[A-Za-z]+(\d+)$/);
+      if (m2) {
+        const n = parseInt(m2[1]);
+        if (n > maxNum) maxNum = n;
+      }
+    });
+    return prefix + String(maxNum + 1).padStart(numDigits, '0');
+  }
+
+
   function badgeStock(estado) {
     if (estado === 'OK')      return { bg:'#d4edda', color:'#155724', txt:'OK'      };
     if (estado === 'BAJO')    return { bg:'#fff3cd', color:'#856404', txt:'BAJO'    };
@@ -557,145 +579,194 @@ async function procesarPDF(e) {
     return 0;
   }
 
-  async function confirmarResultadosIA() {
-    setGuardando(true);
-    const resIncluidos = resultadosIA.filter(r => r.incluir);
+function generarIdPorCategoria(categoria, materiasPrimas) {
+  const mpsCat = (materiasPrimas || []).filter(m => m.categoria === categoria);
+  if (mpsCat.length === 0) return '';
+  const ids = mpsCat.map(m => m.id).filter(Boolean);
+  if (ids.length === 0) return '';
+  const primer = ids[0];
+  const match  = primer.match(/^([A-Za-z]+)(\d+)$/);
+  if (!match) return '';
+  const prefix    = match[1];
+  const numDigits = match[2].length;
+  let maxNum = 0;
+  ids.forEach(id => {
+    const m2 = id.match(/^[A-Za-z]+(\d+)$/);
+    if (m2) {
+      const n = parseInt(m2[1]);
+      if (n > maxNum) maxNum = n;
+    }
+  });
+  return prefix + String(maxNum + 1).padStart(numDigits, '0');
+}
 
-    for (const r of resIncluidos) {
-      const precioSistema = getPrecioSistema(r);
-      const precio = (r.precio_editado !== '' && r.precio_editado !== null && r.precio_editado !== undefined)
-        ? parseFloat(r.precio_editado) || 0
-        : precioSistema;
-      const kg = parseFloat(r.cantidad_editada) || 0;
 
-      if (precio === 0) {
-        await crearNotificacion({
-          tipo:'precio_cero', origen:'inventario_camara',
-          usuario_nombre: userRol?.nombre || 'Bodeguero',
-          user_id: currentUser?.id,
-          producto_nombre: r.nombre_editado,
-          mensaje:`⚠️ "${r.nombre_editado}" fue registrado sin precio ($0). Revisa en Materias Primas.`
-        });
-      }
+async function confirmarResultadosIA() {
+  setGuardando(true);
+  const resIncluidos = resultadosIA.filter(r => r.incluir);
 
-      if (r.accion === 'mismo' && r.match) {
-        const invItem = inventario.find(i => i.id === r.match.id);
-        if (invItem && kg > 0) {
-          const nuevoStock = invItem.stock_kg + kg;
-          await supabase.from('inventario_mp')
-            .update({ stock_kg: nuevoStock, updated_at: new Date().toISOString() })
-            .eq('id', invItem.inv_id);
-          await supabase.from('inventario_movimientos').insert([{
-            materia_prima_id:  r.match.id,
-            nombre_mp:         invItem.nombre_producto || invItem.nombre,
-            tipo:              'entrada', kg,
-            precio_kg_nuevo:   precio || null,
-            precio_kg_anterior:parseFloat(r.match.precio_kg) || null,
-            motivo:            'Entrada por escaneo IA',
-            usuario_nombre:    userRol?.nombre || 'Bodeguero',
-            user_id:           currentUser?.id,
-            via:               'camara',
-            fecha:             new Date().toISOString().split('T')[0]
-          }]);
-        }
-        if (precio > 0 && precio !== parseFloat(r.match.precio_kg))
-          await supabase.from('materias_primas').update({ precio_kg: precio }).eq('id', r.match.id);
+  for (const r of resIncluidos) {
+    const precioSistema = getPrecioSistema(r);
+    const precio = (r.precio_editado !== '' && r.precio_editado !== null && r.precio_editado !== undefined)
+      ? parseFloat(r.precio_editado) || 0
+      : precioSistema;
+    const kg = parseFloat(r.cantidad_editada) || 0;
 
-        await crearNotificacion({
-          tipo:'entrada_inventario', origen:'inventario_camara',
-          usuario_nombre: userRol?.nombre || 'Bodeguero',
-          user_id: currentUser?.id,
-          producto_nombre: r.match.nombre_producto || r.match.nombre,
-          mensaje:`Escaneo IA: "${r.match.nombre_producto || r.match.nombre}" +${kg}kg${precio > 0 ? ` · precio $${precio.toFixed(2)}/kg` : ''}`
-        });
-
-      } else if (r.accion === 'renombrar' && r.match) {
-        const nombreViejo = r.match.nombre_producto;
-        await supabase.from('materias_primas')
-          .update({ nombre_producto: r.nombre_editado }).eq('id', r.match.id);
-        await supabase.from('formulaciones')
-          .update({ ingrediente_nombre: r.nombre_editado }).eq('ingrediente_nombre', nombreViejo);
-        await supabase.from('inventario_mp')
-          .update({ nombre: r.nombre_editado }).eq('materia_prima_id', r.match.id);
-        if (kg > 0) {
-          const invItem = inventario.find(i => i.id === r.match.id);
-          if (invItem) await supabase.from('inventario_mp')
-            .update({ stock_kg: invItem.stock_kg + kg }).eq('id', invItem.inv_id);
-        }
-        await crearNotificacion({
-          tipo:'cambio_nombre', origen:'inventario_camara',
-          usuario_nombre: userRol?.nombre || 'Bodeguero',
-          user_id: currentUser?.id,
-          producto_nombre: r.nombre_editado,
-          mensaje:`Renombrado vía escaneo: "${nombreViejo}" → "${r.nombre_editado}"${kg > 0 ? ` · +${kg}kg` : ''}`
-        });
-
-      } else if (r.accion === 'nuevo') {
-        if (r.vincular_a) {
-          const mpExistente = materiasPrimas.find(m => m.id === r.vincular_a);
-          if (mpExistente) {
-            const invItem = inventario.find(i => i.id === mpExistente.id);
-            if (invItem && kg > 0) {
-              await supabase.from('inventario_mp')
-                .update({ stock_kg: invItem.stock_kg + kg, updated_at: new Date().toISOString() })
-                .eq('id', invItem.inv_id);
-              await supabase.from('inventario_movimientos').insert([{
-                materia_prima_id: mpExistente.id,
-                nombre_mp:        mpExistente.nombre_producto || mpExistente.nombre,
-                tipo:             'entrada', kg,
-                precio_kg_nuevo:  precio || null,
-                motivo:           'Entrada por escaneo IA (vinculado)',
-                usuario_nombre:   userRol?.nombre || 'Bodeguero',
-                user_id:          currentUser?.id,
-                via:              'camara',
-                fecha:            new Date().toISOString().split('T')[0]
-              }]);
-            }
-            if (precio > 0 && precio !== parseFloat(mpExistente.precio_kg))
-              await supabase.from('materias_primas').update({ precio_kg: precio }).eq('id', mpExistente.id);
-            await crearNotificacion({
-              tipo:'entrada_inventario', origen:'inventario_camara',
-              usuario_nombre: userRol?.nombre || 'Bodeguero',
-              user_id: currentUser?.id,
-              producto_nombre: mpExistente.nombre_producto || mpExistente.nombre,
-              mensaje:`Escaneo IA vinculado: "${r.nombre_editado}" → "${mpExistente.nombre_producto || mpExistente.nombre}" +${kg}kg`
-            });
-          }
-        } else {
-          const nuevaMP = {
-            id:             'MP' + Date.now().toString().slice(-6),
-            categoria:      'SIN CATEGORÍA',
-            nombre:         r.nombre_editado,
-            nombre_producto:r.nombre_editado,
-            precio_kg:      precio || 0,
-            precio_lb:      precio > 0 ? precio/2.20462 : 0,
-            precio_gr:      precio > 0 ? precio/1000    : 0,
-            estado:         'ACTIVO',
-            tipo:           'MATERIAS PRIMAS'
-          };
-          await supabase.from('materias_primas').insert([nuevaMP]);
-          await supabase.from('inventario_mp').insert([{
-            materia_prima_id: nuevaMP.id,
-            nombre:           r.nombre_editado,
-            stock_kg:         kg || 0,
-            stock_minimo_kg:  0
-          }]);
-          await crearNotificacion({
-            tipo:'nueva_mp', origen:'inventario_camara',
-            usuario_nombre: userRol?.nombre || 'Bodeguero',
-            user_id: currentUser?.id,
-            producto_nombre: r.nombre_editado,
-            mensaje:`Nueva MP creada vía escaneo: "${r.nombre_editado}"${precio > 0 ? ` · $${precio.toFixed(2)}/kg` : ' · sin precio'}${kg > 0 ? ` · ${kg}kg` : ''}`
-          });
-        }
-      }
+    // Notificar precio en $0
+    if (precio === 0) {
+      await crearNotificacion({
+        tipo:'precio_cero', origen:'inventario_camara',
+        usuario_nombre: userRol?.nombre || 'Bodeguero',
+        user_id: currentUser?.id,
+        producto_nombre: r.nombre_editado,
+        mensaje:`⚠️ "${r.nombre_editado}" fue registrado sin precio ($0). Revisa en Materias Primas.`
+      });
     }
 
-    setModalCamara(false); setResultadosIA([]); setImagenBase64(null);
-    setGuardando(false);
-    mostrarExito(`✅ Entrada confirmada — ${resIncluidos.length} producto(s) procesados`);
-    await cargarTodo();
+    // ── CASO A: mismo producto exacto ──
+    if (r.accion === 'mismo' && r.match) {
+      const invItem = inventario.find(i => i.id === r.match.id);
+      if (invItem && kg > 0) {
+        const nuevoStock = invItem.stock_kg + kg;
+        await supabase.from('inventario_mp')
+          .update({ stock_kg: nuevoStock, updated_at: new Date().toISOString() })
+          .eq('id', invItem.inv_id);
+        await supabase.from('inventario_movimientos').insert([{
+          materia_prima_id:   r.match.id,
+          nombre_mp:          invItem.nombre_producto || invItem.nombre,
+          tipo:               'entrada', kg,
+          precio_kg_nuevo:    precio || null,
+          precio_kg_anterior: parseFloat(r.match.precio_kg) || null,
+          motivo:             'Entrada por escaneo IA',
+          usuario_nombre:     userRol?.nombre || 'Bodeguero',
+          user_id:            currentUser?.id,
+          via:                'camara',
+          fecha:              new Date().toISOString().split('T')[0]
+        }]);
+      }
+      if (precio > 0 && precio !== parseFloat(r.match.precio_kg)) {
+        await supabase.from('materias_primas')
+          .update({ precio_kg: precio }).eq('id', r.match.id);
+      }
+      await crearNotificacion({
+        tipo:'entrada_inventario', origen:'inventario_camara',
+        usuario_nombre: userRol?.nombre || 'Bodeguero',
+        user_id: currentUser?.id,
+        producto_nombre: r.match.nombre_producto || r.match.nombre,
+        mensaje:`Escaneo IA: "${r.match.nombre_producto || r.match.nombre}" +${kg}kg${precio > 0 ? ` · precio $${precio.toFixed(2)}/kg` : ''}`
+      });
+
+    // ── CASO B: renombrar ──
+    } else if (r.accion === 'renombrar' && r.match) {
+      const nombreViejo = r.match.nombre_producto;
+      await supabase.from('materias_primas')
+        .update({ nombre_producto: r.nombre_editado }).eq('id', r.match.id);
+      await supabase.from('formulaciones')
+        .update({ ingrediente_nombre: r.nombre_editado })
+        .eq('ingrediente_nombre', nombreViejo);
+      await supabase.from('inventario_mp')
+        .update({ nombre: r.nombre_editado })
+        .eq('materia_prima_id', r.match.id);
+      if (kg > 0) {
+        const invItem = inventario.find(i => i.id === r.match.id);
+        if (invItem) {
+          await supabase.from('inventario_mp')
+            .update({ stock_kg: invItem.stock_kg + kg })
+            .eq('id', invItem.inv_id);
+        }
+      }
+      await crearNotificacion({
+        tipo:'cambio_nombre', origen:'inventario_camara',
+        usuario_nombre: userRol?.nombre || 'Bodeguero',
+        user_id: currentUser?.id,
+        producto_nombre: r.nombre_editado,
+        mensaje:`Renombrado vía escaneo: "${nombreViejo}" → "${r.nombre_editado}"${kg > 0 ? ` · +${kg}kg` : ''}`
+      });
+
+    // ── CASO C/D: nuevo ──
+    } else if (r.accion === 'nuevo') {
+
+      // Si vincula a MP existente → solo agregar stock
+      if (r.vincular_a) {
+        const mpExistente = materiasPrimas.find(m => m.id === r.vincular_a);
+        if (mpExistente) {
+          const invItem = inventario.find(i => i.id === mpExistente.id);
+          if (invItem && kg > 0) {
+            await supabase.from('inventario_mp')
+              .update({ stock_kg: invItem.stock_kg + kg, updated_at: new Date().toISOString() })
+              .eq('id', invItem.inv_id);
+            await supabase.from('inventario_movimientos').insert([{
+              materia_prima_id: mpExistente.id,
+              nombre_mp:        mpExistente.nombre_producto || mpExistente.nombre,
+              tipo:             'entrada', kg,
+              precio_kg_nuevo:  precio || null,
+              motivo:           'Entrada por escaneo IA (vinculado)',
+              usuario_nombre:   userRol?.nombre || 'Bodeguero',
+              user_id:          currentUser?.id,
+              via:              'camara',
+              fecha:            new Date().toISOString().split('T')[0]
+            }]);
+          }
+          if (precio > 0 && precio !== parseFloat(mpExistente.precio_kg)) {
+            await supabase.from('materias_primas')
+              .update({ precio_kg: precio }).eq('id', mpExistente.id);
+          }
+          await crearNotificacion({
+            tipo:'entrada_inventario', origen:'inventario_camara',
+            usuario_nombre: userRol?.nombre || 'Bodeguero',
+            user_id: currentUser?.id,
+            producto_nombre: mpExistente.nombre_producto || mpExistente.nombre,
+            mensaje:`Escaneo IA vinculado: "${r.nombre_editado}" → "${mpExistente.nombre_producto || mpExistente.nombre}" +${kg}kg`
+          });
+        }
+
+      } else {
+        // Crear nueva MP con categoría e ID seleccionados
+        // Si no eligió categoría, usar 'SIN CATEGORÍA'
+        const catFinal  = r.cat_nueva  || 'SIN CATEGORÍA';
+        const idFinal   = r.id_nuevo   || ('MP' + Date.now().toString().slice(-6));
+        const tipoFinal = r.tipo_nuevo || 'MATERIAS PRIMAS';
+
+        const nuevaMP = {
+          id:              idFinal,
+          categoria:       catFinal,
+          nombre:          r.nombre_editado,
+          nombre_producto: r.nombre_editado,
+          precio_kg:       precio || 0,
+          precio_lb:       precio > 0 ? precio / 2.20462 : 0,
+          precio_gr:       precio > 0 ? precio / 1000    : 0,
+          estado:          'ACTIVO',
+          tipo:            tipoFinal,
+          eliminado:       false,
+        };
+
+        await supabase.from('materias_primas').insert([nuevaMP]);
+        await supabase.from('inventario_mp').insert([{
+          materia_prima_id: idFinal,
+          nombre:           r.nombre_editado,
+          stock_kg:         kg || 0,
+          stock_minimo_kg:  0
+        }]);
+
+        // Notificación al admin para revisar la nueva MP
+        await crearNotificacion({
+          tipo:'nueva_mp', origen:'inventario_camara',
+          usuario_nombre: userRol?.nombre || 'Bodeguero',
+          user_id: currentUser?.id,
+          producto_nombre: r.nombre_editado,
+          mensaje:`Nueva MP creada vía escaneo: "${r.nombre_editado}" · Categoría: ${catFinal} · ID: ${idFinal} · Tipo: ${tipoFinal}${precio > 0 ? ` · $${precio.toFixed(2)}/kg` : ' · sin precio'}${kg > 0 ? ` · ${kg}kg` : ''}. Por favor revisa y confirma categoría y tipo.`
+        });
+      }
+    }
   }
+
+  setModalCamara(false);
+  setResultadosIA([]);
+  setImagenBase64(null);
+  setGuardando(false);
+  mostrarExito(`Entrada confirmada — ${resIncluidos.length} producto(s) procesados`);
+  await cargarTodo();
+}
 
   // ── Filtrado ──────────────────────────────────────────────
   const inventarioFiltrado = inventario.filter(m => {

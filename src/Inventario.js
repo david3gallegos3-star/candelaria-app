@@ -197,6 +197,9 @@ function Inventario({ onVolver, onVolverMenu, userRol, currentUser }) {
         getPrecioSistema={inv.getPrecioSistema}
         actualizarNombreIA={inv.actualizarNombreIA}
         confirmarResultadosIA={inv.confirmarResultadosIA}
+        categoriasMp={inv.categorias}
+        generarIdPorCategoria={inv.generarIdPorCategoria}
+
       />
 
       <ModalNotaInv
