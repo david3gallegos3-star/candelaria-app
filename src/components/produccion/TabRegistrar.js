@@ -336,15 +336,11 @@ export default function TabRegistrar({
                 <option key={p.id} value={p.id}>{p.nombre}</option>
               ))}
             </select>
-              <button
-                onClick={() => {
-                  console.log('prodSelAdd:', prodSelAdd);
-                  agregarProducto(prodSelAdd);
-                }}
-                disabled={!prodSelAdd}
-                style={{
-                  padding:'8px 16px',
-                  background: prodSelAdd ? '#27ae60' : '#ccc',
+            <button
+              onClick={() => agregarProducto(prodSelAdd)}
+              disabled={!prodSelAdd}
+              style={{
+                padding:'9px 14px', background: prodSelAdd ? '#27ae60' : '#ccc',
                 color:'white', border:'none',
                 borderRadius:'8px', fontSize:'13px',
                 fontWeight:'500', cursor: prodSelAdd ? 'pointer' : 'not-allowed'
@@ -581,10 +577,7 @@ export default function TabRegistrar({
               ))}
             </select>
             <button
-              onClick={() => {
-                console.log('prodSelAdd:', prodSelAdd);
-                agregarProducto(prodSelAdd);
-              }}
+              onClick={() => agregarProducto(prodSelAdd)}
               disabled={!prodSelAdd}
               style={{
                 padding:'8px 16px',
