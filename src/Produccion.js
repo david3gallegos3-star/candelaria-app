@@ -13,8 +13,7 @@ import ModalNotaProd       from './components/produccion/ModalNotaProd';
 function Produccion({ onVolver, onVolverMenu, userRol, currentUser }) {
 
   const p = useProduccion({ userRol, currentUser });
-  const resumen = p.calcularResumen();
-
+ 
   return (
     <div style={{
       minHeight:'100vh', background:'#f0f2f5',
