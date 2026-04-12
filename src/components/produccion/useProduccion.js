@@ -83,7 +83,8 @@ export function useProduccion({ userRol, currentUser }) {
       .eq('producto_nombre', prod.nombre).order('orden');
     const { data: config } = await supabase
       .from('config_productos').select('*')
-      .eq('producto_nombre', prod.nombre).single();
+      .eq('producto_nombre', prod.nombre)
+      .maybeSingle();
 
     const nuevo = {
       producto:    prod,
