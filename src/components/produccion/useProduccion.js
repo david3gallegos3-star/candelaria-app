@@ -1,6 +1,7 @@
 // ============================================
 // useProduccion.js
 // Hook con todo el estado y lógica
+// VERSIÓN MULTI-PRODUCTO
 // ============================================
 import { useState, useEffect } from 'react';
 import { supabase } from '../../supabase';
@@ -17,17 +18,18 @@ export function useProduccion({ userRol, currentUser }) {
   const [tab,              setTab]              = useState('registrar');
   const mobile = window.innerWidth < 700;
 
-  // ── Form ──────────────────────────────────────────────────
-  const [productoSel,  setProductoSel]  = useState(null);
-  const [buscarProd,   setBuscarProd]   = useState('');
-  const [numParadas,   setNumParadas]   = useState('');
+  // ── Multi-producto ────────────────────────────────────────
+  // productosDelDia: [{ producto, formulacion, configProd, paradas, inventario }]
+  const [productosDelDia,  setProductosDelDia]  = useState([]);
+  const [productoSelIdx,   setProductoSelIdx]   = useState(null); // índice del que se muestra en detalle
+  const [buscarProd,       setBuscarProd]       = useState('');
+  const [prodSelAdd,       setProdSelAdd]       = useState('');  // id del select para agregar
+
+  // ── Fecha ─────────────────────────────────────────────────
   const [fecha,        setFecha]        = useState(new Date().toISOString().split('T')[0]);
-  const [turno,        setTurno]        = useState('mañana');
-  const [nota,         setNota]         = useState('');
-  const [formulacion,  setFormulacion]  = useState([]);
-  const [configProd,   setConfigProd]   = useState(null);
+
+  // ── Inventario compartido ─────────────────────────────────
   const [inventario,   setInventario]   = useState([]);
-  const [alertasStock, setAlertasStock] = useState([]);
 
   // ── Modales ───────────────────────────────────────────────
   const [modalNota,     setModalNota]     = useState(false);
@@ -49,11 +51,11 @@ export function useProduccion({ userRol, currentUser }) {
     setLoading(true);
     const { data: prods } = await supabase
       .from('productos').select('*')
-      .eq('estado','ACTIVO').order('nombre');
+      .eq('estado', 'ACTIVO').order('nombre');
     const { data: prod } = await supabase
       .from('produccion_diaria').select('*')
       .eq('revertida', false)
-      .order('created_at', { ascending:false }).limit(100);
+      .order('created_at', { ascending: false }).limit(100);
     const { data: inv } = await supabase
       .from('inventario_mp')
       .select('*, materias_primas(id, nombre, nombre_producto, precio_kg)');
@@ -63,36 +65,81 @@ export function useProduccion({ userRol, currentUser }) {
     setLoading(false);
   }
 
-  // ── Seleccionar producto ──────────────────────────────────
-  async function seleccionarProducto(prod) {
-    setProductoSel(prod);
-    setBuscarProd(prod.nombre);
-    setNumParadas('');
-    setAlertasStock([]);
-    const { data: form }   = await supabase
+  // ── Agregar producto al día ───────────────────────────────
+  async function agregarProducto(productoId) {
+    if (!productoId) return;
+    const prod = productos.find(p => p.id === productoId);
+    if (!prod) return;
+
+    // No agregar duplicado
+    const yaExiste = productosDelDia.find(p => p.producto.id === productoId);
+    if (yaExiste) {
+      mostrarExito('Ese producto ya está en la lista');
+      return;
+    }
+
+    const { data: form } = await supabase
       .from('formulaciones').select('*')
       .eq('producto_nombre', prod.nombre).order('orden');
     const { data: config } = await supabase
       .from('config_productos').select('*')
       .eq('producto_nombre', prod.nombre).single();
-    setFormulacion(form   || []);
-    setConfigProd(config  || null);
+
+    const nuevo = {
+      producto:    prod,
+      formulacion: form   || [],
+      configProd:  config || null,
+      paradas:     1,
+    };
+
+    const nuevaLista = [...productosDelDia, nuevo];
+    setProductosDelDia(nuevaLista);
+    setProductoSelIdx(nuevaLista.length - 1); // auto-seleccionar el recién agregado
+    setProdSelAdd('');
   }
 
-  // ── Calcular resumen ──────────────────────────────────────
-  function calcularResumen() {
-    if (!productoSel || !numParadas || !formulacion.length) return null;
-    const paradas = parseFloat(numParadas) || 0;
-    if (paradas <= 0) return null;
+  // ── Actualizar paradas de un producto ─────────────────────
+  function actualizarParadas(idx, valor) {
+    const n = [...productosDelDia];
+    n[idx] = { ...n[idx], paradas: parseInt(valor) || 1 };
+    setProductosDelDia(n);
+    setProductoSelIdx(idx); // al tocar paradas → foco en ese producto
+  }
 
-    const merma = parseFloat(configProd?.merma || 0);
+  // ── Eliminar producto del día ─────────────────────────────
+  function eliminarProductoDia(idx) {
+    const n = productosDelDia.filter((_, i) => i !== idx);
+    setProductosDelDia(n);
+    if (productoSelIdx === idx) {
+      setProductoSelIdx(n.length > 0 ? 0 : null);
+    } else if (productoSelIdx > idx) {
+      setProductoSelIdx(productoSelIdx - 1);
+    }
+  }
+
+  // ── Limpiar todo ──────────────────────────────────────────
+  function limpiarTodo() {
+    if (productosDelDia.length === 0) return;
+    if (!window.confirm('¿Limpiar todos los productos del día?')) return;
+    setProductosDelDia([]);
+    setProductoSelIdx(null);
+  }
+
+  // ── Calcular resumen de UN producto ───────────────────────
+  function calcularResumenProducto(item) {
+    if (!item) return null;
+    const { formulacion, configProd, paradas } = item;
+    if (!formulacion.length) return null;
+
+    const merma  = parseFloat(configProd?.merma  || 0);
+    const margen = parseFloat(configProd?.margen || 0);
     let kgTotalCrudo = 0;
     let costoTotal   = 0;
 
     const ingredientes = formulacion.map(f => {
-      const gramos         = parseFloat(f.gramos || 0);
-      const kgIngrediente  = (gramos / 1000) * paradas;
-      const precioKg       = parseFloat(f.precio_kg || 0);
+      const gramos          = parseFloat(f.gramos || 0);
+      const kgIngrediente   = (gramos / 1000) * paradas;
+      const precioKg        = parseFloat(f.precio_kg || 0);
       const costoIngrediente = kgIngrediente * precioKg;
       kgTotalCrudo += kgIngrediente;
       costoTotal   += costoIngrediente;
@@ -100,104 +147,143 @@ export function useProduccion({ userRol, currentUser }) {
       const invItem    = inventario.find(i => i.materia_prima_id === f.materia_prima_id);
       const stockDisp  = parseFloat(invItem?.stock_kg || 0);
       const suficiente = stockDisp >= kgIngrediente;
+      const falta      = suficiente ? 0 : kgIngrediente - stockDisp;
 
       return {
         ...f,
-        kg_necesarios:    kgIngrediente,
-        stock_disponible: stockDisp,
+        kg_necesarios:     kgIngrediente,
+        stock_disponible:  stockDisp,
         suficiente,
-        costo_ingrediente:costoIngrediente,
-        inv_id:           invItem?.id
+        falta,
+        costo_ingrediente: costoIngrediente,
+        inv_id:            invItem?.id
       };
     });
 
-    const kgProducidos = kgTotalCrudo * (1 - merma);
+    const mermaKg      = kgTotalCrudo * merma;
+    const kgProducidos = kgTotalCrudo - mermaKg;
     const alertas      = ingredientes.filter(i => !i.suficiente);
 
-    return { ingredientes, kgTotalCrudo, kgProducidos, costoTotal, merma, paradas, alertas };
+    return {
+      ingredientes,
+      kgTotalCrudo,
+      mermaKg,
+      mermaPorc:   merma,
+      kgProducidos,
+      costoTotal,
+      margen,
+      paradas,
+      alertas
+    };
   }
 
-  // ── Guardar producción ────────────────────────────────────
-  async function guardarProduccion(resumen) {
-    if (!productoSel || !numParadas || !resumen) return;
+  // ── Calcular totales del día ───────────────────────────────
+  function calcularTotalesDia() {
+    let kgFinales  = 0;
+    let costoTotal = 0;
+    productosDelDia.forEach(item => {
+      const r = calcularResumenProducto(item);
+      if (r) {
+        kgFinales  += r.kgProducidos;
+        costoTotal += r.costoTotal;
+      }
+    });
+    return { kgFinales, costoTotal };
+  }
+
+  // ── Estado de alertas por producto ────────────────────────
+  function getEstadoProducto(item) {
+    const r = calcularResumenProducto(item);
+    if (!r) return 'sin_formula';
+    if (r.alertas.length === 0) return 'ok';
+    if (r.alertas.length === 1) return 'warn';
+    return 'danger';
+  }
+
+  // ── Guardar producción del día (todos los productos) ──────
+  async function guardarProduccion() {
+    if (productosDelDia.length === 0) return;
     setGuardando(true);
 
-    const ingredientesUsados = resumen.ingredientes.map(i => ({
-      materia_prima_id:   i.materia_prima_id,
-      ingrediente_nombre: i.ingrediente_nombre,
-      kg_usados:          i.kg_necesarios,
-      precio_kg:          parseFloat(i.precio_kg || 0),
-      costo:              i.costo_ingrediente
-    }));
+    for (const item of productosDelDia) {
+      const resumen = calcularResumenProducto(item);
+      if (!resumen) continue;
 
-    await supabase.from('produccion_diaria').insert([{
-      fecha,
-      turno,
-      producto_nombre:  productoSel.nombre,
-      producto_id:      productoSel.id,
-      num_paradas:      resumen.paradas,
-      kg_total_crudo:   resumen.kgTotalCrudo,
-      porcentaje_merma: resumen.merma,
-      kg_producidos:    resumen.kgProducidos,
-      costo_total:      resumen.costoTotal,
-      ingredientes_usados: ingredientesUsados,
-      usuario_nombre:   userRol?.nombre || 'Producción',
-      user_id:          currentUser?.id,
-      nota:             nota || null,
-      revertida:        false
-    }]);
+      const ingredientesUsados = resumen.ingredientes.map(i => ({
+        materia_prima_id:   i.materia_prima_id,
+        ingrediente_nombre: i.ingrediente_nombre,
+        kg_usados:          i.kg_necesarios,
+        precio_kg:          parseFloat(i.precio_kg || 0),
+        costo:              i.costo_ingrediente
+      }));
 
-    // Descontar del inventario
-    for (const ing of resumen.ingredientes) {
-      if (ing.inv_id && ing.kg_necesarios > 0) {
-        const nuevoStock = Math.max(0, ing.stock_disponible - ing.kg_necesarios);
-        await supabase.from('inventario_mp')
-          .update({ stock_kg: nuevoStock, updated_at: new Date().toISOString() })
-          .eq('id', ing.inv_id);
+      await supabase.from('produccion_diaria').insert([{
+        fecha,
+        turno:            'mañana', // sin turno — siempre mañana por defecto
+        producto_nombre:  item.producto.nombre,
+        producto_id:      item.producto.id,
+        num_paradas:      resumen.paradas,
+        kg_total_crudo:   resumen.kgTotalCrudo,
+        porcentaje_merma: resumen.mermaPorc,
+        kg_producidos:    resumen.kgProducidos,
+        costo_total:      resumen.costoTotal,
+        ingredientes_usados: ingredientesUsados,
+        usuario_nombre:   userRol?.nombre || 'Producción',
+        user_id:          currentUser?.id,
+        nota:             null,
+        revertida:        false
+      }]);
 
-        await supabase.from('inventario_movimientos').insert([{
-          materia_prima_id: ing.materia_prima_id,
-          nombre_mp:        ing.ingrediente_nombre,
-          tipo:             'salida',
-          kg:               -ing.kg_necesarios,
-          motivo:           `Producción: ${productoSel.nombre} × ${resumen.paradas} paradas`,
-          usuario_nombre:   userRol?.nombre || 'Producción',
-          user_id:          currentUser?.id,
-          via:              'produccion',
-          fecha
-        }]);
+      // Descontar del inventario
+      for (const ing of resumen.ingredientes) {
+        if (ing.inv_id && ing.kg_necesarios > 0) {
+          const nuevoStock = Math.max(0, ing.stock_disponible - ing.kg_necesarios);
+          await supabase.from('inventario_mp')
+            .update({ stock_kg: nuevoStock, updated_at: new Date().toISOString() })
+            .eq('id', ing.inv_id);
+
+          await supabase.from('inventario_movimientos').insert([{
+            materia_prima_id: ing.materia_prima_id,
+            nombre_mp:        ing.ingrediente_nombre,
+            tipo:             'salida',
+            kg:               -ing.kg_necesarios,
+            motivo:           `Producción: ${item.producto.nombre} × ${resumen.paradas} paradas`,
+            usuario_nombre:   userRol?.nombre || 'Producción',
+            user_id:          currentUser?.id,
+            via:              'produccion',
+            fecha
+          }]);
+        }
+      }
+
+      await crearNotificacion({
+        tipo:            'produccion',
+        origen:          'produccion',
+        usuario_nombre:  userRol?.nombre || 'Producción',
+        user_id:         currentUser?.id,
+        producto_nombre: item.producto.nombre,
+        mensaje: `Producción: "${item.producto.nombre}" × ${resumen.paradas} paradas — ${resumen.kgProducidos.toFixed(1)} kg finales · $${resumen.costoTotal.toFixed(2)}`
+      });
+
+      if (resumen.alertas.length > 0) {
+        await crearNotificacion({
+          tipo:            'stock_bajo',
+          origen:          'produccion',
+          usuario_nombre:  'Sistema',
+          user_id:         null,
+          producto_nombre: item.producto.nombre,
+          mensaje: `Stock insuficiente en producción de "${item.producto.nombre}": ${resumen.alertas.map(a => a.ingrediente_nombre).join(', ')}`
+        });
       }
     }
 
     await actualizarProduccionMes();
 
-    await crearNotificacion({
-      tipo:'produccion', origen:'produccion',
-      usuario_nombre: userRol?.nombre || 'Producción',
-      user_id: currentUser?.id,
-      producto_nombre: productoSel.nombre,
-      mensaje:`Producción registrada: "${productoSel.nombre}" × ${resumen.paradas} paradas — ${resumen.kgProducidos.toFixed(1)} kg producidos · $${resumen.costoTotal.toFixed(2)}`
-    });
-
-    if (resumen.alertas.length > 0) {
-      await crearNotificacion({
-        tipo:'stock_bajo', origen:'produccion',
-        usuario_nombre:'Sistema', user_id:null,
-        producto_nombre: productoSel.nombre,
-        mensaje:`⚠️ Producción de "${productoSel.nombre}" usó stock insuficiente en: ${resumen.alertas.map(a => a.ingrediente_nombre).join(', ')}`
-      });
-    }
-
-    // Reset form
-    setProductoSel(null);
-    setBuscarProd('');
-    setNumParadas('');
-    setNota('');
-    setFormulacion([]);
-    setConfigProd(null);
-
+    // Limpiar lista del día
+    setProductosDelDia([]);
+    setProductoSelIdx(null);
     setGuardando(false);
-    mostrarExito(`✅ Producción registrada — ${resumen.kgProducidos.toFixed(1)} kg de ${productoSel.nombre}`);
+    mostrarExito(`Producción registrada — ${productosDelDia.length} producto(s)`);
     await cargarTodo();
     setTab('historial');
   }
@@ -208,14 +294,11 @@ export function useProduccion({ userRol, currentUser }) {
     inicioMes.setDate(1);
     const fechaInicio = inicioMes.toISOString().split('T')[0];
     const fechaFin    = new Date().toISOString().split('T')[0];
-
     const { data } = await supabase.from('produccion_diaria')
       .select('kg_producidos').eq('revertida', false)
       .gte('fecha', fechaInicio).lte('fecha', fechaFin);
-
     const totalMes = (data || []).reduce((s, r) =>
       s + parseFloat(r.kg_producidos || 0), 0);
-
     await supabase.from('cif_items')
       .update({ valor_mes: totalMes })
       .eq('detalle', 'Producción (kg/mes)');
@@ -225,16 +308,14 @@ export function useProduccion({ userRol, currentUser }) {
   async function revertirProduccion(prod) {
     setGuardando(true);
     const ingredientes = prod.ingredientes_usados || [];
-
     for (const ing of ingredientes) {
       const invItem = inventario.find(i => i.materia_prima_id === ing.materia_prima_id);
       if (invItem) {
         await supabase.from('inventario_mp')
           .update({
-            stock_kg: invItem.stock_kg + ing.kg_usados,
+            stock_kg:   invItem.stock_kg + ing.kg_usados,
             updated_at: new Date().toISOString()
           }).eq('id', invItem.id);
-
         await supabase.from('inventario_movimientos').insert([{
           materia_prima_id: ing.materia_prima_id,
           nombre_mp:        ing.ingrediente_nombre,
@@ -248,26 +329,23 @@ export function useProduccion({ userRol, currentUser }) {
         }]);
       }
     }
-
     await supabase.from('produccion_diaria').update({
-      revertida:  true,
-      editado:    true,
-      editado_por:userRol?.nombre,
-      editado_at: new Date().toISOString()
+      revertida:   true,
+      editado:     true,
+      editado_por: userRol?.nombre,
+      editado_at:  new Date().toISOString()
     }).eq('id', prod.id);
-
     await registrarAuditoria({
-      tipo:'reversion_produccion',
-      usuario_nombre: userRol?.nombre,
-      user_id:        currentUser?.id,
-      producto_nombre:prod.producto_nombre,
-      mensaje:`Reversión: "${prod.producto_nombre}" × ${prod.num_paradas} paradas del ${prod.fecha} — devueltos ${parseFloat(prod.kg_producidos).toFixed(1)} kg al inventario`
+      tipo:            'reversion_produccion',
+      usuario_nombre:  userRol?.nombre,
+      user_id:         currentUser?.id,
+      producto_nombre: prod.producto_nombre,
+      mensaje: `Reversión: "${prod.producto_nombre}" × ${prod.num_paradas} paradas del ${prod.fecha} — devueltos ${parseFloat(prod.kg_producidos).toFixed(1)} kg`
     });
-
     await actualizarProduccionMes();
     setModalRevertir(null);
     setGuardando(false);
-    mostrarExito('↩️ Producción revertida — stock devuelto al inventario');
+    mostrarExito('Producción revertida — stock devuelto al inventario');
     await cargarTodo();
   }
 
@@ -275,18 +353,21 @@ export function useProduccion({ userRol, currentUser }) {
   async function enviarNota() {
     if (!textoNota.trim()) return;
     await crearNotificacion({
-      tipo:'nota_produccion', origen:'produccion',
-      usuario_nombre: userRol?.nombre || 'Producción',
-      user_id:        currentUser?.id,
-      producto_nombre:null,
-      mensaje:        textoNota.trim()
+      tipo:            'nota_produccion',
+      origen:          'produccion',
+      usuario_nombre:  userRol?.nombre || 'Producción',
+      user_id:         currentUser?.id,
+      producto_nombre: null,
+      mensaje:         textoNota.trim()
     });
-    setModalNota(false); setTextoNota('');
-    mostrarExito('✅ Nota enviada al administrador');
+    setModalNota(false);
+    setTextoNota('');
+    mostrarExito('Nota enviada al administrador');
   }
 
-  // ── Filtrado ──────────────────────────────────────────────
+  // ── Filtrado búsqueda ─────────────────────────────────────
   const prodsFiltrados = productos.filter(p =>
+    !buscarProd ||
     p.nombre.toLowerCase().includes(buscarProd.toLowerCase())
   );
 
@@ -302,7 +383,6 @@ export function useProduccion({ userRol, currentUser }) {
   const prodHoy  = produccionDiaria.filter(p => p.fecha === hoy);
   const kgHoy    = prodHoy.reduce((s, p) => s + parseFloat(p.kg_producidos  || 0), 0);
   const costoHoy = prodHoy.reduce((s, p) => s + parseFloat(p.costo_total    || 0), 0);
-
   const inicioMes      = new Date(); inicioMes.setDate(1);
   const fechaInicioMes = inicioMes.toISOString().split('T')[0];
   const prodMes        = produccionDiaria.filter(p => p.fecha >= fechaInicioMes);
@@ -314,15 +394,13 @@ export function useProduccion({ userRol, currentUser }) {
     // Estado
     productos, produccionDiaria, loading, guardando, msgExito,
     tab, setTab, mobile, esAdmin,
-    // Form
-    productoSel, setProductoSel,
-    buscarProd,  setBuscarProd,
-    numParadas,  setNumParadas,
-    fecha,       setFecha,
-    turno,       setTurno,
-    nota,        setNota,
-    formulacion, configProd,
-    inventario,  alertasStock,
+    // Multi-producto
+    productosDelDia,
+    productoSelIdx, setProductoSelIdx,
+    buscarProd,     setBuscarProd,
+    prodSelAdd,     setProdSelAdd,
+    fecha,          setFecha,
+    inventario,
     // Modales
     modalNota,    setModalNota,
     textoNota,    setTextoNota,
@@ -332,8 +410,13 @@ export function useProduccion({ userRol, currentUser }) {
     historialAgrupado,
     kgHoy, costoHoy, kgMes, costoMes,
     // Funciones
-    seleccionarProducto,
-    calcularResumen,
+    agregarProducto,
+    actualizarParadas,
+    eliminarProductoDia,
+    limpiarTodo,
+    calcularResumenProducto,
+    calcularTotalesDia,
+    getEstadoProducto,
     guardarProduccion,
     revertirProduccion,
     enviarNota,

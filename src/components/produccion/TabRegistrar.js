@@ -1,391 +1,761 @@
 // ============================================
 // TabRegistrar.js
-// Formulario + resumen de producción
+// Panel izquierdo + panel derecho
+// Versión multi-producto con foco por producto
 // ============================================
 import React from 'react';
 
+// ── Helpers badge por estado ──────────────────────────────
+function BadgeEstado({ estado, alertas }) {
+  if (estado === 'sin_formula') return (
+    <span style={{
+      background:'#f0f0f0', color:'#888',
+      padding:'2px 8px', borderRadius:'20px',
+      fontSize:'10px', fontWeight:'700'
+    }}>sin fórmula</span>
+  );
+  if (estado === 'ok') return (
+    <span style={{
+      background:'#EAF3DE', color:'#3B6D11',
+      padding:'2px 8px', borderRadius:'20px',
+      fontSize:'10px', fontWeight:'700'
+    }}>stock ok</span>
+  );
+  if (estado === 'warn') return (
+    <span style={{
+      background:'#FAEEDA', color:'#854F0B',
+      padding:'2px 8px', borderRadius:'20px',
+      fontSize:'10px', fontWeight:'700'
+    }}>1 alerta</span>
+  );
+  return (
+    <span style={{
+      background:'#FCEBEB', color:'#A32D2D',
+      padding:'2px 8px', borderRadius:'20px',
+      fontSize:'10px', fontWeight:'700'
+    }}>{alertas} alertas</span>
+  );
+}
+
+// ── Panel derecho: detalle con merma + ingredientes ────────
+function DetalleProducto({ item, resumen, mobile }) {
+  if (!item) return (
+    <div style={{
+      display:'flex', flexDirection:'column',
+      alignItems:'center', justifyContent:'center',
+      height: mobile ? '200px' : '400px',
+      color:'#aaa', textAlign:'center',
+      background:'white', borderRadius:'12px',
+      border:'0.5px solid var(--color-border-tertiary)',
+      padding:'20px'
+    }}>
+      <div style={{ fontSize:'40px', marginBottom:'12px' }}>🏭</div>
+      <div style={{ fontSize:'13px' }}>
+        Toca las paradas de un producto para ver su detalle aquí
+      </div>
+    </div>
+  );
+
+  if (!resumen) return (
+    <div style={{
+      background:'#fff3cd', borderRadius:'12px',
+      border:'1px solid #ffc107', padding:'16px',
+      fontSize:'13px', color:'#856404'
+    }}>
+      ⚠️ {item.producto.nombre} no tiene fórmula configurada.
+      Configúrala en el módulo de Fórmulas primero.
+    </div>
+  );
+
+  const mermaPorc  = Math.round(resumen.mermaPorc * 100);
+  const prodPorc   = 100 - mermaPorc;
+  const alertaCount = resumen.alertas.length;
+
+  const borderCard = alertaCount === 0
+    ? '0.5px solid var(--color-border-tertiary)'
+    : alertaCount === 1
+    ? '1.5px solid #EF9F27'
+    : '1.5px solid #E24B4A';
+
+  return (
+    <div style={{
+      background:'white',
+      border: borderCard,
+      borderRadius:'12px',
+      padding:'14px'
+    }}>
+
+      {/* ── Header ── */}
+      <div style={{
+        display:'flex', justifyContent:'space-between',
+        alignItems:'flex-start', marginBottom:'12px'
+      }}>
+        <div>
+          <div style={{ fontSize:'14px', fontWeight:'500', color:'#1a1a2e' }}>
+            {item.producto.nombre}
+          </div>
+          <div style={{ fontSize:'11px', color:'#888', marginTop:'2px' }}>
+            {resumen.paradas} parada{resumen.paradas !== 1 ? 's' : ''} ·
+            base {(resumen.kgTotalCrudo / resumen.paradas * 1000).toFixed(0)} g por parada
+          </div>
+        </div>
+        <BadgeEstado
+          estado={alertaCount === 0 ? 'ok' : alertaCount === 1 ? 'warn' : 'danger'}
+          alertas={alertaCount}
+        />
+      </div>
+
+      {/* ── Bloque merma ── */}
+      <div style={{
+        background:'#FFF3E0',
+        border:'1px solid #EF9F27',
+        borderRadius:'8px',
+        padding:'10px 12px',
+        marginBottom:'12px'
+      }}>
+        <div style={{
+          fontSize:'10px', fontWeight:'700',
+          color:'#633806', marginBottom:'6px',
+          letterSpacing:'.3px'
+        }}>
+          MERMA — {mermaPorc}%
+        </div>
+
+        {[
+          [`Total crudo (${resumen.paradas} paradas)`, `${resumen.kgTotalCrudo.toFixed(2)} kg`, '#854F0B'],
+          ['Merma descontada',                          `− ${resumen.mermaKg.toFixed(2)} kg`,    '#A32D2D'],
+        ].map(([label, val, color]) => (
+          <div key={label} style={{
+            display:'flex', justifyContent:'space-between',
+            fontSize:'12px', color, padding:'3px 0',
+            borderBottom:'0.5px solid rgba(239,159,39,.3)'
+          }}>
+            <span>{label}</span>
+            <span style={{ fontWeight:'500' }}>{val}</span>
+          </div>
+        ))}
+
+        <div style={{
+          display:'flex', justifyContent:'space-between',
+          alignItems:'center', paddingTop:'6px'
+        }}>
+          <span style={{ fontSize:'13px', fontWeight:'500', color:'#412402' }}>
+            KG producidos finales
+          </span>
+          <span style={{ fontSize:'18px', fontWeight:'500', color:'#412402' }}>
+            {resumen.kgProducidos.toFixed(2)} kg
+          </span>
+        </div>
+
+        {/* Barra visual */}
+        <div style={{ marginTop:'8px' }}>
+          <div style={{
+            height:'6px', background:'#F7C1C1',
+            borderRadius:'3px', overflow:'hidden'
+          }}>
+            <div style={{
+              height:'100%',
+              width:`${prodPorc}%`,
+              background:'#27ae60',
+              borderRadius:'3px',
+              transition:'width .3s'
+            }}/>
+          </div>
+          <div style={{
+            display:'flex', justifyContent:'space-between',
+            fontSize:'10px', color:'#854F0B', marginTop:'3px'
+          }}>
+            <span>Producto final {prodPorc}%</span>
+            <span>Merma {mermaPorc}%</span>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Costos ── */}
+      <div style={{
+        display:'grid', gridTemplateColumns:'1fr 1fr 1fr',
+        gap:'6px', marginBottom:'12px'
+      }}>
+        {[
+          ['costo ingredientes', `$${resumen.costoTotal.toFixed(2)}`,                                            '#1a1a2e'],
+          ['costo / kg crudo',   `$${resumen.kgTotalCrudo > 0 ? (resumen.costoTotal / resumen.kgTotalCrudo).toFixed(3) : '0.000'}`, '#555'],
+          ['costo / kg final',   `$${resumen.kgProducidos > 0 ? (resumen.costoTotal / resumen.kgProducidos).toFixed(3) : '0.000'}`,  '#27ae60'],
+        ].map(([label, val, color]) => (
+          <div key={label} style={{
+            background:'#f8f9fa', borderRadius:'8px',
+            padding:'7px 10px', textAlign:'center'
+          }}>
+            <div style={{ fontSize:'10px', color:'#888', marginBottom:'2px' }}>{label}</div>
+            <div style={{ fontSize:'14px', fontWeight:'500', color }}>{val}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* ── Tabla ingredientes ── */}
+      <div style={{
+        fontSize:'10px', fontWeight:'700',
+        color:'#888', marginBottom:'5px',
+        letterSpacing:'.3px'
+      }}>
+        INGREDIENTES NECESARIOS
+      </div>
+
+      <div style={{
+        border:'0.5px solid #e0e0e0',
+        borderRadius:'8px', overflow:'hidden'
+      }}>
+        {/* Header tabla */}
+        <div style={{
+          display:'grid',
+          gridTemplateColumns:'1fr auto auto auto',
+          gap:'6px', padding:'6px 10px',
+          background:'#f8f9fa',
+          fontSize:'10px', color:'#888', fontWeight:'600'
+        }}>
+          <span>Ingrediente</span>
+          <span>Necesita</span>
+          <span>Tiene</span>
+          <span>Estado</span>
+        </div>
+
+        {resumen.ingredientes.map((ing, i) => {
+          const bg = !ing.suficiente
+            ? (ing.falta > 5 ? '#FCEBEB' : '#FAEEDA')
+            : i % 2 === 0 ? '#fafafa' : 'white';
+
+          const colorNec  = ing.suficiente ? '#555'    : '#A32D2D';
+          const colorTiene = ing.suficiente ? '#3B6D11' : '#A32D2D';
+
+          const badge = ing.suficiente
+            ? (
+              <span style={{
+                background:'#EAF3DE', color:'#3B6D11',
+                padding:'2px 7px', borderRadius:'10px',
+                fontSize:'10px', fontWeight:'700'
+              }}>ok</span>
+            ) : (
+              <span style={{
+                background: ing.falta > 5 ? '#FCEBEB' : '#FAEEDA',
+                color:      ing.falta > 5 ? '#A32D2D' : '#854F0B',
+                padding:'2px 7px', borderRadius:'10px',
+                fontSize:'10px', fontWeight:'700',
+                whiteSpace:'nowrap'
+              }}>−{ing.falta.toFixed(2)} kg</span>
+            );
+
+          return (
+            <div key={i} style={{
+              display:'grid',
+              gridTemplateColumns:'1fr auto auto auto',
+              gap:'6px', padding:'6px 10px',
+              background: bg,
+              borderTop:'0.5px solid #f0f0f0',
+              fontSize:'12px', alignItems:'center'
+            }}>
+              <span style={{ color:'#1a1a2e' }}>{ing.ingrediente_nombre}</span>
+              <span style={{ color: colorNec, fontWeight: ing.suficiente ? '400' : '500' }}>
+                {ing.kg_necesarios.toFixed(3)} kg
+              </span>
+              <span style={{ color: colorTiene, fontWeight:'500' }}>
+                {ing.stock_disponible.toFixed(2)} kg
+              </span>
+              {badge}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* ── Aviso stock insuficiente ── */}
+      {alertaCount > 0 && (
+        <div style={{
+          marginTop:'8px',
+          background:'#FCEBEB',
+          borderRadius:'8px',
+          padding:'8px 12px',
+          fontSize:'11px', color:'#A32D2D'
+        }}>
+          Se registrará de todas formas — el stock quedará en negativo
+          para los ingredientes marcados en rojo
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Componente principal ───────────────────────────────────
 export default function TabRegistrar({
   mobile,
-  // Producto
-  productoSel, setProductoSel,
-  buscarProd,  setBuscarProd,
-  prodsFiltrados,
-  formulacion, configProd,
-  seleccionarProducto,
-  // Datos producción
+  // datos
+  productos,
+  productosDelDia,
+  productoSelIdx,
   fecha, setFecha,
-  turno, setTurno,
-  numParadas, setNumParadas,
-  nota, setNota,
-  // Resumen
-  resumen,
-  // Guardar
+  prodSelAdd, setProdSelAdd,
+  // funciones
+  agregarProducto,
+  actualizarParadas,
+  eliminarProductoDia,
+  setProductoSelIdx,
+  limpiarTodo,
+  calcularResumenProducto,
+  calcularTotalesDia,
+  getEstadoProducto,
   guardando,
   guardarProduccion,
 }) {
-  return (
-    <div style={{
-      display:'grid',
-      gridTemplateColumns: mobile ? '1fr' : '1fr 1fr',
-      gap:'16px'
-    }}>
+  const totales = calcularTotalesDia();
+  const itemSel = productoSelIdx !== null ? productosDelDia[productoSelIdx] : null;
+  const resumenSel = itemSel ? calcularResumenProducto(itemSel) : null;
 
-      {/* ── Panel izquierdo — formulario ── */}
+  // ── MOBILE: todo en columna ────────────────────────────────
+  if (mobile) {
+    return (
       <div>
-
-        {/* 1. Seleccionar producto */}
+        {/* Selector agregar */}
         <div style={{
-          background:'white', borderRadius:'10px',
-          padding:'16px', boxShadow:'0 1px 4px rgba(0,0,0,0.06)',
-          marginBottom:'12px'
+          background:'white', borderRadius:'12px',
+          padding:'12px 14px', marginBottom:'8px',
+          border:'0.5px solid #e0e0e0'
         }}>
           <div style={{
-            fontWeight:'bold', color:'#1a1a2e',
-            fontSize:'14px', marginBottom:'12px'
-          }}>1. Selecciona el producto</div>
-
-          <input
-            placeholder="🔍 Buscar producto..."
-            value={buscarProd}
-            onChange={e => {
-              setBuscarProd(e.target.value);
-              if (!e.target.value) setProductoSel(null);
-            }}
-            style={{
-              width:'100%', padding:'10px 12px',
-              borderRadius:'8px', border:'1.5px solid #ddd',
-              fontSize:'13px', boxSizing:'border-box', marginBottom:'8px'
-            }}
-          />
-
-          {/* Dropdown resultados */}
-          {buscarProd && !productoSel && (
-            <div style={{
-              border:'1px solid #eee', borderRadius:'8px',
-              maxHeight:'200px', overflowY:'auto'
-            }}>
-              {prodsFiltrados.length === 0 ? (
-                <div style={{
-                  padding:'12px', color:'#aaa',
-                  fontSize:'13px', textAlign:'center'
-                }}>Sin resultados</div>
-              ) : prodsFiltrados.map(p => (
-                <div
-                  key={p.id}
-                  onClick={() => seleccionarProducto(p)}
-                  style={{
-                    padding:'10px 14px', cursor:'pointer',
-                    borderBottom:'1px solid #f5f5f5',
-                    fontSize:'13px', fontWeight:'bold', color:'#1a1a2e'
-                  }}
-                  onMouseEnter={e => e.currentTarget.style.background = '#f0f8ff'}
-                  onMouseLeave={e => e.currentTarget.style.background = 'white'}
-                >
-                  {p.nombre}
-                  <div style={{ fontSize:'11px', color:'#888', fontWeight:'normal' }}>
-                    {p.categoria}
-                  </div>
-                </div>
+            fontSize:'11px', color:'#888',
+            fontWeight:'600', marginBottom:'6px'
+          }}>Agrega un producto:</div>
+          <div style={{ display:'flex', gap:'6px' }}>
+            <select
+              value={prodSelAdd}
+              onChange={e => setProdSelAdd(e.target.value)}
+              style={{
+                flex:1, padding:'9px',
+                border:'0.5px solid #ddd',
+                borderRadius:'8px', fontSize:'13px'
+              }}
+            >
+              <option value="">Selecciona un producto...</option>
+              {productos.map(p => (
+                <option key={p.id} value={p.id}>{p.nombre}</option>
               ))}
-            </div>
-          )}
-
-          {/* Producto seleccionado */}
-          {productoSel && (
-            <div style={{
-              background:'#e8f5e9', borderRadius:'8px',
-              padding:'10px 14px',
-              display:'flex', justifyContent:'space-between', alignItems:'center'
-            }}>
-              <div>
-                <div style={{ fontWeight:'bold', color:'#1a1a2e', fontSize:'13px' }}>
-                  {productoSel.nombre}
-                </div>
-                <div style={{ fontSize:'11px', color:'#555' }}>
-                  {formulacion.length} ingredientes · Merma: {((configProd?.merma || 0) * 100).toFixed(0)}%
-                </div>
-              </div>
-              <button
-                onClick={() => {
-                  setProductoSel(null);
-                  setBuscarProd('');
-                }}
-                style={{
-                  background:'none', border:'none',
-                  cursor:'pointer', color:'#e74c3c', fontSize:'16px'
-                }}>✕</button>
-            </div>
-          )}
+            </select>
+            <button
+              onClick={() => agregarProducto(prodSelAdd)}
+              disabled={!prodSelAdd}
+              style={{
+                padding:'9px 14px', background: prodSelAdd ? '#27ae60' : '#ccc',
+                color:'white', border:'none',
+                borderRadius:'8px', fontSize:'13px',
+                fontWeight:'500', cursor: prodSelAdd ? 'pointer' : 'not-allowed'
+              }}
+            >+ Agregar</button>
+          </div>
         </div>
 
-        {/* 2. Datos de producción */}
-        <div style={{
-          background:'white', borderRadius:'10px',
-          padding:'16px', boxShadow:'0 1px 4px rgba(0,0,0,0.06)',
-          marginBottom:'12px'
-        }}>
+        {/* Lista productos mobile */}
+        {productosDelDia.length === 0 ? (
           <div style={{
-            fontWeight:'bold', color:'#1a1a2e',
-            fontSize:'14px', marginBottom:'12px'
-          }}>2. Datos de producción</div>
-
-          {/* Fecha y turno */}
-          <div style={{
-            display:'grid', gridTemplateColumns:'1fr 1fr',
-            gap:'10px', marginBottom:'10px'
+            textAlign:'center', padding:'40px',
+            color:'#aaa', background:'white',
+            borderRadius:'12px', border:'0.5px solid #e0e0e0'
           }}>
-            <div>
-              <label style={{
-                fontSize:'11px', fontWeight:'bold',
-                color:'#555', display:'block', marginBottom:'4px'
-              }}>Fecha</label>
-              <input
-                type="date"
-                value={fecha}
-                onChange={e => setFecha(e.target.value)}
-                style={{
-                  width:'100%', padding:'9px',
-                  borderRadius:'8px', border:'1.5px solid #ddd',
-                  fontSize:'13px', boxSizing:'border-box'
-                }}
-              />
+            <div style={{ fontSize:'36px', marginBottom:'10px' }}>🏭</div>
+            <div style={{ fontSize:'13px' }}>Agrega productos para comenzar</div>
+          </div>
+        ) : (
+          productosDelDia.map((item, idx) => {
+            const estado  = getEstadoProducto(item);
+            const resumen = calcularResumenProducto(item);
+            const esSel   = productoSelIdx === idx;
+            const alertas = resumen?.alertas?.length || 0;
+
+            return (
+              <div key={idx}>
+                {/* Card producto mobile */}
+                <div style={{
+                  background:'white', borderRadius:'12px',
+                  border: esSel
+                    ? '1.5px solid #185FA5'
+                    : alertas > 0
+                    ? `1px solid ${alertas >= 2 ? '#E24B4A' : '#EF9F27'}`
+                    : '0.5px solid #e0e0e0',
+                  padding:'12px 14px', marginBottom:'8px'
+                }}>
+                  <div style={{
+                    display:'flex', justifyContent:'space-between',
+                    alignItems:'center', marginBottom:'8px'
+                  }}>
+                    <div>
+                      <div style={{
+                        fontSize:'13px', fontWeight:'500',
+                        color: esSel ? '#0C447C' : '#1a1a2e'
+                      }}>
+                        {item.producto.nombre}
+                      </div>
+                      {resumen && (
+                        <div style={{ fontSize:'10px', color:'#888', marginTop:'2px' }}>
+                          {resumen.kgProducidos.toFixed(2)} kg finales ·
+                          merma {Math.round(resumen.mermaPorc * 100)}% = −{resumen.mermaKg.toFixed(2)} kg
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => eliminarProductoDia(idx)}
+                      style={{
+                        background:'none', border:'none',
+                        color:'#e74c3c', cursor:'pointer', fontSize:'16px'
+                      }}
+                    >✕</button>
+                  </div>
+
+                  <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
+                    <div>
+                      <div style={{
+                        fontSize:'10px', color:'#888',
+                        marginBottom:'3px', fontWeight:'500'
+                      }}>Paradas</div>
+                      <input
+                        type="number"
+                        value={item.paradas}
+                        min="1"
+                        onChange={e => actualizarParadas(idx, e.target.value)}
+                        onClick={() => setProductoSelIdx(idx)}
+                        style={{
+                          width:'72px', textAlign:'center',
+                          fontSize:'20px', fontWeight:'500',
+                          padding:'6px',
+                          border: esSel ? '1.5px solid #185FA5' : '1px solid #ddd',
+                          borderRadius:'8px'
+                        }}
+                      />
+                    </div>
+                    <div style={{ flex:1 }}>
+                      <BadgeEstado estado={estado} alertas={alertas} />
+                      {resumen && (
+                        <div style={{ marginTop:'6px', fontSize:'12px', color:'#1a1a2e' }}>
+                          <strong>{resumen.kgProducidos.toFixed(2)} kg</strong> finales ·
+                          ${resumen.costoTotal.toFixed(2)}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Detalle inline en mobile si está seleccionado */}
+                {esSel && (
+                  <div style={{ marginBottom:'8px' }}>
+                    <DetalleProducto
+                      item={item}
+                      resumen={resumen}
+                      mobile={true}
+                    />
+                  </div>
+                )}
+              </div>
+            );
+          })
+        )}
+
+        {/* Totales + botón mobile */}
+        {productosDelDia.length > 0 && (
+          <>
+            <div style={{
+              display:'grid', gridTemplateColumns:'1fr 1fr',
+              gap:'6px', marginBottom:'8px'
+            }}>
+              <div style={{
+                background:'#f8f9fa', borderRadius:'8px',
+                padding:'8px 10px'
+              }}>
+                <div style={{ fontSize:'10px', color:'#888' }}>kg finales totales</div>
+                <div style={{ fontSize:'16px', fontWeight:'500' }}>
+                  {totales.kgFinales.toFixed(2)} kg
+                </div>
+              </div>
+              <div style={{
+                background:'#f8f9fa', borderRadius:'8px',
+                padding:'8px 10px'
+              }}>
+                <div style={{ fontSize:'10px', color:'#888' }}>costo total</div>
+                <div style={{ fontSize:'16px', fontWeight:'500' }}>
+                  ${totales.costoTotal.toFixed(2)}
+                </div>
+              </div>
             </div>
-            <div>
-              <label style={{
-                fontSize:'11px', fontWeight:'bold',
-                color:'#555', display:'block', marginBottom:'4px'
-              }}>Turno</label>
-              <select
-                value={turno}
-                onChange={e => setTurno(e.target.value)}
+
+            <div style={{ display:'flex', gap:'8px' }}>
+              <button
+                onClick={limpiarTodo}
                 style={{
-                  width:'100%', padding:'9px',
-                  borderRadius:'8px', border:'1.5px solid #ddd', fontSize:'13px'
+                  flex:1, padding:'11px',
+                  background:'white',
+                  border:'0.5px solid #ddd',
+                  borderRadius:'8px', fontSize:'13px',
+                  color:'#888', cursor:'pointer'
+                }}
+              >Limpiar todo</button>
+              <button
+                onClick={guardarProduccion}
+                disabled={guardando}
+                style={{
+                  flex:2, padding:'11px',
+                  background: guardando ? '#ccc' : '#27ae60',
+                  color:'white', border:'none',
+                  borderRadius:'8px', fontSize:'13px',
+                  fontWeight:'500',
+                  cursor: guardando ? 'not-allowed' : 'pointer'
                 }}
               >
-                <option value="mañana">🌅 Mañana</option>
-                <option value="tarde">🌇 Tarde</option>
-                <option value="noche">🌙 Noche</option>
-              </select>
+                {guardando ? 'Guardando...' : 'Registrar producción del día'}
+              </button>
             </div>
-          </div>
+          </>
+        )}
+      </div>
+    );
+  }
 
-          {/* Número de paradas */}
-          <div>
-            <label style={{
-              fontSize:'11px', fontWeight:'bold',
-              color:'#555', display:'block', marginBottom:'4px'
-            }}>Número de paradas</label>
-            <input
-              type="number"
-              value={numParadas}
-              onChange={e => setNumParadas(e.target.value)}
-              placeholder="Ej: 3"
-              min="1"
-              style={{
-                width:'100%', padding:'12px',
-                borderRadius:'8px', border:'1.5px solid #f39c12',
-                fontSize:'22px', fontWeight:'bold',
-                textAlign:'center', boxSizing:'border-box'
-              }}
-            />
-          </div>
+  // ── DESKTOP: dos columnas ──────────────────────────────────
+  return (
+    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'16px' }}>
 
-          {/* Nota */}
-          <div style={{ marginTop:'10px' }}>
-            <label style={{
-              fontSize:'11px', fontWeight:'bold',
-              color:'#555', display:'block', marginBottom:'4px'
-            }}>Nota (opcional)</label>
+      {/* ══ COLUMNA IZQUIERDA ══ */}
+      <div>
+
+        {/* Header día */}
+        <div style={{
+          background:'#1a1a2e', borderRadius:'12px',
+          padding:'12px 16px', marginBottom:'10px'
+        }}>
+          <div style={{
+            display:'flex', justifyContent:'space-between',
+            alignItems:'center'
+          }}>
+            <div>
+              <div style={{
+                color:'white', fontWeight:'500', fontSize:'14px'
+              }}>Producción del día</div>
+              <div style={{ color:'#aaa', fontSize:'11px', marginTop:'2px' }}>
+                {productosDelDia.length} producto{productosDelDia.length !== 1 ? 's' : ''} ·
+                {totales.kgFinales.toFixed(2)} kg finales estimados
+              </div>
+            </div>
             <input
-              type="text"
-              value={nota}
-              onChange={e => setNota(e.target.value)}
-              placeholder="Ej: lote especial, cliente X..."
+              type="date"
+              value={fecha}
+              onChange={e => setFecha(e.target.value)}
               style={{
-                width:'100%', padding:'9px',
-                borderRadius:'8px', border:'1px solid #ddd',
-                fontSize:'13px', boxSizing:'border-box'
+                background:'rgba(255,255,255,0.1)',
+                border:'0.5px solid rgba(255,255,255,0.2)',
+                color:'white', fontSize:'12px',
+                padding:'5px 8px', borderRadius:'6px'
               }}
             />
           </div>
         </div>
 
-        {/* Alertas stock insuficiente */}
-        {resumen && resumen.alertas.length > 0 && (
+        {/* Selector agregar */}
+        <div style={{
+          background:'white', borderRadius:'12px',
+          padding:'12px 14px', marginBottom:'8px',
+          border:'0.5px solid #e0e0e0'
+        }}>
           <div style={{
-            background:'#fff3cd', border:'1px solid #ffc107',
-            borderRadius:'10px', padding:'12px 14px', marginBottom:'12px'
+            fontSize:'11px', color:'#888',
+            fontWeight:'600', marginBottom:'6px'
+          }}>Busca y agrega un producto:</div>
+          <div style={{ display:'flex', gap:'6px' }}>
+            <select
+              value={prodSelAdd}
+              onChange={e => setProdSelAdd(e.target.value)}
+              style={{
+                flex:1, padding:'8px',
+                border:'0.5px solid #ddd',
+                borderRadius:'8px', fontSize:'13px'
+              }}
+            >
+              <option value="">Selecciona un producto...</option>
+              {productos.map(p => (
+                <option key={p.id} value={p.id}>{p.nombre}</option>
+              ))}
+            </select>
+            <button
+              onClick={() => agregarProducto(prodSelAdd)}
+              disabled={!prodSelAdd}
+              style={{
+                padding:'8px 16px',
+                background: prodSelAdd ? '#27ae60' : '#ccc',
+                color:'white', border:'none',
+                borderRadius:'8px', fontSize:'13px',
+                fontWeight:'500',
+                cursor: prodSelAdd ? 'pointer' : 'not-allowed'
+              }}
+            >+ Agregar</button>
+          </div>
+        </div>
+
+        {/* Lista productos */}
+        {productosDelDia.length === 0 ? (
+          <div style={{
+            textAlign:'center', padding:'40px',
+            color:'#aaa', background:'white',
+            borderRadius:'12px', border:'0.5px solid #e0e0e0'
           }}>
-            <div style={{
-              fontWeight:'bold', color:'#856404',
-              fontSize:'13px', marginBottom:'6px'
-            }}>⚠️ Stock insuficiente — se registrará de todas formas</div>
-            {resumen.alertas.map((a, i) => (
-              <div key={i} style={{ fontSize:'12px', color:'#856404', marginBottom:'2px' }}>
-                • {a.ingrediente_nombre}: necesitas{' '}
-                <strong>{a.kg_necesarios.toFixed(2)} kg</strong> · disponible{' '}
-                <strong>{a.stock_disponible.toFixed(2)} kg</strong>
-              </div>
-            ))}
+            <div style={{ fontSize:'36px', marginBottom:'10px' }}>🏭</div>
+            <div style={{ fontSize:'13px' }}>
+              Agrega productos para comenzar
+            </div>
+          </div>
+        ) : (
+          <div style={{
+            background:'white', borderRadius:'12px',
+            border:'0.5px solid #e0e0e0',
+            overflow:'hidden', marginBottom:'10px'
+          }}>
+            {productosDelDia.map((item, idx) => {
+              const estado  = getEstadoProducto(item);
+              const resumen = calcularResumenProducto(item);
+              const esSel   = productoSelIdx === idx;
+              const alertas = resumen?.alertas?.length || 0;
+
+              return (
+                <div
+                  key={idx}
+                  onClick={() => setProductoSelIdx(idx)}
+                  style={{
+                    display:'flex', alignItems:'center', gap:'8px',
+                    padding:'10px 12px',
+                    borderBottom:'0.5px solid #f0f0f0',
+                    background: esSel ? '#E6F1FB' : 'white',
+                    cursor:'pointer',
+                    transition:'background .15s'
+                  }}
+                  onMouseEnter={e => {
+                    if (!esSel) e.currentTarget.style.background = '#f8f9fa';
+                  }}
+                  onMouseLeave={e => {
+                    if (!esSel) e.currentTarget.style.background = 'white';
+                  }}
+                >
+                  {/* Info producto */}
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{
+                      fontSize:'13px', fontWeight:'500',
+                      color: esSel ? '#0C447C' : '#1a1a2e',
+                      overflow:'hidden', textOverflow:'ellipsis',
+                      whiteSpace:'nowrap'
+                    }}>
+                      {item.producto.nombre}
+                    </div>
+                    <div style={{ fontSize:'10px', color:'#888', marginTop:'2px' }}>
+                      {resumen
+                        ? `${resumen.kgProducidos.toFixed(2)} kg finales`
+                        : 'sin fórmula'}
+                    </div>
+                  </div>
+
+                  {/* Input paradas */}
+                  <input
+                    type="number"
+                    value={item.paradas}
+                    min="1"
+                    onClick={e => e.stopPropagation()}
+                    onChange={e => {
+                      e.stopPropagation();
+                      actualizarParadas(idx, e.target.value);
+                    }}
+                    style={{
+                      width:'58px', textAlign:'center',
+                      fontSize:'14px', fontWeight:'500',
+                      padding:'5px',
+                      border: esSel
+                        ? '1.5px solid #185FA5'
+                        : '0.5px solid #ddd',
+                      borderRadius:'6px'
+                    }}
+                  />
+
+                  {/* Badge */}
+                  <BadgeEstado estado={estado} alertas={alertas} />
+
+                  {/* Botón eliminar */}
+                  <button
+                    onClick={e => { e.stopPropagation(); eliminarProductoDia(idx); }}
+                    style={{
+                      background:'none', border:'none',
+                      color:'#e74c3c', cursor:'pointer',
+                      fontSize:'13px', padding:'0 2px',
+                      flexShrink:0
+                    }}
+                  >✕</button>
+                </div>
+              );
+            })}
           </div>
         )}
 
-        {/* Botón guardar */}
-        {resumen && (
+        {/* Totales */}
+        <div style={{
+          display:'grid', gridTemplateColumns:'1fr 1fr',
+          gap:'6px', marginBottom:'8px'
+        }}>
+          <div style={{
+            background:'#f8f9fa', borderRadius:'8px', padding:'8px 10px'
+          }}>
+            <div style={{ fontSize:'10px', color:'#888' }}>kg finales totales</div>
+            <div style={{ fontSize:'16px', fontWeight:'500', color:'#1a1a2e' }}>
+              {totales.kgFinales.toFixed(2)} kg
+            </div>
+          </div>
+          <div style={{
+            background:'#f8f9fa', borderRadius:'8px', padding:'8px 10px'
+          }}>
+            <div style={{ fontSize:'10px', color:'#888' }}>costo total</div>
+            <div style={{ fontSize:'16px', fontWeight:'500', color:'#1a1a2e' }}>
+              ${totales.costoTotal.toFixed(2)}
+            </div>
+          </div>
+        </div>
+
+        {/* Botones */}
+        <div style={{ display:'flex', gap:'6px' }}>
           <button
-            onClick={() => guardarProduccion(resumen)}
-            disabled={guardando}
+            onClick={limpiarTodo}
             style={{
-              width:'100%', padding:'14px',
-              background: guardando ? '#95a5a6' : '#27ae60',
+              flex:1, padding:'10px',
+              background:'white',
+              border:'0.5px solid #ddd',
+              borderRadius:'8px', fontSize:'12px',
+              color:'#888', cursor:'pointer'
+            }}
+          >Limpiar todo</button>
+          <button
+            onClick={guardarProduccion}
+            disabled={guardando || productosDelDia.length === 0}
+            style={{
+              flex:2, padding:'10px',
+              background: guardando || productosDelDia.length === 0
+                ? '#ccc' : '#27ae60',
               color:'white', border:'none',
-              borderRadius:'10px', cursor: guardando ? 'not-allowed' : 'pointer',
-              fontWeight:'bold', fontSize:'15px',
-              opacity: guardando ? 0.7 : 1
-            }}>
+              borderRadius:'8px', fontSize:'13px',
+              fontWeight:'500',
+              cursor: guardando || productosDelDia.length === 0
+                ? 'not-allowed' : 'pointer'
+            }}
+          >
             {guardando
               ? 'Guardando...'
-              : `✅ Registrar ${resumen.paradas} paradas — ${resumen.kgProducidos.toFixed(1)} kg`}
+              : `Registrar producción del día${productosDelDia.length > 0 ? ` (${productosDelDia.length})` : ''}`}
           </button>
-        )}
+        </div>
       </div>
 
-      {/* ── Panel derecho — resumen ── */}
+      {/* ══ COLUMNA DERECHA — detalle producto seleccionado ══ */}
       <div>
-        {resumen ? (
-          <>
-            {/* Resumen kg */}
-            <div style={{
-              background:'#1a1a2e', borderRadius:'10px',
-              padding:'16px', marginBottom:'12px', color:'white'
-            }}>
-              <div style={{
-                fontSize:'13px', color:'#aaa',
-                marginBottom:'10px', fontWeight:'bold'
-              }}>RESUMEN DE PRODUCCIÓN</div>
-
-              <div style={{
-                display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px'
-              }}>
-                {[
-                  ['Paradas',                    resumen.paradas                                          ],
-                  ['Kg crudo total',             resumen.kgTotalCrudo.toFixed(2) + ' kg'                 ],
-                  ['Merma (' + (resumen.merma*100).toFixed(0) + '%)', '-' + (resumen.kgTotalCrudo * resumen.merma).toFixed(2) + ' kg'],
-                  ['KG PRODUCIDOS',              resumen.kgProducidos.toFixed(2) + ' kg'                 ],
-                ].map(([label, val]) => (
-                  <div key={label} style={{
-                    background:'rgba(255,255,255,0.08)',
-                    borderRadius:'8px', padding:'10px 12px'
-                  }}>
-                    <div style={{ fontSize:'10px', color:'#aaa', marginBottom:'3px' }}>
-                      {label}
-                    </div>
-                    <div style={{
-                      fontSize:'16px', fontWeight:'bold',
-                      color: label === 'KG PRODUCIDOS' ? '#2ecc71' : 'white'
-                    }}>{val}</div>
-                  </div>
-                ))}
-              </div>
-
-              <div style={{
-                marginTop:'10px',
-                background:'rgba(255,255,255,0.08)',
-                borderRadius:'8px', padding:'10px 12px',
-                display:'flex', justifyContent:'space-between', alignItems:'center'
-              }}>
-                <span style={{ fontSize:'13px', color:'#aaa' }}>
-                  Costo total ingredientes
-                </span>
-                <span style={{ fontSize:'18px', fontWeight:'bold', color:'#f39c12' }}>
-                  ${resumen.costoTotal.toFixed(2)}
-                </span>
-              </div>
-            </div>
-
-            {/* Tabla ingredientes */}
-            <div style={{
-              background:'white', borderRadius:'10px',
-              overflow:'hidden', boxShadow:'0 1px 4px rgba(0,0,0,0.06)'
-            }}>
-              <div style={{
-                background:'#1a1a2e', padding:'10px 14px',
-                color:'white', fontSize:'12px', fontWeight:'bold'
-              }}>INGREDIENTES NECESARIOS</div>
-
-              <div style={{ overflowX:'auto' }}>
-                <table style={{ width:'100%', borderCollapse:'collapse', fontSize:'12px' }}>
-                  <thead>
-                    <tr style={{ background:'#f8f9fa' }}>
-                      {['INGREDIENTE','KG NECESARIOS','STOCK DISP.','COSTO','ESTADO'].map(h => (
-                        <th key={h} style={{
-                          padding:'8px 10px', textAlign:'left',
-                          fontSize:'10px', color:'#888', fontWeight:'700'
-                        }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {resumen.ingredientes.map((ing, i) => (
-                      <tr key={i} style={{
-                        borderBottom:'1px solid #f0f0f0',
-                        background: !ing.suficiente ? '#fffbf0' : 'white'
-                      }}>
-                        <td style={{
-                          padding:'8px 10px', fontWeight:'bold',
-                          color:'#1a1a2e', fontSize:'11px'
-                        }}>{ing.ingrediente_nombre}</td>
-
-                        <td style={{ padding:'8px 10px', color:'#555' }}>
-                          {ing.kg_necesarios.toFixed(3)} kg
-                        </td>
-
-                        <td style={{
-                          padding:'8px 10px', fontWeight:'bold',
-                          color: ing.suficiente ? '#27ae60' : '#e74c3c'
-                        }}>
-                          {ing.stock_disponible.toFixed(2)} kg
-                        </td>
-
-                        <td style={{
-                          padding:'8px 10px',
-                          color:'#27ae60', fontWeight:'bold'
-                        }}>
-                          ${ing.costo_ingrediente.toFixed(2)}
-                        </td>
-
-                        <td style={{ padding:'8px 10px' }}>
-                          <span style={{
-                            background: ing.suficiente ? '#d4edda' : '#fff3cd',
-                            color:      ing.suficiente ? '#155724' : '#856404',
-                            padding:'2px 8px', borderRadius:'8px',
-                            fontSize:'10px', fontWeight:'700'
-                          }}>
-                            {ing.suficiente ? '✓ OK' : '⚠ BAJO'}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </>
-        ) : (
-          /* Estado vacío */
-          <div style={{
-            background:'white', borderRadius:'10px',
-            padding:'40px', textAlign:'center',
-            boxShadow:'0 1px 4px rgba(0,0,0,0.06)'
-          }}>
-            <div style={{ fontSize:'48px', marginBottom:'12px' }}>🏭</div>
-            <div style={{ color:'#aaa', fontSize:'14px' }}>
-              Selecciona un producto e ingresa el número de paradas para ver el resumen
-            </div>
-          </div>
-        )}
+        <DetalleProducto
+          item={itemSel}
+          resumen={resumenSel}
+          mobile={false}
+        />
       </div>
+
     </div>
   );
 }

@@ -98,19 +98,19 @@ function Produccion({ onVolver, onVolverMenu, userRol, currentUser }) {
         {p.tab === 'registrar' && (
           <TabRegistrar
             mobile={p.mobile}
-            productoSel={p.productoSel}
-            setProductoSel={p.setProductoSel}
-            buscarProd={p.buscarProd}
-            setBuscarProd={p.setBuscarProd}
-            prodsFiltrados={p.prodsFiltrados}
-            formulacion={p.formulacion}
-            configProd={p.configProd}
-            seleccionarProducto={p.seleccionarProducto}
-            fecha={p.fecha}           setFecha={p.setFecha}
-            turno={p.turno}           setTurno={p.setTurno}
-            numParadas={p.numParadas} setNumParadas={p.setNumParadas}
-            nota={p.nota}             setNota={p.setNota}
-            resumen={resumen}
+            productos={p.productos}
+            productosDelDia={p.productosDelDia}
+            productoSelIdx={p.productoSelIdx}
+            fecha={p.fecha}               setFecha={p.setFecha}
+            prodSelAdd={p.prodSelAdd}     setProdSelAdd={p.setProdSelAdd}
+            agregarProducto={p.agregarProducto}
+            actualizarParadas={p.actualizarParadas}
+            eliminarProductoDia={p.eliminarProductoDia}
+            setProductoSelIdx={p.setProductoSelIdx}
+            limpiarTodo={p.limpiarTodo}
+            calcularResumenProducto={p.calcularResumenProducto}
+            calcularTotalesDia={p.calcularTotalesDia}
+            getEstadoProducto={p.getEstadoProducto}
             guardando={p.guardando}
             guardarProduccion={p.guardarProduccion}
           />
