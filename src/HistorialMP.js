@@ -11,14 +11,13 @@ export default function HistorialMP({ onVolver, onVolverMenu, mostrarExito }) {
   const [editandoId,     setEditandoId]     = useState(null);
   const [editData,       setEditData]       = useState({});
   const [categoriasMp,   setCategoriasMp]   = useState([]);
-  const [importando,     setImportando]     = useState(false);
   const [mobile,         setMobile]         = useState(isMobile());
   const [tab,            setTab]            = useState('historial');
   const [restaurando,    setRestaurando]    = useState(false);
   const [filtros, setFiltros] = useState({
     fechaDes:'', fechaHas:'', categoria:'TODAS', texto:''
   });
-  const fileRef = useRef();
+  
 
   useEffect(() => {
     cargarCategorias();
@@ -140,65 +139,7 @@ export default function HistorialMP({ onVolver, onVolverMenu, mostrarExito }) {
     XLSX.writeFile(wb, `historial_mp_${new Date().toISOString().split('T')[0]}.xlsx`);
   }
 
-  async function subirDesdeExcel(e) {
-    const file = e.target.files[0];
-    if (!file) return;
-    setImportando(true);
-    try {
-      const XLSX = await import('xlsx');
-      const data = await file.arrayBuffer();
-      const wb   = XLSX.read(data);
-      const nombreHoja = wb.SheetNames.find(s =>
-        s.toUpperCase().includes('HISTORIAL') ||
-        s.toUpperCase().includes('MATER') ||
-        s.toUpperCase().includes('COSTOS')
-      ) || wb.SheetNames[0];
-      const ws   = wb.Sheets[nombreHoja];
-      const rows = XLSX.utils.sheet_to_json(ws, { header:1, defval:null });
-      let headerRow = 0;
-      for (let i = 0; i < Math.min(rows.length, 15); i++) {
-        const r = rows[i];
-        if (r && r.some(c =>
-          String(c||'').toUpperCase().trim() === 'ID' ||
-          String(c||'').toUpperCase().includes('NOMBRE')
-        )) { headerRow = i; break; }
-      }
-      const headers = (rows[headerRow]||[]).map(h => String(h||'').toUpperCase().trim());
-      const ci = (name) => headers.findIndex(h => h.includes(name));
-      const idxId=ci('ID'), idxCat=ci('CATEG'), idxNombre=ci('NOMBRE'),
-            idxProv=ci('PROVEED'), idxKg=ci('/KG'), idxNotas=ci('NOTA');
-      const registros = [];
-      const hoy = new Date().toISOString().split('T')[0];
-      for (let i = headerRow + 1; i < rows.length; i++) {
-        const r = rows[i];
-        if (!r) continue;
-        const nombre = idxNombre >= 0 ? String(r[idxNombre]||'').trim() : '';
-        if (!nombre || nombre.toUpperCase() === 'NOMBRE') continue;
-        const kg = idxKg >= 0 ? parseFloat(r[idxKg]) || 0 : 0;
-        registros.push({
-          fecha:     hoy,
-          mp_id:     idxId   >= 0 ? String(r[idxId]  ||'').trim() : '',
-          categoria: idxCat  >= 0 ? String(r[idxCat] ||'').trim() : '',
-          nombre,
-          proveedor: idxProv >= 0 ? String(r[idxProv]||'').trim() : '',
-          precio_kg: kg,
-          precio_gr: kg > 0 ? kg / 1000 : 0,
-          notas:     idxNotas >= 0 ? String(r[idxNotas]||'').trim() : ''
-        });
-      }
-      if (registros.length > 0) {
-        for (let i = 0; i < registros.length; i += 50)
-          await supabase.from('historial_materias_primas')
-            .insert(registros.slice(i, i + 50));
-        mostrarExito(`${registros.length} registros importados`);
-      } else {
-        alert('No se encontraron registros válidos');
-      }
-      await buscar();
-    } catch(err) { alert('Error: ' + err.message); }
-    setImportando(false);
-    e.target.value = '';
-  }
+  
 
   const thS = {
     padding: mobile ? '8px 6px' : '10px 8px',
@@ -273,21 +214,7 @@ export default function HistorialMP({ onVolver, onVolverMenu, mostrarExito }) {
           <div style={{ display:'flex', gap:6, flexShrink:0 }}>
             {tab === 'historial' && (
               <>
-                <button
-                  onClick={() => fileRef.current.click()}
-                  disabled={importando}
-                  style={{
-                    ...btnS, padding: mobile ? '8px 10px' : '8px 14px',
-                    background:'#8e44ad', color:'white',
-                    fontSize: mobile ? 11 : 13
-                  }}>
-                  {importando ? '...' : (mobile ? '📤' : '📤 Subir Excel')}
-                </button>
-                <input ref={fileRef} type="file"
-                  accept=".xlsx,.xlsm,.xls"
-                  style={{ display:'none' }}
-                  onChange={subirDesdeExcel}
-                />
+
                 <button onClick={descargarExcel} style={{
                   ...btnS, padding: mobile ? '8px 10px' : '8px 14px',
                   background:'#27ae60', color:'white',
