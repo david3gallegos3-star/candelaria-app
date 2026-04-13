@@ -416,7 +416,8 @@ export default function TabRegistrar({
                       <input
                         type="number"
                         value={item.paradas}
-                        min="1"
+                        min="0.1"
+                        step="0.1"
                         onChange={e => actualizarParadas(idx, e.target.value)}
                         onClick={() => setProductoSelIdx(idx)}
                         style={{
@@ -424,7 +425,7 @@ export default function TabRegistrar({
                           fontSize:'20px', fontWeight:'500',
                           padding:'6px',
                           border: esSel ? '1.5px solid #185FA5' : '1px solid #ddd',
-                          borderRadius:'8px'
+                          borderRadius:'8px'  
                         }}
                       />
                     </div>
@@ -657,7 +658,8 @@ export default function TabRegistrar({
                   <input
                     type="number"
                     value={item.paradas}
-                    min="1"
+                    min="0.1"
+                    step="0.1"
                     onClick={e => e.stopPropagation()}
                     onChange={e => {
                       e.stopPropagation();
