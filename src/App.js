@@ -27,6 +27,7 @@ import GestorUsuarios from './components/GestorUsuarios';
 import PantallaHistorial from './screens/historial/PantallaHistorial';
 import PantallaMaterias  from './screens/materias/PantallaMaterias';
 import MenuFormulas      from './screens/formulas/MenuFormulas';
+import InventarioProduccion from './screens/produccion/InventarioProduccion';
 
 // Hooks y helpers
 import { useAuth }           from './hooks/useAuth';
@@ -769,11 +770,11 @@ async function confirmarImportacion() {
       mostrarExito={mostrarExito}
     />;
   if (pantalla === 'inventarioproduccion')
-    return <div style={{
-      minHeight:'100vh', background:'#f0f2f5',
-      display:'flex', alignItems:'center', justifyContent:'center',
-      fontFamily:'Arial', color:'#888', fontSize:'16px'
-    }}>🚧 Inventario de Producción — en construcción</div>;
+    return <InventarioProduccion
+      onVolver={volverAtras}
+      onVolverMenu={() => setPantalla('menuPrincipal')}
+      userRol={userRol}
+    />;
 
   if (pantalla === 'clientes')
     return <Clientes
