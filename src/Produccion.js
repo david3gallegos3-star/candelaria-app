@@ -74,10 +74,11 @@ function Produccion({ onVolver, onVolverMenu, userRol, currentUser }) {
           marginBottom:'14px', gap:4,
           boxShadow:'0 1px 4px rgba(0,0,0,0.06)'
         }}>
-          {[
-            ['registrar', '🏭 Registrar producción'],
-            ['historial', '📋 Historial'           ],
-          ].map(([key, label]) => (
+            {[
+              ['registrar', '🏭 Registrar producción'],
+              ['cierre',    '✅ Cierre del día'       ],
+              ['historial', '📋 Historial'           ],
+            ].map(([key, label]) => (
             <button key={key}
               onClick={() => p.setTab(key)}
               style={{
@@ -116,6 +117,15 @@ function Produccion({ onVolver, onVolverMenu, userRol, currentUser }) {
         )}
 
         {/* ── Tab historial ── */}
+        {p.tab === 'cierre' && (
+          <div style={{
+            background:'white', borderRadius:'12px',
+            padding:'20px', textAlign:'center', color:'#888'
+          }}>
+            🚧 Cierre del día — en construcción
+          </div>
+        )}
+
         {p.tab === 'historial' && (
           <TabHistorial
             historialAgrupado={p.historialAgrupado}
