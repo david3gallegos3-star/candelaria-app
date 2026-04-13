@@ -105,78 +105,101 @@ function PantallaHistorial({ onVolver, onVolverMenu, mostrarExito }) {
     XLSX.writeFile(wb, `historial_general_${new Date().toISOString().split('T')[0]}.xlsx`);
   }
 
-  async function importarHistorialExcel(e) {
-    const file = e.target.files[0]; if (!file) return;
-    try {
-      const XLSX = await import('xlsx');
-      const data = await file.arrayBuffer();
-      const wb   = XLSX.read(data);
-      const nombreHoja = wb.SheetNames.find(s =>
-        s === 'Historial_General' ||
-        s.toUpperCase().includes('HISTORIAL')
-      ) || wb.SheetNames[0];
-      const ws   = wb.Sheets[nombreHoja];
-      const rows = XLSX.utils.sheet_to_json(ws, { header:1, defval:null });
-      let headerRow = 0;
-      for (let i = 0; i < Math.min(rows.length, 15); i++) {
-        const r = rows[i];
-        if (r && r.some(c =>
-          String(c||'').toUpperCase().includes('PRODUCTO') ||
-          String(c||'').toUpperCase().includes('INGREDIENTE')
-        )) { headerRow = i; break; }
-      }
-      const headers  = (rows[headerRow]||[]).map(h => String(h||'').toUpperCase().trim());
-      const ci       = name => headers.findIndex(h => h.includes(name));
-      const idxFecha   = ci('FECHA');
-      const idxProd    = ci('PRODUCT');
-      const idxIng     = ci('INGRED') >= 0 ? ci('INGRED') : ci('MATERIA');
-      const idxGramos  = ci('GRAM');
-      const idxNota    = ci('NOTA');
-      const idxSeccion = ci('SECCI');
-
-      // Convertir fecha Excel a string
-      function excelFecha(val) {
-        if (!val) return new Date().toISOString().split('T')[0];
-        if (typeof val === 'number') {
-          const d = new Date((val - 25569) * 86400 * 1000);
-          return d.toISOString().split('T')[0];
+    async function importarHistorialExcel(e) {
+      const file = e.target.files[0]; if (!file) return;
+      mostrarExito('⏳ Cargando archivo...');
+      try {
+        const XLSX = await import('xlsx');
+        const data = await file.arrayBuffer();
+        const wb   = XLSX.read(data);
+        const nombreHoja = wb.SheetNames.find(s =>
+          s === 'Historial_General' ||
+          s.toUpperCase().includes('HISTORIAL')
+        ) || wb.SheetNames[0];
+        const ws   = wb.Sheets[nombreHoja];
+        const rows = XLSX.utils.sheet_to_json(ws, { header:1, defval:null });
+        let headerRow = 0;
+        for (let i = 0; i < Math.min(rows.length, 15); i++) {
+          const r = rows[i];
+          if (r && r.some(c =>
+            String(c||'').toUpperCase().includes('PRODUCTO') ||
+            String(c||'').toUpperCase().includes('INGREDIENTE')
+          )) { headerRow = i; break; }
         }
-        return String(val).trim();
-      }
+        const headers  = (rows[headerRow]||[]).map(h => String(h||'').toUpperCase().trim());
+        const ci       = name => headers.findIndex(h => h.includes(name));
+        const idxFecha   = ci('FECHA');
+        const idxProd    = ci('PRODUCT');
+        const idxIng     = ci('INGRED') >= 0 ? ci('INGRED') : ci('MATERIA');
+        const idxGramos  = ci('GRAM');
+        const idxNota    = ci('NOTA');
+        const idxSeccion = ci('SECCI');
 
-      const registros = [];
-      for (let i = headerRow + 1; i < rows.length; i++) {
-        const r    = rows[i]; if (!r) continue;
-        const prod = idxProd >= 0 ? String(r[idxProd]||'').trim() : '';
-        const ing  = idxIng  >= 0 ? String(r[idxIng] ||'').trim() : '';
-        if (!prod && !ing) continue;
-        const gramos  = idxGramos >= 0 ? parseFloat(r[idxGramos]) || 0 : 0;
-        const seccion = idxSeccion >= 0
-          ? String(r[idxSeccion]||'MATERIAS PRIMAS').trim()
-          : 'MATERIAS PRIMAS';
-        registros.push({
-          fecha:              excelFecha(idxFecha >= 0 ? r[idxFecha] : null),
-          producto_nombre:    prod,
-          ingrediente_nombre: ing,
-          gramos,
-          kilos:       gramos / 1000,
-          nota_cambio: idxNota >= 0 ? String(r[idxNota]||'').trim() : '',
-          seccion:     seccion.toUpperCase().includes('CONDIMENTO') ||
-                      seccion.toUpperCase().includes('ADITIVO')
-                      ? 'CONDIMENTOS Y ADITIVOS' : 'MATERIAS PRIMAS'
-        });
+        function excelFecha(val) {
+          if (!val) return new Date().toISOString().split('T')[0];
+          if (typeof val === 'number') {
+            const d = new Date((val - 25569) * 86400 * 1000);
+            return d.toISOString().split('T')[0];
+          }
+          return String(val).trim();
+        }
+
+        const registros = [];
+        for (let i = headerRow + 1; i < rows.length; i++) {
+          const r    = rows[i]; if (!r) continue;
+          const prod = idxProd >= 0 ? String(r[idxProd]||'').trim() : '';
+          const ing  = idxIng  >= 0 ? String(r[idxIng] ||'').trim() : '';
+          if (!prod && !ing) continue;
+          const gramos  = idxGramos >= 0 ? parseFloat(r[idxGramos]) || 0 : 0;
+          const seccion = idxSeccion >= 0
+            ? String(r[idxSeccion]||'MATERIAS PRIMAS').trim()
+            : 'MATERIAS PRIMAS';
+          registros.push({
+            fecha:              excelFecha(idxFecha >= 0 ? r[idxFecha] : null),
+            producto_nombre:    prod,
+            ingrediente_nombre: ing,
+            gramos,
+            kilos:       gramos / 1000,
+            nota_cambio: idxNota >= 0 ? String(r[idxNota]||'').trim() : '',
+            seccion:     seccion.toUpperCase().includes('CONDIMENTO') ||
+                        seccion.toUpperCase().includes('ADITIVO')
+                        ? 'CONDIMENTOS Y ADITIVOS' : 'MATERIAS PRIMAS'
+          });
+        }
+
+        if (registros.length > 0) {
+          mostrarExito(`⏳ Subiendo ${registros.length} registros...`);
+          // Verificar cuántos son nuevos
+          const { data: existentes } = await supabase
+            .from('historial_general')
+            .select('producto_nombre, ingrediente_nombre, fecha')
+            .limit(5000);
+          const existentesSet = new Set(
+            (existentes||[]).map(e => `${e.fecha}|${e.producto_nombre}|${e.ingrediente_nombre}`)
+          );
+          const nuevos = registros.filter(r =>
+            !existentesSet.has(`${r.fecha}|${r.producto_nombre}|${r.ingrediente_nombre}`)
+          );
+          const duplicados = registros.length - nuevos.length;
+
+          if (nuevos.length > 0) {
+            for (let i = 0; i < nuevos.length; i += 50)
+              await supabase.from('historial_general')
+                .insert(nuevos.slice(i, i + 50));
+          }
+
+          await cargarHistorial();
+          mostrarExito(
+            `✅ Completado — ${nuevos.length} nuevos agregados · ${duplicados} ya existían · ${registros.length} total en archivo`
+          );
+        } else {
+          mostrarExito('⚠️ No se encontraron registros válidos en el archivo');
+        }
+      } catch(err) {
+        mostrarExito('❌ Error: ' + err.message);
       }
-      if (registros.length > 0) {
-        for (let i = 0; i < registros.length; i += 50)
-          await supabase.from('historial_general')
-            .insert(registros.slice(i, i + 50));
-        mostrarExito(`✅ ${registros.length} registros importados`);
-      } else {
-        alert('No se encontraron registros válidos');
-      }
-    } catch(err) { alert('Error: ' + err.message); }
-    e.target.value = '';
-  }
+      e.target.value = '';
+    }
 
   // ── Informe HTML ──────────────────────────────────────
   function generarInforme() {
