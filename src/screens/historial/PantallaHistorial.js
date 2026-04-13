@@ -119,7 +119,7 @@ function PantallaHistorial({ onVolver, onVolverMenu, mostrarExito }) {
         const ws   = wb.Sheets[nombreHoja];
         const rows = XLSX.utils.sheet_to_json(ws, { header:1, defval:null });
         let headerRow = 0;
-        for (let i = 0; i < Math.min(rows.length, 15); i++) {
+        for (let i = 0; i < Math.min(rows.length, 30); i++) {
           const r = rows[i];
           if (r && r.some(c =>
             String(c||'').toUpperCase().includes('PRODUCTO') ||
