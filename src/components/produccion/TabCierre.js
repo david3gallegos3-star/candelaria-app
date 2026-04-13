@@ -24,19 +24,31 @@ export default function TabCierre({ mobile, userRol, currentUser, produccionDiar
 
   useEffect(() => { cargarDatos(); }, [fecha]);
 
+  const [configsProductos, setConfigsProductos] = useState({});
+
   async function cargarDatos() {
-    // Cargar producciones del día seleccionado
     const { data: prods } = await supabase
       .from('produccion_diaria')
       .select('*')
       .eq('fecha', fecha)
       .eq('revertida', false);
 
-    // Cargar cierres del día
     const { data: cierresData } = await supabase
       .from('cierres_produccion')
       .select('*')
       .eq('fecha', fecha);
+
+    // Cargar configs con fundas
+    const nombres = (prods || []).map(p => p.producto_nombre);
+    if (nombres.length > 0) {
+      const { data: configs } = await supabase
+        .from('config_productos')
+        .select('producto_nombre, fundas, precio_venta_kg')
+        .in('producto_nombre', nombres);
+      const map = {};
+      (configs || []).forEach(c => { map[c.producto_nombre] = c; });
+      setConfigsProductos(map);
+    }
 
     setProdDelDia(prods || []);
     setCierres(cierresData || []);
@@ -58,7 +70,13 @@ export default function TabCierre({ mobile, userRol, currentUser, produccionDiar
 
   // Abrir formulario nuevo cierre
   function abrirFormNuevo(prod) {
-    const configFundas = prod.ingredientes_usados ? [] : [];
+    const config = configsProductos[prod.producto_nombre];
+    const fundasConfig = (config?.fundas || []).map(f => ({
+      nombre_funda: f.nombre_funda || '',
+      kg_por_funda: parseFloat(f.kg_por_funda) || 1,
+      cantidad:     0,
+      precio_venta_unitario: parseFloat(config?.precio_venta_kg || 0) * (parseFloat(f.kg_por_funda) || 1)
+    }));
     setFormActivo({
       produccion_id:        prod.id,
       producto_nombre:      prod.producto_nombre,
@@ -67,7 +85,7 @@ export default function TabCierre({ mobile, userRol, currentUser, produccionDiar
       kg_producidos_reales: '',
       kg_en_fundas:         '',
       kg_picaditas:         '',
-      fundas:               [],
+      fundas:               fundasConfig,
       esEdicion:            false,
       cierreId:             null,
     });
@@ -415,11 +433,11 @@ export default function TabCierre({ mobile, userRol, currentUser, produccionDiar
                       <div style={{
                         fontSize:'11px', fontWeight:'bold', color:'#555'
                       }}>FUNDAS</div>
-                      <button onClick={agregarFunda} style={{
-                        padding:'4px 12px', background:'#17a589', color:'white',
-                        border:'none', borderRadius:'7px',
-                        cursor:'pointer', fontSize:'12px'
-                      }}>+ Agregar funda</button>
+                      <span style={{
+                        fontSize:'11px', color:'#888', fontStyle:'italic'
+                      }}>
+                        Para nuevas presentaciones agrega fundas en la fórmula del producto
+                      </span>
                     </div>
 
                     {formActivo.fundas.length === 0 ? (
@@ -456,15 +474,12 @@ export default function TabCierre({ mobile, userRol, currentUser, produccionDiar
                             alignItems:'center',
                             borderTop:'0.5px solid #f0f0f0'
                           }}>
-                            <input
-                              value={f.nombre_funda}
-                              onChange={e => actualizarFunda(i,'nombre_funda',e.target.value)}
-                              placeholder="ej: Funda 1kg"
-                              style={{
-                                padding:'5px 7px', border:'0.5px solid #ddd',
-                                borderRadius:'6px', fontSize:'12px', width:'100%'
-                              }}
-                            />
+                            <span style={{
+                                padding:'5px 7px', fontSize:'12px',
+                                color:'#1a1a2e', fontWeight:'500'
+                              }}>
+                                {f.nombre_funda || '—'}
+                              </span>
                             <input type="number" step="0.1"
                               value={f.kg_por_funda}
                               onChange={e => actualizarFunda(i,'kg_por_funda',e.target.value)}
