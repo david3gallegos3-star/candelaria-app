@@ -7,6 +7,7 @@ import { useProduccion }   from './components/produccion/useProduccion';
 import ProduccionHeader    from './components/produccion/ProduccionHeader';
 import TabRegistrar        from './components/produccion/TabRegistrar';
 import TabHistorial        from './components/produccion/TabHistorial';
+import TabCierre from './components/produccion/TabCierre';
 import ModalRevertir       from './components/produccion/ModalRevertir';
 import ModalNotaProd       from './components/produccion/ModalNotaProd';
 
@@ -118,12 +119,12 @@ function Produccion({ onVolver, onVolverMenu, userRol, currentUser }) {
 
         {/* ── Tab historial ── */}
         {p.tab === 'cierre' && (
-          <div style={{
-            background:'white', borderRadius:'12px',
-            padding:'20px', textAlign:'center', color:'#888'
-          }}>
-            🚧 Cierre del día — en construcción
-          </div>
+          <TabCierre
+            mobile={p.mobile}
+            userRol={userRol}
+            currentUser={currentUser}
+            produccionDiaria={p.produccionDiaria}
+          />
         )}
 
         {p.tab === 'historial' && (
