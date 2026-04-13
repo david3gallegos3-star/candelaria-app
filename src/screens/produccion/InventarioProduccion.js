@@ -26,8 +26,8 @@ export default function InventarioProduccion({ onVolver, onVolverMenu, userRol }
       .order('created_at', { ascending: false });
 
     const { data: configs } = await supabase
-      .from('config_productos')
-      .select('producto_nombre, precio_venta_kg, fundas');
+    .from('config_productos')
+    .select('producto_nombre, precio_venta_kg, costo_total_kg, margen, fundas');
 
     const movs = inv || [];
     setMovimientos(movs);
