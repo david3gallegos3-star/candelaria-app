@@ -129,32 +129,41 @@ function PantallaHistorial({ onVolver, onVolverMenu, mostrarExito }) {
       const ci       = name => headers.findIndex(h => h.includes(name));
       const idxFecha   = ci('FECHA');
       const idxProd    = ci('PRODUCT');
-      const idxIng     = ci('INGRED');
+      const idxIng     = ci('INGRED') >= 0 ? ci('INGRED') : ci('MATERIA');
       const idxGramos  = ci('GRAM');
       const idxNota    = ci('NOTA');
       const idxSeccion = ci('SECCI');
-      const registros  = [];
+
+      // Convertir fecha Excel a string
+      function excelFecha(val) {
+        if (!val) return new Date().toISOString().split('T')[0];
+        if (typeof val === 'number') {
+          const d = new Date((val - 25569) * 86400 * 1000);
+          return d.toISOString().split('T')[0];
+        }
+        return String(val).trim();
+      }
+
+      const registros = [];
       for (let i = headerRow + 1; i < rows.length; i++) {
         const r    = rows[i]; if (!r) continue;
         const prod = idxProd >= 0 ? String(r[idxProd]||'').trim() : '';
         const ing  = idxIng  >= 0 ? String(r[idxIng] ||'').trim() : '';
         if (!prod && !ing) continue;
-        const gramos  = idxGramos  >= 0 ? parseFloat(r[idxGramos])  || 0 : 0;
+        const gramos  = idxGramos >= 0 ? parseFloat(r[idxGramos]) || 0 : 0;
         const seccion = idxSeccion >= 0
           ? String(r[idxSeccion]||'MATERIAS PRIMAS').trim()
           : 'MATERIAS PRIMAS';
         registros.push({
-          fecha: idxFecha >= 0
-            ? String(r[idxFecha] || new Date().toISOString().split('T')[0]).trim()
-            : new Date().toISOString().split('T')[0],
+          fecha:              excelFecha(idxFecha >= 0 ? r[idxFecha] : null),
           producto_nombre:    prod,
           ingrediente_nombre: ing,
           gramos,
           kilos:       gramos / 1000,
           nota_cambio: idxNota >= 0 ? String(r[idxNota]||'').trim() : '',
           seccion:     seccion.toUpperCase().includes('CONDIMENTO') ||
-                       seccion.toUpperCase().includes('ADITIVO')
-                       ? 'CONDIMENTOS Y ADITIVOS' : 'MATERIAS PRIMAS'
+                      seccion.toUpperCase().includes('ADITIVO')
+                      ? 'CONDIMENTOS Y ADITIVOS' : 'MATERIAS PRIMAS'
         });
       }
       if (registros.length > 0) {
