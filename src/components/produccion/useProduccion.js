@@ -106,11 +106,11 @@ export function useProduccion({ userRol, currentUser }) {
 
   // ── Actualizar paradas ────────────────────────────────────
   function actualizarParadas(idx, valor) {
-    const n = [...productosDelDia];
-    n[idx] = { ...n[idx], paradas: parseInt(valor) || 1 };
-    setProductosDelDia(n);
-    setProductoSelIdx(idx);
-  }
+  const n = [...productosDelDia];
+  n[idx] = { ...n[idx], paradas: parseFloat(valor) || 0.1 };
+  setProductosDelDia(n);
+  setProductoSelIdx(idx);
+}
 
   // ── Eliminar producto del día ─────────────────────────────
   function eliminarProductoDia(idx) {
