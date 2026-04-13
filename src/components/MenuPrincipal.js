@@ -53,6 +53,15 @@ function MenuPrincipal({
       color:'#e74c3c', border:'rgba(231,76,60,0.4)',
       fn: () => navegarA('inventario')
     });
+
+  if (rol === 'admin')
+    modulos.push({
+      emoji:'🏪', titulo:'Inv. Producción',
+      desc:'Stock fundas y productos terminados',
+      color:'#17a589', border:'rgba(23,165,137,0.4)',
+      fn: () => navegarA('inventarioproduccion')
+    });
+
   if (rol === 'admin') {
     modulos.push({
       emoji:'👥', titulo:'Clientes',
