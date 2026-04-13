@@ -93,20 +93,34 @@ export default function TabCierre({ mobile, userRol, currentUser, produccionDiar
   }
 
   // Abrir formulario editar cierre
-  function abrirFormEditar(cierre) {
-    setFormActivo({
-      produccion_id:        cierre.produccion_id,
-      producto_nombre:      cierre.producto_nombre,
-      kg_crudos_estimados:  parseFloat(cierre.kg_crudos_estimados || 0),
-      merma_estimada:       parseFloat(cierre.merma_estimada || 0),
-      kg_producidos_reales: cierre.kg_producidos_reales,
-      kg_en_fundas:         cierre.kg_en_fundas,
-      kg_picaditas:         cierre.kg_picaditas,
-      fundas:               cierre.fundas || [],
-      esEdicion:            true,
-      cierreId:             cierre.id,
-    });
-  }
+function abrirFormEditar(cierre) {
+  const config = configsProductos[cierre.producto_nombre];
+  const fundasConfig = (config?.fundas || []).map(f => {
+    const fundaGuardada = (cierre.fundas || []).find(fg =>
+      fg.nombre_funda === f.nombre_funda &&
+      parseFloat(fg.kg_por_funda) === parseFloat(f.kg_por_funda)
+    );
+    return {
+      nombre_funda: f.nombre_funda || '',
+      kg_por_funda: parseFloat(f.kg_por_funda) || 1,
+      cantidad:     fundaGuardada ? parseInt(fundaGuardada.cantidad) || 0 : 0,
+      precio_venta_unitario: parseFloat(config?.precio_venta_kg || 0) * (parseFloat(f.kg_por_funda) || 1)
+    };
+  });
+  
+  setFormActivo({
+    produccion_id:        cierre.produccion_id,
+    producto_nombre:      cierre.producto_nombre,
+    kg_crudos_estimados:  parseFloat(cierre.kg_crudos_estimados || 0),
+    merma_estimada:       parseFloat(cierre.merma_estimada || 0),
+    kg_producidos_reales: cierre.kg_producidos_reales,
+    kg_en_fundas:         cierre.kg_en_fundas,
+    kg_picaditas:         cierre.kg_picaditas,
+    fundas:               fundasConfig,
+    esEdicion:            true,
+    cierreId:             cierre.id,
+  });
+}
 
   // Agregar funda al formulario
   function agregarFunda() {

@@ -59,11 +59,16 @@ export default function InventarioProduccion({ onVolver, onVolverMenu, userRol }
     const stockArr = Object.values(stockMap).map(item => {
       const cfg = configMap[item.producto_nombre];
       const precioVentaKg  = parseFloat(cfg?.precio_venta_kg || 0);
-      const fundaConfig    = (cfg?.fundas || []).find(f =>
+        const fundaConfig = (cfg?.fundas || []).find(f =>
         f.nombre_funda === item.nombre_funda &&
         parseFloat(f.kg_por_funda) === parseFloat(item.kg_por_funda)
-      );
-      const precioVentaUnit = precioVentaKg * item.kg_por_funda;
+        );
+        const costoFunda = parseFloat(fundaConfig?.precio_funda || 0);
+        const margen = parseFloat(cfg?.margen || 0);
+        const costoTotalKg = parseFloat(cfg?.costo_total_kg || 0);
+        const precioVentaUnit = margen < 1
+        ? (costoTotalKg * item.kg_por_funda + costoFunda) / (1 - margen)
+        : precioVentaKg * item.kg_por_funda;
       return {
         ...item,
         precio_venta_unitario: precioVentaUnit,
