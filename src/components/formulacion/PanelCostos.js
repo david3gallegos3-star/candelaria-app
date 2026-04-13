@@ -431,8 +431,8 @@ export default function PanelCostos({
                 </span>
               </div>
               <div style={{ fontSize:'11px', color:'#888', marginTop:'5px', textAlign:'right' }}>
-                N° fundas: {funda.kg_por_funda > 0
-                  ? Math.ceil(totalCrudoKg / funda.kg_por_funda) : '-'}
+               N° fundas: {funda.kg_por_funda > 0
+                ? Math.ceil((totalCrudoKg * (1 - merma)) / funda.kg_por_funda) : '-'}
               </div>
             </div>
           ))}

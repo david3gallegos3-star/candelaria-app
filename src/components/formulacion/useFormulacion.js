@@ -151,7 +151,7 @@ export function useFormulacion({ producto, userRol, currentUser }) {
     const hiloKg      = parseFloat(cfg.hilo_kg)        || 0;
     const costoHiloKg = totalKg > 0 ? (hiloPrecio * hiloKg) / totalKg : 0;
     const costoTotalKg = costoConMerma + modCif + costoEmpKg + costoHiloKg;
-    return { precioVentaKg: costoTotalKg * (1 + margen), costoTotalKg };
+    return { precioVentaKg: margen < 1 ? costoTotalKg / (1 - margen) : 0, costoTotalKg };
   }
 
   // ── Guardar silencioso ────────────────────────────────────
@@ -300,12 +300,14 @@ export function useFormulacion({ producto, userRol, currentUser }) {
   const hiloKg         = parseFloat(config.hilo_kg)        || 0;
   const costoAmarreKg  = totalCrudoKg > 0 ? (hiloPrecio * hiloKg) / totalCrudoKg : 0;
   const costoTotalKg   = costoConMerma + modCif + costoEmpaqueKg + costoAmarreKg;
-  const precioVentaKg  = costoTotalKg * (1 + margen);
+  const precioVentaKg  = margen < 1 ? costoTotalKg / (1 - margen) : 0;
 
   function precioFunda(f) {
-    return (costoTotalKg * (parseFloat(f.kg_por_funda) || 1) +
-      (parseFloat(f.precio_funda)   || 0) +
-      (parseFloat(f.precio_etiqueta)|| 0)) * (1 + margen);
+  const kgFunda     = parseFloat(f.kg_por_funda)    || 1;
+  const costoFunda  = parseFloat(f.precio_funda)    || 0;
+  const costoEtiq   = parseFloat(f.precio_etiqueta) || 0;
+  const costoTotal  = costoTotalKg * kgFunda + costoFunda + costoEtiq;
+  return margen < 1 ? costoTotal / (1 - margen) : 0;
   }
 
   // ── Drag & Drop ───────────────────────────────────────────
