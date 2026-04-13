@@ -112,6 +112,7 @@ function PantallaHistorial({ onVolver, onVolverMenu, mostrarExito }) {
       const data = await file.arrayBuffer();
       const wb   = XLSX.read(data);
       const nombreHoja = wb.SheetNames.find(s =>
+        s === 'Historial_General' ||
         s.toUpperCase().includes('HISTORIAL')
       ) || wb.SheetNames[0];
       const ws   = wb.Sheets[nombreHoja];
