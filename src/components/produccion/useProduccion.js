@@ -349,6 +349,23 @@ export function useProduccion({ userRol, currentUser }) {
       editado_por: userRol?.nombre,
       editado_at:  new Date().toISOString()
     }).eq('id', prod.id);
+
+
+        // Revertir cierre asociado si existe
+    const { data: cierreAsoc } = await supabase
+      .from('cierres_produccion')
+      .select('id')
+      .eq('produccion_id', prod.id)
+      .maybeSingle();
+
+    if (cierreAsoc) {
+      await supabase.from('inventario_produccion')
+        .delete().eq('cierre_id', cierreAsoc.id);
+      await supabase.from('cierres_produccion')
+        .update({ revertida: true })
+        .eq('id', cierreAsoc.id);
+    }
+    
     await registrarAuditoria({
       tipo:            'reversion_produccion',
       usuario_nombre:  userRol?.nombre,
