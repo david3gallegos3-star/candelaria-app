@@ -272,9 +272,11 @@ export default function VistaLimpia({
                 ${precioVentaKg.toFixed(4)}
               </span>
             </div>
+            <div style={{ fontSize:'10px', color:'#888', marginTop:'4px', textAlign:'right' }}>
+              ${costoTotalKg.toFixed(4)} ÷ (1 − {((parseFloat(config.margen)||0)*100).toFixed(0)}%) = ${precioVentaKg.toFixed(4)}
+            </div>
           </div>
         </div>
-
         {/* Empaque y Amarre */}
         <div style={{
           background:'white', borderRadius:'10px',
@@ -344,21 +346,24 @@ export default function VistaLimpia({
                     valor={(parseFloat(funda.kg_por_funda) || 1).toFixed(1) + ' kg'} />
                   <Info label="Etiqueta" valor={funda.nombre_etiqueta || '—'} />
                   <Info label="N° fundas"
-                    valor={funda.kg_por_funda > 0
-                      ? Math.ceil(totalCrudoKg / (parseFloat(funda.kg_por_funda) || 1)) + ''
-                      : '-'} />
-                  <div style={{
-                    background:'#17a589', borderRadius:'7px',
-                    padding:'9px 12px',
-                    display:'flex', justifyContent:'space-between', marginTop:'6px'
-                  }}>
-                    <span style={{ color:'white', fontSize: mobile ? '13px' : '12px', fontWeight:'bold' }}>
-                      💰 Precio sugerido
-                    </span>
-                    <span style={{ color:'white', fontSize: mobile ? '15px' : '14px', fontWeight:'bold' }}>
-                      ${precioFunda(funda).toFixed(4)}
-                    </span>
-                  </div>
+                  valor={funda.kg_por_funda > 0
+                    ? Math.ceil((totalCrudoKg * (1 - merma)) / (parseFloat(funda.kg_por_funda) || 1)) + ''
+                    : '-'} />
+                <div style={{
+                  background:'#17a589', borderRadius:'7px',
+                  padding:'9px 12px',
+                  display:'flex', justifyContent:'space-between', marginTop:'6px'
+                }}>
+                  <span style={{ color:'white', fontSize: mobile ? '13px' : '12px', fontWeight:'bold' }}>
+                    💰 Precio sugerido
+                  </span>
+                  <span style={{ color:'white', fontSize: mobile ? '15px' : '14px', fontWeight:'bold' }}>
+                    ${precioFunda(funda).toFixed(4)}
+                  </span>
+                </div>
+                <div style={{ fontSize:'10px', color:'#888', marginTop:'4px', textAlign:'right' }}>
+                  (${costoTotalKg.toFixed(4)} × {(parseFloat(funda.kg_por_funda)||1)} + ${(parseFloat(funda.precio_funda)||0).toFixed(4)}) ÷ (1 − {((parseFloat(config.margen)||0)*100).toFixed(0)}%)
+                </div>
                 </div>
               </div>
             ))}
