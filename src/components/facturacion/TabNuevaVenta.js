@@ -130,7 +130,7 @@ export default function TabNuevaVenta({ mobile, currentUser }) {
         })
       });
       const data = await res.json();
-      if (!data.ok) throw new Error(data.error || JSON.stringify(data.detalle));
+      if (!data.ok) throw new Error(data.error + ' — ' + JSON.stringify(data.detalle));
 
       const numero = `001-001-${String(secuencial).padStart(9, '0')}`;
 
