@@ -21,6 +21,8 @@ import Conciliacion  from './Conciliacion';
 import RRHH          from './RRHH';
 import Trazabilidad  from './Trazabilidad';
 import Dashboard     from './Dashboard';
+import ExpressBodeguero  from './components/express/ExpressBodeguero';
+import ExpressProduccion from './components/express/ExpressProduccion';
 import './App.css';
 import html2canvas from 'html2canvas';
 
@@ -118,6 +120,13 @@ function App() {
   // ── Refs ──────────────────────────────────────────────
   const fileRefHistorial = useRef();
 
+  // ── Ruteo por rol ─────────────────────────────────────
+  function pantallaPorRol(rol) {
+    if (rol === 'bodeguero')  return 'expressBodeguero';
+    if (rol === 'produccion') return 'expressProduccion';
+    return 'menuPrincipal';
+  }
+
   // ── Helpers ───────────────────────────────────────────
   function mostrarExito(msg) {
     setMsgExito(msg);
@@ -211,9 +220,9 @@ function App() {
 
   // ── useEffects ────────────────────────────────────────
   useEffect(() => {
-    checkSession(async () => {
+    checkSession(async (rol) => {
       await cargarTodo();
-      setPantalla('menuPrincipal');
+      setPantalla(pantallaPorRol(rol?.rol));
     });
   }, []);
 
@@ -682,9 +691,9 @@ async function confirmarImportacion() {
       email={email}       setEmail={setEmail}
       password={password} setPassword={setPassword}
       loading={loading}
-      login={() => login(async () => {
+      login={() => login(async (rol) => {
         await cargarTodo();
-        setPantalla('menuPrincipal');
+        setPantalla(pantallaPorRol(rol?.rol));
       })}
     />
   );
@@ -833,6 +842,20 @@ if (pantalla === 'trazabilidad')
     onVolver={volverAtras}
     onVolverMenu={() => setPantalla('menuPrincipal')}
     userRol={userRol}
+  />;
+
+if (pantalla === 'expressBodeguero')
+  return <ExpressBodeguero
+    userRol={userRol}
+    currentUser={user}
+    onLogout={() => logout(() => setPantalla('login'))}
+  />;
+
+if (pantalla === 'expressProduccion')
+  return <ExpressProduccion
+    userRol={userRol}
+    currentUser={user}
+    onLogout={() => logout(() => setPantalla('login'))}
   />;
 
 if (pantalla === 'dashboard')

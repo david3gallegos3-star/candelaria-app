@@ -41,11 +41,11 @@ export function useAuth() {
     const rol = await cargarRolUsuario(data.user.id);
     setUser(data.user);
     setLoading(false);
-    if (!rol) { 
-      alert('Tu usuario no tiene rol asignado. Contacta al administrador.'); 
-      return; 
+    if (!rol) {
+      alert('Tu usuario no tiene rol asignado. Contacta al administrador.');
+      return;
     }
-    if (onSuccess) onSuccess();
+    if (onSuccess) onSuccess(rol);
   }
 
   // Logout
@@ -62,8 +62,8 @@ export function useAuth() {
     const { data: { session } } = await supabase.auth.getSession();
     if (session?.user) {
       setUser(session.user);
-      await cargarRolUsuario(session.user.id);
-      if (onSuccess) onSuccess();
+      const rol = await cargarRolUsuario(session.user.id);
+      if (onSuccess) onSuccess(rol);
     }
   }
 
