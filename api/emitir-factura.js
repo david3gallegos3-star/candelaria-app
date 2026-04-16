@@ -33,7 +33,8 @@ module.exports = async function handler(req, res) {
   const iva         = parseFloat((subtotal * 0.15).toFixed(2));
   const total       = parseFloat((subtotal + iva).toFixed(2));
 
-  // Secuencial como string de 9 dígitos
+  // Fecha y secuencial
+  const fechaHoy      = new Date().toISOString().split('T')[0];
   const secuencialStr = String(secuencial).padStart(9, '0');
 
   const payload = {
