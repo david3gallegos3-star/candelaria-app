@@ -6,10 +6,10 @@
 const DATIL_URL = 'https://link.datil.co/invoices/issue';
 
 const MEDIO_PAGO = {
-  efectivo:      '01',
-  transferencia: '20',
-  cheque:        '20',
-  credito:       '20',
+  efectivo:      'efectivo',
+  transferencia: 'transferencia',
+  cheque:        'cheque',
+  credito:       'tarjeta_credito',
 };
 
 function tipoIdentificacion(id) {
@@ -67,7 +67,7 @@ module.exports = async function handler(req, res) {
     totales: {
       total_sin_impuestos: subtotal,
       impuestos: [{
-        codigo:            2,
+        codigo:            '2',
         codigo_porcentaje: '4',   // 15% IVA (desde mayo 2024)
         base_imponible:    subtotal,
         valor:             iva
@@ -96,7 +96,7 @@ module.exports = async function handler(req, res) {
         descripcion:                item.descripcion || item.producto_nombre,
         precio_total_sin_impuestos: sub,
         impuestos: [{
-          codigo:            2,
+          codigo:            '2',
           codigo_porcentaje: '4',
           tarifa:            15,
           base_imponible:    sub,
