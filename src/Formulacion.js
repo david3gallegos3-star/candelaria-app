@@ -2,7 +2,7 @@
 // Formulacion.js — Solo render
 // Versión modular — abril 2026
 // ============================================
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useFormulacion }      from './components/formulacion/useFormulacion';
 import { norm }                from './components/formulacion/FormulacionInputs';
 import FormulacionHeader       from './components/formulacion/FormulacionHeader';
@@ -11,13 +11,33 @@ import VistaLimpia             from './components/formulacion/VistaLimpia';
 import SeccionIngredientes     from './components/formulacion/SeccionIngredientes';
 import PanelCostos             from './components/formulacion/PanelCostos';
 import PanelComparador         from './components/formulacion/PanelComparador';
+import FormulaVersiones        from './components/formulacion/FormulaVersiones';
 import ModalBuscador           from './components/formulacion/ModalBuscador';
 import ModalNota               from './components/formulacion/ModalNota';
 
-function Formulacion({ producto, onVolver, onVolverMenu, onAbrirMaterias, userRol, currentUser }) {
+function Formulacion({ producto, onVolver, onVolverMenu, onAbrirMaterias, userRol, currentUser, onContextoFormula }) {
 
   const f = useFormulacion({ producto, userRol, currentUser });
   const esFormulador = userRol?.rol === 'formulador';
+  const [versionesAbierto, setVersionesAbierto] = useState(false);
+
+  // ── Envía contexto de fórmula al chat flotante ─────────────────────────────
+  useEffect(() => {
+    if (!onContextoFormula) return;
+    if (f.ingredientesMP.length === 0 && f.ingredientesAD.length === 0) return;
+    const toLinea = i => `${i.ingrediente_nombre} ${parseFloat(i.gramos)||0}g`;
+    const mpText  = f.ingredientesMP.filter(i => i.ingrediente_nombre).map(toLinea).join(', ');
+    const adText  = f.ingredientesAD.filter(i => i.ingrediente_nombre).map(toLinea).join(', ');
+    onContextoFormula(
+      `FÓRMULA ACTIVA EN PANTALLA: ${producto.nombre}\n` +
+      `Materias Primas: ${mpText || 'ninguna'}\n` +
+      `Condimentos/Aditivos: ${adText || 'ninguno'}\n` +
+      `Total crudo: ${f.totalCrudoG.toLocaleString()}g | ` +
+      `Costo/kg: $${f.costoTotalKg.toFixed(4)} | ` +
+      `Precio venta/kg: $${f.precioVentaKg.toFixed(4)}`
+    );
+    return () => { if (onContextoFormula) onContextoFormula(null); };
+  }, [f.ingredientesMP, f.ingredientesAD, f.costoTotalKg]);
 
   // ── Vista formulador ──────────────────────────────────────
   if (esFormulador) return (
@@ -58,6 +78,8 @@ function Formulacion({ producto, onVolver, onVolverMenu, onAbrirMaterias, userRo
         precioVentaKg={f.precioVentaKg}
         comparadorAbierto={f.comparadorAbierto}
         setComparadorAbierto={f.setComparadorAbierto}
+        versionesAbierto={versionesAbierto}
+        setVersionesAbierto={setVersionesAbierto}
         seccionActiva={f.seccionActiva}
         setSeccionActiva={f.setSeccionActiva}
         programarAutoGuardado={f.programarAutoGuardado}
@@ -82,6 +104,23 @@ function Formulacion({ producto, onVolver, onVolverMenu, onAbrirMaterias, userRo
       )}
 
       <div style={{ padding: f.mobile ? '10px' : '16px 20px' }}>
+
+        {/* Panel Versiones — Fase 0 */}
+        {(versionesAbierto || (f.mobile && f.seccionActiva === 'versiones')) && (
+          <FormulaVersiones
+            producto={producto}
+            mobile={f.mobile}
+            materiasPrimas={f.materiasPrimas}
+            ingredientesMP={f.ingredientesMP}
+            ingredientesAD={f.ingredientesAD}
+            config={f.config}
+            costoTotalKg={f.costoTotalKg}
+            precioVentaKg={f.precioVentaKg}
+            obtenerPrecioLive={f.obtenerPrecioLive}
+            onRevertida={f.cargarDatos}
+            onCerrar={() => setVersionesAbierto(false)}
+          />
+        )}
 
         {/* Comparador */}
         {(f.comparadorAbierto || (f.mobile && f.seccionActiva === 'comparar')) && (

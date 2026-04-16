@@ -411,14 +411,41 @@ export function useFormulacion({ producto, userRol, currentUser }) {
 
   async function guardarHistorial() {
     setGuardandoHistorial(true);
-    const fecha = config.fecha || new Date().toISOString().split('T')[0];
-    const { data: existentes } = await supabase
-      .from('historial_general').select('id, ingrediente_nombre, gramos')
-      .eq('producto_nombre', producto.nombre).eq('fecha', fecha);
-    const hayExistentes = existentes && existentes.length > 0;
+    const ahora     = new Date();
+    const fechaHoy  = ahora.toISOString().split('T')[0];   // '2026-04-15'
+    const horaAhora = ahora.toTimeString().slice(0, 5);    // '14:30'
+    let fechaGuardar = fechaHoy;
+
+    // ¿Ya hay versiones guardadas hoy?
+    const { data: versionesHoy } = await supabase.from('historial_general')
+      .select('fecha').eq('producto_nombre', producto.nombre)
+      .like('fecha', `${fechaHoy}%`).limit(1);
+
+    if (versionesHoy && versionesHoy.length > 0) {
+      const usarHora = window.confirm(
+        `⚠️ Ya existe una versión guardada hoy (${fechaHoy}).\n\n` +
+        `✅ OK       → Guardar como nueva versión con hora: ${horaAhora}\n` +
+        `❌ Cancelar → Ver opción de sobreescribir`
+      );
+      if (usarHora) {
+        fechaGuardar = `${fechaHoy} ${horaAhora}`;
+      } else {
+        const sobreescribir = window.confirm(
+          `¿Sobreescribir todas las versiones del ${fechaHoy}?\n\n` +
+          `✅ OK       → Reemplazar con la fórmula actual\n` +
+          `❌ Cancelar → No guardar`
+        );
+        if (!sobreescribir) { setGuardandoHistorial(false); return; }
+        await supabase.from('historial_general').delete()
+          .eq('producto_nombre', producto.nombre)
+          .like('fecha', `${fechaHoy}%`);
+        fechaGuardar = fechaHoy;
+      }
+    }
+
     const filasNuevas = [
       ...ingredientesMP.map(f => ({
-        fecha, producto_nombre: producto.nombre,
+        fecha: fechaGuardar, producto_nombre: producto.nombre,
         ingrediente_nombre: f.ingrediente_nombre,
         materia_prima_id: f.materia_prima_id || null,
         gramos: parseFloat(f.gramos) || 0,
@@ -427,7 +454,7 @@ export function useFormulacion({ producto, userRol, currentUser }) {
         seccion:'MATERIAS PRIMAS'
       })),
       ...ingredientesAD.map(f => ({
-        fecha, producto_nombre: producto.nombre,
+        fecha: fechaGuardar, producto_nombre: producto.nombre,
         ingrediente_nombre: f.ingrediente_nombre,
         materia_prima_id: f.materia_prima_id || null,
         gramos: parseFloat(f.gramos) || 0,
@@ -439,34 +466,8 @@ export function useFormulacion({ producto, userRol, currentUser }) {
 
     if (filasNuevas.length === 0) { setGuardandoHistorial(false); return; }
 
-    if (hayExistentes) {
-      const soloNuevos = filasNuevas.filter(nueva =>
-        !existentes.some(ex =>
-          ex.ingrediente_nombre === nueva.ingrediente_nombre &&
-          parseFloat(ex.gramos) === parseFloat(nueva.gramos)
-        )
-      );
-      const msg = soloNuevos.length > 0
-        ? `Ya hay ${existentes.length} ingrediente(s) en ${fecha}.\n\nSe detectaron ${soloNuevos.length} cambio(s).\n\n• OK = Reemplazar todo\n• Cancelar = Solo agregar los ${soloNuevos.length} nuevos`
-        : `Ya hay ${existentes.length} ingrediente(s) en ${fecha}.\n\nNo hay cambios.\n\n• OK = Reemplazar todo\n• Cancelar = No guardar`;
-      const reemplazar = window.confirm(msg);
-      if (reemplazar) {
-        await supabase.from('historial_general').delete()
-          .eq('producto_nombre', producto.nombre).eq('fecha', fecha);
-        await supabase.from('historial_general').insert(filasNuevas);
-        setMsgExito(`✅ Historial reemplazado (${fecha}) — ${filasNuevas.length} ingredientes`);
-      } else {
-        if (soloNuevos.length > 0) {
-          await supabase.from('historial_general').insert(soloNuevos);
-          setMsgExito(`✅ Se agregaron ${soloNuevos.length} ingrediente(s) nuevos`);
-        } else {
-          setMsgExito('ℹ️ No hay datos nuevos para agregar');
-        }
-      }
-    } else {
-      await supabase.from('historial_general').insert(filasNuevas);
-      setMsgExito(`✅ Guardado en historial (${fecha}) — ${filasNuevas.length} ingredientes`);
-    }
+    await supabase.from('historial_general').insert(filasNuevas);
+    setMsgExito(`✅ Versión guardada (${fechaGuardar}) — ${filasNuevas.length} ingredientes`);
     setGuardandoHistorial(false);
     await cargarFechasHistorial();
     setTimeout(() => setMsgExito(''), 5000);
@@ -645,6 +646,6 @@ export function useFormulacion({ producto, userRol, currentUser }) {
     enviarNota, descargarExcel, imprimir,
     actualizarIng, agregarFila, eliminarFila, seleccionarMP,
     handleDragStart, handleDragOver, handleDrop,
-    cargarFormulaAnterior,
+    cargarFormulaAnterior, cargarDatos,
   };
 }

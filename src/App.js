@@ -48,9 +48,10 @@ function App() {
   } = useAuth();
 
   // ── Navegación ────────────────────────────────────────
-  const [pantalla,       setPantalla]       = useState('login');
-  const [historialNav,   setHistorialNav]   = useState([]);
-  const [productoActivo, setProductoActivo] = useState(null);
+  const [pantalla,        setPantalla]        = useState('login');
+  const [historialNav,    setHistorialNav]    = useState([]);
+  const [productoActivo,  setProductoActivo]  = useState(null);
+  const [formulaContexto, setFormulaContexto] = useState(null);
 
   function navegarA(destino) {
     setHistorialNav(prev => [...prev, pantalla]);
@@ -798,18 +799,21 @@ if (pantalla === 'auditoria')
         userRol={userRol}
         currentUser={user}
         onAbrirMaterias={() => navegarA('materias')}
+        onContextoFormula={setFormulaContexto}
         onVolver={() => {
+          setFormulaContexto(null);
           volverAtras();
           setProductoActivo(null);
           cargarCategorias();
         }}
         onVolverMenu={() => {
+          setFormulaContexto(null);
           setPantalla('menuPrincipal');
           setProductoActivo(null);
           cargarCategorias();
         }}
       />
-      <GeminiChat />
+      <GeminiChat formulaContexto={formulaContexto} />
     </>
   );
 

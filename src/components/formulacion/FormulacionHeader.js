@@ -12,6 +12,7 @@ export default function FormulacionHeader({
   userRol,
   totalCrudoG, totalCostoMP, costoMPkg, precioVentaKg,
   comparadorAbierto, setComparadorAbierto,
+  versionesAbierto, setVersionesAbierto,
   seccionActiva, setSeccionActiva,
   programarAutoGuardado,
   guardar, guardarHistorial,
@@ -127,6 +128,12 @@ export default function FormulacionHeader({
               color:'white'
             }}>🔍 Comparar</button>
 
+            <button onClick={() => setVersionesAbierto(!versionesAbierto)} style={{
+              ...btnBase, padding:'8px 14px',
+              background: versionesAbierto ? '#8e44ad' : '#6c3483',
+              color:'white'
+            }}>🔄 Versiones</button>
+
             {userRol?.rol === 'produccion' && (
               <button onClick={() => setModalNota(true)} style={{
                 ...btnBase, padding:'8px 14px',
@@ -182,6 +189,12 @@ export default function FormulacionHeader({
             background: comparadorAbierto ? '#f39c12' : '#95a5a6',
             color:'white'
           }}>🔍</button>
+
+          <button onClick={() => setVersionesAbierto(!versionesAbierto)} style={{
+            ...btnBase, padding:'8px 10px',
+            background: versionesAbierto ? '#8e44ad' : '#6c3483',
+            color:'white'
+          }}>🧬</button>
 
           {userRol?.rol === 'produccion' && (
             <button onClick={() => setModalNota(true)} style={{
@@ -275,15 +288,17 @@ export default function FormulacionHeader({
           borderRadius:'10px', padding:'4px', gap:4
         }}>
           {[
-            ['formula',  '🧪 Fórmula' ],
-            ['costos',   '📊 Costos'  ],
-            ['empaques', '🛍️ Empaques'],
-            ['comparar', '🔍 Comparar'],
+            ['formula',   '🧪 Fórmula' ],
+            ['costos',    '📊 Costos'  ],
+            ['empaques',  '🛍️ Empaques'],
+            ['comparar',  '🔍 Comparar'],
+            ['versiones', '🔄 Versiones'],
           ].map(([key, label]) => (
             <button key={key}
               onClick={() => {
                 setSeccionActiva(key);
-                if (key === 'comparar') setComparadorAbierto(true);
+                if (key === 'comparar')  setComparadorAbierto(true);
+                if (key === 'versiones') setVersionesAbierto(true);
               }}
               style={{
                 flex:1, padding:'8px 2px', border:'none',

@@ -1,7 +1,15 @@
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
 
-  const { mensaje, historial } = req.body;
+  const { mensaje, historial, contexto } = req.body;
+
+  const systemBase = `Eres un asistente experto de Embutidos y Jamones Candelaria de Ibarra, Ecuador.
+Ayudas con producción, fórmulas, ingredientes, costos y materias primas de embutidos.
+Responde siempre en español, de forma clara y concisa.`;
+
+  const system = contexto
+    ? `${systemBase}\n\n${contexto}\n\nCuando el usuario pregunte sobre la fórmula, usa los datos anteriores para dar recomendaciones específicas.`
+    : systemBase;
 
   try {
     const messages = [
@@ -22,9 +30,7 @@ module.exports = async function handler(req, res) {
       body: JSON.stringify({
         model:      'claude-haiku-4-5-20251001',
         max_tokens: 1000,
-        system:     `Eres un asistente experto de Embutidos y Jamones Candelaria de Ibarra, Ecuador. 
-Ayudas con producción, fórmulas, ingredientes, costos y materias primas de embutidos.
-Responde siempre en español, de forma clara y concisa.`,
+        system,
         messages
       })
     });

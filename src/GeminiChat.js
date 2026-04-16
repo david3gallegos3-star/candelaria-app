@@ -4,7 +4,7 @@ const SYSTEM_PROMPT = `Eres un asistente experto de Embutidos y Jamones Candelar
 Ayudas con producción, fórmulas, ingredientes, costos y materias primas de embutidos.
 Responde siempre en español, de forma clara y concisa.`;
 
-function GeminiChat() {
+function GeminiChat({ formulaContexto }) {
   const [abierto,   setAbierto]   = useState(false);
   const [mensaje,   setMensaje]   = useState('');
   const [chat,      setChat]      = useState([]);
@@ -65,7 +65,8 @@ function GeminiChat() {
           headers: { 'Content-Type':'application/json' },
           body: JSON.stringify({
             mensaje:   pregunta,
-            historial: chat
+            historial: chat,
+            contexto:  formulaContexto || null
           })
         });
         const data = await response.json();
@@ -128,14 +129,21 @@ function GeminiChat() {
               cursor: drag ? 'grabbing' : 'grab',
               userSelect:'none'
             }}>
-            <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-              <div style={{
-                width:8, height:8, background:'#34a853',
-                borderRadius:'50%'
-              }}/>
-              <span style={{ color:'white', fontWeight:'bold', fontSize:'13px' }}>
-                🤖 Asistente Candelaria
-              </span>
+            <div>
+              <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                <div style={{
+                  width:8, height:8, background:'#34a853',
+                  borderRadius:'50%'
+                }}/>
+                <span style={{ color:'white', fontWeight:'bold', fontSize:'13px' }}>
+                  🤖 Asistente Candelaria
+                </span>
+              </div>
+              {formulaContexto && (
+                <div style={{ fontSize:'10px', color:'#a8d5f5', marginTop:2 }}>
+                  📋 Fórmula cargada — puedes preguntar sobre ella
+                </div>
+              )}
             </div>
             <div style={{ display:'flex', gap:8, alignItems:'center' }}>
               <button onClick={() => setAbierto(false)} title="Minimizar" style={{
@@ -160,12 +168,23 @@ function GeminiChat() {
             {chat.length === 0 && (
               <div style={{
                 color:'#888', textAlign:'center',
-                marginTop:'60px', fontSize:'13px', lineHeight:'1.6'
+                marginTop: formulaContexto ? '20px' : '60px',
+                fontSize:'13px', lineHeight:'1.6'
               }}>
                 <div style={{ fontSize:'28px', marginBottom:'8px' }}>🤖</div>
-                Hola, soy tu asistente.<br/>
-                Pregúntame sobre producción,<br/>
-                fórmulas o costos.
+                {formulaContexto ? (
+                  <>
+                    Tengo la fórmula activa cargada.<br/>
+                    Pregúntame qué quieres saber<br/>
+                    o qué mejorar en ella.
+                  </>
+                ) : (
+                  <>
+                    Hola, soy tu asistente.<br/>
+                    Pregúntame sobre producción,<br/>
+                    fórmulas o costos.
+                  </>
+                )}
               </div>
             )}
 
