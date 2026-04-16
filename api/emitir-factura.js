@@ -124,8 +124,15 @@ module.exports = async function handler(req, res) {
 
     const data = await datilRes.json();
 
-    if (!datilRes.ok)
-      return res.status(400).json({ error: 'Error Dátil/SRI', detalle: data });
+    if (!datilRes.ok) {
+      // Extraer mensajes legibles del error Dátil
+      const errores = data?.errores || data?.errors || data?.mensaje || data;
+      const mensajes = Array.isArray(errores)
+        ? errores.map(e => `[${e.campo || e.field || ''}] ${e.mensaje || e.message || JSON.stringify(e)}`).join(' | ')
+        : JSON.stringify(errores);
+      console.error('DATIL ERROR:', JSON.stringify(data, null, 2));
+      return res.status(400).json({ error: mensajes || 'Error Dátil/SRI', detalle: data });
+    }
 
     return res.status(200).json({
       ok:           true,
