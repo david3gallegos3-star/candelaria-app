@@ -117,7 +117,8 @@ module.exports = async function handler(req, res) {
       method:  'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-Key':        process.env.DATIL_API_KEY
+        'X-Key':        process.env.DATIL_API_KEY,
+        'X-Password':   process.env.DATIL_PASSWORD
       },
       body: JSON.stringify(payload)
     });
