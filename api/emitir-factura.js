@@ -29,17 +29,17 @@ module.exports = async function handler(req, res) {
     return res.status(400).json({ error: 'Sin productos en la factura' });
 
   // Totales
-  const subtotal = items.reduce((s, i) => s + parseFloat(i.subtotal || 0), 0);
-  const iva      = parseFloat((subtotal * 0.15).toFixed(2));
-  const total    = parseFloat((subtotal + iva).toFixed(2));
-  const fechaHoy = new Date().toISOString().split('T')[0];
+  const subtotal    = parseFloat(items.reduce((s, i) => s + parseFloat(i.subtotal || 0), 0).toFixed(2));
+  const iva         = parseFloat((subtotal * 0.15).toFixed(2));
+  const total       = parseFloat((subtotal + iva).toFixed(2));
+
+  // Secuencial como string de 9 dígitos
+  const secuencialStr = String(secuencial).padStart(9, '0');
 
   const payload = {
-    ambiente:             1,        // 1=pruebas · 2=producción
-    tipo_emision:         1,
-    secuencial,
-    fecha_inicio_periodo: fechaHoy,
-    fecha_fin_periodo:    fechaHoy,
+    ambiente:     1,   // 1=pruebas · 2=producción
+    tipo_emision: 1,
+    secuencial:   secuencialStr,
 
     emisor: {
       ruc:                    '1004007884001',
@@ -65,8 +65,8 @@ module.exports = async function handler(req, res) {
     totales: {
       total_sin_impuestos: subtotal,
       impuestos: [{
-        codigo:            2,      // IVA
-        codigo_porcentaje: '4',    // 15% desde mayo 2024
+        codigo:            2,
+        codigo_porcentaje: '4',   // 15% IVA (desde mayo 2024)
         base_imponible:    subtotal,
         valor:             iva
       }],
@@ -85,11 +85,12 @@ module.exports = async function handler(req, res) {
     },
 
     items: items.map((item, idx) => {
-      const sub = parseFloat(item.subtotal || 0);
+      const sub   = parseFloat(parseFloat(item.subtotal || 0).toFixed(2));
+      const ivaIt = parseFloat((sub * 0.15).toFixed(2));
       return {
         cantidad:                   parseFloat(item.cantidad),
         codigo_principal:           String(idx + 1).padStart(3, '0'),
-        precio_unitario:            parseFloat(item.precio_unitario),
+        precio_unitario:            parseFloat(parseFloat(item.precio_unitario).toFixed(4)),
         descripcion:                item.descripcion || item.producto_nombre,
         precio_total_sin_impuestos: sub,
         impuestos: [{
@@ -97,7 +98,7 @@ module.exports = async function handler(req, res) {
           codigo_porcentaje: '4',
           tarifa:            15,
           base_imponible:    sub,
-          valor:             parseFloat((sub * 0.15).toFixed(2))
+          valor:             ivaIt
         }],
         descuento: 0
       };
@@ -105,11 +106,7 @@ module.exports = async function handler(req, res) {
 
     pagos: [{
       medio: MEDIO_PAGO[formaPago] || '01',
-      total,
-      propiedades: {
-        plazo:         String(diasCredito || 0),
-        unidad_tiempo: 'dias'
-      }
+      total
     }]
   };
 
