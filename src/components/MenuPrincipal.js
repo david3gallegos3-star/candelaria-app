@@ -115,6 +115,14 @@ function MenuPrincipal({
 
   if (rol === 'admin')
     modulos.push({
+      emoji:'📊', titulo:'Dashboard',
+      desc:'KPIs, alertas y gráficas',
+      color:'#16a085', border:'rgba(22,160,133,0.4)',
+      fn: () => navegarA('dashboard')
+    });
+
+  if (rol === 'admin')
+    modulos.push({
       emoji:'🗂️', titulo:'Auditoría',
       desc:'Historial permanente',
       color:'#8e44ad', border:'rgba(142,68,173,0.4)',
