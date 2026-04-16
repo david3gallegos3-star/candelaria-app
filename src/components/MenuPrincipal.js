@@ -73,6 +73,38 @@ function MenuPrincipal({
     });
   }
 
+  if (rol === 'admin')
+    modulos.push({
+      emoji:'👥', titulo:'RRHH',
+      desc:'Empleados, nómina, IESS',
+      color:'#4a2c7a', border:'rgba(74,44,122,0.4)',
+      fn: () => navegarA('rrhh')
+    });
+
+  if (rol === 'admin')
+    modulos.push({
+      emoji:'🏷️', titulo:'Trazabilidad',
+      desc:'Lotes, calidad, ARCSA',
+      color:'#2d5a1b', border:'rgba(45,90,27,0.4)',
+      fn: () => navegarA('trazabilidad')
+    });
+
+  if (rol === 'admin')
+    modulos.push({
+      emoji:'🔍', titulo:'Conciliación',
+      desc:'Desfases entre módulos + IA',
+      color:'#1a2a3a', border:'rgba(26,42,58,0.4)',
+      fn: () => navegarA('conciliacion')
+    });
+
+  if (rol === 'admin')
+    modulos.push({
+      emoji:'🛒', titulo:'Compras',
+      desc:'Proveedores, ingresos, pagos',
+      color:'#1a5276', border:'rgba(26,82,118,0.4)',
+      fn: () => navegarA('compras')
+    });
+
   if (rol === 'admin' || rol === 'contadora')
     modulos.push({
       emoji:'🧾', titulo:'Facturación',

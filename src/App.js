@@ -16,6 +16,10 @@ import GeminiChat     from './GeminiChat';
 import Clientes    from './Clientes';
 import Auditoria   from './Auditoria';
 import Facturacion from './Facturacion';
+import Compras       from './Compras';
+import Conciliacion  from './Conciliacion';
+import RRHH          from './RRHH';
+import Trazabilidad  from './Trazabilidad';
 import './App.css';
 import html2canvas from 'html2canvas';
 
@@ -799,6 +803,35 @@ if (pantalla === 'facturacion')
     onVolverMenu={() => setPantalla('menuPrincipal')}
     userRol={userRol}
     currentUser={user}
+  />;
+
+if (pantalla === 'compras')
+  return <Compras
+    onVolver={volverAtras}
+    onVolverMenu={() => setPantalla('menuPrincipal')}
+    userRol={userRol}
+    currentUser={user}
+  />;
+
+if (pantalla === 'conciliacion')
+  return <Conciliacion
+    onVolver={volverAtras}
+    onVolverMenu={() => setPantalla('menuPrincipal')}
+    userRol={userRol}
+  />;
+
+if (pantalla === 'rrhh')
+  return <RRHH
+    onVolver={volverAtras}
+    onVolverMenu={() => setPantalla('menuPrincipal')}
+    userRol={userRol}
+  />;
+
+if (pantalla === 'trazabilidad')
+  return <Trazabilidad
+    onVolver={volverAtras}
+    onVolverMenu={() => setPantalla('menuPrincipal')}
+    userRol={userRol}
   />;
 
   if (pantalla === 'formulacion' && productoActivo) return (
