@@ -37,9 +37,10 @@ module.exports = async function handler(req, res) {
   const secuencialStr = String(secuencial).padStart(9, '0');
 
   const payload = {
-    ambiente:     1,   // 1=pruebas · 2=producción
-    tipo_emision: 1,
-    secuencial:   secuencialStr,
+    ambiente:       1,   // 1=pruebas · 2=producción
+    tipo_emision:   1,
+    secuencial:     secuencialStr,
+    fecha_emision:  fechaHoy,
 
     emisor: {
       ruc:                    '1004007884001',
