@@ -13,8 +13,9 @@ import HistorialMP    from './HistorialMP';
 import Inventario     from './Inventario';
 import Produccion     from './Produccion';
 import GeminiChat     from './GeminiChat';
-import Clientes from './Clientes';
-import Auditoria from './Auditoria';
+import Clientes    from './Clientes';
+import Auditoria   from './Auditoria';
+import Facturacion from './Facturacion';
 import './App.css';
 import html2canvas from 'html2canvas';
 
@@ -790,6 +791,14 @@ if (pantalla === 'auditoria')
     onVolver={volverAtras}
     onVolverMenu={() => setPantalla('menuPrincipal')}
     userRol={userRol}
+  />;
+
+if (pantalla === 'facturacion')
+  return <Facturacion
+    onVolver={volverAtras}
+    onVolverMenu={() => setPantalla('menuPrincipal')}
+    userRol={userRol}
+    currentUser={user}
   />;
 
   if (pantalla === 'formulacion' && productoActivo) return (

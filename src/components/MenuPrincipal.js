@@ -10,14 +10,16 @@ const ROL_LABEL = {
   admin:      'Administrador',
   formulador: 'Formulador',
   produccion: 'Producción',
-  bodeguero:  'Bodeguero'
+  bodeguero:  'Bodeguero',
+  contadora:  'Contadora'
 };
 
 const ROL_COLOR = {
   admin:      '#8e44ad',
   formulador: '#1a5276',
   produccion: '#e67e22',
-  bodeguero:  '#27ae60'
+  bodeguero:  '#27ae60',
+  contadora:  '#2980b9'
 };
 
 function MenuPrincipal({
@@ -69,13 +71,23 @@ function MenuPrincipal({
       color:'#3498db', border:'rgba(52,152,219,0.4)',
       fn: () => navegarA('clientes')
     });
+  }
+
+  if (rol === 'admin' || rol === 'contadora')
+    modulos.push({
+      emoji:'🧾', titulo:'Facturación',
+      desc:'Ventas, SRI, cobros',
+      color:'#2980b9', border:'rgba(41,128,185,0.4)',
+      fn: () => navegarA('facturacion')
+    });
+
+  if (rol === 'admin')
     modulos.push({
       emoji:'🗂️', titulo:'Auditoría',
       desc:'Historial permanente',
       color:'#8e44ad', border:'rgba(142,68,173,0.4)',
       fn: () => navegarA('auditoria')
     });
-  }
 
   return (
     <div style={{
