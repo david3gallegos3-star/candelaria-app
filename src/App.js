@@ -21,6 +21,7 @@ import Conciliacion  from './Conciliacion';
 import RRHH          from './RRHH';
 import Trazabilidad  from './Trazabilidad';
 import Dashboard     from './Dashboard';
+import Despacho      from './Despacho';
 import './App.css';
 import html2canvas from 'html2canvas';
 
@@ -837,6 +838,13 @@ if (pantalla === 'trazabilidad')
 
 if (pantalla === 'dashboard')
   return <Dashboard
+    onVolver={volverAtras}
+    onVolverMenu={() => setPantalla('menuPrincipal')}
+    userRol={userRol}
+  />;
+
+if (pantalla === 'despacho')
+  return <Despacho
     onVolver={volverAtras}
     onVolverMenu={() => setPantalla('menuPrincipal')}
     userRol={userRol}
