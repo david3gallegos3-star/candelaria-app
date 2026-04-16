@@ -123,14 +123,6 @@ function MenuPrincipal({
 
   if (rol === 'admin')
     modulos.push({
-      emoji:'🚚', titulo:'Despacho',
-      desc:'Despachos, lotes y guías de remisión',
-      color:'#2d6a4f', border:'rgba(45,106,79,0.4)',
-      fn: () => navegarA('despacho')
-    });
-
-  if (rol === 'admin')
-    modulos.push({
       emoji:'🗂️', titulo:'Auditoría',
       desc:'Historial permanente',
       color:'#8e44ad', border:'rgba(142,68,173,0.4)',
