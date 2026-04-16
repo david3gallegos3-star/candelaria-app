@@ -64,12 +64,17 @@ export default function TabNuevaVenta({ mobile, currentUser }) {
 
   // ── Precio automático al elegir producto ─────────────────
   function precioAutomatico(productoNombre) {
-    if (clienteId === 'consumidor_final') return '';
-    const p = precios.find(p =>
-      p.cliente_id === clienteId &&
-      p.producto_nombre === productoNombre
-    );
-    return p ? String(parseFloat(p.precio_venta_kg).toFixed(4)) : '';
+    // 1. Precio específico del cliente seleccionado
+    if (clienteId !== 'consumidor_final') {
+      const p = precios.find(p =>
+        p.cliente_id === clienteId &&
+        p.producto_nombre === productoNombre
+      );
+      if (p) return String(parseFloat(p.precio_venta_kg).toFixed(4));
+    }
+    // 2. Fallback: cualquier precio registrado para ese producto
+    const fallback = precios.find(p => p.producto_nombre === productoNombre);
+    return fallback ? String(parseFloat(fallback.precio_venta_kg).toFixed(4)) : '';
   }
 
   // ── Actualizar ítem ───────────────────────────────────────
@@ -190,6 +195,78 @@ export default function TabNuevaVenta({ mobile, currentUser }) {
     setEmitiendo(false);
   }
 
+  // ── Guardar borrador (sin Dátil) ─────────────────────────
+  async function guardarBorrador() {
+    setError('');
+    if (!items.some(i => i.producto_nombre && parseFloat(i.cantidad) > 0))
+      return setError('Agrega al menos un producto con cantidad');
+    if (subtotal <= 0)
+      return setError('El subtotal debe ser mayor a 0');
+    if (secuencial === null)
+      return setError('No se pudo cargar el número de factura');
+
+    setEmitiendo(true);
+    const itemsValidos = items.filter(i => i.producto_nombre && parseFloat(i.cantidad) > 0);
+    const numero = `001-001-${String(secuencial).padStart(9, '0')}`;
+
+    try {
+      const { data: factura, error: errF } = await supabase.from('facturas').insert({
+        cliente_id:      clienteObj.id,
+        numero,
+        autorizacion_sri: null,
+        datil_id:         null,
+        pdf_url:          null,
+        xml_url:          null,
+        estado:           'borrador',
+        subtotal,
+        iva,
+        total,
+        porcentaje_iva:   15,
+        forma_pago:       formaPago,
+        dias_credito:     formaPago === 'credito' ? diasCredito : 0,
+        observaciones,
+        vendedor:         currentUser?.email || '',
+        created_by:       currentUser?.email || ''
+      }).select().single();
+      if (errF) throw errF;
+
+      await supabase.from('facturas_detalle').insert(
+        itemsValidos.map(it => ({
+          factura_id:      factura.id,
+          producto_nombre: it.producto_nombre,
+          descripcion:     it.descripcion || it.producto_nombre,
+          cantidad:        parseFloat(it.cantidad),
+          precio_unitario: parseFloat(it.precio_unitario),
+          subtotal:        parseFloat(it.subtotal)
+        }))
+      );
+
+      if (formaPago === 'credito') {
+        const venc = new Date();
+        venc.setDate(venc.getDate() + diasCredito);
+        await supabase.from('cuentas_cobrar').insert({
+          factura_id:        factura.id,
+          cliente_id:        clienteObj.id,
+          monto_total:       total,
+          monto_cobrado:     0,
+          estado:            'pendiente',
+          fecha_vencimiento: venc.toISOString().split('T')[0]
+        });
+      }
+
+      await supabase.from('config_sistema')
+        .update({ valor: String(secuencial + 1), updated_at: new Date().toISOString() })
+        .eq('clave', 'factura_secuencial');
+
+      setSecuencial(prev => prev + 1);
+      setFacturaEmitida({ numero, cliente: clienteObj.nombre, total, autorizacion: null, esBorrador: true });
+
+    } catch (e) {
+      setError('Error al guardar: ' + e.message);
+    }
+    setEmitiendo(false);
+  }
+
   function nuevaFactura() {
     setFacturaEmitida(null);
     setItems([itemVacio()]);
@@ -219,13 +296,24 @@ export default function TabNuevaVenta({ mobile, currentUser }) {
       boxShadow: '0 4px 20px rgba(0,0,0,0.1)',
       textAlign: 'center'
     }}>
-      <div style={{ fontSize: 56, marginBottom: 12 }}>✅</div>
-      <div style={{ fontSize: '20px', fontWeight: 'bold', color: '#27ae60', marginBottom: 8 }}>
-        ¡Factura emitida!
+      <div style={{ fontSize: 56, marginBottom: 12 }}>
+        {facturaEmitida.esBorrador ? '💾' : '✅'}
+      </div>
+      <div style={{ fontSize: '20px', fontWeight: 'bold', color: facturaEmitida.esBorrador ? '#f39c12' : '#27ae60', marginBottom: 8 }}>
+        {facturaEmitida.esBorrador ? '¡Borrador guardado!' : '¡Factura emitida!'}
       </div>
       <div style={{ fontSize: '15px', color: '#555', marginBottom: 20 }}>
         {facturaEmitida.numero} — {facturaEmitida.cliente}
       </div>
+
+      {facturaEmitida.esBorrador && (
+        <div style={{
+          background: '#fff8f0', border: '1px solid #f39c12', borderRadius: 10,
+          padding: '10px 14px', marginBottom: 16, fontSize: '12px', color: '#856404'
+        }}>
+          ⚠️ Esta factura está como borrador. Para emitirla al SRI, hazlo desde la pestaña Facturas cuando estés en producción.
+        </div>
+      )}
 
       <div style={{
         background: '#f8f9fa', borderRadius: 10,
@@ -236,7 +324,7 @@ export default function TabNuevaVenta({ mobile, currentUser }) {
           fontSize: '11px', color: '#1a1a2e', fontWeight: 'bold',
           wordBreak: 'break-all', fontFamily: 'monospace'
         }}>
-          {facturaEmitida.autorizacion || '(modo pruebas)'}
+          {facturaEmitida.autorizacion || '(pendiente — borrador)'}
         </div>
         <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <div style={{
@@ -504,18 +592,32 @@ export default function TabNuevaVenta({ mobile, currentUser }) {
           ))}
         </div>
 
-        <button
-          onClick={emitirFactura}
-          disabled={emitiendo || subtotal <= 0}
-          style={{
-            background: emitiendo || subtotal <= 0 ? '#95a5a6' : '#27ae60',
-            color: 'white', border: 'none', borderRadius: 10,
-            padding: mobile ? '12px 20px' : '12px 28px',
-            cursor: emitiendo || subtotal <= 0 ? 'not-allowed' : 'pointer',
-            fontWeight: 'bold', fontSize: '14px', whiteSpace: 'nowrap'
-          }}>
-          {emitiendo ? '⏳ Emitiendo...' : '🧾 Emitir factura'}
-        </button>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button
+            onClick={guardarBorrador}
+            disabled={emitiendo || subtotal <= 0}
+            style={{
+              background: emitiendo || subtotal <= 0 ? '#95a5a6' : '#f39c12',
+              color: 'white', border: 'none', borderRadius: 10,
+              padding: mobile ? '12px 16px' : '12px 20px',
+              cursor: emitiendo || subtotal <= 0 ? 'not-allowed' : 'pointer',
+              fontWeight: 'bold', fontSize: '13px', whiteSpace: 'nowrap'
+            }}>
+            {emitiendo ? '⏳...' : '💾 Guardar borrador'}
+          </button>
+          <button
+            onClick={emitirFactura}
+            disabled={emitiendo || subtotal <= 0}
+            style={{
+              background: emitiendo || subtotal <= 0 ? '#95a5a6' : '#27ae60',
+              color: 'white', border: 'none', borderRadius: 10,
+              padding: mobile ? '12px 20px' : '12px 28px',
+              cursor: emitiendo || subtotal <= 0 ? 'not-allowed' : 'pointer',
+              fontWeight: 'bold', fontSize: '14px', whiteSpace: 'nowrap'
+            }}>
+            {emitiendo ? '⏳ Emitiendo...' : '🧾 Emitir factura'}
+          </button>
+        </div>
       </div>
 
     </div>

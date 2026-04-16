@@ -42,7 +42,7 @@ module.exports = async function handler(req, res) {
     fecha_fin_periodo:    fechaHoy,
 
     emisor: {
-      ruc:                    '1004007884',
+      ruc:                    '1004007884001',
       obligado_contabilidad:  false,
       contribuyente_especial: '',
       nombre_comercial:       'Embutidos y Jamones Candelaria',
