@@ -77,9 +77,9 @@ module.exports = async function handler(req, res) {
     },
 
     comprador: {
-      razon_social:        cliente.nombre     || 'CONSUMIDOR FINAL',
-      identificacion:      cliente.ruc_cedula || '9999999999999',
-      tipo_identificacion: tipoIdentificacion(cliente.ruc_cedula),
+      razon_social:        cliente.nombre || 'CONSUMIDOR FINAL',
+      identificacion:      cliente.ruc    || '9999999999999',
+      tipo_identificacion: tipoIdentificacion(cliente.ruc),
       email:               cliente.email      || '',
       telefono:            cliente.telefono   || '',
       direccion:           cliente.direccion  || ''

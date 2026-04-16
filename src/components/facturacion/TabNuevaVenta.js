@@ -7,7 +7,7 @@ import { supabase } from '../../supabase';
 
 const CONSUMIDOR_FINAL = {
   id: null, nombre: 'CONSUMIDOR FINAL',
-  ruc_cedula: '9999999999999', email: '', telefono: '', direccion: ''
+  ruc: '9999999999999', email: '', telefono: '', direccion: ''
 };
 
 const FORMAS_PAGO = [
@@ -45,7 +45,7 @@ export default function TabNuevaVenta({ mobile, currentUser }) {
   async function cargarDatos() {
     const [{ data: cls }, { data: prods }, { data: prec }, { data: cfg }] =
       await Promise.all([
-        supabase.from('clientes').select('id,nombre,ruc_cedula,email,telefono,direccion')
+        supabase.from('clientes').select('id,nombre,ruc,email,telefono,direccion')
           .not('eliminado', 'eq', true).order('nombre'),
         supabase.from('productos').select('id,nombre').eq('estado', 'ACTIVO').order('nombre'),
         supabase.from('precios_clientes').select('cliente_id,producto_nombre,precio_venta_kg'),
@@ -397,7 +397,7 @@ export default function TabNuevaVenta({ mobile, currentUser }) {
           <option value="consumidor_final">CONSUMIDOR FINAL</option>
           {clientes.map(c => (
             <option key={c.id} value={c.id}>
-              {c.nombre} {c.ruc_cedula ? `— ${c.ruc_cedula}` : ''}
+              {c.nombre} {c.ruc ? `— ${c.ruc}` : ''}
             </option>
           ))}
         </select>
