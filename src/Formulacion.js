@@ -15,7 +15,7 @@ import FormulaVersiones        from './components/formulacion/FormulaVersiones';
 import ModalBuscador           from './components/formulacion/ModalBuscador';
 import ModalNota               from './components/formulacion/ModalNota';
 
-function Formulacion({ producto, onVolver, onVolverMenu, onAbrirMaterias, userRol, currentUser, onContextoFormula }) {
+function Formulacion({ producto, onVolver, onVolverMenu, onAbrirMaterias, userRol, currentUser, onContextoFormula, onIngredientesFormula }) {
 
   const f = useFormulacion({ producto, userRol, currentUser });
   const esFormulador = userRol?.rol === 'formulador';
@@ -39,6 +39,17 @@ function Formulacion({ producto, onVolver, onVolverMenu, onAbrirMaterias, userRo
     );
     return () => { if (onContextoFormula) onContextoFormula(null); };
   }, [f.ingredientesMP, f.ingredientesAD, f.costoTotalKg]);
+
+  // ── Envía ingredientes estructurados para comparación Excel ───────────────
+  useEffect(() => {
+    if (!onIngredientesFormula) return;
+    onIngredientesFormula({
+      nombre: producto.nombre,
+      mp: f.ingredientesMP.filter(i => i.ingrediente_nombre).map(i => ({ nombre: i.ingrediente_nombre, gramos: parseFloat(i.gramos) || 0 })),
+      ad: f.ingredientesAD.filter(i => i.ingrediente_nombre).map(i => ({ nombre: i.ingrediente_nombre, gramos: parseFloat(i.gramos) || 0 })),
+    });
+    return () => { if (onIngredientesFormula) onIngredientesFormula(null); };
+  }, [f.ingredientesMP, f.ingredientesAD]);
 
   // ── Vista formulador ──────────────────────────────────────
   if (esFormulador) return (

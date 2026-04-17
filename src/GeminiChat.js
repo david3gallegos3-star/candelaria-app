@@ -23,45 +23,77 @@ function textoVisible(texto) {
   return idx === -1 ? texto : texto.substring(0, idx).trim();
 }
 
-// ── Genera Excel con el mismo formato que la fórmula normal ──
-function descargarExcelSugerencia(formula) {
+// ── Genera Excel con el mismo formato + columna de comparación ──
+function descargarExcelSugerencia(formula, formulaActual) {
   const mpList  = formula.mp  || [];
   const adList  = formula.ad  || [];
   const totalG  = [...mpList, ...adList].reduce((s, i) => s + (parseFloat(i.gramos) || 0), 0);
   const totMPg  = mpList.reduce((s, i) => s + (parseFloat(i.gramos) || 0), 0);
   const totADg  = adList.reduce((s, i) => s + (parseFloat(i.gramos) || 0), 0);
 
-  const pct  = (g) => totalG > 0 ? parseFloat(((g / totalG) * 100).toFixed(2)) : 0;
-  const vacia = () => ({ 'SECCIÓN':'','DETALLE':'','GRAMOS':'','KILOS':'','% TOTAL':'','$/KG':'','COSTO $':'','NOTA':'' });
-  const fila  = (seccion, nombre, g) => ({
-    'SECCIÓN': seccion,
-    'DETALLE': nombre,
-    'GRAMOS':  Math.round(g),
-    'KILOS':   parseFloat((g / 1000).toFixed(3)),
-    '% TOTAL': pct(g),
-    '$/KG':    '',
-    'COSTO $': '',
-    'NOTA':    ''
+  const pct   = (g) => totalG > 0 ? parseFloat(((g / totalG) * 100).toFixed(2)) : 0;
+  const norm  = (s) => (s || '').toLowerCase().trim();
+  const vacia = () => ({ 'SECCIÓN':'','DETALLE':'','GRAMOS':'','KILOS':'','% TOTAL':'','$/KG':'','COSTO $':'','NOTA':'','CAMBIO vs FÓRMULA ACTUAL':'' });
+
+  // Busca el ingrediente en la fórmula actual y retorna el texto de cambio
+  function cambio(nombre, gramosNuevo, seccionActual) {
+    if (!formulaActual) return '';
+    const lista = seccionActual === 'mp' ? (formulaActual.mp || []) : (formulaActual.ad || []);
+    const orig  = lista.find(x => norm(x.nombre) === norm(nombre));
+    if (!orig) return '🆕 NUEVO';
+    const diff = Math.round(gramosNuevo - orig.gramos);
+    if (diff === 0) return '✅ IGUAL';
+    return diff > 0 ? `⬆️ AUMENTÓ +${diff}g` : `⬇️ DISMINUYÓ ${diff}g`;
+  }
+
+  const fila = (seccion, secKey, nombre, g) => ({
+    'SECCIÓN':   seccion,
+    'DETALLE':   nombre,
+    'GRAMOS':    Math.round(g),
+    'KILOS':     parseFloat((g / 1000).toFixed(3)),
+    '% TOTAL':   pct(g),
+    '$/KG':      '',
+    'COSTO $':   '',
+    'NOTA':      '',
+    'CAMBIO vs FÓRMULA ACTUAL': cambio(nombre, g, secKey)
   });
 
+  // Ingredientes eliminados (en fórmula actual pero no en sugerencia)
+  function eliminados(listaActual, listaNueva, seccion) {
+    if (!formulaActual) return [];
+    return (listaActual || [])
+      .filter(orig => !listaNueva.find(n => norm(n.nombre) === norm(orig.nombre)))
+      .map(orig => ({
+        ...vacia(),
+        'SECCIÓN': seccion,
+        'DETALLE': orig.nombre,
+        'GRAMOS':  0,
+        'KILOS':   0,
+        '% TOTAL': 0,
+        'CAMBIO vs FÓRMULA ACTUAL': `❌ ELIMINADO (era ${orig.gramos}g)`
+      }));
+  }
+
   const datos = [
-    ...mpList.map(i => fila('MATERIAS PRIMAS', i.nombre || '', parseFloat(i.gramos) || 0)),
+    ...mpList.map(i => fila('MATERIAS PRIMAS', 'mp', i.nombre || '', parseFloat(i.gramos) || 0)),
+    ...eliminados(formulaActual?.mp, mpList, 'MATERIAS PRIMAS'),
     { ...vacia(), 'DETALLE':'SUB-TOTAL MATERIAS PRIMAS', 'GRAMOS':Math.round(totMPg), 'KILOS':parseFloat((totMPg/1000).toFixed(3)), '% TOTAL':pct(totMPg) },
     vacia(),
-    ...adList.map(i => fila('CONDIMENTOS Y ADITIVOS', i.nombre || '', parseFloat(i.gramos) || 0)),
+    ...adList.map(i => fila('CONDIMENTOS Y ADITIVOS', 'ad', i.nombre || '', parseFloat(i.gramos) || 0)),
+    ...eliminados(formulaActual?.ad, adList, 'CONDIMENTOS Y ADITIVOS'),
     { ...vacia(), 'DETALLE':'SUB-TOTAL CONDIMENTOS', 'GRAMOS':Math.round(totADg), 'KILOS':parseFloat((totADg/1000).toFixed(3)), '% TOTAL':pct(totADg) },
     vacia(),
     { ...vacia(), 'DETALLE':'TOTAL CRUDO', 'GRAMOS':Math.round(totalG), 'KILOS':parseFloat((totalG/1000).toFixed(3)), '% TOTAL':100 },
   ];
 
   const ws = XLSX.utils.json_to_sheet(datos);
-  ws['!cols'] = [{wch:22},{wch:35},{wch:10},{wch:10},{wch:10},{wch:12},{wch:12},{wch:25}];
+  ws['!cols'] = [{wch:22},{wch:35},{wch:10},{wch:10},{wch:10},{wch:12},{wch:12},{wch:25},{wch:30}];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, (formula.nombre || 'Sugerencia IA').substring(0, 31));
-  XLSX.writeFile(wb, `${formula.nombre || 'Sugerencia_IA'}_formula.xlsx`);
+  XLSX.writeFile(wb, `${formula.nombre || 'Sugerencia_IA'}_sugerencia_IA.xlsx`);
 }
 
-function GeminiChat({ formulaContexto }) {
+function GeminiChat({ formulaContexto, formulaIngredientes }) {
   const [abierto,   setAbierto]   = useState(false);
   const [mensaje,   setMensaje]   = useState('');
   const [chat,      setChat]      = useState([]);
@@ -299,7 +331,7 @@ function GeminiChat({ formulaContexto }) {
                   {/* Botón Excel cuando hay FORMULA_JSON */}
                   {formula && (
                     <button
-                      onClick={() => descargarExcelSugerencia(formula)}
+                      onClick={() => descargarExcelSugerencia(formula, formulaIngredientes)}
                       style={{
                         marginTop:6,
                         background:'linear-gradient(135deg,#27ae60,#1e8449)',
