@@ -1,8 +1,65 @@
 import React, { useState, useRef, useEffect } from 'react';
+import * as XLSX from 'xlsx';
 
-const SYSTEM_PROMPT = `Eres un asistente experto de Embutidos y Jamones Candelaria de Ibarra, Ecuador. 
-Ayudas con producción, fórmulas, ingredientes, costos y materias primas de embutidos.
-Responde siempre en español, de forma clara y concisa.`;
+// ── Detecta y parsea FORMULA_JSON al final de la respuesta ──
+function parsearFormula(texto) {
+  const idx = texto.indexOf('FORMULA_JSON:');
+  if (idx === -1) return null;
+  const jsonStr = texto.substring(idx + 'FORMULA_JSON:'.length).trim();
+  // Extrae el primer objeto JSON balanceado
+  let depth = 0, start = jsonStr.indexOf('{'), end = -1;
+  if (start === -1) return null;
+  for (let i = start; i < jsonStr.length; i++) {
+    if (jsonStr[i] === '{') depth++;
+    else if (jsonStr[i] === '}') { depth--; if (depth === 0) { end = i; break; } }
+  }
+  if (end === -1) return null;
+  try { return JSON.parse(jsonStr.substring(start, end + 1)); } catch { return null; }
+}
+
+// ── Texto visible sin el bloque FORMULA_JSON ──
+function textoVisible(texto) {
+  const idx = texto.indexOf('FORMULA_JSON:');
+  return idx === -1 ? texto : texto.substring(0, idx).trim();
+}
+
+// ── Genera Excel con el mismo formato que la fórmula normal ──
+function descargarExcelSugerencia(formula) {
+  const mpList  = formula.mp  || [];
+  const adList  = formula.ad  || [];
+  const totalG  = [...mpList, ...adList].reduce((s, i) => s + (parseFloat(i.gramos) || 0), 0);
+  const totMPg  = mpList.reduce((s, i) => s + (parseFloat(i.gramos) || 0), 0);
+  const totADg  = adList.reduce((s, i) => s + (parseFloat(i.gramos) || 0), 0);
+
+  const pct  = (g) => totalG > 0 ? parseFloat(((g / totalG) * 100).toFixed(2)) : 0;
+  const vacia = () => ({ 'SECCIÓN':'','DETALLE':'','GRAMOS':'','KILOS':'','% TOTAL':'','$/KG':'','COSTO $':'','NOTA':'' });
+  const fila  = (seccion, nombre, g) => ({
+    'SECCIÓN': seccion,
+    'DETALLE': nombre,
+    'GRAMOS':  Math.round(g),
+    'KILOS':   parseFloat((g / 1000).toFixed(3)),
+    '% TOTAL': pct(g),
+    '$/KG':    '',
+    'COSTO $': '',
+    'NOTA':    ''
+  });
+
+  const datos = [
+    ...mpList.map(i => fila('MATERIAS PRIMAS', i.nombre || '', parseFloat(i.gramos) || 0)),
+    { ...vacia(), 'DETALLE':'SUB-TOTAL MATERIAS PRIMAS', 'GRAMOS':Math.round(totMPg), 'KILOS':parseFloat((totMPg/1000).toFixed(3)), '% TOTAL':pct(totMPg) },
+    vacia(),
+    ...adList.map(i => fila('CONDIMENTOS Y ADITIVOS', i.nombre || '', parseFloat(i.gramos) || 0)),
+    { ...vacia(), 'DETALLE':'SUB-TOTAL CONDIMENTOS', 'GRAMOS':Math.round(totADg), 'KILOS':parseFloat((totADg/1000).toFixed(3)), '% TOTAL':pct(totADg) },
+    vacia(),
+    { ...vacia(), 'DETALLE':'TOTAL CRUDO', 'GRAMOS':Math.round(totalG), 'KILOS':parseFloat((totalG/1000).toFixed(3)), '% TOTAL':100 },
+  ];
+
+  const ws = XLSX.utils.json_to_sheet(datos);
+  ws['!cols'] = [{wch:22},{wch:35},{wch:10},{wch:10},{wch:10},{wch:12},{wch:12},{wch:25}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, (formula.nombre || 'Sugerencia IA').substring(0, 31));
+  XLSX.writeFile(wb, `${formula.nombre || 'Sugerencia_IA'}_formula.xlsx`);
+}
 
 function GeminiChat({ formulaContexto }) {
   const [abierto,   setAbierto]   = useState(false);
@@ -12,34 +69,27 @@ function GeminiChat({ formulaContexto }) {
   const [pos,       setPos]       = useState({ bottom:20, right:20 });
   const [drag,      setDrag]      = useState(false);
   const [dragStart, setDragStart] = useState(null);
-  const chatRef  = useRef();
-  const headerRef = useRef();
+  const [archivo,   setArchivo]   = useState(null); // { base64, mimeType, nombre, previewUrl }
 
-  // Auto scroll al último mensaje
+  const chatRef  = useRef();
+  const fileRef  = useRef();
+
   useEffect(() => {
     if (chatRef.current)
       chatRef.current.scrollTop = chatRef.current.scrollHeight;
   }, [chat, cargando]);
 
-  // ── Drag ──────────────────────────────────────────────────
+  // ── Drag ──
   function onMouseDown(e) {
     setDrag(true);
-    setDragStart({
-      x: e.clientX,
-      y: e.clientY,
-      bottom: pos.bottom,
-      right:  pos.right
-    });
+    setDragStart({ x:e.clientX, y:e.clientY, bottom:pos.bottom, right:pos.right });
   }
-
   useEffect(() => {
     function onMouseMove(e) {
       if (!drag || !dragStart) return;
-      const dx = dragStart.x - e.clientX;
-      const dy = dragStart.y - e.clientY;
       setPos({
-        right:  Math.max(0, dragStart.right  + dx),
-        bottom: Math.max(0, dragStart.bottom + dy)
+        right:  Math.max(0, dragStart.right  + (dragStart.x - e.clientX)),
+        bottom: Math.max(0, dragStart.bottom + (dragStart.y - e.clientY))
       });
     }
     function onMouseUp() { setDrag(false); }
@@ -51,42 +101,77 @@ function GeminiChat({ formulaContexto }) {
     };
   }, [drag, dragStart]);
 
-  // ── Enviar mensaje ────────────────────────────────────────
-    async function enviar() {
-      if (!mensaje.trim() || cargando) return;
-      const pregunta = mensaje.trim();
-      setMensaje('');
-      setChat(prev => [...prev, { rol:'tu', texto:pregunta }]);
-      setCargando(true);
+  // ── Seleccionar archivo ──
+  function onSeleccionarArchivo(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const dataUrl = ev.target.result;
+      // dataUrl = "data:image/jpeg;base64,XXXXX"
+      const [meta, base64] = dataUrl.split(',');
+      const mimeType = meta.match(/:(.*?);/)[1];
+      setArchivo({
+        base64,
+        mimeType,
+        nombre: file.name,
+        previewUrl: file.type.startsWith('image/') ? dataUrl : null
+      });
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  }
 
-      try {
-        const response = await fetch('/api/chat', {
-          method:  'POST',
-          headers: { 'Content-Type':'application/json' },
-          body: JSON.stringify({
-            mensaje:   pregunta,
-            historial: chat,
-            contexto:  formulaContexto || null
-          })
-        });
-        const data = await response.json();
-        setChat(prev => [...prev, { rol:'ia', texto: data.texto || 'Sin respuesta' }]);
-      } catch(e) {
-        setChat(prev => [...prev, { rol:'ia', texto:'Error: ' + e.message }]);
-      }
-      setCargando(false);
+  // ── Enviar ──
+  async function enviar() {
+    if ((!mensaje.trim() && !archivo) || cargando) return;
+    const pregunta = mensaje.trim();
+    const archivoEnviado = archivo;
+    setMensaje('');
+    setArchivo(null);
+
+    const msgUsuario = {
+      rol: 'tu',
+      texto: pregunta || `[Archivo: ${archivoEnviado?.nombre}]`,
+      previewUrl: archivoEnviado?.previewUrl || null,
+      nombreArchivo: archivoEnviado && !archivoEnviado.previewUrl ? archivoEnviado.nombre : null
+    };
+    setChat(prev => [...prev, msgUsuario]);
+    setCargando(true);
+
+    try {
+      const body = {
+        mensaje:   pregunta,
+        historial: chat,
+        contexto:  formulaContexto || null,
+        archivo:   archivoEnviado ? { base64: archivoEnviado.base64, mimeType: archivoEnviado.mimeType } : null
+      };
+      const response = await fetch('/api/chat', {
+        method:  'POST',
+        headers: { 'Content-Type':'application/json' },
+        body:    JSON.stringify(body)
+      });
+      const data = await response.json();
+      const textoIA = data.texto || 'Sin respuesta';
+      setChat(prev => [...prev, { rol:'ia', texto: textoIA }]);
+    } catch(e) {
+      setChat(prev => [...prev, { rol:'ia', texto:'Error: ' + e.message }]);
     }
-  // ── Render ────────────────────────────────────────────────
+    setCargando(false);
+  }
+
+  // ── Render ──
   return (
     <div style={{
       position:'fixed',
-      bottom: `${pos.bottom}px`,
-      right:  `${pos.right}px`,
-      zIndex: 1000,
+      bottom:`${pos.bottom}px`,
+      right:`${pos.right}px`,
+      zIndex:1000,
       userSelect: drag ? 'none' : 'auto'
     }}>
+      <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}`}</style>
 
-      {/* ── Botón minimizado ── */}
+      {/* Botón minimizado */}
       {!abierto && (
         <button onClick={() => setAbierto(true)} style={{
           background:'linear-gradient(135deg,#4285f4,#1a73e8)',
@@ -100,27 +185,22 @@ function GeminiChat({ formulaContexto }) {
           onMouseEnter={e => e.currentTarget.style.transform='scale(1.05)'}
           onMouseLeave={e => e.currentTarget.style.transform='scale(1)'}
         >
-          <div style={{
-            width:8, height:8, background:'#34a853',
-            borderRadius:'50%', animation:'pulse 2s infinite'
-          }}/>
+          <div style={{ width:8, height:8, background:'#34a853', borderRadius:'50%', animation:'pulse 2s infinite' }}/>
           🤖 Asistente
-          <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}`}</style>
         </button>
       )}
 
-      {/* ── Chat abierto ── */}
+      {/* Chat abierto */}
       {abierto && (
         <div style={{
-          width:'340px', background:'white',
+          width:'360px', background:'white',
           borderRadius:'14px',
           boxShadow:'0 8px 40px rgba(0,0,0,0.2)',
           display:'flex', flexDirection:'column',
           overflow:'hidden'
         }}>
-          {/* Header — arrastrable */}
+          {/* Header arrastrable */}
           <div
-            ref={headerRef}
             onMouseDown={onMouseDown}
             style={{
               background:'linear-gradient(135deg,#4285f4,#1a73e8)',
@@ -131,10 +211,7 @@ function GeminiChat({ formulaContexto }) {
             }}>
             <div>
               <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                <div style={{
-                  width:8, height:8, background:'#34a853',
-                  borderRadius:'50%'
-                }}/>
+                <div style={{ width:8, height:8, background:'#34a853', borderRadius:'50%' }}/>
                 <span style={{ color:'white', fontWeight:'bold', fontSize:'13px' }}>
                   🤖 Asistente Candelaria
                 </span>
@@ -151,7 +228,7 @@ function GeminiChat({ formulaContexto }) {
                 color:'white', cursor:'pointer', borderRadius:'4px',
                 padding:'2px 8px', fontSize:'14px'
               }}>—</button>
-              <button onClick={() => { setAbierto(false); setChat([]); }} title="Cerrar" style={{
+              <button onClick={() => { setAbierto(false); setChat([]); setArchivo(null); }} title="Cerrar" style={{
                 background:'rgba(255,255,255,0.2)', border:'none',
                 color:'white', cursor:'pointer', borderRadius:'4px',
                 padding:'2px 8px', fontSize:'14px'
@@ -161,7 +238,7 @@ function GeminiChat({ formulaContexto }) {
 
           {/* Mensajes */}
           <div ref={chatRef} style={{
-            height:'280px', overflowY:'auto',
+            height:'300px', overflowY:'auto',
             padding:'12px', background:'#f8f9fa',
             display:'flex', flexDirection:'column', gap:8
           }}>
@@ -173,40 +250,71 @@ function GeminiChat({ formulaContexto }) {
               }}>
                 <div style={{ fontSize:'28px', marginBottom:'8px' }}>🤖</div>
                 {formulaContexto ? (
-                  <>
-                    Tengo la fórmula activa cargada.<br/>
-                    Pregúntame qué quieres saber<br/>
-                    o qué mejorar en ella.
-                  </>
+                  <>Tengo la fórmula activa cargada.<br/>Pregúntame qué quieres saber<br/>o qué mejorar en ella.</>
                 ) : (
-                  <>
-                    Hola, soy tu asistente.<br/>
-                    Pregúntame sobre producción,<br/>
-                    fórmulas o costos.
-                  </>
+                  <>Hola, soy tu asistente.<br/>Pregúntame sobre producción,<br/>fórmulas o costos.<br/><br/>📎 Puedes subir fotos o archivos.</>
                 )}
               </div>
             )}
 
-            {chat.map((m, i) => (
-              <div key={i} style={{
-                display:'flex',
-                justifyContent: m.rol === 'tu' ? 'flex-end' : 'flex-start'
-              }}>
-                <span style={{
-                  background: m.rol === 'tu' ? '#4285f4' : 'white',
-                  color:      m.rol === 'tu' ? 'white'   : '#333',
-                  padding:'8px 12px', borderRadius:
-                    m.rol === 'tu' ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
-                  maxWidth:'82%', fontSize:'13px',
-                  boxShadow:'0 1px 3px rgba(0,0,0,0.1)',
-                  lineHeight:'1.5', whiteSpace:'pre-wrap',
-                  wordBreak:'break-word'
+            {chat.map((m, i) => {
+              const esIA      = m.rol === 'ia';
+              const formula   = esIA ? parsearFormula(m.texto) : null;
+              const textoMostrar = esIA ? textoVisible(m.texto) : m.texto;
+              return (
+                <div key={i} style={{
+                  display:'flex',
+                  flexDirection:'column',
+                  alignItems: esIA ? 'flex-start' : 'flex-end'
                 }}>
-                  {m.texto}
-                </span>
-              </div>
-            ))}
+                  {/* Preview imagen del usuario */}
+                  {m.previewUrl && (
+                    <img src={m.previewUrl} alt="adjunto"
+                      style={{ maxWidth:180, maxHeight:120, borderRadius:8, marginBottom:4, objectFit:'cover' }}
+                    />
+                  )}
+                  {/* Nombre de archivo no-imagen */}
+                  {m.nombreArchivo && (
+                    <div style={{
+                      background:'#e8f4fd', color:'#1a5276',
+                      padding:'6px 10px', borderRadius:8,
+                      fontSize:'12px', marginBottom:4
+                    }}>📄 {m.nombreArchivo}</div>
+                  )}
+                  {/* Burbuja de texto */}
+                  {textoMostrar && (
+                    <span style={{
+                      background: esIA ? 'white' : '#4285f4',
+                      color:      esIA ? '#333'  : 'white',
+                      padding:'8px 12px',
+                      borderRadius: esIA ? '12px 12px 12px 2px' : '12px 12px 2px 12px',
+                      maxWidth:'85%', fontSize:'13px',
+                      boxShadow:'0 1px 3px rgba(0,0,0,0.1)',
+                      lineHeight:'1.5', whiteSpace:'pre-wrap',
+                      wordBreak:'break-word'
+                    }}>
+                      {textoMostrar}
+                    </span>
+                  )}
+                  {/* Botón Excel cuando hay FORMULA_JSON */}
+                  {formula && (
+                    <button
+                      onClick={() => descargarExcelSugerencia(formula)}
+                      style={{
+                        marginTop:6,
+                        background:'linear-gradient(135deg,#27ae60,#1e8449)',
+                        color:'white', border:'none', borderRadius:8,
+                        padding:'7px 14px', cursor:'pointer',
+                        fontSize:'12px', fontWeight:'bold',
+                        display:'flex', alignItems:'center', gap:6,
+                        boxShadow:'0 2px 8px rgba(39,174,96,0.3)'
+                      }}>
+                      📥 Descargar fórmula Excel
+                    </button>
+                  )}
+                </div>
+              );
+            })}
 
             {cargando && (
               <div style={{ display:'flex', justifyContent:'flex-start' }}>
@@ -217,35 +325,79 @@ function GeminiChat({ formulaContexto }) {
                   boxShadow:'0 1px 3px rgba(0,0,0,0.1)'
                 }}>
                   <span style={{ animation:'pulse 1s infinite' }}>●</span>{' '}
-                  <span style={{ animationDelay:'0.2s', animation:'pulse 1s infinite' }}>●</span>{' '}
-                  <span style={{ animationDelay:'0.4s', animation:'pulse 1s infinite' }}>●</span>
+                  <span style={{ animation:'pulse 1s 0.2s infinite' }}>●</span>{' '}
+                  <span style={{ animation:'pulse 1s 0.4s infinite' }}>●</span>
                 </span>
               </div>
             )}
           </div>
 
+          {/* Preview archivo adjunto */}
+          {archivo && (
+            <div style={{
+              padding:'8px 10px', background:'#f0f8ff',
+              borderTop:'1px solid #dce8f5',
+              display:'flex', alignItems:'center', gap:8
+            }}>
+              {archivo.previewUrl
+                ? <img src={archivo.previewUrl} alt="prev"
+                    style={{ width:40, height:40, objectFit:'cover', borderRadius:6 }} />
+                : <div style={{ fontSize:'22px' }}>📄</div>
+              }
+              <div style={{ flex:1, fontSize:'12px', color:'#333', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                {archivo.nombre}
+              </div>
+              <button onClick={() => setArchivo(null)} style={{
+                background:'none', border:'none', color:'#e74c3c',
+                cursor:'pointer', fontSize:'16px', padding:'0 4px'
+              }}>✕</button>
+            </div>
+          )}
+
           {/* Input */}
           <div style={{
-            padding:'10px', display:'flex', gap:'8px',
+            padding:'10px', display:'flex', gap:'6px', alignItems:'center',
             borderTop:'1px solid #eee', background:'white'
           }}>
+            {/* Botón adjuntar */}
+            <button
+              onClick={() => fileRef.current.click()}
+              title="Adjuntar imagen o PDF"
+              style={{
+                background: archivo ? '#e8f4fd' : '#f0f0f0',
+                border: archivo ? '1.5px solid #4285f4' : '1.5px solid #ddd',
+                borderRadius:'8px', cursor:'pointer',
+                padding:'8px 10px', fontSize:'16px',
+                color: archivo ? '#4285f4' : '#888',
+                flexShrink:0
+              }}>📎</button>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*,application/pdf"
+              style={{ display:'none' }}
+              onChange={onSeleccionarArchivo}
+            />
+
             <input
               value={mensaje}
               onChange={e => setMensaje(e.target.value)}
               onKeyPress={e => e.key === 'Enter' && enviar()}
-              placeholder="Escribe tu pregunta..."
+              placeholder={archivo ? 'Mensaje opcional...' : 'Escribe tu pregunta...'}
               style={{
                 flex:1, padding:'9px 12px', borderRadius:'8px',
-                border:'1px solid #ddd', fontSize:'13px',
-                outline:'none'
+                border:'1px solid #ddd', fontSize:'13px', outline:'none'
               }}
             />
-            <button onClick={enviar} disabled={cargando || !mensaje.trim()} style={{
-              background: cargando || !mensaje.trim() ? '#ccc' : '#4285f4',
-              color:'white', border:'none', borderRadius:'8px',
-              padding:'8px 14px', cursor: cargando ? 'not-allowed' : 'pointer',
-              fontSize:'14px', transition:'background 0.2s'
-            }}>➤</button>
+            <button
+              onClick={enviar}
+              disabled={cargando || (!mensaje.trim() && !archivo)}
+              style={{
+                background: (cargando || (!mensaje.trim() && !archivo)) ? '#ccc' : '#4285f4',
+                color:'white', border:'none', borderRadius:'8px',
+                padding:'8px 14px', cursor: cargando ? 'not-allowed' : 'pointer',
+                fontSize:'14px', transition:'background 0.2s', flexShrink:0
+              }}>➤</button>
           </div>
         </div>
       )}
