@@ -175,6 +175,18 @@ function abrirFormEditar(cierre) {
     if (kgEnF === 0) return true;
     return Math.abs(totalF - kgEnF) < 0.1;
   }
+  // ── Genera código de lote secuencial por fecha ───────────
+  async function generarCodigoLote(productoNombre, fechaProd) {
+    const siglas = productoNombre
+      .split(' ').map(w => w[0]?.toUpperCase() || '').join('').slice(0, 4);
+    const { count } = await supabase
+      .from('lotes_produccion')
+      .select('*', { count: 'exact', head: true })
+      .eq('fecha_produccion', fechaProd);
+    const seq = String((count || 0) + 1).padStart(3, '0');
+    return `${siglas}-${fechaProd.replace(/-/g, '')}-${seq}`;
+  }
+
   // Guardar cierre
   async function guardarCierre() {
     if (!formActivo) return;
@@ -228,7 +240,32 @@ function abrirFormEditar(cierre) {
         }
 
         await insertarInventario(nuevoCierre.id);
-        mostrarExito('✅ Cierre guardado y merma actualizada');
+
+        // ── Generar lote automático si no existe para esta producción ──
+        const { data: loteExistente } = await supabase
+          .from('lotes_produccion')
+          .select('id')
+          .eq('produccion_id', formActivo.produccion_id)
+          .maybeSingle();
+
+        if (!loteExistente) {
+          const codigoLote = await generarCodigoLote(formActivo.producto_nombre, fecha);
+          // Fecha de vencimiento por defecto: 90 días
+          const fechaVenc = new Date(fecha + 'T00:00:00');
+          fechaVenc.setDate(fechaVenc.getDate() + 90);
+          await supabase.from('lotes_produccion').insert({
+            produccion_id:     formActivo.produccion_id,
+            producto_nombre:   formActivo.producto_nombre,
+            codigo_lote:       codigoLote,
+            fecha_produccion:  fecha,
+            fecha_vencimiento: fechaVenc.toISOString().slice(0, 10),
+            cantidad_kg:       parseFloat(formActivo.kg_producidos_reales) || 0,
+            estado:            'activo',
+            notas:             `Generado automáticamente al cerrar producción`
+          });
+        }
+
+        mostrarExito('✅ Cierre guardado · lote generado · merma actualizada');
       }
 
       setFormActivo(null);

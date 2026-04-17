@@ -171,6 +171,23 @@ export default function TabNuevaVenta({ mobile, currentUser }) {
         }))
       );
 
+      // 3b. Descontar inventario_produccion por cada ítem vendido
+      const fechaHoy = new Date().toISOString().split('T')[0];
+      for (const it of itemsValidos) {
+        const kg = parseFloat(it.cantidad) || 0;
+        if (kg <= 0) continue;
+        await supabase.from('inventario_produccion').insert({
+          fecha:           fechaHoy,
+          producto_nombre: it.producto_nombre,
+          nombre_funda:    'kg-venta',
+          kg_por_funda:    1,
+          cantidad:        kg,
+          kg_total:        kg,
+          tipo:            'salida',
+          referencia:      `Factura ${numero}`,
+        });
+      }
+
       // 4. Si es crédito → crear cuenta x cobrar
       if (formaPago === 'credito') {
         const venc = new Date();
@@ -244,6 +261,23 @@ export default function TabNuevaVenta({ mobile, currentUser }) {
           subtotal:        parseFloat(it.subtotal)
         }))
       );
+
+      // Descontar inventario_produccion por cada ítem vendido
+      const fechaHoyB = new Date().toISOString().split('T')[0];
+      for (const it of itemsValidos) {
+        const kg = parseFloat(it.cantidad) || 0;
+        if (kg <= 0) continue;
+        await supabase.from('inventario_produccion').insert({
+          fecha:           fechaHoyB,
+          producto_nombre: it.producto_nombre,
+          nombre_funda:    'kg-venta',
+          kg_por_funda:    1,
+          cantidad:        kg,
+          kg_total:        kg,
+          tipo:            'salida',
+          referencia:      `Factura ${numero}`,
+        });
+      }
 
       if (formaPago === 'credito') {
         const venc = new Date();

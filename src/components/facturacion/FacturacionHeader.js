@@ -9,6 +9,7 @@ const TABS = [
   { key: 'facturas', emoji: '📄', label: 'Facturas'       },
   { key: 'cobrar',   emoji: '💰', label: 'Por cobrar'     },
   { key: 'cobros',   emoji: '📋', label: 'Cobros'         },
+  { key: 'f104',     emoji: '📊', label: 'Form. 104'      },
 ];
 
 export default function FacturacionHeader({

@@ -131,11 +131,27 @@ export default function TabIngresoCompra({ mobile, currentUser, userRol }) {
         });
 
         // Actualizar stock en inventario_mp
-        if (item.inv_id) {
-          const nuevoStock = (mp?.stock_kg || 0) + kg;
+        // Leer stock actual desde BD (no desde estado) para evitar race condition
+        const { data: invActual } = await supabase
+          .from('inventario_mp')
+          .select('id, stock_kg')
+          .eq('materia_prima_id', item.materia_prima_id)
+          .single();
+
+        if (invActual) {
+          // Registro existe → sumar
+          const nuevoStock = parseFloat(invActual.stock_kg || 0) + kg;
           await supabase.from('inventario_mp')
             .update({ stock_kg: nuevoStock, updated_at: new Date().toISOString() })
-            .eq('id', item.inv_id);
+            .eq('id', invActual.id);
+        } else {
+          // Registro NO existe → crear con el stock inicial
+          await supabase.from('inventario_mp').insert({
+            materia_prima_id: item.materia_prima_id,
+            nombre:           item.mp_nombre,
+            stock_kg:         kg,
+            stock_minimo_kg:  0
+          });
         }
 
         // Registrar movimiento de entrada

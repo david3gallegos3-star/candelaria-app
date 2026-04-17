@@ -3,11 +3,12 @@
 // Ventas · Facturas · Por cobrar · Cobros
 // ============================================
 import React, { useState, useEffect } from 'react';
-import FacturacionHeader from './components/facturacion/FacturacionHeader';
-import TabNuevaVenta     from './components/facturacion/TabNuevaVenta';
-import TabFacturas       from './components/facturacion/TabFacturas';
-import TabCobrar         from './components/facturacion/TabCobrar';
-import TabCobros         from './components/facturacion/TabCobros';
+import FacturacionHeader  from './components/facturacion/FacturacionHeader';
+import TabNuevaVenta      from './components/facturacion/TabNuevaVenta';
+import TabFacturas        from './components/facturacion/TabFacturas';
+import TabCobrar          from './components/facturacion/TabCobrar';
+import TabCobros          from './components/facturacion/TabCobros';
+import TabFormulario104   from './components/facturacion/TabFormulario104';
 
 function Facturacion({ onVolver, onVolverMenu, userRol, currentUser }) {
 
@@ -55,6 +56,11 @@ function Facturacion({ onVolver, onVolverMenu, userRol, currentUser }) {
         )}
         {tabActiva === 'cobros'   && (
           <TabCobros
+            mobile={mobile}
+          />
+        )}
+        {tabActiva === 'f104'     && (
+          <TabFormulario104
             mobile={mobile}
           />
         )}

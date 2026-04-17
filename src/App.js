@@ -21,8 +21,10 @@ import Conciliacion  from './Conciliacion';
 import RRHH          from './RRHH';
 import Trazabilidad  from './Trazabilidad';
 import Dashboard     from './Dashboard';
-import ExpressBodeguero  from './components/express/ExpressBodeguero';
-import ExpressProduccion from './components/express/ExpressProduccion';
+import ExpressBodeguero   from './components/express/ExpressBodeguero';
+import ExpressProduccion  from './components/express/ExpressProduccion';
+import ExpressRepartidor  from './components/express/ExpressRepartidor';
+import ExpressContadora   from './components/express/ExpressContadora';
 import './App.css';
 import html2canvas from 'html2canvas';
 
@@ -123,8 +125,10 @@ function App() {
 
   // ── Ruteo por rol ─────────────────────────────────────
   function pantallaPorRol(rol) {
-    if (rol === 'bodeguero')  return 'expressBodeguero';
-    if (rol === 'produccion') return 'expressProduccion';
+    if (rol === 'bodeguero')   return 'expressBodeguero';
+    if (rol === 'produccion')  return 'expressProduccion';
+    if (rol === 'repartidor')  return 'expressRepartidor';
+    if (rol === 'contadora')   return 'expressContadora';
     return 'menuPrincipal';
   }
 
@@ -855,6 +859,18 @@ if (pantalla === 'expressBodeguero')
 if (pantalla === 'expressProduccion')
   return <ExpressProduccion
     userRol={userRol}
+    currentUser={user}
+    onLogout={() => logout(() => setPantalla('login'))}
+  />;
+
+if (pantalla === 'expressRepartidor')
+  return <ExpressRepartidor
+    currentUser={user}
+    onLogout={() => logout(() => setPantalla('login'))}
+  />;
+
+if (pantalla === 'expressContadora')
+  return <ExpressContadora
     currentUser={user}
     onLogout={() => logout(() => setPantalla('login'))}
   />;

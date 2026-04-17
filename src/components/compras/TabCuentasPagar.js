@@ -64,6 +64,13 @@ export default function TabCuentasPagar({ mobile }) {
     .filter(c => c.estado !== 'pagado' && diasRestantes(c.fecha_vencimiento) < 0)
     .reduce((s, c) => s + (c.saldo_pendiente || 0), 0);
 
+  // Alertas: vencidas + próximas a vencer ≤5 días
+  const alertasUrgentes = cuentas.filter(c => {
+    if (c.estado === 'pagado') return false;
+    const d = diasRestantes(c.fecha_vencimiento);
+    return d !== null && d <= 5;
+  });
+
   function abrirPago(cuenta) {
     setModalPago(cuenta);
     setMontoPago(parseFloat(cuenta.saldo_pendiente || 0).toFixed(2));
@@ -126,6 +133,32 @@ export default function TabCuentasPagar({ mobile }) {
 
   return (
     <div>
+      {/* Banner alertas urgentes */}
+      {alertasUrgentes.length > 0 && (
+        <div style={{
+          background: '#fff0f0', border: '2px solid #e74c3c',
+          borderRadius: '12px', padding: '12px 16px', marginBottom: '12px'
+        }}>
+          <div style={{ fontWeight: 'bold', color: '#c0392b', fontSize: '14px', marginBottom: '6px' }}>
+            🚨 {alertasUrgentes.length} cuenta{alertasUrgentes.length > 1 ? 's' : ''} por pagar urgente{alertasUrgentes.length > 1 ? 's' : ''}
+          </div>
+          {alertasUrgentes.map(c => {
+            const d = diasRestantes(c.fecha_vencimiento);
+            return (
+              <div key={c.id} style={{ fontSize: '12px', color: '#555', marginBottom: '3px' }}>
+                • <b>{c.proveedores?.nombre || '—'}</b>
+                &nbsp;—&nbsp;${(c.saldo_pendiente || 0).toFixed(2)}
+                &nbsp;—&nbsp;
+                <span style={{ color: d < 0 ? '#e74c3c' : '#f39c12', fontWeight: 'bold' }}>
+                  {d < 0 ? `VENCIDA hace ${Math.abs(d)} días` : d === 0 ? 'VENCE HOY' : `vence en ${d} días`}
+                </span>
+                &nbsp;({c.fecha_vencimiento})
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* Resumen */}
       <div style={{
         display: 'grid',
