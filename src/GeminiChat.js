@@ -76,15 +76,21 @@ function GeminiChat({ formulaContexto, onDescargarExcel }) {
       const data  = await response.json();
       let textoRaw = data.texto || 'Sin respuesta';
 
-      // Extraer bloque FORMULA_JSON si existe
-      const match = textoRaw.match(/<FORMULA_JSON>([\s\S]*?)<\/FORMULA_JSON>/);
-      if (match) {
+      // Extraer bloque FORMULA_JSON si existe (con o sin tag de cierre)
+      const matchFull = textoRaw.match(/<FORMULA_JSON>([\s\S]*?)<\/FORMULA_JSON>/);
+      const matchOpen = textoRaw.match(/<FORMULA_JSON>([\s\S]*)/); // sin cierre
+      const matchUsado = matchFull || matchOpen;
+      if (matchUsado) {
         try {
-          const parsed = JSON.parse(match[1].trim());
-          setSugerenciaXL(parsed);
+          const jsonStr = matchUsado[1].trim();
+          const parsed = JSON.parse(jsonStr);
+          if (parsed.nombre && (parsed.mp || parsed.ad)) setSugerenciaXL(parsed);
         } catch(_) {}
-        // Quitar el bloque del texto visible
-        textoRaw = textoRaw.replace(/<FORMULA_JSON>[\s\S]*?<\/FORMULA_JSON>/g, '').trim();
+        // Quitar el bloque del texto visible (con y sin cierre)
+        textoRaw = textoRaw
+          .replace(/<FORMULA_JSON>[\s\S]*?<\/FORMULA_JSON>/g, '')
+          .replace(/<FORMULA_JSON>[\s\S]*/g, '')
+          .trim();
       }
 
       setChat(prev => [...prev, { rol: 'ia', texto: textoRaw }]);

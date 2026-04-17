@@ -38,7 +38,7 @@ Solo incluye este bloque si realmente estás proponiendo ingredientes con cantid
       },
       body: JSON.stringify({
         model:      'claude-haiku-4-5-20251001',
-        max_tokens: 1000,
+        max_tokens: 2000,
         system,
         messages
       })
