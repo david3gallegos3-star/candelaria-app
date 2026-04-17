@@ -1,11 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
+import * as XLSX from 'xlsx';
 
 function GeminiChat({ formulaContexto, onDescargarExcel }) {
   const [abierto,   setAbierto]   = useState(false);
   const [mensaje,   setMensaje]   = useState('');
   const [chat,      setChat]      = useState([]);
-  const [cargando,  setCargando]  = useState(false);
-  const [pos,       setPos]       = useState({ bottom: 20, right: 20 });
+  const [cargando,      setCargando]      = useState(false);
+  const [sugerenciaXL,  setSugerenciaXL]  = useState(null); // datos JSON de sugerencia IA
+  const [pos,           setPos]           = useState({ bottom: 20, right: 20 });
   const [drag,      setDrag]      = useState(false);
   const [dragStart, setDragStart] = useState(null);
   const chatRef   = useRef();
@@ -71,12 +73,64 @@ function GeminiChat({ formulaContexto, onDescargarExcel }) {
           contexto:  formulaContexto || null
         })
       });
-      const data = await response.json();
-      setChat(prev => [...prev, { rol: 'ia', texto: data.texto || 'Sin respuesta' }]);
+      const data  = await response.json();
+      let textoRaw = data.texto || 'Sin respuesta';
+
+      // Extraer bloque FORMULA_JSON si existe
+      const match = textoRaw.match(/<FORMULA_JSON>([\s\S]*?)<\/FORMULA_JSON>/);
+      if (match) {
+        try {
+          const parsed = JSON.parse(match[1].trim());
+          setSugerenciaXL(parsed);
+        } catch(_) {}
+        // Quitar el bloque del texto visible
+        textoRaw = textoRaw.replace(/<FORMULA_JSON>[\s\S]*?<\/FORMULA_JSON>/g, '').trim();
+      }
+
+      setChat(prev => [...prev, { rol: 'ia', texto: textoRaw }]);
     } catch(e) {
       setChat(prev => [...prev, { rol: 'ia', texto: 'Error: ' + e.message }]);
     }
     setCargando(false);
+  }
+
+  // ── Descargar sugerencia IA como Excel ───────────────────
+  function descargarSugerencia() {
+    if (!sugerenciaXL) return;
+    const { nombre, mp = [], ad = [] } = sugerenciaXL;
+    const totalG = [...mp, ...ad].reduce((s, i) => s + (i.g || 0), 0);
+
+    const fila = (seccion, n, g) => ({
+      'SECCIÓN': seccion,
+      'DETALLE': n,
+      'GRAMOS':  Math.round(g),
+      'KILOS':   parseFloat((g / 1000).toFixed(3)),
+      '% TOTAL': totalG > 0 ? parseFloat(((g / totalG) * 100).toFixed(2)) : 0,
+      '$/KG':    '',
+      'COSTO $': '',
+      'NOTA':    '← Sugerencia IA'
+    });
+    const filaVacia = () => ({ 'SECCIÓN':'','DETALLE':'','GRAMOS':'','KILOS':'','% TOTAL':'','$/KG':'','COSTO $':'','NOTA':'' });
+    const subTot = (label, items) => {
+      const g = items.reduce((s, i) => s + (i.g || 0), 0);
+      return { 'SECCIÓN':'','DETALLE':label,'GRAMOS':Math.round(g),'KILOS':parseFloat((g/1000).toFixed(3)),'% TOTAL':totalG>0?parseFloat(((g/totalG)*100).toFixed(2)):0,'$/KG':'','COSTO $':'','NOTA':'' };
+    };
+
+    const datos = [
+      ...mp.map(i => fila('MATERIAS PRIMAS', i.n, i.g)),
+      subTot('SUB-TOTAL MATERIAS PRIMAS', mp),
+      filaVacia(),
+      ...ad.map(i => fila('CONDIMENTOS Y ADITIVOS', i.n, i.g)),
+      subTot('SUB-TOTAL CONDIMENTOS', ad),
+      filaVacia(),
+      { 'SECCIÓN':'','DETALLE':'TOTAL CRUDO','GRAMOS':Math.round(totalG),'KILOS':parseFloat((totalG/1000).toFixed(3)),'% TOTAL':100,'$/KG':'','COSTO $':'','NOTA':'' },
+    ];
+
+    const ws = XLSX.utils.json_to_sheet(datos);
+    ws['!cols'] = [{wch:22},{wch:35},{wch:10},{wch:10},{wch:10},{wch:12},{wch:12},{wch:25}];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, (nombre || 'Sugerencia').substring(0, 31));
+    XLSX.writeFile(wb, `Sugerencia_IA_${nombre || 'formula'}.xlsx`);
   }
 
   // ── Render ────────────────────────────────────────────────
@@ -154,18 +208,31 @@ function GeminiChat({ formulaContexto, onDescargarExcel }) {
             </div>
 
             <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-              {/* Botón Excel — solo si hay fórmula */}
+              {/* Botón Excel fórmula actual */}
               {formulaContexto && onDescargarExcel && (
                 <button
                   onClick={onDescargarExcel}
-                  title="Descargar fórmula en Excel"
+                  title="Descargar fórmula actual en Excel"
                   style={{
                     background: '#1e7e34', border: 'none',
                     color: 'white', cursor: 'pointer', borderRadius: '6px',
-                    padding: '4px 10px', fontSize: '12px', fontWeight: 'bold',
-                    display: 'flex', alignItems: 'center', gap: 4
+                    padding: '4px 10px', fontSize: '12px', fontWeight: 'bold'
                   }}>
-                  📥 Excel
+                  📥 Actual
+                </button>
+              )}
+              {/* Botón Excel sugerencia IA */}
+              {sugerenciaXL && (
+                <button
+                  onClick={descargarSugerencia}
+                  title="Descargar sugerencia de la IA en Excel"
+                  style={{
+                    background: '#e65100', border: 'none',
+                    color: 'white', cursor: 'pointer', borderRadius: '6px',
+                    padding: '4px 10px', fontSize: '12px', fontWeight: 'bold',
+                    animation: 'pulse 2s infinite'
+                  }}>
+                  🤖 Excel IA
                 </button>
               )}
               <button onClick={() => setAbierto(false)} title="Minimizar" style={{
