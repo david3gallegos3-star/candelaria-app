@@ -8,7 +8,6 @@ import ProduccionHeader    from './components/produccion/ProduccionHeader';
 import TabRegistrar        from './components/produccion/TabRegistrar';
 import TabHistorial        from './components/produccion/TabHistorial';
 import TabCierre from './components/produccion/TabCierre';
-import TabInyeccion        from './components/produccion/TabInyeccion';
 import ModalRevertir       from './components/produccion/ModalRevertir';
 import ModalNotaProd       from './components/produccion/ModalNotaProd';
 
@@ -80,7 +79,6 @@ function Produccion({ onVolver, onVolverMenu, userRol, currentUser }) {
               ['registrar',  '🏭 Registrar producción'],
               ['cierre',     '✅ Cierre del día'      ],
               ['historial',  '📋 Historial'          ],
-              ['inyeccion',  '💉 Inyección'          ],
             ].map(([key, label]) => (
             <button key={key}
               onClick={() => p.setTab(key)}
@@ -116,10 +114,11 @@ function Produccion({ onVolver, onVolverMenu, userRol, currentUser }) {
             getEstadoProducto={p.getEstadoProducto}
             guardando={p.guardando}
             guardarProduccion={p.guardarProduccion}
+            currentUser={currentUser}
           />
         )}
 
-        {/* ── Tab historial ── */}
+        {/* ── Tab cierre ── */}
         {p.tab === 'cierre' && (
           <TabCierre
             mobile={p.mobile}
@@ -135,13 +134,6 @@ function Produccion({ onVolver, onVolverMenu, userRol, currentUser }) {
             produccionDiaria={p.produccionDiaria}
             esAdmin={p.esAdmin}
             setModalRevertir={p.setModalRevertir}
-          />
-        )}
-
-        {p.tab === 'inyeccion' && (
-          <TabInyeccion
-            currentUser={currentUser}
-            mobile={p.mobile}
           />
         )}
       </div>

@@ -16,7 +16,9 @@ export default function VistaLimpia({
   merma, margen, modCif,
   empPrecio, empCantidad,
   hiloPrecio, hiloKg,
+  esSalmuera,
 }) {
+  const precioVentaSalmuera = margen < 1 ? costoMPkg / (1 - margen) : 0;
   const thS = {
     padding: mobile ? '7px 8px' : '7px 10px',
     fontSize:'10px', color:'#888', fontWeight:'700',
@@ -237,48 +239,53 @@ export default function VistaLimpia({
             </span>
           </div>
           <div style={{ padding: mobile ? '12px 14px' : '10px 16px' }}>
-            <Info label="Merma"
-              valor={((parseFloat(config.merma) || 0) * 100).toFixed(0) + '%'} />
+            {!esSalmuera && <Info label="Merma"
+              valor={((parseFloat(config.merma) || 0) * 100).toFixed(0) + '%'} />}
             <Info label="Margen ganancia"
               valor={((parseFloat(config.margen) || 0) * 100).toFixed(0) + '%'} />
-            <Info label="MOD+CIF/kg"
+            {!esSalmuera && <Info label="MOD+CIF/kg"
               valor={'$' + (parseFloat(config.mod_cif_kg) || 0).toFixed(4)}
-              color="#3498db" />
+              color="#3498db" />}
             <Info label="Costo MP/kg"    valor={'$' + costoMPkg.toFixed(4)} />
-            <Info label="Con merma"      valor={'$' + costoConMerma.toFixed(4)}  color="#e74c3c" />
-            <Info label="Empaque/kg"     valor={'$' + costoEmpaqueKg.toFixed(4)} color="#8e44ad" />
-            <Info label="Amarre/kg"      valor={'$' + costoAmarreKg.toFixed(4)}  color="#e67e22" />
-            <div style={{
-              marginTop:'10px', background:'#f8f9fa', borderRadius:'8px',
-              padding:'10px 12px', display:'flex',
-              justifyContent:'space-between', marginBottom:'8px'
-            }}>
-              <span style={{ fontWeight:'bold', color:'#2c3e50', fontSize: mobile ? '13px' : '12px' }}>
-                COSTO TOTAL/KG
-              </span>
-              <span style={{ fontWeight:'bold', color:'#e74c3c', fontSize: mobile ? '15px' : '14px' }}>
-                ${costoTotalKg.toFixed(4)}
-              </span>
-            </div>
+            {!esSalmuera && <Info label="Con merma"      valor={'$' + costoConMerma.toFixed(4)}  color="#e74c3c" />}
+            {!esSalmuera && <Info label="Empaque/kg"     valor={'$' + costoEmpaqueKg.toFixed(4)} color="#8e44ad" />}
+            {!esSalmuera && <Info label="Amarre/kg"      valor={'$' + costoAmarreKg.toFixed(4)}  color="#e67e22" />}
+            {!esSalmuera && (
+              <div style={{
+                marginTop:'10px', background:'#f8f9fa', borderRadius:'8px',
+                padding:'10px 12px', display:'flex',
+                justifyContent:'space-between', marginBottom:'8px'
+              }}>
+                <span style={{ fontWeight:'bold', color:'#2c3e50', fontSize: mobile ? '13px' : '12px' }}>
+                  COSTO TOTAL/KG
+                </span>
+                <span style={{ fontWeight:'bold', color:'#e74c3c', fontSize: mobile ? '15px' : '14px' }}>
+                  ${costoTotalKg.toFixed(4)}
+                </span>
+              </div>
+            )}
             <div style={{
               background:'#27ae60', borderRadius:'8px',
-              padding:'11px 14px',
+              padding:'11px 14px', marginTop: esSalmuera ? '10px' : 0,
               display:'flex', justifyContent:'space-between'
             }}>
               <span style={{ fontWeight:'bold', color:'white', fontSize: mobile ? '13px' : '12px' }}>
                 💰 PRECIO VENTA/KG
               </span>
               <span style={{ fontWeight:'bold', color:'white', fontSize: mobile ? '17px' : '16px' }}>
-                ${precioVentaKg.toFixed(4)}
+                ${(esSalmuera ? precioVentaSalmuera : precioVentaKg).toFixed(4)}
               </span>
             </div>
             <div style={{ fontSize:'10px', color:'#888', marginTop:'4px', textAlign:'right' }}>
-              ${costoTotalKg.toFixed(4)} ÷ (1 − {((parseFloat(config.margen)||0)*100).toFixed(0)}%) = ${precioVentaKg.toFixed(4)}
+              {esSalmuera
+                ? `$${costoMPkg.toFixed(4)} ÷ (1 − ${((parseFloat(config.margen)||0)*100).toFixed(0)}%) = $${precioVentaSalmuera.toFixed(4)}`
+                : `$${costoTotalKg.toFixed(4)} ÷ (1 − ${((parseFloat(config.margen)||0)*100).toFixed(0)}%) = $${precioVentaKg.toFixed(4)}`
+              }
             </div>
           </div>
         </div>
         {/* Empaque y Amarre */}
-        <div style={{
+        {!esSalmuera && <div style={{
           background:'white', borderRadius:'10px',
           overflow:'hidden', boxShadow:'0 1px 4px rgba(0,0,0,0.06)'
         }}>
@@ -312,11 +319,11 @@ export default function VistaLimpia({
               </>
             )}
           </div>
-        </div>
+        </div>}
       </div>
 
       {/* ── Fundas ── */}
-      {config.fundas && config.fundas.length > 0 && (
+      {!esSalmuera && config.fundas && config.fundas.length > 0 && (
         <div style={{
           background:'white', borderRadius:'10px',
           overflow:'hidden', boxShadow:'0 1px 4px rgba(0,0,0,0.06)'

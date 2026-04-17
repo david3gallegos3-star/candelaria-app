@@ -148,11 +148,34 @@ function App() {
 
   // ── Carga de datos ────────────────────────────────────
   async function cargarTodo() {
+    await asegurarCategoriasBase();
     await Promise.all([
       cargarCategorias(),
       cargarCategoriasMpDB(),
       cargarMaterias(),
     ]);
+  }
+
+  async function asegurarCategoriasBase() {
+    const { data: cats } = await supabase.from('categorias_productos').select('nombre,orden').order('orden', { ascending: false });
+    const existentes = (cats || []).map(c => c.nombre);
+    const maxOrden   = (cats?.[0]?.orden ?? 0);
+
+    const nuevas = [
+      { nombre: 'SALMUERAS', emoji: '🧂' },
+      { nombre: 'CORTES',    emoji: '🥩' },
+    ].filter(c => !existentes.includes(c.nombre));
+
+    for (let i = 0; i < nuevas.length; i++) {
+      await supabase.from('categorias_productos').insert({ ...nuevas[i], orden: maxOrden + i + 1 });
+    }
+
+    const { data: mpCats } = await supabase.from('categorias_mp').select('nombre,orden').order('orden', { ascending: false });
+    const mpExistentes = (mpCats || []).map(c => c.nombre);
+    const maxOrdenMp   = (mpCats?.[0]?.orden ?? 0);
+    if (!mpExistentes.includes('Salmuera')) {
+      await supabase.from('categorias_mp').insert({ nombre: 'Salmuera', orden: maxOrdenMp + 1 });
+    }
   }
 
   async function cargarCategorias() {
@@ -253,16 +276,34 @@ function App() {
   const CATS_PROTEGIDAS = ['SALMUERAS', 'CORTES'];
 
   async function sincronizarSalmueraMP(nombre, precio_kg) {
+    // Buscar si ya existe
     const { data: ex } = await supabase.from('materias_primas')
       .select('id').eq('nombre_producto', nombre).eq('categoria', 'Salmuera').maybeSingle();
     if (ex) {
       await supabase.from('materias_primas').update({ precio_kg }).eq('id', ex.id);
-    } else {
-      await supabase.from('materias_primas').insert({
-        nombre: nombre, nombre_producto: nombre,
-        categoria: 'Salmuera', precio_kg, eliminado: false,
-      });
+      return;
     }
+    // Generar ID único tipo SAL001
+    const { data: salMPs } = await supabase.from('materias_primas')
+      .select('id').eq('categoria', 'Salmuera');
+    const nums = (salMPs || [])
+      .map(m => parseInt((m.id || '').replace(/\D/g, '') || '0'))
+      .filter(n => !isNaN(n));
+    const nextNum = nums.length > 0 ? Math.max(...nums) + 1 : 1;
+    const newId = 'SAL' + String(nextNum).padStart(3, '0');
+
+    const { error } = await supabase.from('materias_primas').insert({
+      id:              newId,
+      nombre:          nombre,
+      nombre_producto: nombre,
+      categoria:       'Salmuera',
+      precio_kg:       parseFloat(precio_kg) || 0,
+      precio_lb:       0,
+      precio_gr:       0,
+      estado:          'ACTIVO',
+      eliminado:       false,
+    });
+    if (error) console.error('Error sync salmuera MP:', error.message);
   }
 
   async function crearProducto() {
@@ -276,6 +317,7 @@ function App() {
     setModalNuevo(false);
     setNuevoNombre('');
     await cargarCategorias();
+    if (catSel === 'SALMUERAS') await cargarMaterias();
     mostrarExito('✅ Producto creado');
     setProductoActivo(data);
     navegarA('formulacion');
@@ -298,6 +340,7 @@ function App() {
       }
     }
     await cargarCategorias();
+    if (prod?.categoria === 'SALMUERAS') await cargarMaterias();
     mostrarExito('🗑️ Eliminado — recupéralo en Gestionar → Eliminados');
   }
 
@@ -317,6 +360,7 @@ function App() {
     }
     setEditando(null);
     await cargarCategorias();
+    if (prod?.categoria === 'SALMUERAS') await cargarMaterias();
     mostrarExito('✅ Nombre actualizado');
   }
 

@@ -253,6 +253,7 @@ function Formulacion({ producto, onVolver, onVolverMenu, onAbrirMaterias, userRo
                 merma={f.merma}     margen={f.margen}   modCif={f.modCif}
                 empPrecio={f.empPrecio} empCantidad={f.empCantidad}
                 hiloPrecio={f.hiloPrecio} hiloKg={f.hiloKg}
+                esSalmuera={producto?.categoria === 'SALMUERAS'}
               />
             )}
 

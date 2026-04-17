@@ -4,6 +4,7 @@
 // Versión multi-producto con foco por producto
 // ============================================
 import React from 'react';
+import TabInyeccion from './TabInyeccion';
 
 // ── Helpers badge por estado ──────────────────────────────
 function BadgeEstado({ estado, alertas }) {
@@ -304,6 +305,7 @@ export default function TabRegistrar({
   getEstadoProducto,
   guardando,
   guardarProduccion,
+  currentUser,
 }) {
   const totales = calcularTotalesDia();
   const itemSel = productoSelIdx !== null ? productosDelDia[productoSelIdx] : null;
@@ -751,11 +753,17 @@ export default function TabRegistrar({
         </div>
       </div>
 
-      {/* ══ COLUMNA DERECHA — detalle producto seleccionado ══ */}
-      <div>
-        <DetalleProducto
-          item={itemSel}
-          resumen={resumenSel}
+      {/* ══ COLUMNA DERECHA — detalle + inyección ══ */}
+      <div style={{ display:'flex', flexDirection:'column', gap:'16px' }}>
+        {itemSel && (
+          <DetalleProducto
+            item={itemSel}
+            resumen={resumenSel}
+            mobile={false}
+          />
+        )}
+        <TabInyeccion
+          currentUser={currentUser}
           mobile={false}
         />
       </div>
