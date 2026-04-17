@@ -93,45 +93,103 @@ function descargarExcelSugerencia(formula, formulaActual) {
   XLSX.writeFile(wb, `${formula.nombre || 'Sugerencia_IA'}_sugerencia_IA.xlsx`);
 }
 
-function GeminiChat({ formulaContexto, formulaIngredientes }) {
-  const [abierto,   setAbierto]   = useState(false);
-  const [mensaje,   setMensaje]   = useState('');
-  const [chat,      setChat]      = useState([]);
-  const [cargando,  setCargando]  = useState(false);
-  const [pos,       setPos]       = useState({ bottom:20, right:20 });
-  const [drag,      setDrag]      = useState(false);
-  const [dragStart, setDragStart] = useState(null);
-  const [archivo,   setArchivo]   = useState(null); // { base64, mimeType, nombre, previewUrl }
+const POS_DEFAULT = { bottom: 20, right: 20 };
+const SIZE_DEFAULT = { width: 360, height: 300 };
 
-  const chatRef  = useRef();
-  const fileRef  = useRef();
+function GeminiChat({ formulaContexto, formulaIngredientes }) {
+  const [abierto,     setAbierto]     = useState(false);
+  const [mensaje,     setMensaje]     = useState('');
+  const [chat,        setChat]        = useState([]);
+  const [cargando,    setCargando]    = useState(false);
+  const [pos,         setPos]         = useState(POS_DEFAULT);
+  const [size,        setSize]        = useState(SIZE_DEFAULT);
+  const [drag,        setDrag]        = useState(false);
+  const [dragStart,   setDragStart]   = useState(null);
+  const [resizing,    setResizing]    = useState(false);
+  const [resizeStart, setResizeStart] = useState(null);
+  const [archivo,       setArchivo]       = useState(null);
+  const [btnDragging,   setBtnDragging]   = useState(false);
+  const [btnDragStart,  setBtnDragStart]  = useState(null);
+  const btnHasMoved = useRef(false);
+
+  const chatRef = useRef();
+  const fileRef = useRef();
 
   useEffect(() => {
     if (chatRef.current)
       chatRef.current.scrollTop = chatRef.current.scrollHeight;
   }, [chat, cargando]);
 
-  // ── Drag ──
+  // ── Cerrar: resetea posición ──
+  function cerrar(limpiarChat) {
+    setAbierto(false);
+    setPos(POS_DEFAULT);
+    if (limpiarChat) { setChat([]); setArchivo(null); }
+  }
+
+  // ── Drag burbuja minimizada ──
+  function onBtnMouseDown(e) {
+    e.preventDefault();
+    btnHasMoved.current = false;
+    setBtnDragStart({ x:e.clientX, y:e.clientY, bottom:pos.bottom, right:pos.right });
+    setBtnDragging(true);
+  }
+
+  // ── Drag (mover el chat abierto) ──
   function onMouseDown(e) {
     setDrag(true);
     setDragStart({ x:e.clientX, y:e.clientY, bottom:pos.bottom, right:pos.right });
   }
+
+  // ── Resize (esquina superior izquierda) ──
+  function onResizeMouseDown(e) {
+    e.stopPropagation();
+    e.preventDefault();
+    setResizing(true);
+    setResizeStart({ x:e.clientX, y:e.clientY, width:size.width, height:size.height });
+  }
+
   useEffect(() => {
     function onMouseMove(e) {
-      if (!drag || !dragStart) return;
-      setPos({
-        right:  Math.max(0, dragStart.right  + (dragStart.x - e.clientX)),
-        bottom: Math.max(0, dragStart.bottom + (dragStart.y - e.clientY))
-      });
+      if (drag && dragStart) {
+        setPos({
+          right:  Math.max(0, dragStart.right  + (dragStart.x - e.clientX)),
+          bottom: Math.max(0, dragStart.bottom + (dragStart.y - e.clientY))
+        });
+      }
+      if (resizing && resizeStart) {
+        const dw = resizeStart.x - e.clientX;
+        const dh = resizeStart.y - e.clientY;
+        setSize({
+          width:  Math.max(280, Math.min(700, resizeStart.width  + dw)),
+          height: Math.max(200, Math.min(600, resizeStart.height + dh))
+        });
+      }
+      if (btnDragging && btnDragStart) {
+        const dx = Math.abs(e.clientX - btnDragStart.x);
+        const dy = Math.abs(e.clientY - btnDragStart.y);
+        if (dx > 5 || dy > 5) {
+          btnHasMoved.current = true;
+          setPos({
+            right:  Math.max(0, btnDragStart.right  + (btnDragStart.x - e.clientX)),
+            bottom: Math.max(0, btnDragStart.bottom + (btnDragStart.y - e.clientY))
+          });
+        }
+      }
     }
-    function onMouseUp() { setDrag(false); }
+    function onMouseUp() {
+      if (btnDragging && !btnHasMoved.current) setAbierto(true); // fue click
+      setDrag(false);
+      setResizing(false);
+      setBtnDragging(false);
+    }
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup',   onMouseUp);
     return () => {
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup',   onMouseUp);
     };
-  }, [drag, dragStart]);
+  }, [drag, dragStart, resizing, resizeStart, btnDragging, btnDragStart]);
 
   // ── Seleccionar archivo ──
   function onSeleccionarArchivo(e) {
@@ -199,23 +257,23 @@ function GeminiChat({ formulaContexto, formulaIngredientes }) {
       bottom:`${pos.bottom}px`,
       right:`${pos.right}px`,
       zIndex:1000,
-      userSelect: drag ? 'none' : 'auto'
+      userSelect: (drag || resizing) ? 'none' : 'auto'
     }}>
       <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}`}</style>
 
-      {/* Botón minimizado */}
+      {/* Burbuja minimizada — arrastrable */}
       {!abierto && (
-        <button onClick={() => setAbierto(true)} style={{
-          background:'linear-gradient(135deg,#4285f4,#1a73e8)',
-          color:'white', border:'none', borderRadius:'50px',
-          padding:'12px 18px', cursor:'pointer', fontSize:'14px',
-          fontWeight:'bold',
-          boxShadow:'0 4px 15px rgba(66,133,244,0.4)',
-          display:'flex', alignItems:'center', gap:8,
-          transition:'transform 0.2s'
-        }}
-          onMouseEnter={e => e.currentTarget.style.transform='scale(1.05)'}
-          onMouseLeave={e => e.currentTarget.style.transform='scale(1)'}
+        <button
+          onMouseDown={onBtnMouseDown}
+          style={{
+            background:'linear-gradient(135deg,#4285f4,#1a73e8)',
+            color:'white', border:'none', borderRadius:'50px',
+            padding:'12px 18px', fontSize:'14px', fontWeight:'bold',
+            boxShadow:'0 4px 15px rgba(66,133,244,0.4)',
+            display:'flex', alignItems:'center', gap:8,
+            cursor: btnDragging ? 'grabbing' : 'grab',
+            userSelect:'none'
+          }}
         >
           <div style={{ width:8, height:8, background:'#34a853', borderRadius:'50%', animation:'pulse 2s infinite' }}/>
           🤖 Asistente
@@ -225,12 +283,29 @@ function GeminiChat({ formulaContexto, formulaIngredientes }) {
       {/* Chat abierto */}
       {abierto && (
         <div style={{
-          width:'360px', background:'white',
-          borderRadius:'14px',
+          width:`${size.width}px`, background:'white',
+          borderRadius:'14px', position:'relative',
           boxShadow:'0 8px 40px rgba(0,0,0,0.2)',
           display:'flex', flexDirection:'column',
           overflow:'hidden'
         }}>
+          {/* Grip de redimensionar — esquina superior izquierda */}
+          <div
+            onMouseDown={onResizeMouseDown}
+            title="Arrastra para redimensionar"
+            style={{
+              position:'absolute', top:0, left:0,
+              width:18, height:18, zIndex:10,
+              cursor:'nwse-resize',
+              background:'linear-gradient(135deg,rgba(255,255,255,0.3),transparent)',
+              borderRadius:'0 0 6px 0'
+            }}>
+            <svg width="12" height="12" viewBox="0 0 12 12" style={{ position:'absolute', top:2, left:2, opacity:0.5 }}>
+              <line x1="2" y1="10" x2="10" y2="2" stroke="white" strokeWidth="1.5"/>
+              <line x1="6" y1="10" x2="10" y2="6" stroke="white" strokeWidth="1.5"/>
+            </svg>
+          </div>
+
           {/* Header arrastrable */}
           <div
             onMouseDown={onMouseDown}
@@ -255,12 +330,12 @@ function GeminiChat({ formulaContexto, formulaIngredientes }) {
               )}
             </div>
             <div style={{ display:'flex', gap:8, alignItems:'center' }}>
-              <button onClick={() => setAbierto(false)} title="Minimizar" style={{
+              <button onClick={() => cerrar(false)} title="Minimizar (vuelve a esquina)" style={{
                 background:'rgba(255,255,255,0.2)', border:'none',
                 color:'white', cursor:'pointer', borderRadius:'4px',
                 padding:'2px 8px', fontSize:'14px'
               }}>—</button>
-              <button onClick={() => { setAbierto(false); setChat([]); setArchivo(null); }} title="Cerrar" style={{
+              <button onClick={() => cerrar(true)} title="Cerrar y limpiar" style={{
                 background:'rgba(255,255,255,0.2)', border:'none',
                 color:'white', cursor:'pointer', borderRadius:'4px',
                 padding:'2px 8px', fontSize:'14px'
@@ -270,7 +345,7 @@ function GeminiChat({ formulaContexto, formulaIngredientes }) {
 
           {/* Mensajes */}
           <div ref={chatRef} style={{
-            height:'300px', overflowY:'auto',
+            height:`${size.height}px`, overflowY:'auto',
             padding:'12px', background:'#f8f9fa',
             display:'flex', flexDirection:'column', gap:8
           }}>
