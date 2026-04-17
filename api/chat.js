@@ -1,7 +1,7 @@
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
 
-  const { mensaje, historial, contexto } = req.body;
+  const { mensaje, historial, contexto, imagen } = req.body;
 
   const systemBase = `Eres un asistente experto de Embutidos y Jamones Candelaria de Ibarra, Ecuador.
 Ayudas con producción, fórmulas, ingredientes, costos y materias primas de embutidos.
@@ -26,7 +26,15 @@ Solo incluye este bloque si realmente estás proponiendo ingredientes con cantid
         role:    m.rol === 'tu' ? 'user' : 'assistant',
         content: m.texto
       })),
-      { role:'user', content: mensaje }
+      {
+        role: 'user',
+        content: imagen
+          ? [
+              { type: 'image', source: { type: 'base64', media_type: imagen.mediaType, data: imagen.base64 } },
+              { type: 'text',  text: mensaje || 'Analiza esta imagen y dime qué observas en relación a la fórmula.' }
+            ]
+          : mensaje
+      }
     ];
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {

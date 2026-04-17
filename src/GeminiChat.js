@@ -2,16 +2,18 @@ import React, { useState, useRef, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 
 function GeminiChat({ formulaContexto, onDescargarExcel }) {
-  const [abierto,   setAbierto]   = useState(false);
-  const [mensaje,   setMensaje]   = useState('');
-  const [chat,      setChat]      = useState([]);
-  const [cargando,      setCargando]      = useState(false);
-  const [sugerenciaXL,  setSugerenciaXL]  = useState(null); // datos JSON de sugerencia IA
-  const [pos,           setPos]           = useState({ bottom: 20, right: 20 });
-  const [drag,      setDrag]      = useState(false);
-  const [dragStart, setDragStart] = useState(null);
-  const chatRef   = useRef();
-  const wrapRef   = useRef();
+  const [abierto,      setAbierto]      = useState(false);
+  const [mensaje,      setMensaje]      = useState('');
+  const [chat,         setChat]         = useState([]);
+  const [cargando,     setCargando]     = useState(false);
+  const [sugerenciaXL, setSugerenciaXL] = useState(null);
+  const [pos,          setPos]          = useState({ bottom: 20, right: 20 });
+  const [drag,         setDrag]         = useState(false);
+  const [dragStart,    setDragStart]    = useState(null);
+  const [imagen,       setImagen]       = useState(null); // { base64, mediaType, preview }
+  const chatRef    = useRef();
+  const wrapRef    = useRef();
+  const fileRef    = useRef();
 
   // Auto scroll
   useEffect(() => {
@@ -56,12 +58,31 @@ function GeminiChat({ formulaContexto, onDescargarExcel }) {
     };
   }, [drag, dragStart]);
 
+  // ── Seleccionar imagen ────────────────────────────────────
+  function seleccionarArchivo(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const mediaType = file.type; // image/jpeg, image/png, etc.
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const dataUrl = ev.target.result;
+      const base64  = dataUrl.split(',')[1];
+      setImagen({ base64, mediaType, preview: dataUrl, nombre: file.name });
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  }
+
   // ── Enviar mensaje ────────────────────────────────────────
   async function enviar() {
-    if (!mensaje.trim() || cargando) return;
-    const pregunta = mensaje.trim();
+    if ((!mensaje.trim() && !imagen) || cargando) return;
+    const pregunta   = mensaje.trim();
+    const imgActual  = imagen;
     setMensaje('');
-    setChat(prev => [...prev, { rol: 'tu', texto: pregunta }]);
+    setImagen(null);
+
+    // Mostrar en el chat: texto + miniatura si hay imagen
+    setChat(prev => [...prev, { rol: 'tu', texto: pregunta, imagen: imgActual }]);
     setCargando(true);
     try {
       const response = await fetch('/api/chat', {
@@ -70,23 +91,22 @@ function GeminiChat({ formulaContexto, onDescargarExcel }) {
         body: JSON.stringify({
           mensaje:   pregunta,
           historial: chat,
-          contexto:  formulaContexto || null
+          contexto:  formulaContexto || null,
+          imagen:    imgActual ? { base64: imgActual.base64, mediaType: imgActual.mediaType } : null
         })
       });
       const data  = await response.json();
       let textoRaw = data.texto || 'Sin respuesta';
 
-      // Extraer bloque FORMULA_JSON si existe (con o sin tag de cierre)
-      const matchFull = textoRaw.match(/<FORMULA_JSON>([\s\S]*?)<\/FORMULA_JSON>/);
-      const matchOpen = textoRaw.match(/<FORMULA_JSON>([\s\S]*)/); // sin cierre
+      // Extraer bloque FORMULA_JSON si existe
+      const matchFull  = textoRaw.match(/<FORMULA_JSON>([\s\S]*?)<\/FORMULA_JSON>/);
+      const matchOpen  = textoRaw.match(/<FORMULA_JSON>([\s\S]*)/);
       const matchUsado = matchFull || matchOpen;
       if (matchUsado) {
         try {
-          const jsonStr = matchUsado[1].trim();
-          const parsed = JSON.parse(jsonStr);
+          const parsed = JSON.parse(matchUsado[1].trim());
           if (parsed.nombre && (parsed.mp || parsed.ad)) setSugerenciaXL(parsed);
         } catch(_) {}
-        // Quitar el bloque del texto visible (con y sin cierre)
         textoRaw = textoRaw
           .replace(/<FORMULA_JSON>[\s\S]*?<\/FORMULA_JSON>/g, '')
           .replace(/<FORMULA_JSON>[\s\S]*/g, '')
@@ -107,14 +127,11 @@ function GeminiChat({ formulaContexto, onDescargarExcel }) {
     const totalG = [...mp, ...ad].reduce((s, i) => s + (i.g || 0), 0);
 
     const fila = (seccion, n, g) => ({
-      'SECCIÓN': seccion,
-      'DETALLE': n,
+      'SECCIÓN': seccion, 'DETALLE': n,
       'GRAMOS':  Math.round(g),
       'KILOS':   parseFloat((g / 1000).toFixed(3)),
       '% TOTAL': totalG > 0 ? parseFloat(((g / totalG) * 100).toFixed(2)) : 0,
-      '$/KG':    '',
-      'COSTO $': '',
-      'NOTA':    '← Sugerencia IA'
+      '$/KG': '', 'COSTO $': '', 'NOTA': '← Sugerencia IA'
     });
     const filaVacia = () => ({ 'SECCIÓN':'','DETALLE':'','GRAMOS':'','KILOS':'','% TOTAL':'','$/KG':'','COSTO $':'','NOTA':'' });
     const subTot = (label, items) => {
@@ -179,13 +196,10 @@ function GeminiChat({ formulaContexto, onDescargarExcel }) {
       {/* ── Chat abierto ── */}
       {abierto && (
         <div style={{
-          width: '500px',
-          background: 'white',
-          borderRadius: '14px',
+          width: '500px', background: 'white', borderRadius: '14px',
           boxShadow: '0 8px 40px rgba(0,0,0,0.2)',
           display: 'flex', flexDirection: 'column',
-          overflow: 'hidden',
-          maxWidth: 'calc(100vw - 24px)'
+          overflow: 'hidden', maxWidth: 'calc(100vw - 24px)'
         }}>
 
           {/* Header — arrastrable */}
@@ -196,8 +210,7 @@ function GeminiChat({ formulaContexto, onDescargarExcel }) {
               background: 'linear-gradient(135deg,#4285f4,#1a73e8)',
               padding: '12px 14px',
               display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-              cursor: drag ? 'grabbing' : 'grab',
-              userSelect: 'none'
+              cursor: drag ? 'grabbing' : 'grab', userSelect: 'none'
             }}>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -214,26 +227,21 @@ function GeminiChat({ formulaContexto, onDescargarExcel }) {
             </div>
 
             <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-              {/* Botón Excel sugerencia IA */}
               {sugerenciaXL && (
-                <button
-                  onClick={descargarSugerencia}
-                  title="Descargar sugerencia de la IA en Excel"
+                <button onClick={descargarSugerencia} title="Descargar sugerencia de la IA en Excel"
                   style={{
-                    background: '#e65100', border: 'none',
-                    color: 'white', cursor: 'pointer', borderRadius: '6px',
+                    background: '#e65100', border: 'none', color: 'white',
+                    cursor: 'pointer', borderRadius: '6px',
                     padding: '4px 10px', fontSize: '12px', fontWeight: 'bold',
                     animation: 'pulse 2s infinite'
-                  }}>
-                  🤖 Excel IA
-                </button>
+                  }}>🤖 Excel IA</button>
               )}
               <button onClick={() => setAbierto(false)} title="Minimizar" style={{
                 background: 'rgba(255,255,255,0.2)', border: 'none',
                 color: 'white', cursor: 'pointer', borderRadius: '4px',
                 padding: '2px 8px', fontSize: '14px'
               }}>—</button>
-              <button onClick={() => { setAbierto(false); setChat([]); }} title="Cerrar" style={{
+              <button onClick={() => { setAbierto(false); setChat([]); setSugerenciaXL(null); setImagen(null); }} title="Cerrar" style={{
                 background: 'rgba(255,255,255,0.2)', border: 'none',
                 color: 'white', cursor: 'pointer', borderRadius: '4px',
                 padding: '2px 8px', fontSize: '14px'
@@ -250,24 +258,26 @@ function GeminiChat({ formulaContexto, onDescargarExcel }) {
             {chat.length === 0 && (
               <div style={{
                 color: '#888', textAlign: 'center',
-                marginTop: formulaContexto ? '20px' : '80px',
+                marginTop: formulaContexto ? '20px' : '60px',
                 fontSize: '13px', lineHeight: '1.6'
               }}>
                 <div style={{ fontSize: '32px', marginBottom: '10px' }}>🤖</div>
                 {formulaContexto ? (
                   <>
                     Tengo la fórmula activa cargada.<br/>
-                    Pregúntame qué quieres saber<br/>
-                    o qué mejorar en ella.<br/>
+                    Pregúntame qué quieres saber o qué mejorar.<br/>
                     <span style={{ fontSize: '11px', color: '#aaa', marginTop: 6, display: 'block' }}>
-                      Usa el botón 📥 Excel para descargarla
+                      📎 También puedes subir una foto del producto
                     </span>
                   </>
                 ) : (
                   <>
                     Hola, soy tu asistente.<br/>
                     Pregúntame sobre producción,<br/>
-                    fórmulas o costos.
+                    fórmulas o costos.<br/>
+                    <span style={{ fontSize: '11px', color: '#aaa', marginTop: 6, display: 'block' }}>
+                      📎 Puedes adjuntar fotos para análisis
+                    </span>
                   </>
                 )}
               </div>
@@ -278,18 +288,32 @@ function GeminiChat({ formulaContexto, onDescargarExcel }) {
                 display: 'flex',
                 justifyContent: m.rol === 'tu' ? 'flex-end' : 'flex-start'
               }}>
-                <span style={{
-                  background: m.rol === 'tu' ? '#4285f4' : 'white',
-                  color:      m.rol === 'tu' ? 'white'   : '#333',
-                  padding: '9px 13px',
-                  borderRadius: m.rol === 'tu' ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
-                  maxWidth: '85%', fontSize: '13px',
-                  boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-                  lineHeight: '1.5', whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-word'
-                }}>
-                  {m.texto}
-                </span>
+                <div style={{ maxWidth: '85%', display: 'flex', flexDirection: 'column', alignItems: m.rol === 'tu' ? 'flex-end' : 'flex-start', gap: 4 }}>
+                  {/* Miniatura de imagen si el mensaje la incluye */}
+                  {m.imagen && (
+                    <img
+                      src={m.imagen.preview}
+                      alt={m.imagen.nombre}
+                      style={{
+                        maxWidth: '160px', maxHeight: '120px',
+                        borderRadius: '10px', border: '2px solid #4285f4',
+                        objectFit: 'cover'
+                      }}
+                    />
+                  )}
+                  {m.texto && (
+                    <span style={{
+                      background: m.rol === 'tu' ? '#4285f4' : 'white',
+                      color:      m.rol === 'tu' ? 'white'   : '#333',
+                      padding: '9px 13px',
+                      borderRadius: m.rol === 'tu' ? '12px 12px 2px 12px' : '12px 12px 12px 2px',
+                      fontSize: '13px', boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+                      lineHeight: '1.5', whiteSpace: 'pre-wrap', wordBreak: 'break-word'
+                    }}>
+                      {m.texto}
+                    </span>
+                  )}
+                </div>
               </div>
             ))}
 
@@ -299,8 +323,7 @@ function GeminiChat({ formulaContexto, onDescargarExcel }) {
                   background: 'white', padding: '10px 14px',
                   borderRadius: '12px 12px 12px 2px',
                   fontSize: '16px', color: '#4285f4',
-                  boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-                  letterSpacing: 3
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.1)', letterSpacing: 3
                 }}>
                   <span style={{ animation: 'pulse 1s infinite' }}>●</span>
                   <span style={{ animation: 'pulse 1s 0.2s infinite' }}>●</span>
@@ -310,27 +333,71 @@ function GeminiChat({ formulaContexto, onDescargarExcel }) {
             )}
           </div>
 
+          {/* Preview imagen seleccionada */}
+          {imagen && (
+            <div style={{
+              padding: '8px 10px', background: '#e8f4fd',
+              borderTop: '1px solid #cce0f5',
+              display: 'flex', alignItems: 'center', gap: 8
+            }}>
+              <img src={imagen.preview} alt="preview"
+                style={{ width: 48, height: 48, objectFit: 'cover', borderRadius: 8, border: '2px solid #4285f4' }}
+              />
+              <div style={{ flex: 1, fontSize: '12px', color: '#1a5276', fontWeight: 'bold', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                📎 {imagen.nombre}
+              </div>
+              <button onClick={() => setImagen(null)} style={{
+                background: '#e74c3c', color: 'white', border: 'none',
+                borderRadius: '50%', width: 22, height: 22,
+                cursor: 'pointer', fontSize: '12px', flexShrink: 0
+              }}>✕</button>
+            </div>
+          )}
+
           {/* Input */}
           <div style={{
             padding: '10px', display: 'flex', gap: 8,
-            borderTop: '1px solid #eee', background: 'white'
+            borderTop: '1px solid #eee', background: 'white', alignItems: 'center'
           }}>
+            {/* Botón adjuntar */}
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              style={{ display: 'none' }}
+              onChange={seleccionarArchivo}
+            />
+            <button
+              onClick={() => fileRef.current.click()}
+              title="Adjuntar foto"
+              style={{
+                background: imagen ? '#4285f4' : '#f0f0f0',
+                color: imagen ? 'white' : '#555',
+                border: 'none', borderRadius: '8px',
+                padding: '10px 12px', cursor: 'pointer',
+                fontSize: '16px', flexShrink: 0,
+                transition: 'all 0.2s'
+              }}>📎</button>
+
             <input
               value={mensaje}
               onChange={e => setMensaje(e.target.value)}
               onKeyPress={e => e.key === 'Enter' && enviar()}
-              placeholder="Escribe tu pregunta..."
+              placeholder={imagen ? 'Escribe sobre la imagen...' : 'Escribe tu pregunta...'}
               style={{
                 flex: 1, padding: '10px 12px', borderRadius: '8px',
                 border: '1px solid #ddd', fontSize: '13px', outline: 'none'
               }}
             />
-            <button onClick={enviar} disabled={cargando || !mensaje.trim()} style={{
-              background: cargando || !mensaje.trim() ? '#ccc' : '#4285f4',
-              color: 'white', border: 'none', borderRadius: '8px',
-              padding: '8px 16px', cursor: cargando ? 'not-allowed' : 'pointer',
-              fontSize: '16px', transition: 'background 0.2s'
-            }}>➤</button>
+            <button
+              onClick={enviar}
+              disabled={cargando || (!mensaje.trim() && !imagen)}
+              style={{
+                background: (cargando || (!mensaje.trim() && !imagen)) ? '#ccc' : '#4285f4',
+                color: 'white', border: 'none', borderRadius: '8px',
+                padding: '8px 16px', cursor: cargando ? 'not-allowed' : 'pointer',
+                fontSize: '16px', transition: 'background 0.2s', flexShrink: 0
+              }}>➤</button>
           </div>
         </div>
       )}
