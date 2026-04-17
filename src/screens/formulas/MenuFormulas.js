@@ -108,34 +108,27 @@ export default function MenuFormulas({
         {/* Tabs admin */}
         {userRol?.rol === 'admin' && (
           <div style={{
-            display:'flex', overflowX:'auto',
-            borderTop:'1px solid rgba(255,255,255,0.12)',
-            marginTop:8, paddingTop:0, gap:0
+            display:'flex', overflowX:'auto', gap:2,
+            borderTop:'1px solid rgba(255,255,255,0.15)',
+            marginTop:6, paddingTop:4
           }}>
             {[
-              ['💰 Precios',   () => navegarA('resumen')  ],
-              ['⚙️ MOD+CIF',  () => navegarA('modcif')   ],
-              ['📦 Materias', () => navegarA('materias') ],
-              ['📋 Historial',() => navegarA('historial')],
-            ].map(([label, fn]) => (
-              <button key={label} onClick={fn} style={{
-                padding:'10px 16px',
-                background:'transparent', color:'rgba(255,255,255,0.7)',
-                border:'none', borderBottom:'3px solid transparent',
-                cursor:'pointer', fontSize:'13px', fontWeight:'bold',
-                whiteSpace:'nowrap', flexShrink:0,
-                transition:'all 0.2s'
-              }}
-              onMouseEnter={e => {
-                e.currentTarget.style.color = 'white';
-                e.currentTarget.style.borderBottomColor = '#4fc3f7';
-                e.currentTarget.style.background = 'rgba(255,255,255,0.08)';
-              }}
-              onMouseLeave={e => {
-                e.currentTarget.style.color = 'rgba(255,255,255,0.7)';
-                e.currentTarget.style.borderBottomColor = 'transparent';
-                e.currentTarget.style.background = 'transparent';
-              }}
+              ['💰 Precios',   () => navegarA('resumen'),  '#f1c40f', 'rgba(241,196,15,0.18)'  ],
+              ['⚙️ MOD+CIF',  () => navegarA('modcif'),   '#4fc3f7', 'rgba(79,195,247,0.14)'  ],
+              ['📦 Materias', () => navegarA('materias'), '#2ecc71', 'rgba(46,204,113,0.16)'  ],
+              ['📋 Historial',() => navegarA('historial'),'#a29bfe', 'rgba(162,155,254,0.16)' ],
+            ].map(([label, fn, color, bgColor]) => (
+              <button key={label} onClick={fn}
+                style={{
+                  padding:'9px 18px', background:bgColor,
+                  color: color, border:'none',
+                  borderBottom:`3px solid ${color}`,
+                  borderRadius:'8px 8px 0 0',
+                  cursor:'pointer', fontSize:'13px', fontWeight:'bold',
+                  whiteSpace:'nowrap', flexShrink:0, transition:'all 0.2s'
+                }}
+                onMouseEnter={e => { e.currentTarget.style.opacity='1'; e.currentTarget.style.transform='translateY(-2px)'; }}
+                onMouseLeave={e => { e.currentTarget.style.opacity='0.9'; e.currentTarget.style.transform='translateY(0)'; }}
               >{label}</button>
             ))}
           </div>

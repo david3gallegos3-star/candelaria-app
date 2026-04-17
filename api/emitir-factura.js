@@ -48,7 +48,7 @@ module.exports = async function handler(req, res) {
       obligado_contabilidad:  false,
       contribuyente_especial: '',
       nombre_comercial:       'Embutidos y Jamones Candelaria',
-      razon_social:           'GALLEGOS BRAVO DAVID ERNESTO',
+      razon_social:           'Embutidos y Jamones Candelaria',
       direccion:              'Ibarra, Imbabura, Ecuador',
       establecimiento: {
         punto_emision: '001',

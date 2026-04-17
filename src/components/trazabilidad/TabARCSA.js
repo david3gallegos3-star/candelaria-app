@@ -107,57 +107,6 @@ export default function TabARCSA({ mobile }) {
     await cargar();
   }
 
-  async function exportarReporteARCSA() {
-    // Cruzar registros ARCSA con lotes_produccion
-    const { data: lotes } = await supabase
-      .from('lotes_produccion')
-      .select('producto_nombre, codigo_lote, fecha_produccion, fecha_vencimiento, cantidad_kg, estado')
-      .eq('estado', 'activo')
-      .order('fecha_produccion', { ascending: false });
-
-    const lotesPorProducto = {};
-    (lotes || []).forEach(l => {
-      if (!lotesPorProducto[l.producto_nombre]) lotesPorProducto[l.producto_nombre] = [];
-      lotesPorProducto[l.producto_nombre].push(l);
-    });
-
-    const hoy = new Date().toISOString().slice(0, 10);
-    const enc = [
-      'Producto', 'N° Notificación ARCSA', 'Tipo',
-      'F. Emisión', 'F. Vencimiento NSO', 'Vida útil (días)',
-      'Titular', 'Almacenamiento', 'Ingredientes',
-      'Último lote activo', 'F. Producción', 'F. Venc. Lote', 'Kg producidos'
-    ];
-    const rows = registros.map(r => {
-      const lotesP = lotesPorProducto[r.producto_nombre] || [];
-      const ultimoLote = lotesP[0];
-      return [
-        r.producto_nombre,
-        r.numero_notificacion,
-        r.tipo_notificacion,
-        r.fecha_emision || '',
-        r.fecha_vencimiento || '',
-        r.vida_util_dias || '',
-        r.titular || '',
-        r.condiciones_almacenamiento || '',
-        (r.ingredientes_declarados || '').replace(/\n/g, ' '),
-        ultimoLote?.codigo_lote || '—',
-        ultimoLote?.fecha_produccion || '—',
-        ultimoLote?.fecha_vencimiento || '—',
-        ultimoLote ? `${ultimoLote.cantidad_kg} kg` : '—',
-      ];
-    });
-
-    const csv = [enc, ...rows].map(r => r.map(v => `"${v}"`).join(',')).join('\n');
-    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href = url;
-    a.download = `Reporte_ARCSA_${hoy}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
   const filtrados = registros.filter(r =>
     !busqueda ||
     r.producto_nombre?.toLowerCase().includes(busqueda.toLowerCase()) ||
@@ -205,12 +154,6 @@ export default function TabARCSA({ mobile }) {
         <input value={busqueda} onChange={e => setBusqueda(e.target.value)}
           placeholder="Buscar producto o N° notificación..."
           style={{ ...inputStyle, flex: 1, minWidth: 200 }} />
-        {registros.length > 0 && (
-          <button onClick={exportarReporteARCSA} style={{
-            background: '#2d5a1b', color: 'white', border: 'none', borderRadius: '8px',
-            padding: '9px 14px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold'
-          }}>📥 Reporte ARCSA</button>
-        )}
         <button onClick={abrirNuevo} style={{
           background: 'linear-gradient(135deg,#1a3a1a,#2d5a1b)',
           color: 'white', border: 'none', borderRadius: '8px',

@@ -21,10 +21,6 @@ import Conciliacion  from './Conciliacion';
 import RRHH          from './RRHH';
 import Trazabilidad  from './Trazabilidad';
 import Dashboard     from './Dashboard';
-import ExpressBodeguero   from './components/express/ExpressBodeguero';
-import ExpressProduccion  from './components/express/ExpressProduccion';
-import ExpressRepartidor  from './components/express/ExpressRepartidor';
-import ExpressContadora   from './components/express/ExpressContadora';
 import './App.css';
 import html2canvas from 'html2canvas';
 
@@ -61,8 +57,7 @@ function App() {
   const [pantalla,        setPantalla]        = useState('login');
   const [historialNav,    setHistorialNav]    = useState([]);
   const [productoActivo,  setProductoActivo]  = useState(null);
-  const [formulaContexto,   setFormulaContexto]   = useState(null);
-  const [formulaDescargaFn, setFormulaDescargaFn] = useState(null);
+  const [formulaContexto, setFormulaContexto] = useState(null);
 
   function navegarA(destino) {
     setHistorialNav(prev => [...prev, pantalla]);
@@ -122,15 +117,6 @@ function App() {
 
   // ── Refs ──────────────────────────────────────────────
   const fileRefHistorial = useRef();
-
-  // ── Ruteo por rol ─────────────────────────────────────
-  function pantallaPorRol(rol) {
-    if (rol === 'bodeguero')   return 'expressBodeguero';
-    if (rol === 'produccion')  return 'expressProduccion';
-    if (rol === 'repartidor')  return 'expressRepartidor';
-    if (rol === 'contadora')   return 'expressContadora';
-    return 'menuPrincipal';
-  }
 
   // ── Helpers ───────────────────────────────────────────
   function mostrarExito(msg) {
@@ -225,9 +211,9 @@ function App() {
 
   // ── useEffects ────────────────────────────────────────
   useEffect(() => {
-    checkSession(async (rol) => {
+    checkSession(async () => {
       await cargarTodo();
-      setPantalla(pantallaPorRol(rol?.rol));
+      setPantalla('menuPrincipal');
     });
   }, []);
 
@@ -696,9 +682,9 @@ async function confirmarImportacion() {
       email={email}       setEmail={setEmail}
       password={password} setPassword={setPassword}
       loading={loading}
-      login={() => login(async (rol) => {
+      login={() => login(async () => {
         await cargarTodo();
-        setPantalla(pantallaPorRol(rol?.rol));
+        setPantalla('menuPrincipal');
       })}
     />
   );
@@ -849,32 +835,6 @@ if (pantalla === 'trazabilidad')
     userRol={userRol}
   />;
 
-if (pantalla === 'expressBodeguero')
-  return <ExpressBodeguero
-    userRol={userRol}
-    currentUser={user}
-    onLogout={() => logout(() => setPantalla('login'))}
-  />;
-
-if (pantalla === 'expressProduccion')
-  return <ExpressProduccion
-    userRol={userRol}
-    currentUser={user}
-    onLogout={() => logout(() => setPantalla('login'))}
-  />;
-
-if (pantalla === 'expressRepartidor')
-  return <ExpressRepartidor
-    currentUser={user}
-    onLogout={() => logout(() => setPantalla('login'))}
-  />;
-
-if (pantalla === 'expressContadora')
-  return <ExpressContadora
-    currentUser={user}
-    onLogout={() => logout(() => setPantalla('login'))}
-  />;
-
 if (pantalla === 'dashboard')
   return <Dashboard
     onVolver={volverAtras}
@@ -890,10 +850,8 @@ if (pantalla === 'dashboard')
         currentUser={user}
         onAbrirMaterias={() => navegarA('materias')}
         onContextoFormula={setFormulaContexto}
-        onDescargaFn={fn => setFormulaDescargaFn(() => fn)}
         onVolver={() => {
           setFormulaContexto(null);
-          setFormulaDescargaFn(null);
           volverAtras();
           setProductoActivo(null);
           cargarCategorias();
@@ -905,7 +863,7 @@ if (pantalla === 'dashboard')
           cargarCategorias();
         }}
       />
-      <GeminiChat formulaContexto={formulaContexto} onDescargarExcel={formulaDescargaFn} />
+      <GeminiChat formulaContexto={formulaContexto} />
     </>
   );
 

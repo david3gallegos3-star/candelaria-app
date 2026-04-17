@@ -62,6 +62,17 @@ export default function FormulacionHeader({
             border:'1px solid rgba(255,255,255,0.25)'
           }}>← Volver</button>
 
+          {onAbrirMaterias && (
+            <button onClick={onAbrirMaterias} style={{
+              ...btnBase,
+              background:'rgba(255,255,255,0.15)',
+              color:'white',
+              padding: mobile ? '8px 10px' : '7px 12px',
+              border:'1px solid rgba(255,255,255,0.25)',
+              fontSize:'12px'
+            }}>📦 {mobile ? '' : 'Materias'}</button>
+          )}
+
           <div>
             <div style={{
               color:'white', fontWeight:'bold',
@@ -167,6 +178,12 @@ export default function FormulacionHeader({
             ...btnBase, padding:'8px 10px', background:'#27ae60', color:'white'
           }}>📥</button>
 
+          <button onClick={() => setComparadorAbierto(!comparadorAbierto)} style={{
+            ...btnBase, padding:'8px 10px',
+            background: comparadorAbierto ? '#f39c12' : '#95a5a6',
+            color:'white'
+          }}>🔍</button>
+
           <button onClick={() => setVersionesAbierto(!versionesAbierto)} style={{
             ...btnBase, padding:'8px 10px',
             background: versionesAbierto ? '#8e44ad' : '#6c3483',
@@ -257,42 +274,53 @@ export default function FormulacionHeader({
         </div>
       )}
 
-      {/* ── Tabs mobile (solo en edición) ── */}
-      {modoEdicion && mobile && (
+      {/* ── Tabs mobile ── */}
+      {mobile && (
         <div style={{
           display:'flex', marginTop:8,
           background:'rgba(255,255,255,0.08)',
           borderRadius:'10px', padding:'4px', gap:4
         }}>
-          {[
+          {/* Fórmula y Costos — solo en edición */}
+          {modoEdicion && [
             ['formula', '🧪 Fórmula'],
             ['costos',  '📊 Costos' ],
-            ['materias','📦 Materias'],
-          ].map(([key, label]) => {
-            const esMaterias = key === 'materias';
-            const activo     = seccionActiva === key;
-            return (
-              <button key={key}
-                onClick={() => {
-                  if (esMaterias) { onAbrirMaterias && onAbrirMaterias(); return; }
-                  setSeccionActiva(key);
-                }}
-                style={{
-                  flex:1, padding:'8px 2px', cursor:'pointer',
-                  fontSize:'11px', fontWeight:'bold',
-                  border: 'none',
-                  borderBottom: esMaterias
-                    ? `3px solid ${activo ? '#2ecc71' : 'rgba(46,204,113,0.5)'}`
-                    : `3px solid ${activo ? 'white' : 'transparent'}`,
-                  borderRadius:'7px 7px 0 0',
-                  background: esMaterias
-                    ? 'rgba(46,204,113,0.15)'
-                    : activo ? 'rgba(255,255,255,0.2)' : 'transparent',
-                  color: esMaterias ? '#2ecc71' : activo ? 'white' : '#aaa',
-                  transition:'all 0.2s'
-                }}>{label}</button>
-            );
-          })}
+          ].map(([key, label]) => (
+            <button key={key}
+              onClick={() => setSeccionActiva(key)}
+              style={{
+                flex:1, padding:'8px 2px', border:'none',
+                borderRadius:'7px', cursor:'pointer',
+                fontSize:'11px', fontWeight:'bold',
+                background: seccionActiva === key ? 'rgba(255,255,255,0.2)' : 'transparent',
+                color: seccionActiva === key ? 'white' : 'rgba(255,255,255,0.6)',
+                transition:'all 0.2s'
+              }}>{label}</button>
+          ))}
+          {/* Materias — siempre visible, color diferente (verde) */}
+          <button
+            onClick={() => onAbrirMaterias && onAbrirMaterias()}
+            style={{
+              flex:1, padding:'8px 2px', border:'none',
+              borderRadius:'7px', cursor:'pointer',
+              fontSize:'11px', fontWeight:'bold',
+              background:'rgba(46,204,113,0.2)',
+              color:'#2ecc71',
+              transition:'all 0.2s'
+            }}>📦 Materias</button>
+          {/* Versiones — solo en edición */}
+          {modoEdicion && (
+            <button
+              onClick={() => { setVersionesAbierto(true); setSeccionActiva('versiones'); }}
+              style={{
+                flex:1, padding:'8px 2px', border:'none',
+                borderRadius:'7px', cursor:'pointer',
+                fontSize:'11px', fontWeight:'bold',
+                background: seccionActiva === 'versiones' ? 'rgba(255,255,255,0.2)' : 'transparent',
+                color: seccionActiva === 'versiones' ? 'white' : 'rgba(255,255,255,0.6)',
+                transition:'all 0.2s'
+              }}>🔄 Vers.</button>
+          )}
         </div>
       )}
     </div>

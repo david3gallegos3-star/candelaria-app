@@ -8,11 +8,6 @@ import TabDesfasesInventario    from './components/conciliacion/TabDesfasesInven
 import TabDesfasesPrecios       from './components/conciliacion/TabDesfasesPrecios';
 import TabDesfasesProduccion    from './components/conciliacion/TabDesfasesProduccion';
 import TabAnalisisIA            from './components/conciliacion/TabAnalisisIA';
-import TabVentasCobros          from './components/conciliacion/TabVentasCobros';
-import TabComprasPagos          from './components/conciliacion/TabComprasPagos';
-import TabConciliacionIVA       from './components/conciliacion/TabConciliacionIVA';
-import TabNominaIESS            from './components/conciliacion/TabNominaIESS';
-import TabCierreMensual         from './components/conciliacion/TabCierreMensual';
 
 function Conciliacion({ onVolver, onVolverMenu, userRol }) {
 
@@ -48,21 +43,6 @@ function Conciliacion({ onVolver, onVolverMenu, userRol }) {
         )}
         {tabActiva === 'produccion' && (
           <TabDesfasesProduccion mobile={mobile} />
-        )}
-        {tabActiva === 'ventas_cobros' && (
-          <TabVentasCobros mobile={mobile} />
-        )}
-        {tabActiva === 'compras_pagos' && (
-          <TabComprasPagos mobile={mobile} />
-        )}
-        {tabActiva === 'iva' && (
-          <TabConciliacionIVA mobile={mobile} />
-        )}
-        {tabActiva === 'nomina_iess' && (
-          <TabNominaIESS mobile={mobile} />
-        )}
-        {tabActiva === 'cierre' && (
-          <TabCierreMensual mobile={mobile} />
         )}
         {tabActiva === 'ia' && (
           <TabAnalisisIA mobile={mobile} />

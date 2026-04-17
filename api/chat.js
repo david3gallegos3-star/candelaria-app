@@ -1,24 +1,15 @@
 module.exports = async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
 
-  const { mensaje, historial, contexto, imagen } = req.body;
+  const { mensaje, historial, contexto } = req.body;
 
   const systemBase = `Eres un asistente experto de Embutidos y Jamones Candelaria de Ibarra, Ecuador.
 Ayudas con producción, fórmulas, ingredientes, costos y materias primas de embutidos.
 Responde siempre en español, de forma clara y concisa.`;
 
-  const instruccionFormula = contexto ? `
-
-${contexto}
-
-Cuando el usuario pregunte sobre la fórmula, usa los datos anteriores para dar recomendaciones específicas.
-
-INSTRUCCIÓN IMPORTANTE: Si el usuario pide una fórmula nueva, modificada, sugerida o mejorada (con ingredientes y gramos), al FINAL de tu respuesta agrega un bloque con este formato exacto (sin espacios extra):
-<FORMULA_JSON>{"nombre":"NOMBRE DEL PRODUCTO","mp":[{"n":"Ingrediente","g":1000},...],"ad":[{"n":"Condimento","g":50},...]}
-</FORMULA_JSON>
-Solo incluye este bloque si realmente estás proponiendo ingredientes con cantidades específicas en gramos. Si solo estás explicando o respondiendo preguntas generales, NO lo incluyas.` : '';
-
-  const system = `${systemBase}${instruccionFormula}`;
+  const system = contexto
+    ? `${systemBase}\n\n${contexto}\n\nCuando el usuario pregunte sobre la fórmula, usa los datos anteriores para dar recomendaciones específicas.`
+    : systemBase;
 
   try {
     const messages = [
@@ -26,15 +17,7 @@ Solo incluye este bloque si realmente estás proponiendo ingredientes con cantid
         role:    m.rol === 'tu' ? 'user' : 'assistant',
         content: m.texto
       })),
-      {
-        role: 'user',
-        content: imagen
-          ? [
-              { type: 'image', source: { type: 'base64', media_type: imagen.mediaType, data: imagen.base64 } },
-              { type: 'text',  text: mensaje || 'Analiza esta imagen y dime qué observas en relación a la fórmula.' }
-            ]
-          : mensaje
-      }
+      { role:'user', content: mensaje }
     ];
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -46,7 +29,7 @@ Solo incluye este bloque si realmente estás proponiendo ingredientes con cantid
       },
       body: JSON.stringify({
         model:      'claude-haiku-4-5-20251001',
-        max_tokens: 2000,
+        max_tokens: 1000,
         system,
         messages
       })

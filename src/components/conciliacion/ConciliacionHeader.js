@@ -5,15 +5,10 @@
 import React from 'react';
 
 const TABS = [
-  { key: 'inventario',    emoji: '📦', label: 'Inventario'    },
-  { key: 'precios',       emoji: '💰', label: 'Precios'       },
-  { key: 'produccion',    emoji: '🏭', label: 'Producción'    },
-  { key: 'ventas_cobros', emoji: '🧾', label: 'Ventas/Cobros' },
-  { key: 'compras_pagos', emoji: '🛒', label: 'Compras/Pagos' },
-  { key: 'iva',           emoji: '📊', label: 'IVA'           },
-  { key: 'nomina_iess',   emoji: '👥', label: 'Nómina/IESS'   },
-  { key: 'cierre',        emoji: '📋', label: 'Cierre mes'     },
-  { key: 'ia',            emoji: '🤖', label: 'Análisis IA'   },
+  { key: 'inventario',  emoji: '📦', label: 'Inventario'  },
+  { key: 'precios',     emoji: '💰', label: 'Precios'     },
+  { key: 'produccion',  emoji: '🏭', label: 'Producción'  },
+  { key: 'ia',          emoji: '🤖', label: 'Análisis IA' },
 ];
 
 export default function ConciliacionHeader({

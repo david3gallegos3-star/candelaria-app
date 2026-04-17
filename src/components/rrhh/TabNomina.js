@@ -11,10 +11,6 @@ const MESES = [
   'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'
 ];
 
-function norm(s) {
-  return (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
-}
-
 // Cálculos Ecuador
 function calcularRol(emp, diasTrabajados = 30) {
   const sueldo       = emp.sueldo_base || 0;
@@ -85,63 +81,6 @@ export default function TabNomina({ mobile }) {
 
   useEffect(() => { cargar(); }, [cargar]);
 
-  // Sincroniza costo_patronal de la nómina → mod_directa / mod_indirecta → config_productos
-  async function sincronizarConMODCIF(periodoStr) {
-    try {
-      const [
-        { data: nomPeriodo },
-        { data: modD },
-        { data: modI },
-        { data: cfg },
-        { data: cif },
-      ] = await Promise.all([
-        supabase.from('nomina').select('costo_patronal, empleados(nombre)').eq('periodo', periodoStr),
-        supabase.from('mod_directa').select('id, nombre, sueldo_mes'),
-        supabase.from('mod_indirecta').select('id, nombre, sueldo_mes'),
-        supabase.from('costos_mod_cif').select('produccion_kg').single(),
-        supabase.from('cif_items').select('valor_mes'),
-      ]);
-
-      if (!nomPeriodo?.length) return;
-
-      const prodKg = parseFloat(cfg?.produccion_kg) || 13600;
-      let totalMO = 0;
-
-      // Actualizar filas de MOD que coincidan con nombres de empleados
-      for (const row of (modD || [])) {
-        const match = nomPeriodo.find(n => norm(n.empleados?.nombre) === norm(row.nombre));
-        if (match) {
-          await supabase.from('mod_directa').update({
-            sueldo_mes: match.costo_patronal,
-            costo_kg:   prodKg > 0 ? match.costo_patronal / prodKg : 0,
-          }).eq('id', row.id);
-          totalMO += match.costo_patronal;
-        } else {
-          totalMO += parseFloat(row.sueldo_mes) || 0;
-        }
-      }
-      for (const row of (modI || [])) {
-        const match = nomPeriodo.find(n => norm(n.empleados?.nombre) === norm(row.nombre));
-        if (match) {
-          await supabase.from('mod_indirecta').update({
-            sueldo_mes: match.costo_patronal,
-            costo_kg:   prodKg > 0 ? match.costo_patronal / prodKg : 0,
-          }).eq('id', row.id);
-          totalMO += match.costo_patronal;
-        } else {
-          totalMO += parseFloat(row.sueldo_mes) || 0;
-        }
-      }
-
-      // Recalcular mod_cif_kg y propagar a todas las fórmulas
-      const totalCIF      = (cif || []).reduce((s, c) => s + (parseFloat(c.valor_mes) || 0), 0);
-      const nuevoModCifKg = prodKg > 0 ? (totalMO + totalCIF) / prodKg : 0;
-      await supabase.from('config_productos').update({ mod_cif_kg: nuevoModCifKg });
-    } catch (_) {
-      // Sincronización no crítica: si falla, no bloquea el guardado de nómina
-    }
-  }
-
   async function generarNomina() {
     if (yaGenerada) {
       if (!window.confirm(`Ya existe nómina para ${MESES[mes]} ${anio}. ¿Regenerar y reemplazar?`)) return;
@@ -175,7 +114,6 @@ export default function TabNomina({ mobile }) {
     const { error } = await supabase.from('nomina').insert(rows);
     if (error) { alert('Error al generar nómina: ' + error.message); setGenerando(false); return; }
     await cargar();
-    await sincronizarConMODCIF(periodoStr);
     setGenerando(false);
   }
 

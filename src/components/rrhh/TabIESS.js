@@ -23,10 +23,10 @@ export default function TabIESS({ mobile }) {
     const periodoStr = `${anio}-${String(mes + 1).padStart(2,'0')}`;
     const { data } = await supabase
       .from('nomina')
-      .select('*, empleados(nombre, cedula, cargo, sueldo_base, afiliado_iess)')
+      .select('*, empleados(nombre, cedula, cargo)')
       .eq('periodo', periodoStr)
-      .order('created_at');
-    setPlanilla((data || []).filter(n => n.empleados?.afiliado_iess !== false));
+      .eq('estado', 'pagado');            // solo nómina pagada
+    setPlanilla(data || []);
     setCargando(false);
   }, [mes, anio]);
 
@@ -40,38 +40,6 @@ export default function TabIESS({ mobile }) {
   const totDecXIV  = planilla.reduce((s, n) => s + (n.decimo_cuarto  || 0), 0);
   const totNeto    = planilla.reduce((s, n) => s + (n.sueldo_neto    || 0), 0);
   const totPatronal= planilla.reduce((s, n) => s + (n.costo_patronal || 0), 0);
-
-  // Formato IESS en línea (portal empleadores SRCI)
-  // Columnas: cédula | apellidos | nombres | sueldo_base | dias | iess_emp | iess_pat | fondo_reserva
-  function exportarIESSLinea() {
-    const periodoStr = `${anio}-${String(mes + 1).padStart(2,'0')}`;
-    const rows = planilla.map(n => {
-      const nombre    = (n.empleados?.nombre || '').trim();
-      const partes    = nombre.split(' ');
-      // Intentar separar apellidos (2 primeras palabras) de nombres (resto)
-      const apellidos = partes.slice(0, 2).join(' ').toUpperCase();
-      const nombres   = partes.slice(2).join(' ').toUpperCase() || apellidos;
-      const cedula    = (n.empleados?.cedula || '').replace(/\D/g, '').padStart(10, '0');
-      return [
-        cedula,
-        apellidos,
-        nombres,
-        (parseFloat(n.sueldo_base || n.sueldo_prop) || 0).toFixed(2),
-        n.dias_trabajados || 30,
-        (n.iess_empleado  || 0).toFixed(2),
-        (n.iess_patronal  || 0).toFixed(2),
-        (n.fondo_reserva  || 0).toFixed(2),
-      ].join('|');
-    });
-    const contenido = rows.join('\n');
-    const blob = new Blob([contenido], { type: 'text/plain;charset=utf-8;' });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href = url;
-    a.download = `IESS_${periodoStr}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
 
   function exportarPlanilla() {
     const enc = [
@@ -132,16 +100,12 @@ export default function TabIESS({ mobile }) {
           <input type="number" value={anio} onChange={e => setAnio(Number(e.target.value))}
             style={{ ...inputStyle, width: '80px' }} />
         </div>
-        {planilla.length > 0 && (<>
+        {planilla.length > 0 && (
           <button onClick={exportarPlanilla} style={{
             background: '#27ae60', color: 'white', border: 'none', borderRadius: '8px',
             padding: '9px 16px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold'
-          }}>📥 Exportar CSV</button>
-          <button onClick={exportarIESSLinea} style={{
-            background: '#1a3a6e', color: 'white', border: 'none', borderRadius: '8px',
-            padding: '9px 16px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold'
-          }}>🏛️ Planilla IESS en línea (.txt)</button>
-        </>)}
+          }}>📥 Exportar planilla IESS</button>
+        )}
       </div>
 
       {/* Info períodos IESS Ecuador */}
@@ -183,8 +147,8 @@ export default function TabIESS({ mobile }) {
         <div style={{ textAlign: 'center', padding: '40px', color: '#888' }}>Cargando...</div>
       ) : planilla.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '40px', color: '#888' }}>
-          No hay nómina generada para {MESES[mes]} {anio}.<br />
-          <span style={{ fontSize: '12px' }}>Genera la nómina en la pestaña Nómina primero.</span>
+          No hay nóminas <b>pagadas</b> para {MESES[mes]} {anio}.<br />
+          <span style={{ fontSize: '12px' }}>Genera y paga la nómina en la pestaña Nómina primero.</span>
         </div>
       ) : (
         <div style={card}>

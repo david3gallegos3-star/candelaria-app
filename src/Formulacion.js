@@ -15,17 +15,12 @@ import FormulaVersiones        from './components/formulacion/FormulaVersiones';
 import ModalBuscador           from './components/formulacion/ModalBuscador';
 import ModalNota               from './components/formulacion/ModalNota';
 
-function Formulacion({ producto, onVolver, onVolverMenu, onAbrirMaterias, userRol, currentUser, onContextoFormula, onDescargaFn }) {
+function Formulacion({ producto, onVolver, onVolverMenu, onAbrirMaterias, userRol, currentUser, onContextoFormula }) {
 
   const f = useFormulacion({ producto, userRol, currentUser });
   const esFormulador = userRol?.rol === 'formulador';
   const [versionesAbierto, setVersionesAbierto] = useState(false);
   const [tabVersiones,     setTabVersiones]     = useState('versiones');
-
-  // ── Pasa función de descarga al chat flotante ──────────────────────────────
-  useEffect(() => {
-    if (onDescargaFn) onDescargaFn(f.descargarExcel);
-  }, [f.descargarExcel]);
 
   // ── Envía contexto de fórmula al chat flotante ─────────────────────────────
   useEffect(() => {
@@ -100,29 +95,25 @@ function Formulacion({ producto, onVolver, onVolverMenu, onAbrirMaterias, userRo
         onAbrirMaterias={onAbrirMaterias}
       />
 
-      {/* ── Tabs desktop (Fórmula | Materias Primas) ── */}
+      {/* ── Pestañas desktop: Fórmula | Materias Primas ── */}
       {!f.mobile && (
         <div style={{
           display:'flex', background:'white',
           borderBottom:'2px solid #e0e0e0',
           boxShadow:'0 2px 6px rgba(0,0,0,0.06)'
         }}>
-          {/* Tab Fórmula — siempre activo */}
           <div style={{
             padding:'12px 24px', fontWeight:'bold', fontSize:'14px',
-            color:'#1a1a2e', borderBottom:'3px solid #1a3a5c',
+            color:'#1a3a5c', borderBottom:'3px solid #1a3a5c',
             cursor:'default'
           }}>🧪 Fórmula</div>
-
-          {/* Tab Materias Primas — navega */}
           {onAbrirMaterias && (
             <button
               onClick={onAbrirMaterias}
               style={{
                 padding:'12px 24px', fontWeight:'bold', fontSize:'14px',
                 color:'#27ae60', border:'none', borderBottom:'3px solid transparent',
-                background:'transparent', cursor:'pointer',
-                transition:'all 0.2s'
+                background:'transparent', cursor:'pointer', transition:'all 0.2s'
               }}
               onMouseEnter={e => {
                 e.currentTarget.style.borderBottomColor = '#27ae60';
@@ -148,34 +139,50 @@ function Formulacion({ producto, onVolver, onVolverMenu, onAbrirMaterias, userRo
 
       <div style={{ padding: f.mobile ? '10px' : '16px 20px' }}>
 
-        {/* Panel Versiones + Comparar — con tabs */}
-        {(versionesAbierto || (f.mobile && f.seccionActiva === 'versiones')) && (
-          <div>
-            {/* Barra de tabs */}
+        {/* Panel Versiones + Comparar con pestañas internas */}
+        {(versionesAbierto || (f.mobile && (f.seccionActiva === 'versiones' || f.seccionActiva === 'comparar'))) && (
+          <div style={{ marginBottom:16 }}>
+            {/* Barra de pestañas internas */}
             <div style={{
-              display: 'flex', background: 'white',
-              borderRadius: '12px 12px 0 0',
-              borderBottom: '2px solid #e0e0e0',
-              overflow: 'hidden', marginBottom: 0,
-              boxShadow: '0 2px 8px rgba(0,0,0,0.08)'
+              display:'flex', background:'white',
+              borderRadius:'12px 12px 0 0',
+              borderBottom:'2px solid #e0e0e0',
+              overflow:'hidden',
+              boxShadow:'0 2px 8px rgba(0,0,0,0.08)'
             }}>
               {[
                 ['versiones', '🔄 Versiones'],
                 ['comparar',  '🔍 Comparar' ],
-              ].map(([key, label]) => (
-                <button key={key}
-                  onClick={() => setTabVersiones(key)}
-                  style={{
-                    flex: 1, padding: '11px 8px', border: 'none',
-                    cursor: 'pointer', fontWeight: 'bold', fontSize: '13px',
-                    background: tabVersiones === key ? '#1a3a5c' : 'white',
-                    color:      tabVersiones === key ? 'white'   : '#555',
-                    borderBottom: tabVersiones === key ? '3px solid #2980b9' : '3px solid transparent',
-                    transition: 'all 0.2s'
-                  }}>{label}</button>
-              ))}
+              ].map(([key, label]) => {
+                const activo = tabVersiones === key ||
+                  (f.mobile && f.seccionActiva === key && tabVersiones !== (key === 'versiones' ? 'comparar' : 'versiones'));
+                const esActivo = tabVersiones === key;
+                return (
+                  <button key={key}
+                    onClick={() => {
+                      setTabVersiones(key);
+                      f.setSeccionActiva(key);
+                    }}
+                    style={{
+                      flex:1, padding:'11px 8px', border:'none',
+                      cursor:'pointer', fontWeight:'bold', fontSize:'13px',
+                      background: esActivo ? '#1a3a5c' : 'white',
+                      color:      esActivo ? 'white'   : '#555',
+                      borderBottom:`3px solid ${esActivo ? '#2980b9' : 'transparent'}`,
+                      transition:'all 0.2s'
+                    }}>{label}</button>
+                );
+              })}
+              <button
+                onClick={() => { setVersionesAbierto(false); f.setSeccionActiva('formula'); }}
+                style={{
+                  padding:'11px 16px', border:'none', background:'white',
+                  cursor:'pointer', fontSize:'13px', color:'#888',
+                  borderLeft:'1px solid #e0e0e0'
+                }}>✕ Cerrar</button>
             </div>
 
+            {/* Contenido según pestaña activa */}
             {tabVersiones === 'versiones' && (
               <FormulaVersiones
                 producto={producto}
@@ -188,10 +195,9 @@ function Formulacion({ producto, onVolver, onVolverMenu, onAbrirMaterias, userRo
                 precioVentaKg={f.precioVentaKg}
                 obtenerPrecioLive={f.obtenerPrecioLive}
                 onRevertida={f.cargarDatos}
-                onCerrar={() => setVersionesAbierto(false)}
+                onCerrar={() => { setVersionesAbierto(false); f.setSeccionActiva('formula'); }}
               />
             )}
-
             {tabVersiones === 'comparar' && (
               <PanelComparador
                 producto={producto}         mobile={f.mobile}
@@ -205,7 +211,7 @@ function Formulacion({ producto, onVolver, onVolverMenu, onAbrirMaterias, userRo
                 setFormulaAnterior={f.setFormulaAnterior}
                 cargandoCompar={f.cargandoCompar}
                 cargarFormulaAnterior={f.cargarFormulaAnterior}
-                setComparadorAbierto={() => setVersionesAbierto(false)}
+                setComparadorAbierto={f.setComparadorAbierto}
                 norm={norm}
               />
             )}
