@@ -15,11 +15,16 @@ import FormulaVersiones        from './components/formulacion/FormulaVersiones';
 import ModalBuscador           from './components/formulacion/ModalBuscador';
 import ModalNota               from './components/formulacion/ModalNota';
 
-function Formulacion({ producto, onVolver, onVolverMenu, onAbrirMaterias, userRol, currentUser, onContextoFormula }) {
+function Formulacion({ producto, onVolver, onVolverMenu, onAbrirMaterias, userRol, currentUser, onContextoFormula, onDescargaFn }) {
 
   const f = useFormulacion({ producto, userRol, currentUser });
   const esFormulador = userRol?.rol === 'formulador';
   const [versionesAbierto, setVersionesAbierto] = useState(false);
+
+  // ── Pasa función de descarga al chat flotante ──────────────────────────────
+  useEffect(() => {
+    if (onDescargaFn) onDescargaFn(f.descargarExcel);
+  }, [f.descargarExcel]);
 
   // ── Envía contexto de fórmula al chat flotante ─────────────────────────────
   useEffect(() => {

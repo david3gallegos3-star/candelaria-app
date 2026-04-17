@@ -59,7 +59,8 @@ function App() {
   const [pantalla,        setPantalla]        = useState('login');
   const [historialNav,    setHistorialNav]    = useState([]);
   const [productoActivo,  setProductoActivo]  = useState(null);
-  const [formulaContexto, setFormulaContexto] = useState(null);
+  const [formulaContexto,   setFormulaContexto]   = useState(null);
+  const [formulaDescargaFn, setFormulaDescargaFn] = useState(null);
 
   function navegarA(destino) {
     setHistorialNav(prev => [...prev, pantalla]);
@@ -873,8 +874,10 @@ if (pantalla === 'dashboard')
         currentUser={user}
         onAbrirMaterias={() => navegarA('materias')}
         onContextoFormula={setFormulaContexto}
+        onDescargaFn={fn => setFormulaDescargaFn(() => fn)}
         onVolver={() => {
           setFormulaContexto(null);
+          setFormulaDescargaFn(null);
           volverAtras();
           setProductoActivo(null);
           cargarCategorias();
@@ -886,7 +889,7 @@ if (pantalla === 'dashboard')
           cargarCategorias();
         }}
       />
-      <GeminiChat formulaContexto={formulaContexto} />
+      <GeminiChat formulaContexto={formulaContexto} onDescargarExcel={formulaDescargaFn} />
     </>
   );
 
