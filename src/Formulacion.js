@@ -20,6 +20,7 @@ function Formulacion({ producto, onVolver, onVolverMenu, onAbrirMaterias, userRo
   const f = useFormulacion({ producto, userRol, currentUser });
   const esFormulador = userRol?.rol === 'formulador';
   const [versionesAbierto, setVersionesAbierto] = useState(false);
+  const [tabVersiones,     setTabVersiones]     = useState('versiones');
 
   // ── Pasa función de descarga al chat flotante ──────────────────────────────
   useEffect(() => {
@@ -99,6 +100,43 @@ function Formulacion({ producto, onVolver, onVolverMenu, onAbrirMaterias, userRo
         onAbrirMaterias={onAbrirMaterias}
       />
 
+      {/* ── Tabs desktop (Fórmula | Materias Primas) ── */}
+      {!f.mobile && (
+        <div style={{
+          display:'flex', background:'white',
+          borderBottom:'2px solid #e0e0e0',
+          boxShadow:'0 2px 6px rgba(0,0,0,0.06)'
+        }}>
+          {/* Tab Fórmula — siempre activo */}
+          <div style={{
+            padding:'12px 24px', fontWeight:'bold', fontSize:'14px',
+            color:'#1a1a2e', borderBottom:'3px solid #1a3a5c',
+            cursor:'default'
+          }}>🧪 Fórmula</div>
+
+          {/* Tab Materias Primas — navega */}
+          {onAbrirMaterias && (
+            <button
+              onClick={onAbrirMaterias}
+              style={{
+                padding:'12px 24px', fontWeight:'bold', fontSize:'14px',
+                color:'#27ae60', border:'none', borderBottom:'3px solid transparent',
+                background:'transparent', cursor:'pointer',
+                transition:'all 0.2s'
+              }}
+              onMouseEnter={e => {
+                e.currentTarget.style.borderBottomColor = '#27ae60';
+                e.currentTarget.style.background = '#f0faf4';
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.borderBottomColor = 'transparent';
+                e.currentTarget.style.background = 'transparent';
+              }}
+            >📦 Materias Primas</button>
+          )}
+        </div>
+      )}
+
       {/* Mensaje éxito */}
       {f.msgExito && (
         <div style={{
@@ -110,40 +148,68 @@ function Formulacion({ producto, onVolver, onVolverMenu, onAbrirMaterias, userRo
 
       <div style={{ padding: f.mobile ? '10px' : '16px 20px' }}>
 
-        {/* Panel Versiones — Fase 0 */}
+        {/* Panel Versiones + Comparar — con tabs */}
         {(versionesAbierto || (f.mobile && f.seccionActiva === 'versiones')) && (
-          <FormulaVersiones
-            producto={producto}
-            mobile={f.mobile}
-            materiasPrimas={f.materiasPrimas}
-            ingredientesMP={f.ingredientesMP}
-            ingredientesAD={f.ingredientesAD}
-            config={f.config}
-            costoTotalKg={f.costoTotalKg}
-            precioVentaKg={f.precioVentaKg}
-            obtenerPrecioLive={f.obtenerPrecioLive}
-            onRevertida={f.cargarDatos}
-            onCerrar={() => setVersionesAbierto(false)}
-          />
-        )}
+          <div>
+            {/* Barra de tabs */}
+            <div style={{
+              display: 'flex', background: 'white',
+              borderRadius: '12px 12px 0 0',
+              borderBottom: '2px solid #e0e0e0',
+              overflow: 'hidden', marginBottom: 0,
+              boxShadow: '0 2px 8px rgba(0,0,0,0.08)'
+            }}>
+              {[
+                ['versiones', '🔄 Versiones'],
+                ['comparar',  '🔍 Comparar' ],
+              ].map(([key, label]) => (
+                <button key={key}
+                  onClick={() => setTabVersiones(key)}
+                  style={{
+                    flex: 1, padding: '11px 8px', border: 'none',
+                    cursor: 'pointer', fontWeight: 'bold', fontSize: '13px',
+                    background: tabVersiones === key ? '#1a3a5c' : 'white',
+                    color:      tabVersiones === key ? 'white'   : '#555',
+                    borderBottom: tabVersiones === key ? '3px solid #2980b9' : '3px solid transparent',
+                    transition: 'all 0.2s'
+                  }}>{label}</button>
+              ))}
+            </div>
 
-        {/* Comparador */}
-        {(f.comparadorAbierto || (f.mobile && f.seccionActiva === 'comparar')) && (
-          <PanelComparador
-            producto={producto}         mobile={f.mobile}
-            ingredientesMP={f.ingredientesMP}
-            ingredientesAD={f.ingredientesAD}
-            totalCrudoG={f.totalCrudoG}
-            fechasDisponibles={f.fechasDisponibles}
-            fechaComparar={f.fechaComparar}
-            setFechaComparar={f.setFechaComparar}
-            formulaAnterior={f.formulaAnterior}
-            setFormulaAnterior={f.setFormulaAnterior}
-            cargandoCompar={f.cargandoCompar}
-            cargarFormulaAnterior={f.cargarFormulaAnterior}
-            setComparadorAbierto={f.setComparadorAbierto}
-            norm={norm}
-          />
+            {tabVersiones === 'versiones' && (
+              <FormulaVersiones
+                producto={producto}
+                mobile={f.mobile}
+                materiasPrimas={f.materiasPrimas}
+                ingredientesMP={f.ingredientesMP}
+                ingredientesAD={f.ingredientesAD}
+                config={f.config}
+                costoTotalKg={f.costoTotalKg}
+                precioVentaKg={f.precioVentaKg}
+                obtenerPrecioLive={f.obtenerPrecioLive}
+                onRevertida={f.cargarDatos}
+                onCerrar={() => setVersionesAbierto(false)}
+              />
+            )}
+
+            {tabVersiones === 'comparar' && (
+              <PanelComparador
+                producto={producto}         mobile={f.mobile}
+                ingredientesMP={f.ingredientesMP}
+                ingredientesAD={f.ingredientesAD}
+                totalCrudoG={f.totalCrudoG}
+                fechasDisponibles={f.fechasDisponibles}
+                fechaComparar={f.fechaComparar}
+                setFechaComparar={f.setFechaComparar}
+                formulaAnterior={f.formulaAnterior}
+                setFormulaAnterior={f.setFormulaAnterior}
+                cargandoCompar={f.cargandoCompar}
+                cargarFormulaAnterior={f.cargarFormulaAnterior}
+                setComparadorAbierto={() => setVersionesAbierto(false)}
+                norm={norm}
+              />
+            )}
+          </div>
         )}
 
         {/* Vista limpia o edición */}

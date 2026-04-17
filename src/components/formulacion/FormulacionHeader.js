@@ -62,17 +62,6 @@ export default function FormulacionHeader({
             border:'1px solid rgba(255,255,255,0.25)'
           }}>← Volver</button>
 
-          {onAbrirMaterias && (
-            <button onClick={onAbrirMaterias} style={{
-              ...btnBase,
-              background:'rgba(255,255,255,0.15)',
-              color:'white',
-              padding: mobile ? '8px 10px' : '7px 12px',
-              border:'1px solid rgba(255,255,255,0.25)',
-              fontSize:'12px'
-            }}>📦 {mobile ? '' : 'Materias'}</button>
-          )}
-
           <div>
             <div style={{
               color:'white', fontWeight:'bold',
@@ -121,12 +110,6 @@ export default function FormulacionHeader({
               ...btnBase, padding:'8px 14px',
               background:'#27ae60', color:'white'
             }}>📥 Excel</button>
-
-            <button onClick={() => setComparadorAbierto(!comparadorAbierto)} style={{
-              ...btnBase, padding:'8px 14px',
-              background: comparadorAbierto ? '#f39c12' : '#95a5a6',
-              color:'white'
-            }}>🔍 Comparar</button>
 
             <button onClick={() => setVersionesAbierto(!versionesAbierto)} style={{
               ...btnBase, padding:'8px 14px',
@@ -183,12 +166,6 @@ export default function FormulacionHeader({
           <button onClick={descargarExcel} style={{
             ...btnBase, padding:'8px 10px', background:'#27ae60', color:'white'
           }}>📥</button>
-
-          <button onClick={() => setComparadorAbierto(!comparadorAbierto)} style={{
-            ...btnBase, padding:'8px 10px',
-            background: comparadorAbierto ? '#f39c12' : '#95a5a6',
-            color:'white'
-          }}>🔍</button>
 
           <button onClick={() => setVersionesAbierto(!versionesAbierto)} style={{
             ...btnBase, padding:'8px 10px',
@@ -288,28 +265,34 @@ export default function FormulacionHeader({
           borderRadius:'10px', padding:'4px', gap:4
         }}>
           {[
-            ['formula',   '🧪 Fórmula' ],
-            ['costos',    '📊 Costos'  ],
-            ['empaques',  '🛍️ Empaques'],
-            ['comparar',  '🔍 Comparar'],
-            ['versiones', '🔄 Versiones'],
-          ].map(([key, label]) => (
-            <button key={key}
-              onClick={() => {
-                setSeccionActiva(key);
-                if (key === 'comparar')  setComparadorAbierto(true);
-                if (key === 'versiones') setVersionesAbierto(true);
-              }}
-              style={{
-                flex:1, padding:'8px 2px', border:'none',
-                borderRadius:'7px', cursor:'pointer',
-                fontSize:'11px', fontWeight:'bold',
-                background: seccionActiva === key
-                  ? 'rgba(255,255,255,0.2)' : 'transparent',
-                color: seccionActiva === key ? 'white' : '#aaa',
-                transition:'all 0.2s'
-              }}>{label}</button>
-          ))}
+            ['formula', '🧪 Fórmula'],
+            ['costos',  '📊 Costos' ],
+            ['materias','📦 Materias'],
+          ].map(([key, label]) => {
+            const esMaterias = key === 'materias';
+            const activo     = seccionActiva === key;
+            return (
+              <button key={key}
+                onClick={() => {
+                  if (esMaterias) { onAbrirMaterias && onAbrirMaterias(); return; }
+                  setSeccionActiva(key);
+                }}
+                style={{
+                  flex:1, padding:'8px 2px', cursor:'pointer',
+                  fontSize:'11px', fontWeight:'bold',
+                  border: 'none',
+                  borderBottom: esMaterias
+                    ? `3px solid ${activo ? '#2ecc71' : 'rgba(46,204,113,0.5)'}`
+                    : `3px solid ${activo ? 'white' : 'transparent'}`,
+                  borderRadius:'7px 7px 0 0',
+                  background: esMaterias
+                    ? 'rgba(46,204,113,0.15)'
+                    : activo ? 'rgba(255,255,255,0.2)' : 'transparent',
+                  color: esMaterias ? '#2ecc71' : activo ? 'white' : '#aaa',
+                  transition:'all 0.2s'
+                }}>{label}</button>
+            );
+          })}
         </div>
       )}
     </div>

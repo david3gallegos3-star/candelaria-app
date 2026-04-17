@@ -107,19 +107,36 @@ export default function MenuFormulas({
 
         {/* Tabs admin */}
         {userRol?.rol === 'admin' && (
-          <div style={{ display:'flex', gap:6, overflowX:'auto', paddingBottom:2 }}>
+          <div style={{
+            display:'flex', overflowX:'auto',
+            borderTop:'1px solid rgba(255,255,255,0.12)',
+            marginTop:8, paddingTop:0, gap:0
+          }}>
             {[
-              ['💰 Precios',   () => navegarA('resumen'),   '#27ae60',                    'none'],
-              ['⚙️ MOD+CIF',  () => navegarA('modcif'),    'rgba(255,255,255,0.15)',      '1px solid rgba(255,255,255,0.3)'],
-              ['📦 Materias', () => navegarA('materias'),  'rgba(255,255,255,0.15)',      '1px solid rgba(255,255,255,0.3)'],
-              ['📋 Historial',() => navegarA('historial'), 'rgba(255,255,255,0.15)',      '1px solid rgba(255,255,255,0.3)'],
-            ].map(([label, fn, bg, border]) => (
+              ['💰 Precios',   () => navegarA('resumen')  ],
+              ['⚙️ MOD+CIF',  () => navegarA('modcif')   ],
+              ['📦 Materias', () => navegarA('materias') ],
+              ['📋 Historial',() => navegarA('historial')],
+            ].map(([label, fn]) => (
               <button key={label} onClick={fn} style={{
-                padding:'7px 12px', background:bg, color:'white',
-                border:border, borderRadius:'7px', cursor:'pointer',
-                fontSize:'12px', fontWeight:'bold',
-                whiteSpace:'nowrap', flexShrink:0
-              }}>{label}</button>
+                padding:'10px 16px',
+                background:'transparent', color:'rgba(255,255,255,0.7)',
+                border:'none', borderBottom:'3px solid transparent',
+                cursor:'pointer', fontSize:'13px', fontWeight:'bold',
+                whiteSpace:'nowrap', flexShrink:0,
+                transition:'all 0.2s'
+              }}
+              onMouseEnter={e => {
+                e.currentTarget.style.color = 'white';
+                e.currentTarget.style.borderBottomColor = '#4fc3f7';
+                e.currentTarget.style.background = 'rgba(255,255,255,0.08)';
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.color = 'rgba(255,255,255,0.7)';
+                e.currentTarget.style.borderBottomColor = 'transparent';
+                e.currentTarget.style.background = 'transparent';
+              }}
+              >{label}</button>
             ))}
           </div>
         )}

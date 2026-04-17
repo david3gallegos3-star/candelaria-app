@@ -214,19 +214,6 @@ function GeminiChat({ formulaContexto, onDescargarExcel }) {
             </div>
 
             <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-              {/* Botón Excel fórmula actual */}
-              {formulaContexto && onDescargarExcel && (
-                <button
-                  onClick={onDescargarExcel}
-                  title="Descargar fórmula actual en Excel"
-                  style={{
-                    background: '#1e7e34', border: 'none',
-                    color: 'white', cursor: 'pointer', borderRadius: '6px',
-                    padding: '4px 10px', fontSize: '12px', fontWeight: 'bold'
-                  }}>
-                  📥 Actual
-                </button>
-              )}
               {/* Botón Excel sugerencia IA */}
               {sugerenciaXL && (
                 <button
