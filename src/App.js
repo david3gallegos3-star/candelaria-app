@@ -11,7 +11,7 @@ import ModCif         from './ModCif';
 import ResumenPrecios from './ResumenPrecios';
 import HistorialMP    from './HistorialMP';
 import Inventario     from './Inventario';
-import Produccion     from './Produccion';
+import Produccion        from './Produccion';
 import GeminiChat     from './GeminiChat';
 import Clientes    from './Clientes';
 import Auditoria   from './Auditoria';
