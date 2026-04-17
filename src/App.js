@@ -250,6 +250,21 @@ function App() {
     }
   }
 
+  const CATS_PROTEGIDAS = ['SALMUERAS', 'CORTES'];
+
+  async function sincronizarSalmueraMP(nombre, precio_kg) {
+    const { data: ex } = await supabase.from('materias_primas')
+      .select('id').eq('nombre_producto', nombre).eq('categoria', 'Salmuera').maybeSingle();
+    if (ex) {
+      await supabase.from('materias_primas').update({ precio_kg }).eq('id', ex.id);
+    } else {
+      await supabase.from('materias_primas').insert({
+        nombre: nombre, nombre_producto: nombre,
+        categoria: 'Salmuera', precio_kg, eliminado: false,
+      });
+    }
+  }
+
   async function crearProducto() {
     if (!nuevoNombre.trim()) return alert('Escribe el nombre del producto');
     const catSel = nuevaCategoria || Object.keys(categoriasConfig)[0];
@@ -257,6 +272,7 @@ function App() {
       .insert([{ nombre: nuevoNombre.trim(), categoria: catSel, estado:'ACTIVO' }])
       .select().single();
     if (error) return alert('Error: ' + error.message);
+    if (catSel === 'SALMUERAS') await sincronizarSalmueraMP(nuevoNombre.trim(), 0);
     setModalNuevo(false);
     setNuevoNombre('');
     await cargarCategorias();
@@ -275,25 +291,40 @@ function App() {
         eliminado_por: userRol?.nombre || 'Admin',
         estado:        'INACTIVO'
       }).eq('id', prod.id);
+      if (prod.categoria === 'SALMUERAS') {
+        await supabase.from('materias_primas')
+          .update({ eliminado: true })
+          .eq('nombre_producto', nombre).eq('categoria', 'Salmuera');
+      }
     }
     await cargarCategorias();
     mostrarExito('🗑️ Eliminado — recupéralo en Gestionar → Eliminados');
   }
-  
+
   async function guardarEdicionProducto() {
     if (!editando?.nuevoNombre?.trim()) return;
+    const prod = productos.find(p => p.nombre === editando.nombre);
     await supabase.from('productos')
       .update({ nombre: editando.nuevoNombre }).eq('nombre', editando.nombre);
     await supabase.from('formulaciones')
       .update({ producto_nombre: editando.nuevoNombre }).eq('producto_nombre', editando.nombre);
     await supabase.from('config_productos')
       .update({ producto_nombre: editando.nuevoNombre }).eq('producto_nombre', editando.nombre);
+    if (prod?.categoria === 'SALMUERAS') {
+      await supabase.from('materias_primas')
+        .update({ nombre: editando.nuevoNombre, nombre_producto: editando.nuevoNombre })
+        .eq('nombre_producto', editando.nombre).eq('categoria', 'Salmuera');
+    }
     setEditando(null);
     await cargarCategorias();
     mostrarExito('✅ Nombre actualizado');
   }
 
   async function moverCategoria(nombre, catActual, nuevaCat) {
+    if (CATS_PROTEGIDAS.includes(catActual) || CATS_PROTEGIDAS.includes(nuevaCat)) {
+      alert('Las categorías SALMUERAS y CORTES son protegidas — no se pueden mover productos.');
+      return;
+    }
     await supabase.from('productos')
       .update({ categoria: nuevaCat }).eq('nombre', nombre);
     await cargarCategorias();
@@ -338,6 +369,10 @@ function App() {
   }
 
   async function eliminarCategoria(nombre) {
+    if (CATS_PROTEGIDAS.includes(nombre)) {
+      alert(`La categoría "${nombre}" es protegida y no puede eliminarse.`);
+      return;
+    }
     const prods = categoriasConfig[nombre] || [];
     if (prods.length > 0) { setConfirmElimCat(nombre); return; }
     await supabase.from('categorias_productos').delete().eq('nombre', nombre);
@@ -348,6 +383,11 @@ function App() {
 
   async function confirmarElimCategoria(moverA) {
     const nombre = confirmElimCat;
+    if (CATS_PROTEGIDAS.includes(nombre)) {
+      alert(`La categoría "${nombre}" es protegida y no puede eliminarse.`);
+      setConfirmElimCat(null);
+      return;
+    }
     const prods  = categoriasConfig[nombre] || [];
     if (moverA && prods.length > 0)
       await supabase.from('productos')
@@ -902,6 +942,7 @@ return (
       crearCategoria={crearCategoria}
       confirmElimCat={confirmElimCat} setConfirmElimCat={setConfirmElimCat}
       confirmarElimCategoria={confirmarElimCategoria}
+      categoriasProtegidas={CATS_PROTEGIDAS}
       notificaciones={notificaciones}
       notifNoLeidas={notifNoLeidas}
       campanAbierta={campanAbierta}   setCampanaAbierta={setCampanaAbierta}

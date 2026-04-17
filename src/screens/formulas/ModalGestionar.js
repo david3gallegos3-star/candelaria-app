@@ -30,6 +30,7 @@ export default function ModalGestionar({
   confirmElimCat, setConfirmElimCat,
   confirmarElimCategoria,
   cargarCategorias,
+  categoriasProtegidas = [],
 }) {
   const [productosEliminados, setProductosEliminados] = useState([]);
   const [restaurando, setRestaurando] = useState(false);
@@ -126,16 +127,23 @@ export default function ModalGestionar({
             {/* ── Tab productos ── */}
             {tabGestionar === 'productos' && (
               <div>
-                {Object.entries(categoriasConfig).map(([categoria, nombresProductos]) => (
+                {Object.entries(categoriasConfig).map(([categoria, nombresProductos]) => {
+                  const esProtegida = categoriasProtegidas.includes(categoria);
+                  return (
                   <div key={categoria} style={{ marginBottom:20 }}>
                     <div style={{
-                      background:'#1a1a2e', color:'white',
+                      background: esProtegida ? '#1a3a5c' : '#1a1a2e', color:'white',
                       padding:'8px 14px', borderRadius:8,
                       fontWeight:'bold', fontSize:'14px',
                       marginBottom:8, display:'flex', alignItems:'center', gap:8
                     }}>
                       <span>{EMOJIS_CAT[categoria]||'📋'}</span>
                       {categoria}
+                      {esProtegida && (
+                        <span style={{ fontSize:'11px', background:'rgba(255,200,0,0.25)', color:'#ffd700', padding:'2px 8px', borderRadius:8 }}>
+                          🔒 Protegida
+                        </span>
+                      )}
                       <span style={{
                         marginLeft:'auto', background:'rgba(255,255,255,0.15)',
                         padding:'2px 10px', borderRadius:10, fontSize:'12px'
@@ -180,15 +188,17 @@ export default function ModalGestionar({
                               flex:1, fontSize:'13px',
                               fontWeight:'bold', color:'#2c3e50'
                             }}>{nombre}</span>
-                            <select
-                              onChange={e => moverCategoria(nombre, categoria, e.target.value)}
-                              value={categoria}
-                              style={{ padding:'4px 6px', borderRadius:6, border:'1px solid #ddd', fontSize:'12px' }}
-                            >
-                              {Object.keys(categoriasConfig).map(c => (
-                                <option key={c} value={c}>{EMOJIS_CAT[c]||'📋'} {c}</option>
-                              ))}
-                            </select>
+                            {!esProtegida && (
+                              <select
+                                onChange={e => moverCategoria(nombre, categoria, e.target.value)}
+                                value={categoria}
+                                style={{ padding:'4px 6px', borderRadius:6, border:'1px solid #ddd', fontSize:'12px' }}
+                              >
+                                {Object.keys(categoriasConfig).map(c => (
+                                  <option key={c} value={c}>{EMOJIS_CAT[c]||'📋'} {c}</option>
+                                ))}
+                              </select>
+                            )}
                             <button onClick={() => setEditando({ nombre, nuevoNombre: nombre })} style={{
                               padding:'5px 10px', background:'#3498db', color:'white',
                               border:'none', borderRadius:6, cursor:'pointer', fontSize:'12px'
@@ -202,7 +212,8 @@ export default function ModalGestionar({
                       </div>
                     ))}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 
@@ -215,9 +226,11 @@ export default function ModalGestionar({
                   fontSize:'14px', fontWeight:'bold', marginBottom:16
                 }}>➕ Nueva categoría</button>
 
-                {Object.entries(categoriasConfig).map(([categoria, prods]) => (
+                {Object.entries(categoriasConfig).map(([categoria, prods]) => {
+                  const esProtCat = categoriasProtegidas.includes(categoria);
+                  return (
                   <div key={categoria} style={{
-                    background:'#f8f9fa', border:'1.5px solid #e9ecef',
+                    background:'#f8f9fa', border:`1.5px solid ${esProtCat ? '#ffc107' : '#e9ecef'}`,
                     borderRadius:10, padding:'12px 14px', marginBottom:10
                   }}>
                     {editandoCat?.nombre === categoria ? (
@@ -263,21 +276,29 @@ export default function ModalGestionar({
                             {prods.length} producto{prods.length!==1?'s':''}
                           </div>
                         </div>
-                        <button onClick={() => setEditandoCat({
-                          nombre: categoria, nuevoNombre: categoria,
-                          emoji: EMOJIS_CAT[categoria]||'📦'
-                        })} style={{
-                          padding:'6px 12px', background:'#3498db', color:'white',
-                          border:'none', borderRadius:7, cursor:'pointer', fontSize:'12px'
-                        }}>✏️ Editar</button>
-                        <button onClick={() => eliminarCategoria(categoria)} style={{
-                          padding:'6px 12px', background:'#e74c3c', color:'white',
-                          border:'none', borderRadius:7, cursor:'pointer', fontSize:'12px'
-                        }}>🗑️</button>
+                        {esProtCat && (
+                          <span style={{ fontSize:'11px', color:'#856404', background:'#fff3cd', padding:'3px 8px', borderRadius:6 }}>🔒 Protegida</span>
+                        )}
+                        {!esProtCat && (
+                          <button onClick={() => setEditandoCat({
+                            nombre: categoria, nuevoNombre: categoria,
+                            emoji: EMOJIS_CAT[categoria]||'📦'
+                          })} style={{
+                            padding:'6px 12px', background:'#3498db', color:'white',
+                            border:'none', borderRadius:7, cursor:'pointer', fontSize:'12px'
+                          }}>✏️ Editar</button>
+                        )}
+                        {!esProtCat && (
+                          <button onClick={() => eliminarCategoria(categoria)} style={{
+                            padding:'6px 12px', background:'#e74c3c', color:'white',
+                            border:'none', borderRadius:7, cursor:'pointer', fontSize:'12px'
+                          }}>🗑️</button>
+                        )}
                       </div>
                     )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 

@@ -17,7 +17,9 @@ export default function PanelCostos({
   precioFunda,
   programarAutoGuardado,
   setBuscador,
+  esSalmuera,
 }) {
+  const precioVentaSalmuera = margen < 1 ? costoMPkg / (1 - margen) : 0;
 
   const BtnBuscar = ({ valor, tipo, indice, color = '#2980b9' }) => (
     <div style={{ display:'flex', gap:'6px', alignItems:'center' }}>
@@ -86,10 +88,10 @@ export default function PanelCostos({
           }}>⚙️ Ajustes</h4>
 
           {[
-            ['Merma %',           'merma'],
+            !esSalmuera && ['Merma %',           'merma'],
             ['Margen ganancia %', 'margen'],
-            ['MOD + CIF $/kg',    'mod_cif_kg'],
-          ].map(([label, key]) => (
+            !esSalmuera && ['MOD + CIF $/kg',    'mod_cif_kg'],
+          ].filter(Boolean).map(([label, key]) => (
             <div key={key} style={{
               display:'flex', justifyContent:'space-between',
               alignItems:'center', marginBottom:'10px'
@@ -117,7 +119,7 @@ export default function PanelCostos({
         </div>
 
         {/* Empaque */}
-        <div style={{
+        {!esSalmuera && <div style={{
           background:'white', borderRadius:'12px',
           padding:'14px', boxShadow:'0 1px 4px rgba(0,0,0,0.08)'
         }}>
@@ -208,10 +210,10 @@ export default function PanelCostos({
               </div>
             ))}
           </div>
-        </div>
+        </div>}
 
         {/* Amarre */}
-        <div style={{
+        {!esSalmuera && <div style={{
           background:'white', borderRadius:'12px',
           padding:'14px', boxShadow:'0 1px 4px rgba(0,0,0,0.08)'
         }}>
@@ -269,7 +271,7 @@ export default function PanelCostos({
               </span>
             </div>
           </div>
-        </div>
+        </div>}
       </div>
 
       {/* ── Columna derecha ── */}
@@ -288,11 +290,11 @@ export default function PanelCostos({
 
           {[
             ['Costo MP/kg',  `$${costoMPkg.toFixed(4)}`,      '#555'    ],
-            ['Con merma',    `$${costoConMerma.toFixed(4)}`,   '#e74c3c' ],
-            ['MOD + CIF/kg', `$${modCif.toFixed(4)}`,          '#3498db' ],
-            ['Empaque/kg',   `$${costoEmpaqueKg.toFixed(4)}`,  '#8e44ad' ],
-            ['Amarre/kg',    `$${costoAmarreKg.toFixed(4)}`,   '#e67e22' ],
-          ].map(([l, v, col]) => (
+            !esSalmuera && ['Con merma',    `$${costoConMerma.toFixed(4)}`,   '#e74c3c' ],
+            !esSalmuera && ['MOD + CIF/kg', `$${modCif.toFixed(4)}`,          '#3498db' ],
+            !esSalmuera && ['Empaque/kg',   `$${costoEmpaqueKg.toFixed(4)}`,  '#8e44ad' ],
+            !esSalmuera && ['Amarre/kg',    `$${costoAmarreKg.toFixed(4)}`,   '#e67e22' ],
+          ].filter(Boolean).map(([l, v, col]) => (
             <div key={l} style={{
               display:'flex', justifyContent:'space-between',
               marginBottom:'8px', fontSize:'13px'
@@ -321,14 +323,14 @@ export default function PanelCostos({
                 💰 PRECIO VENTA/KG
               </span>
               <span style={{ fontWeight:'bold', color:'white', fontSize: mobile ? '18px' : '16px' }}>
-                ${precioVentaKg.toFixed(4)}
+                ${(esSalmuera ? precioVentaSalmuera : precioVentaKg).toFixed(4)}
               </span>
             </div>
           </div>
         </div>
 
         {/* Fundas */}
-        <div style={{
+        {!esSalmuera && <div style={{
           background:'white', borderRadius:'12px',
           padding:'14px', boxShadow:'0 1px 4px rgba(0,0,0,0.08)'
         }}>
@@ -436,7 +438,7 @@ export default function PanelCostos({
               </div>
             </div>
           ))}
-        </div>
+        </div>}
       </div>
     </div>
   );

@@ -344,6 +344,7 @@ function Formulacion({ producto, onVolver, onVolverMenu, onAbrirMaterias, userRo
             precioFunda={f.precioFunda}
             programarAutoGuardado={f.programarAutoGuardado}
             setBuscador={f.setBuscador}
+            esSalmuera={producto?.categoria === 'SALMUERAS'}
           />
         )}
       </div>

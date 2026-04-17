@@ -300,7 +300,21 @@ export function useFormulacion({ producto, userRol, currentUser }) {
   const hiloKg         = parseFloat(config.hilo_kg)        || 0;
   const costoAmarreKg  = totalCrudoKg > 0 ? (hiloPrecio * hiloKg) / totalCrudoKg : 0;
   const costoTotalKg   = costoConMerma + modCif + costoEmpaqueKg + costoAmarreKg;
-  const precioVentaKg  = margen < 1 ? costoTotalKg / (1 - margen) : 0;
+  const precioVentaKg       = margen < 1 ? costoTotalKg / (1 - margen) : 0;
+  const precioVentaSalmuera = margen < 1 ? costoMPkg / (1 - margen) : 0;
+
+  // Sincronizar precio_kg en materias_primas cuando cambia el costo de una salmuera
+  useEffect(() => {
+    if (producto?.categoria !== 'SALMUERAS') return;
+    if (precioVentaSalmuera <= 0) return;
+    const timer = setTimeout(async () => {
+      await supabase.from('materias_primas')
+        .update({ precio_kg: precioVentaSalmuera })
+        .eq('nombre_producto', producto.nombre)
+        .eq('categoria', 'Salmuera');
+    }, 3000);
+    return () => clearTimeout(timer);
+  }, [precioVentaSalmuera, producto?.nombre, producto?.categoria]);
 
   function precioFunda(f) {
   const kgFunda     = parseFloat(f.kg_por_funda)    || 1;

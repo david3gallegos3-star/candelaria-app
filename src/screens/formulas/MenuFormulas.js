@@ -30,6 +30,7 @@ export default function MenuFormulas({
   guardarEdicionProducto,
   eliminarProducto,
   moverCategoria,
+  categoriasProtegidas,
   // categorías
   editandoCat, setEditandoCat,
   guardarEdicionCategoria,
@@ -50,6 +51,7 @@ export default function MenuFormulas({
   // misc
   msgExito,
   onVolverMenu,
+  cargarCategorias,
 }) {
 
   const fileRefProductos = useRef();
@@ -294,6 +296,8 @@ export default function MenuFormulas({
         crearCategoria={crearCategoria}
         confirmElimCat={confirmElimCat}     setConfirmElimCat={setConfirmElimCat}
         confirmarElimCategoria={confirmarElimCategoria}
+        categoriasProtegidas={categoriasProtegidas}
+        cargarCategorias={cargarCategorias}
       />
 
       <GeminiChat />
