@@ -464,6 +464,34 @@ export default function TabRegistrar({
   if (mobile) {
     return (
       <div>
+
+        {/* ── Acordeón Inyección mobile ── */}
+        <div style={{ marginBottom:'8px' }}>
+          <button
+            onClick={() => setShowInyeccion(v => !v)}
+            style={{
+              width:'100%', display:'flex',
+              alignItems:'center', justifyContent:'space-between',
+              padding:'11px 14px',
+              background: showInyeccion ? '#1a3a5c' : '#eaf4fb',
+              border: showInyeccion ? 'none' : '0.5px solid #2980b9',
+              borderRadius: showInyeccion ? '10px 10px 0 0' : '10px',
+              cursor:'pointer'
+            }}
+          >
+            <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+              <span style={{ fontSize:18 }}>💉</span>
+              <span style={{ fontWeight:'bold', fontSize:'13px', color: showInyeccion ? 'white' : '#1a3a5c' }}>
+                Inyección de Salmuera
+              </span>
+            </div>
+            <span style={{ fontSize:'18px', fontWeight:'bold', color: showInyeccion ? 'white' : '#2980b9', transform: showInyeccion ? 'rotate(180deg)' : 'none', transition:'transform 0.2s', lineHeight:1 }}>⌄</span>
+          </button>
+          <div style={{ display: showInyeccion ? 'block' : 'none', border:'0.5px solid #2980b9', borderTop:'none', borderRadius:'0 0 10px 10px', padding:'14px', background:'white' }}>
+            <TabInyeccion currentUser={currentUser} mobile={true} onSalmueraChange={setSalmueraDetalle} />
+          </div>
+        </div>
+
         {/* Selector agregar */}
         <div style={{
           background:'white', borderRadius:'12px',
