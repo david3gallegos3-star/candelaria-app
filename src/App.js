@@ -104,9 +104,10 @@ function App() {
   const [faseImportar,       setFaseImportar]       = useState('seleccionar'); // 'seleccionar' | 'confirmar'
 
   // ── Estados modales productos/categorías ──────────────
-  const [modalNuevo,     setModalNuevo]     = useState(false);
-  const [nuevoNombre,    setNuevoNombre]    = useState('');
-  const [nuevaCategoria, setNuevaCategoria] = useState('');
+  const [modalNuevo,       setModalNuevo]       = useState(false);
+  const [nuevoNombre,      setNuevoNombre]      = useState('');
+  const [nuevaCategoria,   setNuevaCategoria]   = useState('');
+  const [nuevoMpVinculado, setNuevoMpVinculado] = useState(null);
   const [editando,       setEditando]       = useState(null);
   const [modalGestionar, setModalGestionar] = useState(false);
   const [tabGestionar,   setTabGestionar]   = useState('productos');
@@ -173,8 +174,24 @@ function App() {
     const { data: mpCats } = await supabase.from('categorias_mp').select('nombre,orden').order('orden', { ascending: false });
     const mpExistentes = (mpCats || []).map(c => c.nombre);
     const maxOrdenMp   = (mpCats?.[0]?.orden ?? 0);
+    let ordenMp = maxOrdenMp;
     if (!mpExistentes.includes('Salmuera')) {
-      await supabase.from('categorias_mp').insert({ nombre: 'Salmuera', orden: maxOrdenMp + 1 });
+      ordenMp++;
+      await supabase.from('categorias_mp').insert({ nombre: 'Salmuera', orden: ordenMp });
+    }
+    if (!mpExistentes.includes('Retazos')) {
+      ordenMp++;
+      await supabase.from('categorias_mp').insert({ nombre: 'Retazos', orden: ordenMp });
+    }
+    // Asegurar que exista la MP "Retazos Cortes"
+    const { data: mpRetazos } = await supabase.from('materias_primas')
+      .select('id').eq('nombre', 'Retazos Cortes').limit(1);
+    if (!mpRetazos || mpRetazos.length === 0) {
+      await supabase.from('materias_primas').insert({
+        nombre: 'Retazos Cortes', nombre_producto: 'Retazos Cortes',
+        categoria: 'Retazos', precio_kg: 0,
+        estado: 'ACTIVO', eliminado: false,
+      });
     }
   }
 
@@ -309,13 +326,21 @@ function App() {
   async function crearProducto() {
     if (!nuevoNombre.trim()) return alert('Escribe el nombre del producto');
     const catSel = nuevaCategoria || Object.keys(categoriasConfig)[0];
+    const esCorte = catSel === 'Cortes' || catSel === 'CORTES';
+    if (esCorte && !nuevoMpVinculado) return alert('Selecciona la materia prima vinculada a este corte');
     const { data, error } = await supabase.from('productos')
-      .insert([{ nombre: nuevoNombre.trim(), categoria: catSel, estado:'ACTIVO' }])
+      .insert([{
+        nombre: nuevoNombre.trim(),
+        categoria: catSel,
+        estado: 'ACTIVO',
+        ...(esCorte && nuevoMpVinculado ? { mp_vinculado_id: nuevoMpVinculado.id } : {}),
+      }])
       .select().single();
     if (error) return alert('Error: ' + error.message);
     if (catSel === 'SALMUERAS') await sincronizarSalmueraMP(nuevoNombre.trim(), 0);
     setModalNuevo(false);
     setNuevoNombre('');
+    setNuevoMpVinculado(null);
     await cargarCategorias();
     if (catSel === 'SALMUERAS') await cargarMaterias();
     mostrarExito('✅ Producto creado');
@@ -968,8 +993,9 @@ return (
       EMOJIS_CAT={EMOJIS_CAT}
       abrirProducto={abrirProducto}
       modalNuevo={modalNuevo}         setModalNuevo={setModalNuevo}
-      nuevoNombre={nuevoNombre}       setNuevoNombre={setNuevoNombre}
-      nuevaCategoria={nuevaCategoria} setNuevaCategoria={setNuevaCategoria}
+      nuevoNombre={nuevoNombre}           setNuevoNombre={setNuevoNombre}
+      nuevaCategoria={nuevaCategoria}     setNuevaCategoria={setNuevaCategoria}
+      nuevoMpVinculado={nuevoMpVinculado} setNuevoMpVinculado={setNuevoMpVinculado}
       crearProducto={crearProducto}
       modalGestionar={modalGestionar} setModalGestionar={setModalGestionar} cargarCategorias={cargarCategorias}
       tabGestionar={tabGestionar}     setTabGestionar={setTabGestionar}

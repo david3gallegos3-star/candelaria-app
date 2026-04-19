@@ -139,10 +139,12 @@ function MateriasTabla({
                       border:'none', borderRadius:6, cursor:'pointer',
                       fontSize:'12px', marginRight:6
                     }}>✏️</button>
-                    <button onClick={() => onEliminar(m.id)} style={{
-                      padding:'5px 10px', background:'#e74c3c', color:'white',
-                      border:'none', borderRadius:6, cursor:'pointer', fontSize:'12px'
-                    }}>🗑️</button>
+                    {m.nombre !== 'Retazos Cortes' && (
+                      <button onClick={() => onEliminar(m.id)} style={{
+                        padding:'5px 10px', background:'#e74c3c', color:'white',
+                        border:'none', borderRadius:6, cursor:'pointer', fontSize:'12px'
+                      }}>🗑️</button>
+                    )}
                   </td>
                 </tr>
               ))}

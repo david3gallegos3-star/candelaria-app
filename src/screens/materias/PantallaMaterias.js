@@ -4,7 +4,7 @@
 // Usado por: App.js
 // ============================================
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { supabase }          from '../../supabase';
 import GeminiChat            from '../../GeminiChat';
 import MateriasTabla         from './MateriasTabla';
@@ -17,6 +17,38 @@ function PantallaMaterias({
   generarSiguienteId, guardarHistorialPrecios,
   navegarA, onVolver, onVolverMenu, mostrarExito
 }) {
+
+  // ── Seed: asegurar "Retazos Cortes" existe ────────────
+  useEffect(() => {
+    async function seedRetazos() {
+      const { data: cats } = await supabase.from('categorias_mp').select('nombre');
+      if (!(cats || []).some(c => c.nombre === 'Retazos')) {
+        await supabase.from('categorias_mp').insert({ nombre: 'Retazos', orden: 99 });
+        await cargarCategoriasMpDB();
+      }
+      const { data: mp } = await supabase.from('materias_primas')
+        .select('id').eq('nombre', 'Retazos Cortes').limit(1);
+      if (!mp || mp.length === 0) {
+        const { error: eIns } = await supabase.from('materias_primas').insert({
+          id:              'RET001',
+          nombre:          'Retazos Cortes',
+          nombre_producto: 'Retazos Cortes',
+          categoria:       'Retazos',
+          precio_kg:       0,
+          precio_lb:       0,
+          precio_gr:       0,
+          proveedor:       '',
+          notas:           'Precio de venta de retazos de cortes — editable, no eliminar',
+          estado:          'ACTIVO',
+          eliminado:       false,
+          tipo:            'MATERIAS PRIMAS',
+        });
+        if (eIns) console.error('Seed Retazos Cortes:', eIns.message);
+        await cargarMaterias();
+      }
+    }
+    seedRetazos();
+  }, []);
 
   // ── Estados filtros ───────────────────────────────────
   const [buscar,       setBuscar]       = useState('');
@@ -158,6 +190,11 @@ function PantallaMaterias({
 
   // ── Eliminar MP ───────────────────────────────────────
     async function eliminarMP(id) {
+      const mp = materias.find(m => m.id === id);
+      if (mp?.nombre === 'Retazos Cortes') {
+        alert('⛔ Esta materia prima es del sistema y no puede eliminarse.');
+        return;
+      }
       if (!window.confirm('¿Eliminar esta materia prima?')) return;
       await supabase.from('materias_primas').update({
         eliminado:     true,

@@ -16,15 +16,126 @@ export default function TabCierre({ mobile, userRol, currentUser, produccionDiar
 
   // Estado del formulario activo
   const [formActivo, setFormActivo] = useState(null);
+
+  // ── Inyección ──
+  const [lotesInyeccion,   setLotesInyeccion]   = useState([]);
+  const [formInyec,        setFormInyec]         = useState(null);
+  const [guardandoInyec,   setGuardandoInyec]    = useState(false);
+  const [precioRetazoMP,   setPrecioRetazoMP]    = useState(0);
   // {
   //   produccion_id, producto_nombre, kg_crudos_estimados,
   //   kg_producidos_reales, kg_en_fundas, kg_picaditas,
   //   merma_estimada, fundas: [{nombre_funda, kg_por_funda, cantidad}]
   // }
 
-  useEffect(() => { cargarDatos(); }, [fecha]);
+  useEffect(() => { cargarDatos(); cargarLotesInyeccion(); }, [fecha]);
+
+  useEffect(() => {
+    supabase.from('materias_primas')
+      .select('precio_kg').eq('nombre', 'Retazos Cortes').eq('eliminado', false).limit(1)
+      .then(({ data }) => { if (data?.[0]) setPrecioRetazoMP(parseFloat(data[0].precio_kg) || 0); });
+  }, []);
 
   const [configsProductos, setConfigsProductos] = useState({});
+
+  async function cargarLotesInyeccion() {
+    const { data } = await supabase
+      .from('produccion_inyeccion')
+      .select('*, produccion_inyeccion_cortes(*), produccion_inyeccion_ingredientes(*)')
+      .eq('fecha', fecha)
+      .eq('estado', 'abierto')
+      .order('created_at', { ascending: false });
+    setLotesInyeccion(data || []);
+  }
+
+  function abrirCierreInyeccion(lote) {
+    setFormInyec({
+      lote,
+      filas: (lote.produccion_inyeccion_cortes || []).map(c => ({
+        id: c.id,
+        nombre: c.corte_nombre,
+        kg_crudo: parseFloat(c.kg_carne_cruda || 0),
+        costo_carne: parseFloat(c.costo_carne || 0),
+        peso_inyectado: '',
+        peso_post_corte: '',
+      })),
+      virutas_total: '',
+    });
+  }
+
+  async function guardarCierreInyeccion() {
+    if (!formInyec) return;
+    setGuardandoInyec(true);
+    try {
+      const { lote, filas, virutas_total } = formInyec;
+      const kgTotalCarne       = parseFloat(lote.kg_carne_total || 0);
+      const costoSalmueraTotal = parseFloat(lote.costo_salmuera_total || 0);
+      const precioRetazo       = precioRetazoMP;
+
+      // Calcular pesos finales
+      const filasConPesos = filas.map(f => {
+        const pesoInj  = parseFloat(f.peso_inyectado)  > 0 ? parseFloat(f.peso_inyectado)  : f.kg_crudo;
+        const pesoPost = parseFloat(f.peso_post_corte) > 0 ? parseFloat(f.peso_post_corte) : f.kg_crudo;
+        return { ...f, pesoInj, pesoPost, kgRetazos: Math.max(0, pesoInj - pesoPost) };
+      });
+
+      const kgTotalRetazos       = filasConPesos.reduce((s, f) => s + f.kgRetazos, 0);
+      const ingresoRetazosTotal  = kgTotalRetazos * precioRetazo;
+
+      // Actualizar cada corte con costo_final_kg proporcional
+      for (const f of filasConPesos) {
+        const proporcion        = kgTotalCarne > 0 ? f.kg_crudo / kgTotalCarne : 0;
+        const costoSalmueraProp = costoSalmueraTotal * proporcion;
+        const creditoRetazos    = ingresoRetazosTotal * proporcion;
+        const costoFinalKg      = f.pesoPost > 0
+          ? (f.costo_carne + costoSalmueraProp - creditoRetazos) / f.pesoPost
+          : 0;
+
+        await supabase.from('produccion_inyeccion_cortes').update({
+          kg_carne_limpia:        f.pesoPost,
+          kg_retazos:             f.kgRetazos,
+          precio_venta_retazo_kg: precioRetazo,
+          ingreso_retazos:        ingresoRetazosTotal * proporcion,
+          costo_salmuera_asignado: costoSalmueraProp,
+          costo_final_kg:         costoFinalKg,
+        }).eq('id', f.id);
+      }
+
+      // Debitar inventario de ingredientes de salmuera
+      const { data: invActual } = await supabase.from('inventario_mp').select('materia_prima_id,stock_kg');
+      for (const ing of (lote.produccion_inyeccion_ingredientes || [])) {
+        if (!ing.materia_prima_id || parseFloat(ing.kg_usados) <= 0) continue;
+        const invReg = (invActual || []).find(i => i.materia_prima_id === ing.materia_prima_id);
+        if (invReg) {
+          await supabase.from('inventario_mp').update({
+            stock_kg: Math.max(0, parseFloat(invReg.stock_kg) - parseFloat(ing.kg_usados))
+          }).eq('materia_prima_id', ing.materia_prima_id);
+        }
+      }
+      // Debitar inventario de cortes (carne)
+      for (const corte of (lote.produccion_inyeccion_cortes || [])) {
+        if (!corte.materia_prima_id || parseFloat(corte.kg_carne_cruda) <= 0) continue;
+        const invReg = (invActual || []).find(i => i.materia_prima_id === corte.materia_prima_id);
+        if (invReg) {
+          await supabase.from('inventario_mp').update({
+            stock_kg: Math.max(0, parseFloat(invReg.stock_kg) - parseFloat(corte.kg_carne_cruda))
+          }).eq('materia_prima_id', corte.materia_prima_id);
+        }
+      }
+
+      // Cerrar lote
+      await supabase.from('produccion_inyeccion').update({
+        estado: 'cerrado',
+        fecha_cierre: fecha,
+        notas: [lote.notas, virutas_total ? `Virutas: ${virutas_total} kg` : ''].filter(Boolean).join(' | ') || null,
+      }).eq('id', lote.id);
+
+      setFormInyec(null);
+      mostrarExito('✅ Cierre de inyección registrado — inventario debitado');
+      await cargarLotesInyeccion();
+    } catch (e) { alert('Error: ' + e.message); }
+    setGuardandoInyec(false);
+  }
 
   async function cargarDatos() {
     const { data: prods } = await supabase
@@ -290,6 +401,107 @@ function abrirFormEditar(cierre) {
           }}
         />
       </div>
+
+      {/* ── Sección Inyección ── */}
+      {lotesInyeccion.length > 0 && (
+        <div style={{ marginBottom:16 }}>
+          <div style={{ fontSize:12, fontWeight:'bold', color:'#1a3a5c', marginBottom:8, display:'flex', alignItems:'center', gap:6 }}>
+            <span style={{ fontSize:16 }}>💉</span> INYECCIÓN DE SALMUERA PENDIENTE
+          </div>
+          {lotesInyeccion.map(lote => {
+            const esForm = formInyec?.lote?.id === lote.id;
+            return (
+              <div key={lote.id} style={{ background:'white', borderRadius:12, border:'0.5px solid #2980b9', marginBottom:12, overflow:'hidden' }}>
+                <div style={{ background:'#1a3a5c', padding:'10px 16px', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                  <div>
+                    <div style={{ color:'white', fontWeight:'bold', fontSize:13 }}>💉 {lote.formula_salmuera}</div>
+                    <div style={{ color:'rgba(255,255,255,0.6)', fontSize:11 }}>
+                      {parseFloat(lote.kg_carne_total).toFixed(2)} kg carne · {(lote.produccion_inyeccion_cortes||[]).length} corte(s)
+                    </div>
+                  </div>
+                  {!esForm && (
+                    <div style={{ display:'flex', gap:6 }}>
+                      <button onClick={() => abrirCierreInyeccion(lote)}
+                        style={{ padding:'6px 14px', background:'white', color:'#1a3a5c', border:'none', borderRadius:7, cursor:'pointer', fontSize:12, fontWeight:'bold' }}>
+                        + Registrar cierre
+                      </button>
+                      <button onClick={async () => {
+                        if (!window.confirm('¿Eliminar este lote de inyección?')) return;
+                        await supabase.from('produccion_inyeccion_ingredientes').delete().eq('produccion_id', lote.id);
+                        await supabase.from('produccion_inyeccion_cortes').delete().eq('produccion_id', lote.id);
+                        await supabase.from('produccion_inyeccion').delete().eq('id', lote.id);
+                        await cargarLotesInyeccion();
+                      }} style={{ padding:'6px 10px', background:'#e74c3c', color:'white', border:'none', borderRadius:7, cursor:'pointer', fontSize:12, fontWeight:'bold' }}>
+                        🗑️
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {esForm && (
+                  <div style={{ padding:'14px 16px' }}>
+                    <div style={{ fontSize:11, fontWeight:'bold', color:'#555', marginBottom:10 }}>PESOS POST-INYECCIÓN</div>
+                    {formInyec.filas.map((f, i) => (
+                      <div key={f.id} style={{ background:'#f8f9fa', borderRadius:10, padding:'12px 14px', marginBottom:10 }}>
+                        <div style={{ fontWeight:'bold', fontSize:13, color:'#1a1a2e', marginBottom:8 }}>
+                          🥩 {f.nombre} <span style={{ fontWeight:'normal', color:'#888', fontSize:11 }}>({f.kg_crudo} kg crudos)</span>
+                        </div>
+                        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+                          <div>
+                            <label style={{ fontSize:11, color:'#555', display:'block', marginBottom:4 }}>Peso inyectado (kg)</label>
+                            <input type="number" min="0" step="0.01" placeholder="0.00"
+                              value={f.peso_inyectado}
+                              onChange={e => {
+                                const filas = [...formInyec.filas];
+                                filas[i] = { ...filas[i], peso_inyectado: e.target.value };
+                                setFormInyec({ ...formInyec, filas });
+                              }}
+                              style={{ width:'100%', padding:'9px', borderRadius:8, border:'1.5px solid #ddd', fontSize:14, textAlign:'right', boxSizing:'border-box', outline:'none' }} />
+                          </div>
+                          <div>
+                            <label style={{ fontSize:11, color:'#555', display:'block', marginBottom:4 }}>Peso post-corte (kg)</label>
+                            <input type="number" min="0" step="0.01" placeholder="0.00"
+                              value={f.peso_post_corte}
+                              onChange={e => {
+                                const filas = [...formInyec.filas];
+                                filas[i] = { ...filas[i], peso_post_corte: e.target.value };
+                                setFormInyec({ ...formInyec, filas });
+                              }}
+                              style={{ width:'100%', padding:'9px', borderRadius:8, border:'1.5px solid #ddd', fontSize:14, textAlign:'right', boxSizing:'border-box', outline:'none' }} />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+
+                    <div style={{ background:'#fff3cd', borderRadius:10, padding:'12px 14px', marginBottom:14, border:'1px solid #ffc107' }}>
+                      <label style={{ fontSize:12, fontWeight:'bold', color:'#856404', display:'block', marginBottom:6 }}>🗑️ Virutas totales (kg)</label>
+                      <input type="number" min="0" step="0.01" placeholder="0.00"
+                        value={formInyec.virutas_total}
+                        onChange={e => setFormInyec({ ...formInyec, virutas_total: e.target.value })}
+                        style={{ width:'100%', padding:'10px', borderRadius:8, border:'1.5px solid #ffc107', fontSize:15, textAlign:'right', boxSizing:'border-box', outline:'none', fontWeight:'bold' }} />
+                      <div style={{ marginTop:6, fontSize:11, color:'#856404' }}>
+                        Precio retazo: <strong>${precioRetazoMP.toFixed(2)}/kg</strong>
+                        {precioRetazoMP === 0 && <span style={{ color:'#e74c3c', marginLeft:6 }}>⚠️ configura el precio en Materias Primas → Retazos Cortes</span>}
+                      </div>
+                    </div>
+
+                    <div style={{ display:'flex', gap:8 }}>
+                      <button onClick={() => setFormInyec(null)}
+                        style={{ flex:1, padding:'10px', background:'white', border:'0.5px solid #ddd', borderRadius:8, cursor:'pointer', fontSize:13, color:'#555' }}>
+                        Cancelar
+                      </button>
+                      <button onClick={guardarCierreInyeccion} disabled={guardandoInyec}
+                        style={{ flex:2, padding:'10px', background: guardandoInyec ? '#95a5a6' : '#1a3a5c', color:'white', border:'none', borderRadius:8, cursor: guardandoInyec ? 'default':'pointer', fontSize:13, fontWeight:'bold' }}>
+                        {guardandoInyec ? '⏳ Guardando...' : '✅ Guardar cierre — debitar inventario'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Lista productos del día */}
       {prodDelDia.length === 0 ? (

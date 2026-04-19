@@ -6,6 +6,153 @@
 import React from 'react';
 import TabInyeccion from './TabInyeccion';
 
+// ── Detalle de salmuera en columna derecha ────────────────
+function DetalleSalmuera({ datos }) {
+  const { formula, ingredientes, costoKg, kgCarneTotal } = datos;
+  const f = kgCarneTotal > 0 ? kgCarneTotal : 1;
+
+  return (
+    <div style={{ background:'white', borderRadius:12, border:'1.5px solid #2980b9', padding:16 }}>
+
+      {/* Header */}
+      <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:14, paddingBottom:10, borderBottom:'2px solid #2980b9' }}>
+        <span style={{ fontSize:24 }}>🧂</span>
+        <div>
+          <div style={{ fontSize:11, color:'#888' }}>Fórmula de salmuera</div>
+          <div style={{ fontSize:16, fontWeight:'bold', color:'#1a3a5c' }}>{formula.nombre}</div>
+        </div>
+      </div>
+
+      {/* Total kg (viene de cortes) */}
+      <div style={{ background:'#1a3a5c', borderRadius:10, padding:'10px 14px', marginBottom:14, display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+        <div>
+          <div style={{ fontSize:10, color:'rgba(255,255,255,0.6)' }}>Total kg cortes</div>
+          <div style={{ fontSize:20, fontWeight:'bold', color:'white' }}>{f.toFixed(3)} kg</div>
+        </div>
+        <div style={{ textAlign:'right' }}>
+          <div style={{ fontSize:10, color:'rgba(255,255,255,0.6)' }}>Costo total estimado</div>
+          <div style={{ fontSize:16, fontWeight:'bold', color:'#4fc3f7' }}>${(costoKg * f).toFixed(4)}</div>
+        </div>
+      </div>
+
+      {/* Botón imprimir */}
+      <button
+        onClick={() => {
+          const grupos = [
+            { key: 'MP', label: 'MATERIAS PRIMAS' },
+            { key: 'CA', label: 'CONDIMENTOS Y ADITIVOS' },
+          ];
+          const seccionesHTML = grupos.map(({ key, label }) => {
+            const ings = ingredientes.filter(i => (i.grupo || 'MP') === key);
+            const subGr = ings.reduce((s, i) => s + (i.gramos || i.kgUsados * 1000) * f, 0);
+            const subKg = ings.reduce((s, i) => s + i.kgUsados * f, 0);
+            const filas = ings.map(ing => {
+              const grEsc = (ing.gramos || ing.kgUsados * 1000) * f;
+              const kgEsc = ing.kgUsados * f;
+              return `<tr>
+                <td style="padding:7px 12px;border-bottom:1px solid #eee">${ing.nombre}</td>
+                <td style="padding:7px 12px;border-bottom:1px solid #eee;text-align:right">${grEsc.toFixed(0)}</td>
+                <td style="padding:7px 12px;border-bottom:1px solid #eee;text-align:right">${kgEsc.toFixed(3)}</td>
+              </tr>`;
+            }).join('');
+            return `
+              <tr style="background:#1a3a5c">
+                <td style="padding:8px 12px;color:white;font-weight:bold">${label}</td>
+                <td style="padding:8px 12px;color:white;font-weight:bold;text-align:right">GRAMOS</td>
+                <td style="padding:8px 12px;color:white;font-weight:bold;text-align:right">KILOS</td>
+              </tr>
+              ${filas}
+              <tr style="background:#e8f0f8">
+                <td style="padding:8px 12px;font-weight:bold">SUB-TOTAL</td>
+                <td style="padding:8px 12px;font-weight:bold;text-align:right">${subGr.toFixed(0)}</td>
+                <td style="padding:8px 12px;font-weight:bold;text-align:right">${subKg.toFixed(3)}</td>
+              </tr>`;
+          }).join('');
+          const totalGr = ingredientes.reduce((s, i) => s + (i.gramos || i.kgUsados * 1000) * f, 0);
+          const totalKgImp = ingredientes.reduce((s, i) => s + i.kgUsados * f, 0);
+          const html = `<!DOCTYPE html><html><head><title>Salmuera — ${formula.nombre}</title>
+          <style>
+            body{font-family:Arial,sans-serif;padding:30px;color:#1a1a2e}
+            h2{color:#1a3a5c;margin-bottom:4px}
+            .sub{color:#888;font-size:13px;margin-bottom:16px}
+            .resumen{display:flex;gap:20px;margin-bottom:20px}
+            .card{background:#f0f4f8;border-radius:8px;padding:10px 16px}
+            .card-label{font-size:11px;color:#888}
+            .card-val{font-size:18px;font-weight:bold;color:#1a3a5c}
+            table{width:100%;border-collapse:collapse;font-size:13px}
+            td{vertical-align:middle}
+          </style></head><body>
+          <h2>🧂 ${formula.nombre}</h2>
+          <div class="sub">Fórmula de salmuera · Impreso ${new Date().toLocaleString('es-EC')}</div>
+          <div class="resumen">
+            <div class="card"><div class="card-label">Total kg cortes</div><div class="card-val">${f.toFixed(3)} kg</div></div>
+          </div>
+          <table>
+            <tbody>
+              ${seccionesHTML}
+              <tr style="background:#1a1a2e;border-top:3px solid #1a1a2e">
+                <td style="padding:10px 12px;color:white;font-weight:bold;font-size:14px">TOTAL CRUDO</td>
+                <td style="padding:10px 12px;color:white;font-weight:bold;text-align:right;font-size:14px">${totalGr.toFixed(0)}</td>
+                <td style="padding:10px 12px;color:white;font-weight:bold;text-align:right;font-size:14px">${totalKgImp.toFixed(3)}</td>
+              </tr>
+            </tbody>
+          </table>
+          </body></html>`;
+          const w = window.open('', '_blank');
+          w.document.write(html);
+          w.document.close();
+          w.print();
+        }}
+        style={{
+          width:'100%', padding:'9px', marginBottom:14,
+          background:'#2980b9', color:'white', border:'none',
+          borderRadius:8, fontSize:13, fontWeight:'bold',
+          cursor:'pointer', display:'flex', alignItems:'center',
+          justifyContent:'center', gap:6
+        }}
+      >
+        🖨️ Imprimir ingredientes
+      </button>
+
+      {/* Lista ingredientes escalados */}
+      <div style={{ fontSize:12, fontWeight:'bold', color:'#555', marginBottom:8 }}>
+        Ingredientes {kgCarneTotal > 0 && <span style={{ color:'#2980b9', fontWeight:'normal' }}>escalados × {f.toFixed(3)} kg</span>}
+      </div>
+      {ingredientes.length === 0 ? (
+        <div style={{ color:'#aaa', fontSize:12, textAlign:'center', padding:'20px 0' }}>Sin ingredientes configurados</div>
+      ) : ingredientes.map((ing, i) => {
+        const gramosEscalados = (ing.gramos || ing.kgUsados * 1000) * f;
+        const kgEscalados     = ing.kgUsados * f;
+        const costoEscalado   = ing.costo * f;
+        const stockOk         = ing.stockKg >= kgEscalados - 0.001;
+        return (
+          <div key={i} style={{
+            display:'flex', justifyContent:'space-between', alignItems:'center',
+            padding:'8px 10px', borderRadius:8, marginBottom:6,
+            background: stockOk ? '#f8f9fa' : '#fdecea',
+            border: `1px solid ${stockOk ? '#e0e0e0' : '#f5c6cb'}`
+          }}>
+            <div>
+              <div style={{ fontSize:13, fontWeight:'bold', color:'#1a1a2e' }}>{ing.nombre}</div>
+              <div style={{ fontSize:10, color: stockOk ? '#888' : '#e74c3c' }}>
+                Stock: {ing.stockKg.toFixed(3)} kg {!stockOk && '⚠️ insuficiente'}
+              </div>
+            </div>
+            <div style={{ textAlign:'right' }}>
+              <div style={{ fontSize:14, fontWeight:'bold', color: stockOk ? '#1a3a5c' : '#e74c3c' }}>
+                {gramosEscalados >= 1000
+                  ? `${kgEscalados.toFixed(3)} kg`
+                  : `${gramosEscalados.toFixed(1)}g`}
+              </div>
+              <div style={{ fontSize:11, color:'#27ae60' }}>${costoEscalado.toFixed(4)}</div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── Helpers badge por estado ──────────────────────────────
 function BadgeEstado({ estado, alertas }) {
   if (estado === 'sin_formula') return (
@@ -307,6 +454,8 @@ export default function TabRegistrar({
   guardarProduccion,
   currentUser,
 }) {
+  const [showInyeccion, setShowInyeccion] = React.useState(false);
+  const [salmueraDetalle, setSalmueraDetalle] = React.useState(null);
   const totales = calcularTotalesDia();
   const itemSel = productoSelIdx !== null ? productosDelDia[productoSelIdx] : null;
   const resumenSel = itemSel ? calcularResumenProducto(itemSel) : null;
@@ -596,6 +745,48 @@ export default function TabRegistrar({
           </div>
         </div>
 
+        {/* ── Acordeón Inyección ── */}
+        <div style={{ marginBottom:'8px' }}>
+          <button
+            onClick={() => setShowInyeccion(v => !v)}
+            style={{
+              width:'100%', display:'flex',
+              alignItems:'center', justifyContent:'space-between',
+              padding:'11px 14px',
+              background: showInyeccion ? '#1a3a5c' : '#eaf4fb',
+              border: showInyeccion ? 'none' : '0.5px solid #2980b9',
+              borderRadius: showInyeccion ? '10px 10px 0 0' : '10px',
+              cursor:'pointer', transition:'all 0.2s'
+            }}
+          >
+            <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+              <span style={{ fontSize:18 }}>💉</span>
+              <span style={{
+                fontWeight:'bold', fontSize:'13px',
+                color: showInyeccion ? 'white' : '#1a3a5c'
+              }}>Inyección de Salmuera</span>
+            </div>
+            <span style={{
+              fontSize:'18px', fontWeight:'bold',
+              color: showInyeccion ? 'white' : '#2980b9',
+              transform: showInyeccion ? 'rotate(180deg)' : 'none',
+              transition:'transform 0.2s', lineHeight:1
+            }}>⌄</span>
+          </button>
+          <div style={{
+            display: showInyeccion ? 'block' : 'none',
+            border:'0.5px solid #2980b9', borderTop:'none',
+            borderRadius:'0 0 10px 10px',
+            padding:'14px', background:'white'
+          }}>
+            <TabInyeccion
+              currentUser={currentUser}
+              mobile={false}
+              onSalmueraChange={setSalmueraDetalle}
+            />
+          </div>
+        </div>
+
         {/* Lista productos */}
         {productosDelDia.length === 0 ? (
           <div style={{
@@ -751,21 +942,18 @@ export default function TabRegistrar({
               : `Registrar producción del día${productosDelDia.length > 0 ? ` (${productosDelDia.length})` : ''}`}
           </button>
         </div>
+
       </div>
 
-      {/* ══ COLUMNA DERECHA — detalle + inyección ══ */}
-      <div style={{ display:'flex', flexDirection:'column', gap:'16px' }}>
-        {itemSel && (
-          <DetalleProducto
-            item={itemSel}
-            resumen={resumenSel}
-            mobile={false}
-          />
+      {/* ══ COLUMNA DERECHA ══ */}
+      <div>
+        {itemSel ? (
+          <DetalleProducto item={itemSel} resumen={resumenSel} mobile={false} />
+        ) : salmueraDetalle ? (
+          <DetalleSalmuera datos={salmueraDetalle} />
+        ) : (
+          <DetalleProducto item={null} resumen={null} mobile={false} />
         )}
-        <TabInyeccion
-          currentUser={currentUser}
-          mobile={false}
-        />
       </div>
 
     </div>

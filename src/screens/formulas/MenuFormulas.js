@@ -22,6 +22,7 @@ export default function MenuFormulas({
   modalNuevo, setModalNuevo,
   nuevoNombre, setNuevoNombre,
   nuevaCategoria, setNuevaCategoria,
+  nuevoMpVinculado, setNuevoMpVinculado,
   crearProducto,
   // modal gestionar
   modalGestionar, setModalGestionar,
@@ -270,11 +271,12 @@ export default function MenuFormulas({
       {/* ── Modales ── */}
       {modalNuevo && (
         <ModalNuevoProducto
-          nuevoNombre={nuevoNombre}         setNuevoNombre={setNuevoNombre}
-          nuevaCategoria={nuevaCategoria}   setNuevaCategoria={setNuevaCategoria}
+          nuevoNombre={nuevoNombre}               setNuevoNombre={setNuevoNombre}
+          nuevaCategoria={nuevaCategoria}         setNuevaCategoria={setNuevaCategoria}
+          nuevoMpVinculado={nuevoMpVinculado}     setNuevoMpVinculado={setNuevoMpVinculado}
           categoriasConfig={categoriasConfig}
           onCrear={crearProducto}
-          onCerrar={() => setModalNuevo(false)}
+          onCerrar={() => { setModalNuevo(false); setNuevoMpVinculado(null); }}
         />
       )}
 
