@@ -94,7 +94,7 @@ export function useProduccion({ userRol, currentUser }) {
       producto:    prod,
       formulacion: form      || [],
       configProd:  config    || null,
-      kg_carne:    0,
+      paradas:     1,
       mps:         mpsActual || [],
     };
 
@@ -104,10 +104,10 @@ export function useProduccion({ userRol, currentUser }) {
     setProdSelAdd('');
   }
 
-  // ── Actualizar kg de carne ───────────────────────────────
-  function actualizarKgCarne(idx, valor) {
+  // ── Actualizar paradas ────────────────────────────────────
+  function actualizarParadas(idx, valor) {
     const n = [...productosDelDia];
-    n[idx] = { ...n[idx], kg_carne: parseFloat(valor) || 0 };
+    n[idx] = { ...n[idx], paradas: parseFloat(valor) || 0.1 };
     setProductosDelDia(n);
     setProductoSelIdx(idx);
   }
@@ -134,22 +134,19 @@ export function useProduccion({ userRol, currentUser }) {
   // ── Calcular resumen de UN producto ───────────────────────
   function calcularResumenProducto(item) {
     if (!item) return null;
-    const { formulacion, configProd, kg_carne } = item;
+    const { formulacion, configProd, paradas } = item;
     if (!formulacion || !formulacion.length) return null;
 
     const mps = (item.mps && item.mps.length > 0) ? item.mps : materiasPrimas;
 
-    const merma              = parseFloat(configProd?.merma  || 0);
-    const margen             = parseFloat(configProd?.margen || 0);
-    const porcentajeSalmuera = parseFloat(configProd?.porcentaje_salmuera ?? 20);
-    const totalCrudoG        = formulacion.reduce((s, f) => s + (parseFloat(f.gramos) || 0), 0);
-    const kg_salmuera        = (kg_carne || 0) * (porcentajeSalmuera / 100);
+    const merma  = parseFloat(configProd?.merma  || 0);
+    const margen = parseFloat(configProd?.margen || 0);
     let kgTotalCrudo = 0;
     let costoTotal   = 0;
 
     const ingredientes = formulacion.map(f => {
       const gramos        = parseFloat(f.gramos || 0);
-      const kgIngrediente = totalCrudoG > 0 ? (gramos / totalCrudoG) * kg_salmuera : 0;
+      const kgIngrediente = (gramos / 1000) * paradas;
       const nombreIng = (f.ingrediente_nombre || '').toLowerCase().trim();
       const mp = mps.find(m =>
         (m.nombre_producto || m.nombre || '').toLowerCase().trim() === nombreIng
@@ -191,9 +188,7 @@ export function useProduccion({ userRol, currentUser }) {
       kgProducidos,
       costoTotal,
       margen,
-      kg_carne:        kg_carne || 0,
-      kg_salmuera,
-      porcentajeSalmuera,
+      paradas,
       alertas
     };
   }
@@ -243,7 +238,7 @@ export function useProduccion({ userRol, currentUser }) {
         fecha,
         turno:               'mañana',
         producto_nombre:     item.producto.nombre,
-        num_paradas:         resumen.kg_salmuera,
+        num_paradas:         resumen.paradas,
         kg_total_crudo:      resumen.kgTotalCrudo,
         porcentaje_merma:    resumen.mermaPorc,
         kg_producidos:       resumen.kgProducidos,
@@ -266,7 +261,7 @@ export function useProduccion({ userRol, currentUser }) {
             nombre_mp:        ing.ingrediente_nombre,
             tipo:             'salida',
             kg:               -ing.kg_necesarios,
-            motivo:           `Producción: ${item.producto.nombre} — ${resumen.kg_salmuera.toFixed(2)} kg salmuera`,
+            motivo:           `Producción: ${item.producto.nombre} × ${resumen.paradas} paradas`,
             usuario_nombre:   userRol?.nombre || 'Producción',
             user_id:          currentUser?.id,
             via:              'produccion',
@@ -281,7 +276,7 @@ export function useProduccion({ userRol, currentUser }) {
         usuario_nombre:  userRol?.nombre || 'Producción',
         user_id:         currentUser?.id,
         producto_nombre: item.producto.nombre,
-        mensaje: `Producción: "${item.producto.nombre}" — ${resumen.kg_salmuera.toFixed(2)} kg salmuera (${resumen.porcentajeSalmuera}%) — ${resumen.kgProducidos.toFixed(1)} kg finales · $${resumen.costoTotal.toFixed(2)}`
+        mensaje: `Producción: "${item.producto.nombre}" × ${resumen.paradas} paradas — ${resumen.kgProducidos.toFixed(1)} kg finales · $${resumen.costoTotal.toFixed(2)}`
       });
 
       if (resumen.alertas.length > 0) {
@@ -441,7 +436,7 @@ export function useProduccion({ userRol, currentUser }) {
     historialAgrupado,
     kgHoy, costoHoy, kgMes, costoMes,
     agregarProducto,
-    actualizarKgCarne,
+    actualizarParadas,
     eliminarProductoDia,
     limpiarTodo,
     calcularResumenProducto,
