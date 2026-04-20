@@ -27,6 +27,7 @@ export default function TabNuevaVenta({ mobile, currentUser }) {
   const [clientes,   setClientes]   = useState([]);
   const [productos,  setProductos]  = useState([]);
   const [precios,    setPrecios]    = useState([]);   // precios_clientes
+  const [configPrecios, setConfigPrecios] = useState([]); // config_productos precio_venta_kg
   const [secuencial, setSecuencial] = useState(null);
 
   const [clienteId,     setClienteId]     = useState('consumidor_final');
@@ -43,17 +44,19 @@ export default function TabNuevaVenta({ mobile, currentUser }) {
 
   // ── Cargar datos iniciales ────────────────────────────────
   async function cargarDatos() {
-    const [{ data: cls }, { data: prods }, { data: prec }, { data: cfg }] =
+    const [{ data: cls }, { data: prods }, { data: prec }, { data: cfg }, { data: cfgPrec }] =
       await Promise.all([
         supabase.from('clientes').select('id,nombre,ruc,email,telefono,direccion')
           .not('eliminado', 'eq', true).order('nombre'),
         supabase.from('productos').select('id,nombre').eq('estado', 'ACTIVO').order('nombre'),
         supabase.from('precios_clientes').select('cliente_id,producto_nombre,precio_venta_kg'),
-        supabase.from('config_sistema').select('valor').eq('clave', 'factura_secuencial').single()
+        supabase.from('config_sistema').select('valor').eq('clave', 'factura_secuencial').single(),
+        supabase.from('config_productos').select('producto_nombre,precio_venta_kg')
       ]);
     setClientes(cls   || []);
     setProductos(prods || []);
     setPrecios(prec   || []);
+    setConfigPrecios(cfgPrec || []);
     if (cfg?.valor) setSecuencial(parseInt(cfg.valor));
   }
 
@@ -72,9 +75,13 @@ export default function TabNuevaVenta({ mobile, currentUser }) {
       );
       if (p) return String(parseFloat(p.precio_venta_kg).toFixed(4));
     }
-    // 2. Fallback: cualquier precio registrado para ese producto
+    // 2. Cualquier precio en precios_clientes para ese producto
     const fallback = precios.find(p => p.producto_nombre === productoNombre);
-    return fallback ? String(parseFloat(fallback.precio_venta_kg).toFixed(4)) : '';
+    if (fallback) return String(parseFloat(fallback.precio_venta_kg).toFixed(4));
+    // 3. Precio de la fórmula del producto (config_productos)
+    const cfgP = configPrecios.find(p => p.producto_nombre === productoNombre);
+    if (cfgP && cfgP.precio_venta_kg > 0) return String(parseFloat(cfgP.precio_venta_kg).toFixed(4));
+    return '';
   }
 
   // ── Actualizar ítem ───────────────────────────────────────
