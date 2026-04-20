@@ -1,90 +1,118 @@
 // ============================================
-// TabNomina.js
-// Generación y gestión de roles de pago
-// Ecuador: SBU 2024 = $460, décimos, vacaciones
+// TabNomina.js — Empresa artesanal
+// Sin décimos, fondo de reserva ni vacaciones
 // ============================================
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../supabase';
+import * as XLSX from 'xlsx';
 
 const MESES = [
   'Enero','Febrero','Marzo','Abril','Mayo','Junio',
   'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'
 ];
 
-// Cálculos Ecuador
-function calcularRol(emp, diasTrabajados = 30) {
-  const sueldo       = emp.sueldo_base || 0;
-  const factor       = diasTrabajados / 30;
-  const sueldoProp   = sueldo * factor;
+function calcularRol(emp, dias, ext) {
+  const sueldo     = parseFloat(emp.sueldo_base || 0);
+  const sueldoProp = parseFloat((sueldo * (dias / 30)).toFixed(2));
 
-  // IESS
-  const pEmp         = (emp.porcentaje_iess_empleado || 9.45) / 100;
-  const pPat         = (emp.porcentaje_iess_patronal || 12.15) / 100;
-  const iessEmp      = emp.afiliado_iess ? sueldoProp * pEmp  : 0;
-  const iessPat      = emp.afiliado_iess ? sueldoProp * pPat  : 0;
+  const pEmp    = (emp.porcentaje_iess_empleado || 9.45) / 100;
+  const pPat    = (emp.porcentaje_iess_patronal || 12.15) / 100;
+  const iessEmp = emp.afiliado_iess ? parseFloat((sueldoProp * pEmp).toFixed(2)) : 0;
+  const iessPat = emp.afiliado_iess ? parseFloat((sueldoProp * pPat).toFixed(2)) : 0;
 
-  // Beneficios sociales (proporcional mensual)
-  const decimoTercero  = sueldoProp / 12;          // 1/12 mensual
-  const decimoCuarto   = (460 / 12) * factor;      // SBU proporcional
-  const fondoReserva   = sueldo >= 460 ? sueldoProp / 12 : 0; // solo si > 1 año
-  const vacaciones     = sueldoProp / 24;           // 15 días / año
+  const bonificacion    = parseFloat(ext.bonificacion    || 0);
+  const horasExtra      = parseFloat(ext.horasExtra      || 0);
+  const valorHoraExtra  = parseFloat(ext.valorHoraExtra  || 0);
+  const totalExtras     = parseFloat((horasExtra * valorHoraExtra).toFixed(2));
+  const horasAtraso     = parseFloat(ext.horasAtraso     || 0);
+  const valorHoraAtraso = parseFloat(ext.valorHoraAtraso || 0);
+  const totalAtrasos    = parseFloat((horasAtraso * valorHoraAtraso).toFixed(2));
+  const anticipo        = parseFloat(ext.anticipo        || 0);
+  const comprasEmpresa  = parseFloat(ext.comprasEmpresa  || 0);
 
-  const sueldoNeto     = sueldoProp - iessEmp;
-  const costoPatronal  = sueldoProp + iessPat + decimoTercero + decimoCuarto + fondoReserva + vacaciones;
+  const totalDescuentos = parseFloat((iessEmp + totalAtrasos + anticipo + comprasEmpresa).toFixed(2));
+  const sueldoNeto      = parseFloat((sueldoProp + bonificacion + totalExtras - totalDescuentos).toFixed(2));
+  const costoPatronal   = parseFloat((sueldoProp + bonificacion + totalExtras + iessPat).toFixed(2));
 
   return {
     sueldoProp, iessEmp, iessPat,
-    decimoTercero, decimoCuarto, fondoReserva, vacaciones,
-    sueldoNeto, costoPatronal
+    bonificacion, horasExtra, valorHoraExtra, totalExtras,
+    horasAtraso, valorHoraAtraso, totalAtrasos,
+    anticipo, comprasEmpresa,
+    totalDescuentos, sueldoNeto, costoPatronal
   };
 }
 
+function RolFila({ label, valor, color = '#333', bold = false }) {
+  const v = parseFloat(valor || 0);
+  return (
+    <div style={{
+      display: 'flex', justifyContent: 'space-between',
+      padding: '4px 0', fontSize: bold ? '14px' : '13px',
+      fontWeight: bold ? 'bold' : 'normal', color
+    }}>
+      <span>{label}</span>
+      <span>{v < 0 ? '-' : ''}${Math.abs(v).toFixed(2)}</span>
+    </div>
+  );
+}
+
 export default function TabNomina({ mobile }) {
-  const now   = new Date();
-  const [mes,        setMes]        = useState(now.getMonth());       // 0-11
-  const [anio,       setAnio]       = useState(now.getFullYear());
-  const [empleados,  setEmpleados]  = useState([]);
-  const [nomina,     setNomina]     = useState([]);  // nómina ya guardada del período
-  const [cargando,   setCargando]   = useState(true);
-  const [generando,  setGenerando]  = useState(false);
+  const now = new Date();
+  const [mes,          setMes]          = useState(now.getMonth());
+  const [anio,         setAnio]         = useState(now.getFullYear());
+  const [empleados,    setEmpleados]    = useState([]);
+  const [nomina,       setNomina]       = useState([]);
+  const [cargando,     setCargando]     = useState(true);
+  const [generando,    setGenerando]    = useState(false);
   const [modalDetalle, setModalDetalle] = useState(null);
-  const [diasMap,    setDiasMap]    = useState({});  // empId → diasTrabajados
-  const [yaGenerada, setYaGenerada] = useState(false);
+  const [yaGenerada,   setYaGenerada]   = useState(false);
+
+  const [diasMap,           setDiasMap]           = useState({});
+  const [bonifMap,          setBonifMap]           = useState({});
+  const [horasExtraMap,     setHorasExtraMap]     = useState({});
+  const [valHoraExtraMap,   setValHoraExtraMap]   = useState({});
+  const [horasAtrasoMap,    setHorasAtrasoMap]    = useState({});
+  const [valHoraAtrasoMap,  setValHoraAtrasoMap]  = useState({});
+  const [anticipoMap,       setAnticipoMap]        = useState({});
+  const [comprasEmpMap,     setComprasEmpMap]      = useState({});
 
   const cargar = useCallback(async () => {
     setCargando(true);
     const periodoStr = `${anio}-${String(mes + 1).padStart(2,'0')}`;
-
-    // Empleados activos
-    const { data: emps } = await supabase
-      .from('empleados').select('*')
-      .eq('activo', true).is('deleted_at', null).order('nombre');
-
-    // Nómina existente para el período
-    const { data: nom } = await supabase
-      .from('nomina')
-      .select('*, empleados(nombre, cedula)')
-      .eq('periodo', periodoStr)
-      .order('created_at');
-
+    const [{ data: emps }, { data: nom }] = await Promise.all([
+      supabase.from('empleados').select('*').eq('activo', true).is('deleted_at', null).order('nombre'),
+      supabase.from('nomina').select('*, empleados(nombre, cedula)').eq('periodo', periodoStr).order('created_at')
+    ]);
     const lista = emps || [];
     setEmpleados(lista);
     setNomina(nom || []);
     setYaGenerada((nom || []).length > 0);
-
-    // Inicializar días trabajados en 30
-    const dm = {};
-    lista.forEach(e => { dm[e.id] = diasMap[e.id] || 30; });
-    setDiasMap(dm);
+    setDiasMap(prev => {
+      const dm = {};
+      lista.forEach(e => { dm[e.id] = prev[e.id] || 30; });
+      return dm;
+    });
     setCargando(false);
-  }, [mes, anio]); // eslint-disable-line
+  }, [mes, anio]);
 
   useEffect(() => { cargar(); }, [cargar]);
 
+  function getExtras(empId) {
+    return {
+      bonificacion:    bonifMap[empId]        || 0,
+      horasExtra:      horasExtraMap[empId]   || 0,
+      valorHoraExtra:  valHoraExtraMap[empId] || 0,
+      horasAtraso:     horasAtrasoMap[empId]  || 0,
+      valorHoraAtraso: valHoraAtrasoMap[empId]|| 0,
+      anticipo:        anticipoMap[empId]     || 0,
+      comprasEmpresa:  comprasEmpMap[empId]   || 0,
+    };
+  }
+
   async function generarNomina() {
     if (yaGenerada) {
-      if (!window.confirm(`Ya existe nómina para ${MESES[mes]} ${anio}. ¿Regenerar y reemplazar?`)) return;
-      // Borrar la anterior
+      if (!window.confirm(`Ya existe nómina para ${MESES[mes]} ${anio}. ¿Regenerar?`)) return;
       const periodoStr = `${anio}-${String(mes + 1).padStart(2,'0')}`;
       await supabase.from('nomina').delete().eq('periodo', periodoStr);
     }
@@ -92,25 +120,33 @@ export default function TabNomina({ mobile }) {
     const periodoStr = `${anio}-${String(mes + 1).padStart(2,'0')}`;
     const rows = empleados.map(emp => {
       const dias = diasMap[emp.id] || 30;
-      const r    = calcularRol(emp, dias);
+      const r    = calcularRol(emp, dias, getExtras(emp.id));
       return {
-        empleado_id:      emp.id,
-        periodo:          periodoStr,
-        dias_trabajados:  dias,
-        sueldo_base:      emp.sueldo_base,
-        sueldo_prop:      r.sueldoProp,
-        iess_empleado:    r.iessEmp,
-        iess_patronal:    r.iessPat,
-        decimo_tercero:   r.decimoTercero,
-        decimo_cuarto:    r.decimoCuarto,
-        fondo_reserva:    r.fondoReserva,
-        vacaciones:       r.vacaciones,
-        sueldo_neto:      r.sueldoNeto,
-        costo_patronal:   r.costoPatronal,
-        estado:           'generado'
+        empleado_id:        emp.id,
+        periodo:            periodoStr,
+        dias_trabajados:    dias,
+        sueldo_base:        emp.sueldo_base,
+        sueldo_prop:        r.sueldoProp,
+        iess_empleado:      r.iessEmp,
+        iess_patronal:      r.iessPat,
+        decimo_tercero:     0,
+        decimo_cuarto:      0,
+        fondo_reserva:      0,
+        vacaciones:         0,
+        bonificacion:       r.bonificacion,
+        horas_extra:        r.horasExtra,
+        valor_hora_extra:   r.valorHoraExtra,
+        total_extras:       r.totalExtras,
+        horas_atraso:       r.horasAtraso,
+        valor_hora_atraso:  r.valorHoraAtraso,
+        total_atrasos:      r.totalAtrasos,
+        anticipo:           r.anticipo,
+        compras_empresa:    r.comprasEmpresa,
+        sueldo_neto:        r.sueldoNeto,
+        costo_patronal:     r.costoPatronal,
+        estado:             'generado'
       };
     });
-
     const { error } = await supabase.from('nomina').insert(rows);
     if (error) { alert('Error al generar nómina: ' + error.message); setGenerando(false); return; }
     await cargar();
@@ -118,40 +154,45 @@ export default function TabNomina({ mobile }) {
   }
 
   async function marcarPagado(id) {
-    await supabase.from('nomina').update({
-      estado: 'pagado', fecha_pago: new Date().toISOString().slice(0,10)
-    }).eq('id', id);
+    await supabase.from('nomina')
+      .update({ estado: 'pagado', fecha_pago: new Date().toISOString().slice(0,10) })
+      .eq('id', id);
     await cargar();
   }
 
-  // Totales de la nómina cargada
   const totales = nomina.reduce((acc, n) => ({
-    sueldos:   acc.sueldos   + (n.sueldo_prop     || 0),
-    iessEmp:   acc.iessEmp   + (n.iess_empleado   || 0),
-    iessPat:   acc.iessPat   + (n.iess_patronal   || 0),
-    neto:      acc.neto      + (n.sueldo_neto     || 0),
-    patronal:  acc.patronal  + (n.costo_patronal  || 0),
+    sueldos:  acc.sueldos  + (n.sueldo_prop    || 0),
+    iessEmp:  acc.iessEmp  + (n.iess_empleado  || 0),
+    iessPat:  acc.iessPat  + (n.iess_patronal  || 0),
+    neto:     acc.neto     + (n.sueldo_neto    || 0),
+    patronal: acc.patronal + (n.costo_patronal || 0),
   }), { sueldos: 0, iessEmp: 0, iessPat: 0, neto: 0, patronal: 0 });
 
-  function exportarCSV() {
-    const enc = ['Empleado','Cédula','Días','Sueldo','IESS emp.','IESS pat.','XIII','XIV','F.Reserva','Vacaciones','Neto','Costo patronal','Estado'];
-    const rows = nomina.map(n => [
-      n.empleados?.nombre || '', n.empleados?.cedula || '',
-      n.dias_trabajados, n.sueldo_prop?.toFixed(2),
-      n.iess_empleado?.toFixed(2), n.iess_patronal?.toFixed(2),
-      n.decimo_tercero?.toFixed(2), n.decimo_cuarto?.toFixed(2),
-      n.fondo_reserva?.toFixed(2), n.vacaciones?.toFixed(2),
-      n.sueldo_neto?.toFixed(2), n.costo_patronal?.toFixed(2),
-      n.estado
-    ]);
-    const csv = [enc, ...rows].map(r => r.map(v => `"${v}"`).join(',')).join('\n');
-    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href = url;
-    a.download = `nomina_${MESES[mes]}_${anio}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+  function exportarExcel() {
+    const filas = nomina.map(n => ({
+      'Empleado':        n.empleados?.nombre || '',
+      'Cédula':          n.empleados?.cedula || '',
+      'Días':            n.dias_trabajados,
+      'Sueldo':          parseFloat((n.sueldo_prop      || 0).toFixed(2)),
+      'Bonificación':    parseFloat((n.bonificacion     || 0).toFixed(2)),
+      'H. Extra':        n.horas_extra || 0,
+      'Val/H. Extra':    parseFloat((n.valor_hora_extra  || 0).toFixed(2)),
+      'Total Extras':    parseFloat((n.total_extras      || 0).toFixed(2)),
+      'H. Atraso':       n.horas_atraso || 0,
+      'Val/H. Atraso':   parseFloat((n.valor_hora_atraso || 0).toFixed(2)),
+      'Total Atrasos':   parseFloat((n.total_atrasos     || 0).toFixed(2)),
+      'Anticipo':        parseFloat((n.anticipo          || 0).toFixed(2)),
+      'Compras Empresa': parseFloat((n.compras_empresa   || 0).toFixed(2)),
+      'IESS Empleado':   parseFloat((n.iess_empleado     || 0).toFixed(2)),
+      'IESS Patronal':   parseFloat((n.iess_patronal     || 0).toFixed(2)),
+      'Neto a Pagar':    parseFloat((n.sueldo_neto       || 0).toFixed(2)),
+      'Costo Empresa':   parseFloat((n.costo_patronal    || 0).toFixed(2)),
+      'Estado':          n.estado
+    }));
+    const ws = XLSX.utils.json_to_sheet(filas);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, `${MESES[mes]} ${anio}`);
+    XLSX.writeFile(wb, `nomina_${MESES[mes]}_${anio}.xlsx`);
   }
 
   const card = {
@@ -163,67 +204,114 @@ export default function TabNomina({ mobile }) {
     padding: '8px 12px', borderRadius: '8px',
     border: '1.5px solid #ddd', fontSize: '13px', outline: 'none'
   };
+  const fieldStyle = (color = '#ddd') => ({
+    width: '100%', padding: '6px 8px', borderRadius: '6px',
+    border: `1.5px solid ${color}`, fontSize: '13px',
+    boxSizing: 'border-box', outline: 'none'
+  });
+  const labelStyle = (color = '#777') => ({
+    fontSize: '10px', color, marginBottom: '3px', fontWeight: '600', display: 'block'
+  });
 
   return (
     <div>
       {/* Selector período + acciones */}
       <div style={{ ...card, display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
         <div>
-          <div style={{ fontSize: '11px', color: '#777', marginBottom: '3px', fontWeight: '600' }}>Mes</div>
+          <div style={labelStyle()}>Mes</div>
           <select value={mes} onChange={e => setMes(Number(e.target.value))} style={inputStyle}>
             {MESES.map((m, i) => <option key={i} value={i}>{m}</option>)}
           </select>
         </div>
         <div>
-          <div style={{ fontSize: '11px', color: '#777', marginBottom: '3px', fontWeight: '600' }}>Año</div>
+          <div style={labelStyle()}>Año</div>
           <input type="number" value={anio} onChange={e => setAnio(Number(e.target.value))}
             style={{ ...inputStyle, width: '80px' }} />
         </div>
-        <button onClick={generarNomina} disabled={generando || cargando || empleados.length === 0} style={{
-          background: (generando || cargando) ? '#aaa' : 'linear-gradient(135deg,#2c1a4a,#4a2c7a)',
-          color: 'white', border: 'none', borderRadius: '8px',
-          padding: '9px 18px', cursor: (generando || cargando) ? 'default' : 'pointer',
-          fontSize: '13px', fontWeight: 'bold'
-        }}>
+        <button onClick={generarNomina} disabled={generando || cargando || empleados.length === 0}
+          style={{
+            background: (generando || cargando) ? '#aaa' : 'linear-gradient(135deg,#2c1a4a,#4a2c7a)',
+            color: 'white', border: 'none', borderRadius: '8px',
+            padding: '9px 18px', cursor: (generando || cargando) ? 'default' : 'pointer',
+            fontSize: '13px', fontWeight: 'bold'
+          }}>
           {generando ? 'Generando...' : yaGenerada ? '🔄 Regenerar' : '⚡ Generar nómina'}
         </button>
         {nomina.length > 0 && (
-          <button onClick={exportarCSV} style={{
+          <button onClick={exportarExcel} style={{
             background: '#27ae60', color: 'white', border: 'none', borderRadius: '8px',
             padding: '9px 16px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold'
           }}>📥 Exportar CSV</button>
         )}
       </div>
 
-      {/* Días trabajados — solo cuando aún no se generó */}
+      {/* Inputs pre-generación por empleado */}
       {!yaGenerada && !cargando && empleados.length > 0 && (
         <div style={card}>
-          <div style={{ fontWeight: 'bold', fontSize: '13px', color: '#2c1a4a', marginBottom: '10px' }}>
-            📋 Días trabajados — {MESES[mes]} {anio}
+          <div style={{ fontWeight: 'bold', fontSize: '13px', color: '#2c1a4a', marginBottom: '12px' }}>
+            📋 Datos de nómina — {MESES[mes]} {anio}
           </div>
-          <div style={{
-            display: 'grid',
-            gridTemplateColumns: mobile ? '1fr 1fr' : 'repeat(3,1fr)',
-            gap: '8px'
-          }}>
-            {empleados.map(emp => (
-              <div key={emp.id} style={{
-                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                background: '#f8f9fa', borderRadius: '8px', padding: '8px 12px'
-              }}>
-                <span style={{ fontSize: '13px', color: '#333' }}>{emp.nombre}</span>
-                <input
-                  type="number" min={1} max={31}
-                  value={diasMap[emp.id] || 30}
-                  onChange={e => setDiasMap(d => ({ ...d, [emp.id]: Number(e.target.value) }))}
-                  style={{
-                    width: '52px', padding: '4px 8px', borderRadius: '6px',
-                    border: '1.5px solid #ddd', fontSize: '13px', textAlign: 'center'
-                  }}
-                />
+          {empleados.map(emp => (
+            <div key={emp.id} style={{
+              marginBottom: '14px', padding: '12px',
+              background: '#f8f9fa', borderRadius: '10px',
+              borderLeft: '3px solid #4a2c7a'
+            }}>
+              <div style={{ fontWeight: 'bold', fontSize: '13px', color: '#2c1a4a', marginBottom: '10px' }}>
+                👤 {emp.nombre} — Sueldo base: ${parseFloat(emp.sueldo_base || 0).toFixed(2)}
               </div>
-            ))}
-          </div>
+              <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr 1fr' : 'repeat(4,1fr)', gap: '8px' }}>
+                <div>
+                  <label style={labelStyle()}>Días trabajados</label>
+                  <input type="number" min={1} max={31} value={diasMap[emp.id] || 30}
+                    onChange={e => setDiasMap(d => ({ ...d, [emp.id]: Number(e.target.value) }))}
+                    style={fieldStyle()} />
+                </div>
+                <div>
+                  <label style={labelStyle('#27ae60')}>Bonificación $</label>
+                  <input type="number" min={0} step="0.01" value={bonifMap[emp.id] || ''}
+                    onChange={e => setBonifMap(d => ({ ...d, [emp.id]: e.target.value }))}
+                    placeholder="0.00" style={fieldStyle('#27ae60')} />
+                </div>
+                <div>
+                  <label style={labelStyle('#27ae60')}>H. Extras (cant)</label>
+                  <input type="number" min={0} step="0.5" value={horasExtraMap[emp.id] || ''}
+                    onChange={e => setHorasExtraMap(d => ({ ...d, [emp.id]: e.target.value }))}
+                    placeholder="0" style={fieldStyle('#27ae60')} />
+                </div>
+                <div>
+                  <label style={labelStyle('#27ae60')}>Valor/H. Extra $</label>
+                  <input type="number" min={0} step="0.01" value={valHoraExtraMap[emp.id] || ''}
+                    onChange={e => setValHoraExtraMap(d => ({ ...d, [emp.id]: e.target.value }))}
+                    placeholder="0.00" style={fieldStyle('#27ae60')} />
+                </div>
+                <div>
+                  <label style={labelStyle('#e74c3c')}>H. Atraso (cant)</label>
+                  <input type="number" min={0} step="0.5" value={horasAtrasoMap[emp.id] || ''}
+                    onChange={e => setHorasAtrasoMap(d => ({ ...d, [emp.id]: e.target.value }))}
+                    placeholder="0" style={fieldStyle('#e74c3c')} />
+                </div>
+                <div>
+                  <label style={labelStyle('#e74c3c')}>Valor/H. Atraso $</label>
+                  <input type="number" min={0} step="0.01" value={valHoraAtrasoMap[emp.id] || ''}
+                    onChange={e => setValHoraAtrasoMap(d => ({ ...d, [emp.id]: e.target.value }))}
+                    placeholder="0.00" style={fieldStyle('#e74c3c')} />
+                </div>
+                <div>
+                  <label style={labelStyle('#e74c3c')}>Anticipo $</label>
+                  <input type="number" min={0} step="0.01" value={anticipoMap[emp.id] || ''}
+                    onChange={e => setAnticipoMap(d => ({ ...d, [emp.id]: e.target.value }))}
+                    placeholder="0.00" style={fieldStyle('#e74c3c')} />
+                </div>
+                <div>
+                  <label style={labelStyle('#e74c3c')}>Compras Empresa $</label>
+                  <input type="number" min={0} step="0.01" value={comprasEmpMap[emp.id] || ''}
+                    onChange={e => setComprasEmpMap(d => ({ ...d, [emp.id]: e.target.value }))}
+                    placeholder="0.00" style={fieldStyle('#e74c3c')} />
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
@@ -235,11 +323,11 @@ export default function TabNomina({ mobile }) {
           gap: '8px', marginBottom: '12px'
         }}>
           {[
-            { label: 'Sueldos',       valor: totales.sueldos,  color: '#2980b9' },
-            { label: 'IESS empleados',valor: totales.iessEmp,  color: '#e74c3c' },
-            { label: 'IESS patronal', valor: totales.iessPat,  color: '#8e44ad' },
-            { label: 'Neto a pagar',  valor: totales.neto,     color: '#27ae60' },
-            { label: 'Costo empresa', valor: totales.patronal, color: '#f39c12' },
+            { label: 'Sueldos',        valor: totales.sueldos,  color: '#2980b9' },
+            { label: 'IESS empleados', valor: totales.iessEmp,  color: '#e74c3c' },
+            { label: 'IESS patronal',  valor: totales.iessPat,  color: '#8e44ad' },
+            { label: 'Neto a pagar',   valor: totales.neto,     color: '#27ae60' },
+            { label: 'Costo empresa',  valor: totales.patronal, color: '#f39c12' },
           ].map(r => (
             <div key={r.label} style={{ ...card, marginBottom: 0, textAlign: 'center', padding: '12px 8px' }}>
               <div style={{ fontSize: '10px', color: '#888', marginBottom: '4px' }}>{r.label}</div>
@@ -257,15 +345,12 @@ export default function TabNomina({ mobile }) {
       ) : nomina.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '40px', color: '#888' }}>
           {empleados.length === 0
-            ? 'No tienes empleados activos. Regístralos primero en la pestaña Empleados.'
-            : `No hay nómina generada para ${MESES[mes]} ${anio}. Ajusta los días y presiona "Generar nómina".`}
+            ? 'No tienes empleados activos. Regístralos en la pestaña Empleados.'
+            : `Completa los datos arriba y presiona "Generar nómina".`}
         </div>
       ) : (
         nomina.map(n => (
-          <div key={n.id} style={{
-            ...card,
-            borderLeft: `4px solid ${n.estado === 'pagado' ? '#27ae60' : '#4a2c7a'}`
-          }}>
+          <div key={n.id} style={{ ...card, borderLeft: `4px solid ${n.estado === 'pagado' ? '#27ae60' : '#4a2c7a'}` }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '8px' }}>
               <div style={{ flex: 1 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
@@ -276,23 +361,18 @@ export default function TabNomina({ mobile }) {
                     background: n.estado === 'pagado' ? '#27ae60' : '#4a2c7a',
                     color: 'white', borderRadius: '12px', padding: '2px 10px',
                     fontSize: '11px', fontWeight: 'bold'
-                  }}>
-                    {n.estado === 'pagado' ? '✅ Pagado' : '⏳ Pendiente'}
-                  </span>
-                  <span style={{ fontSize: '11px', color: '#888' }}>
-                    {n.dias_trabajados}d trabajados
-                  </span>
+                  }}>{n.estado === 'pagado' ? '✅ Pagado' : '⏳ Pendiente'}</span>
+                  <span style={{ fontSize: '11px', color: '#888' }}>{n.dias_trabajados}d</span>
                 </div>
-                <div style={{
-                  display: 'grid',
-                  gridTemplateColumns: mobile ? '1fr 1fr' : 'repeat(5, auto)',
-                  gap: '4px 16px', fontSize: '12px', color: '#555'
-                }}>
-                  <span>Sueldo: <b>${(n.sueldo_prop||0).toFixed(2)}</b></span>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 16px', fontSize: '12px' }}>
+                  <span style={{ color: '#555' }}>Sueldo: <b>${(n.sueldo_prop||0).toFixed(2)}</b></span>
+                  {(n.bonificacion||0) > 0   && <span style={{ color: '#27ae60' }}>Bonif: +${(n.bonificacion||0).toFixed(2)}</span>}
+                  {(n.total_extras||0) > 0   && <span style={{ color: '#27ae60' }}>Extras: +${(n.total_extras||0).toFixed(2)}</span>}
+                  {(n.total_atrasos||0) > 0  && <span style={{ color: '#e74c3c' }}>Atrasos: -${(n.total_atrasos||0).toFixed(2)}</span>}
+                  {(n.anticipo||0) > 0       && <span style={{ color: '#e74c3c' }}>Anticipo: -${(n.anticipo||0).toFixed(2)}</span>}
+                  {(n.compras_empresa||0) > 0&& <span style={{ color: '#e74c3c' }}>Compras: -${(n.compras_empresa||0).toFixed(2)}</span>}
                   <span style={{ color: '#e74c3c' }}>IESS: -${(n.iess_empleado||0).toFixed(2)}</span>
-                  <span style={{ color: '#27ae60', fontWeight: 'bold' }}>Neto: ${(n.sueldo_neto||0).toFixed(2)}</span>
-                  <span style={{ color: '#8e44ad' }}>XIII: +${(n.decimo_tercero||0).toFixed(2)}</span>
-                  <span style={{ color: '#f39c12' }}>Costo emp.: ${(n.costo_patronal||0).toFixed(2)}</span>
+                  <span style={{ color: '#27ae60', fontWeight: 'bold' }}>NETO: ${(n.sueldo_neto||0).toFixed(2)}</span>
                 </div>
               </div>
               <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
@@ -302,9 +382,8 @@ export default function TabNomina({ mobile }) {
                 }}>🔍 Detalle</button>
                 {n.estado !== 'pagado' && (
                   <button onClick={() => marcarPagado(n.id)} style={{
-                    background: '#27ae60', color: 'white', border: 'none',
-                    borderRadius: '8px', padding: '7px 12px',
-                    cursor: 'pointer', fontSize: '12px', fontWeight: 'bold'
+                    background: '#27ae60', color: 'white', border: 'none', borderRadius: '8px',
+                    padding: '7px 12px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold'
                   }}>✅ Pagar</button>
                 )}
               </div>
@@ -313,7 +392,7 @@ export default function TabNomina({ mobile }) {
         ))
       )}
 
-      {/* Modal detalle rol de pago */}
+      {/* Modal rol de pago — Básico + Extras */}
       {modalDetalle && (
         <div style={{
           position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
@@ -321,50 +400,125 @@ export default function TabNomina({ mobile }) {
         }}>
           <div style={{
             background: 'white', borderRadius: '16px', padding: '24px',
-            width: '100%', maxWidth: '420px',
-            boxShadow: '0 8px 32px rgba(0,0,0,0.2)'
+            width: '100%', maxWidth: '680px',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.2)',
+            overflowY: 'auto', maxHeight: '90vh'
           }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <h3 style={{ margin: 0, color: '#2c1a4a' }}>📄 Rol de pago</h3>
+            {/* Header */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '14px' }}>
+              <div>
+                <h3 style={{ margin: 0, color: '#2c1a4a' }}>📄 Rol de Pago</h3>
+                <div style={{ fontSize: '12px', color: '#888', marginTop: '2px' }}>
+                  Embutidos y Jamones Candelaria — {MESES[mes]} {anio}
+                </div>
+              </div>
               <button onClick={() => setModalDetalle(null)} style={{
                 background: '#f0f2f5', border: 'none', borderRadius: '6px',
                 padding: '5px 10px', cursor: 'pointer', fontSize: '12px'
               }}>✕</button>
             </div>
 
-            <div style={{ fontSize: '14px', fontWeight: 'bold', marginBottom: '4px' }}>
+            <div style={{ fontWeight: 'bold', fontSize: '15px', color: '#2c1a4a' }}>
               {modalDetalle.empleados?.nombre}
             </div>
             <div style={{ fontSize: '12px', color: '#888', marginBottom: '16px' }}>
-              {MESES[mes]} {anio} · {modalDetalle.dias_trabajados} días trabajados
+              Cédula: {modalDetalle.empleados?.cedula || '—'} · {modalDetalle.dias_trabajados} días trabajados
             </div>
 
-            {[
-              { label: 'Sueldo proporcional',  valor:  modalDetalle.sueldo_prop,     color: '#333',   sign: '' },
-              { label: `IESS empleado (${modalDetalle.iess_empleado && modalDetalle.sueldo_prop ? ((modalDetalle.iess_empleado/modalDetalle.sueldo_prop)*100).toFixed(2) : '9.45'}%)`,
-                                               valor: -modalDetalle.iess_empleado,   color: '#e74c3c', sign: '-' },
-              { label: '── Sueldo neto a recibir', valor: modalDetalle.sueldo_neto,  color: '#27ae60', bold: true },
-              null,
-              { label: 'Décimo tercero (1/12)', valor: modalDetalle.decimo_tercero,  color: '#8e44ad', sign: '+' },
-              { label: 'Décimo cuarto (1/12)',  valor: modalDetalle.decimo_cuarto,   color: '#8e44ad', sign: '+' },
-              { label: 'Fondo de reserva',      valor: modalDetalle.fondo_reserva,   color: '#8e44ad', sign: '+' },
-              { label: 'Vacaciones (1/24)',      valor: modalDetalle.vacaciones,      color: '#8e44ad', sign: '+' },
-              { label: 'IESS patronal',          valor: modalDetalle.iess_patronal,   color: '#8e44ad', sign: '+' },
-              null,
-              { label: '── COSTO TOTAL EMPRESA', valor: modalDetalle.costo_patronal, color: '#f39c12', bold: true },
-            ].map((r, i) => {
-              if (!r) return <hr key={i} style={{ border: 'none', borderTop: '1px solid #eee', margin: '8px 0' }} />;
-              return (
-                <div key={i} style={{
-                  display: 'flex', justifyContent: 'space-between',
-                  padding: '5px 0', fontSize: r.bold ? '14px' : '13px',
-                  fontWeight: r.bold ? 'bold' : 'normal', color: r.color
+            {/* Dos columnas */}
+            <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1fr 1fr', gap: '14px' }}>
+
+              {/* BÁSICO */}
+              <div style={{ background: '#f8f9fa', borderRadius: '12px', padding: '16px' }}>
+                <div style={{
+                  fontWeight: 'bold', fontSize: '13px', color: '#2c1a4a',
+                  marginBottom: '10px', borderBottom: '1px solid #ddd', paddingBottom: '6px'
                 }}>
-                  <span>{r.label}</span>
-                  <span>{r.sign === '-' ? '-' : ''} ${Math.abs(r.valor || 0).toFixed(2)}</span>
+                  📋 BÁSICO
                 </div>
-              );
-            })}
+                <RolFila label="Sueldo básico" valor={modalDetalle.sueldo_prop} />
+                <div style={{ fontSize: '11px', fontWeight: '600', color: '#e74c3c', margin: '10px 0 6px' }}>
+                  DESCUENTOS
+                </div>
+                {(modalDetalle.anticipo || 0) > 0 && (
+                  <RolFila label="Anticipos" valor={-(modalDetalle.anticipo || 0)} color="#e74c3c" />
+                )}
+                {(modalDetalle.compras_empresa || 0) > 0 && (
+                  <RolFila label="Compras Empresa" valor={-(modalDetalle.compras_empresa || 0)} color="#e74c3c" />
+                )}
+                <RolFila
+                  label={`Aporte IESS ${(modalDetalle.sueldo_prop ? (modalDetalle.iess_empleado / modalDetalle.sueldo_prop * 100).toFixed(2) : '9.45')}%`}
+                  valor={-(modalDetalle.iess_empleado || 0)}
+                  color="#e74c3c"
+                />
+                <div style={{ borderTop: '2px solid #2c1a4a', margin: '10px 0 6px' }} />
+                <RolFila
+                  label="TOTAL"
+                  valor={
+                    (modalDetalle.sueldo_prop || 0)
+                    - (modalDetalle.anticipo || 0)
+                    - (modalDetalle.compras_empresa || 0)
+                    - (modalDetalle.iess_empleado || 0)
+                  }
+                  bold color="#2c1a4a"
+                />
+              </div>
+
+              {/* EXTRAS */}
+              <div style={{ background: '#f0f7ff', borderRadius: '12px', padding: '16px' }}>
+                <div style={{
+                  fontWeight: 'bold', fontSize: '13px', color: '#2c1a4a',
+                  marginBottom: '10px', borderBottom: '1px solid #c8dff5', paddingBottom: '6px'
+                }}>
+                  ⚡ EXTRAS / BONOS
+                </div>
+                {(modalDetalle.bonificacion || 0) > 0 && (
+                  <RolFila label="Bonificación" valor={modalDetalle.bonificacion} color="#27ae60" />
+                )}
+                {(modalDetalle.total_extras || 0) > 0 && (
+                  <RolFila
+                    label={`${modalDetalle.horas_extra} H. Extra × $${parseFloat(modalDetalle.valor_hora_extra || 0).toFixed(2)}`}
+                    valor={modalDetalle.total_extras}
+                    color="#27ae60"
+                  />
+                )}
+                {(modalDetalle.total_atrasos || 0) > 0 && (
+                  <RolFila
+                    label={`${modalDetalle.horas_atraso} H. Atraso × $${parseFloat(modalDetalle.valor_hora_atraso || 0).toFixed(2)}`}
+                    valor={-(modalDetalle.total_atrasos || 0)}
+                    color="#e74c3c"
+                  />
+                )}
+                <div style={{ borderTop: '2px solid #2c1a4a', margin: '10px 0 6px' }} />
+                <RolFila
+                  label="TOTAL"
+                  valor={
+                    (modalDetalle.bonificacion || 0)
+                    + (modalDetalle.total_extras || 0)
+                    - (modalDetalle.total_atrasos || 0)
+                  }
+                  bold color="#2c1a4a"
+                />
+              </div>
+            </div>
+
+            {/* NETO FINAL */}
+            <div style={{
+              background: 'linear-gradient(135deg,#2c1a4a,#4a2c7a)',
+              borderRadius: '12px', padding: '16px', marginTop: '14px',
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+            }}>
+              <div style={{ color: 'white', fontWeight: 'bold', fontSize: '14px' }}>
+                NETO TOTAL A PAGAR
+              </div>
+              <div style={{ color: '#a9dfbf', fontWeight: 'bold', fontSize: '24px' }}>
+                ${(modalDetalle.sueldo_neto || 0).toFixed(2)}
+              </div>
+            </div>
+
+            <div style={{ marginTop: '10px', fontSize: '11px', color: '#888', textAlign: 'center' }}>
+              IESS patronal: ${(modalDetalle.iess_patronal || 0).toFixed(2)} · Costo total empresa: ${(modalDetalle.costo_patronal || 0).toFixed(2)}
+            </div>
           </div>
         </div>
       )}

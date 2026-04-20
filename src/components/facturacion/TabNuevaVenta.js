@@ -38,7 +38,6 @@ export default function TabNuevaVenta({ mobile, currentUser }) {
   const [emitiendo,      setEmitiendo]      = useState(false);
   const [facturaEmitida, setFacturaEmitida] = useState(null);
   const [error,          setError]          = useState('');
-  const [errorDetalle,   setErrorDetalle]   = useState(null);
 
   useEffect(() => { cargarDatos(); }, []);
 
@@ -131,10 +130,7 @@ export default function TabNuevaVenta({ mobile, currentUser }) {
         })
       });
       const data = await res.json();
-      if (!data.ok) {
-        setErrorDetalle(data.detalle);
-        throw new Error(data.error);
-      }
+      if (!data.ok) throw new Error(data.error);
 
       const numero = `001-001-${String(secuencial).padStart(9, '0')}`;
 
@@ -278,7 +274,6 @@ export default function TabNuevaVenta({ mobile, currentUser }) {
     setFormaPago('efectivo');
     setClienteId('consumidor_final');
     setError('');
-    setErrorDetalle(null);
   }
 
   // ── Estilos reutilizables ─────────────────────────────────
@@ -370,17 +365,6 @@ export default function TabNuevaVenta({ mobile, currentUser }) {
           <div style={{ padding: '10px 14px', fontSize: '13px', fontWeight: 'bold', color: '#c0392b' }}>
             ⚠️ {error}
           </div>
-          {errorDetalle && (
-            <pre style={{
-              margin: 0, padding: '10px 14px',
-              background: '#2d0a0a', color: '#ff9999',
-              fontSize: '11px', overflowX: 'auto',
-              maxHeight: '300px', overflowY: 'auto',
-              borderTop: '1px solid #e74c3c'
-            }}>
-              {JSON.stringify(errorDetalle, null, 2)}
-            </pre>
-          )}
         </div>
       )}
 

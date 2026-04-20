@@ -4,7 +4,6 @@
 // ============================================
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../supabase';
-import * as XLSX from 'xlsx';
 
 const FORMA_ICONO = {
   efectivo:      '💵',
@@ -29,7 +28,9 @@ export default function TabCobros({ mobile }) {
       .from('cobros')
       .select(`
         *,
-        facturas ( numero )
+        facturas ( numero ),
+        cuentas_cobrar ( monto_total ),
+        clientes ( nombre )
       `)
       .is('deleted_at', null)
       .order('created_at', { ascending: false });
@@ -58,22 +59,26 @@ export default function TabCobros({ mobile }) {
       .reduce((s, c) => s + (parseFloat(c.monto) || 0), 0)
   })).filter(f => f.total > 0);
 
-  // ── Exportar Excel ────────────────────────────────────────
+  // ── Exportar CSV ──────────────────────────────────────────
   function exportarExcel() {
-    const filas = cobrosFiltrados.map(c => ({
-      Fecha:      c.fecha,
-      Factura:    c.facturas?.numero || '',
-      Cliente:    c.cliente_nombre || '',
-      Monto:      parseFloat(c.monto).toFixed(2),
-      FormaPago:  c.forma_pago,
-      Observaciones: c.observaciones || '',
-      Registrado: c.registrado_por || '',
-      Hora:       new Date(c.created_at).toLocaleTimeString('es-EC')
-    }));
-    const ws = XLSX.utils.json_to_sheet(filas);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Cobros');
-    XLSX.writeFile(wb, `cobros_${filtroDesde || 'todos'}.xlsx`);
+    const enc  = ['forma_pago', 'nombre_cliente', 'valor_cuenta', 'valor_pago', 'fecha_pago'];
+    const rows = cobrosFiltrados.map(c => [
+      (c.forma_pago || '').toUpperCase(),
+      c.clientes?.nombre || '',
+      parseFloat(c.cuentas_cobrar?.monto_total || 0).toFixed(2),
+      parseFloat(c.monto || 0).toFixed(2),
+      c.fecha || ''
+    ]);
+    const csv  = [enc, ...rows]
+      .map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = `cobros_${filtroDesde || new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   const inputStyle = {

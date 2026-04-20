@@ -3,29 +3,84 @@
 // Historial de pagos a proveedores + Excel
 // ============================================
 import React, { useState, useEffect, useCallback } from 'react';
+import * as XLSX from 'xlsx';
 import { supabase } from '../../supabase';
 
 const FORMAS = ['Todas', 'transferencia', 'efectivo', 'cheque', 'tarjeta'];
 
-function exportarExcel(filas) {
-  const encabezado = ['Fecha', 'Proveedor', 'Forma de pago', 'Monto', 'Notas'];
-  const rows = filas.map(p => [
-    p.fecha_pago,
-    p.proveedores?.nombre || '',
-    p.forma_pago || '',
-    (p.monto || 0).toFixed(2),
-    p.notas || ''
-  ]);
-  const csv = [encabezado, ...rows]
-    .map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))
-    .join('\n');
-  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement('a');
-  a.href     = url;
-  a.download = `pagos_proveedores_${new Date().toISOString().slice(0,10)}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
+const FORMA_SRI = { efectivo: '01', transferencia: '20', cheque: '20', credito: '19', tarjeta: '19' };
+
+function exportarPagos(filas) {
+  const datos = filas.map(p => ({
+    'Fecha':         p.fecha_pago || '',
+    'Proveedor':     p.proveedores?.nombre || '',
+    'Forma de pago': p.forma_pago || '',
+    'Monto':         parseFloat((p.monto || 0).toFixed(2)),
+    'Notas':         p.notas || ''
+  }));
+  const ws = XLSX.utils.json_to_sheet(datos);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Pagos');
+  XLSX.writeFile(wb, `pagos_proveedores_${new Date().toISOString().slice(0,10)}.xlsx`);
+}
+
+function exportarATS(compras) {
+  const RUC_EMPRESA   = '1004007884001';
+  const NOMBRE_EMPRESA = 'Embutidos y Jamones Candelaria';
+
+  const enc = [
+    'N','CodDoc','Fecha','RUC Emisor','Razón Social Emisor',
+    'Nro.Secuencial','TipoId.','Id.Comprador','Razón Social Comprador',
+    'Formas de Pago','Descuento','Total Sin Impuestos',
+    'Base IVA 0%','Base IVA 5%','Base IVA 8%','Base IVA 12%','Base IVA 14%','Base IVA 15%',
+    'No Objeto IVA','Exento IVA','Desc. Adicional','Devol. IVA',
+    'Monto IVA','Base ICE','Monto ICE','Base IRBPNR','Monto IRBPNR',
+    'Propina','Ret. IVA Pres.','Ret. Renta Pres.',
+    'Monto Total','Guía de Remisión','Primeras 3 Artículos','EXTRAS','Nro de Autorización'
+  ];
+
+  const rows = compras.map((c, i) => {
+    const subtotal  = parseFloat(c.subtotal || 0);
+    const iva       = parseFloat(c.iva || 0);
+    const total     = parseFloat(c.total || 0);
+    const codDoc    = c.tiene_factura ? '01' : '03';
+    const baseIVA15 = c.tiene_factura ? subtotal : 0;
+    const baseIVA0  = c.tiene_factura ? 0 : subtotal;
+
+    const items3 = (c.compras_detalle || [])
+      .slice(0, 3).map(d => d.mp_nombre).join(' / ');
+
+    return [
+      i + 1,
+      codDoc,
+      c.fecha || '',
+      c.proveedores?.ruc   || '',
+      c.proveedores?.nombre || c.proveedor_nombre || '',
+      c.numero_factura || '',
+      '04',
+      RUC_EMPRESA,
+      NOMBRE_EMPRESA,
+      FORMA_SRI[c.forma_pago] || '20',
+      '0.00',
+      subtotal.toFixed(2),
+      baseIVA0.toFixed(2), '0.00','0.00','0.00','0.00',
+      baseIVA15.toFixed(2),
+      '0.00','0.00','0.00','0.00',
+      iva.toFixed(2),
+      '0.00','0.00','0.00','0.00','0.00','0.00','0.00',
+      total.toFixed(2),
+      '',
+      items3,
+      '',
+      c.autorizacion_sri || ''
+    ];
+  });
+
+  const datos = rows.map(r => Object.fromEntries(enc.map((k, i) => [k, r[i]])));
+  const ws = XLSX.utils.json_to_sheet(datos);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'ATS Compras');
+  XLSX.writeFile(wb, `ATS_compras_${new Date().toISOString().slice(0,10)}.xlsx`);
 }
 
 export default function TabPagos({ mobile }) {
@@ -33,6 +88,7 @@ export default function TabPagos({ mobile }) {
   const mes1  = hoy.slice(0, 7) + '-01';
 
   const [pagos,      setPagos]      = useState([]);
+  const [comprasATS, setComprasATS] = useState([]);
   const [cargando,   setCargando]   = useState(true);
   const [desde,      setDesde]      = useState(mes1);
   const [hasta,      setHasta]      = useState(hoy);
@@ -41,17 +97,26 @@ export default function TabPagos({ mobile }) {
 
   const cargar = useCallback(async () => {
     setCargando(true);
-    let q = supabase
-      .from('pagos_compras')
-      .select(`*, proveedores ( nombre )`)
-      .gte('fecha_pago', desde)
-      .lte('fecha_pago', hasta)
-      .order('fecha_pago', { ascending: false });
-
-    if (formaFiltro !== 'Todas') q = q.eq('forma_pago', formaFiltro);
-
-    const { data } = await q;
-    setPagos(data || []);
+    const [{ data: pagosData }, { data: comprasData }] = await Promise.all([
+      (() => {
+        let q = supabase
+          .from('pagos_compras')
+          .select(`*, proveedores ( nombre )`)
+          .gte('fecha_pago', desde)
+          .lte('fecha_pago', hasta)
+          .order('fecha_pago', { ascending: false });
+        if (formaFiltro !== 'Todas') q = q.eq('forma_pago', formaFiltro);
+        return q;
+      })(),
+      supabase
+        .from('compras')
+        .select(`*, proveedores ( ruc, nombre ), compras_detalle ( mp_nombre )`)
+        .gte('fecha', desde)
+        .lte('fecha', hasta)
+        .order('fecha', { ascending: false })
+    ]);
+    setPagos(pagosData || []);
+    setComprasATS(comprasData || []);
     setCargando(false);
   }, [desde, hasta, formaFiltro]);
 
@@ -116,12 +181,19 @@ export default function TabPagos({ mobile }) {
             style={{ ...inputStyle, width: '100%', boxSizing: 'border-box' }}
           />
         </div>
-        <button onClick={() => exportarExcel(filtrados)} style={{
+        <button onClick={() => exportarPagos(filtrados)} style={{
           background: '#27ae60', color: 'white', border: 'none',
           borderRadius: '8px', padding: '9px 16px', cursor: 'pointer',
           fontSize: '13px', fontWeight: 'bold', whiteSpace: 'nowrap'
         }}>
-          📥 Exportar CSV
+          📥 Pagos CSV
+        </button>
+        <button onClick={() => exportarATS(comprasATS)} style={{
+          background: '#8e44ad', color: 'white', border: 'none',
+          borderRadius: '8px', padding: '9px 16px', cursor: 'pointer',
+          fontSize: '13px', fontWeight: 'bold', whiteSpace: 'nowrap'
+        }}>
+          📋 ATS SRI
         </button>
       </div>
 
