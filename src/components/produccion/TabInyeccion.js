@@ -114,7 +114,7 @@ export default function TabInyeccion({ currentUser, mobile, onSalmueraChange }) 
       const stockKg  = parseFloat(invReg?.stock_kg || 0);
       return {
         nombre: f.ingrediente_nombre, gramos, kgUsados: kgReales,
-        grupo: f.grupo || 'MP', precioKg,
+        grupo: f.seccion || f.grupo || 'MP', precioKg,
         costo: kgReales * precioKg, stockKg,
         stockOk: stockKg >= kgReales - 0.001,
       };

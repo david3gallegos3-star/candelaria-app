@@ -40,7 +40,7 @@ function DetalleSalmuera({ datos }) {
         onClick={() => {
           const grupos = [
             { key: 'MP', label: 'MATERIAS PRIMAS' },
-            { key: 'CA', label: 'CONDIMENTOS Y ADITIVOS' },
+            { key: 'AD', label: 'CONDIMENTOS Y ADITIVOS' },
           ];
           const seccionesHTML = grupos.map(({ key, label }) => {
             const ings = ingredientes.filter(i => (i.grupo || 'MP') === key);
