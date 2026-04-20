@@ -128,12 +128,29 @@ export default function TabHistorial({
                         Ver cortes ({lote.produccion_inyeccion_cortes.length})
                       </summary>
                       <div style={{ marginTop:6, display:'flex', flexWrap:'wrap', gap:4 }}>
-                        {lote.produccion_inyeccion_cortes.map((c, i) => (
-                          <span key={i} style={{ background:'#f0f2f5', padding:'2px 8px', borderRadius:6, fontSize:10, color:'#555' }}>
-                            {c.corte_nombre}: {parseFloat(c.kg_carne_cruda).toFixed(2)} kg
-                            {parseFloat(c.kg_carne_limpia) > 0 && ` → ${parseFloat(c.kg_carne_limpia).toFixed(2)} kg limpia`}
-                          </span>
-                        ))}
+                        {(() => {
+                          const mermas = lote.produccion_inyeccion_cortes.map(c => {
+                            const inj  = parseFloat(c.kg_carne_limpia || 0) + parseFloat(c.kg_retazos || 0);
+                            const post = parseFloat(c.kg_carne_limpia || 0);
+                            return inj > 0 ? ((inj - post) / inj) * 100 : 0;
+                          });
+                          const maxMerma = Math.max(...mermas);
+                          return lote.produccion_inyeccion_cortes.map((c, i) => {
+                            const pct = mermas[i];
+                            const esMayor = pct > 0 && pct === maxMerma;
+                            return (
+                              <span key={i} style={{
+                                background: esMayor ? '#fdecea' : '#f0f2f5',
+                                padding:'3px 10px', borderRadius:6, fontSize:10,
+                                color: esMayor ? '#c0392b' : '#555',
+                                fontWeight: esMayor ? 'bold' : 'normal',
+                                border: esMayor ? '1px solid #e74c3c' : '1px solid transparent'
+                              }}>
+                                {c.corte_nombre}: {esMayor && '↑'}{pct > 0 ? ` ${pct.toFixed(1)}% merma` : ' sin datos'}
+                              </span>
+                            );
+                          });
+                        })()}
                       </div>
                     </details>
                   )}
