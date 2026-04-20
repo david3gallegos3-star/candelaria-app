@@ -10,6 +10,14 @@ const FORMAS = ['Todas', 'transferencia', 'efectivo', 'cheque', 'tarjeta'];
 
 const FORMA_SRI = { efectivo: '01', transferencia: '20', cheque: '20', credito: '19', tarjeta: '19' };
 
+function tipoIdDoc(ruc) {
+  if (!ruc) return '07';
+  const limpio = ruc.replace(/[^0-9]/g, '');
+  if (limpio.length === 13) return '04';
+  if (limpio.length === 10) return '05';
+  return '06';
+}
+
 function exportarPagos(filas) {
   const datos = filas.map(p => ({
     'Fecha':         p.fecha_pago || '',
@@ -55,9 +63,9 @@ function exportarATS(compras) {
       codDoc,
       c.fecha || '',
       c.proveedores?.ruc   || '',
-      c.proveedores?.nombre || c.proveedor_nombre || '',
+      c.proveedores?.razon_social || c.proveedores?.nombre || c.proveedor_nombre || '',
       c.numero_factura || '',
-      '04',
+      tipoIdDoc(c.proveedores?.ruc),
       RUC_EMPRESA,
       NOMBRE_EMPRESA,
       FORMA_SRI[c.forma_pago] || '20',
@@ -83,17 +91,22 @@ function exportarATS(compras) {
   XLSX.writeFile(wb, `ATS_compras_${new Date().toISOString().slice(0,10)}.xlsx`);
 }
 
+const FORMAS_PAGO = ['transferencia', 'efectivo', 'cheque', 'tarjeta'];
+
 export default function TabPagos({ mobile }) {
   const hoy   = new Date().toISOString().slice(0, 10);
   const mes1  = hoy.slice(0, 7) + '-01';
 
-  const [pagos,      setPagos]      = useState([]);
-  const [comprasATS, setComprasATS] = useState([]);
-  const [cargando,   setCargando]   = useState(true);
-  const [desde,      setDesde]      = useState(mes1);
-  const [hasta,      setHasta]      = useState(hoy);
-  const [formaFiltro,setFormaFiltro]= useState('Todas');
-  const [busqueda,   setBusqueda]   = useState('');
+  const [pagos,        setPagos]        = useState([]);
+  const [comprasATS,   setComprasATS]   = useState([]);
+  const [cargando,     setCargando]     = useState(true);
+  const [desde,        setDesde]        = useState(mes1);
+  const [hasta,        setHasta]        = useState(hoy);
+  const [formaFiltro,  setFormaFiltro]  = useState('Todas');
+  const [busqueda,     setBusqueda]     = useState('');
+  const [modalEditar,  setModalEditar]  = useState(null);
+  const [editForm,     setEditForm]     = useState({});
+  const [guardando,    setGuardando]    = useState(false);
 
   const cargar = useCallback(async () => {
     setCargando(true);
@@ -101,7 +114,7 @@ export default function TabPagos({ mobile }) {
       (() => {
         let q = supabase
           .from('pagos_compras')
-          .select(`*, proveedores ( nombre )`)
+          .select(`*, proveedores ( nombre ), compras ( id, numero_factura, subtotal, descuento, iva, total )`)
           .gte('fecha_pago', desde)
           .lte('fecha_pago', hasta)
           .order('fecha_pago', { ascending: false });
@@ -121,6 +134,46 @@ export default function TabPagos({ mobile }) {
   }, [desde, hasta, formaFiltro]);
 
   useEffect(() => { cargar(); }, [cargar]);
+
+  function abrirEditar(p) {
+    setEditForm({
+      monto:          p.monto || '',
+      forma_pago:     p.forma_pago || 'transferencia',
+      fecha_pago:     p.fecha_pago || hoy,
+      notas:          p.notas || '',
+      numero_factura: p.compras?.numero_factura || '',
+      subtotal:       p.compras?.subtotal || '',
+      descuento:      p.compras?.descuento || '',
+      iva:            p.compras?.iva || '',
+      total:          p.compras?.total || ''
+    });
+    setModalEditar(p);
+  }
+
+  async function guardarEdicion() {
+    if (!modalEditar) return;
+    setGuardando(true);
+    await supabase.from('pagos_compras').update({
+      monto:      parseFloat(editForm.monto) || 0,
+      forma_pago: editForm.forma_pago,
+      fecha_pago: editForm.fecha_pago,
+      notas:      editForm.notas || null
+    }).eq('id', modalEditar.id);
+
+    if (modalEditar.compras?.id) {
+      await supabase.from('compras').update({
+        numero_factura: editForm.numero_factura || null,
+        subtotal:       parseFloat(editForm.subtotal) || 0,
+        descuento:      parseFloat(editForm.descuento) || 0,
+        iva:            parseFloat(editForm.iva) || 0,
+        total:          parseFloat(editForm.total) || 0
+      }).eq('id', modalEditar.compras.id);
+    }
+
+    setGuardando(false);
+    setModalEditar(null);
+    cargar();
+  }
 
   // Filtro por búsqueda local (proveedor o nota)
   const filtrados = pagos.filter(p => {
@@ -253,16 +306,124 @@ export default function TabPagos({ mobile }) {
                 </div>
               </div>
 
-              {/* Derecha — monto */}
-              <div style={{
-                fontSize: mobile ? '18px' : '20px',
-                fontWeight: 'bold', color: '#27ae60'
-              }}>
-                ${(p.monto || 0).toFixed(2)}
+              {/* Derecha — monto + editar */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{
+                  fontSize: mobile ? '18px' : '20px',
+                  fontWeight: 'bold', color: '#27ae60'
+                }}>
+                  ${(p.monto || 0).toFixed(2)}
+                </div>
+                <button onClick={() => abrirEditar(p)} style={{
+                  background: '#f0f2f5', border: '1px solid #ddd',
+                  borderRadius: '8px', padding: '5px 10px',
+                  cursor: 'pointer', fontSize: '12px', color: '#555'
+                }}>
+                  ✏️ Editar
+                </button>
               </div>
             </div>
           </div>
         ))
+      )}
+
+      {/* Modal editar pago */}
+      {modalEditar && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000
+        }}>
+          <div style={{
+            background: 'white', borderRadius: '16px', padding: '24px',
+            width: mobile ? '95vw' : '420px', boxShadow: '0 8px 32px rgba(0,0,0,0.18)'
+          }}>
+            <div style={{ fontWeight: 'bold', fontSize: '16px', marginBottom: '16px', color: '#1a3a2a' }}>
+              ✏️ Editar pago — {modalEditar.proveedores?.nombre || '—'}
+            </div>
+
+            {/* Campos del pago */}
+            <div style={{ fontSize: '11px', color: '#2980b9', fontWeight: '700', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+              Pago
+            </div>
+            {[
+              { label: 'Monto pagado ($)', key: 'monto', type: 'number' },
+              { label: 'Fecha de pago', key: 'fecha_pago', type: 'date' },
+              { label: 'Notas', key: 'notas', type: 'text' }
+            ].map(({ label, key, type }) => (
+              <div key={key} style={{ marginBottom: '12px' }}>
+                <div style={{ fontSize: '11px', color: '#777', marginBottom: '3px', fontWeight: '600' }}>{label}</div>
+                <input
+                  type={type}
+                  value={editForm[key]}
+                  onChange={e => setEditForm(f => ({ ...f, [key]: e.target.value }))}
+                  style={{
+                    width: '100%', boxSizing: 'border-box',
+                    padding: '8px 12px', borderRadius: '8px',
+                    border: '1.5px solid #ddd', fontSize: '13px'
+                  }}
+                />
+              </div>
+            ))}
+
+            {/* Campos de la compra */}
+            {modalEditar?.compras?.id && <>
+              <div style={{ fontSize: '11px', color: '#27ae60', fontWeight: '700', margin: '16px 0 8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                Compra
+              </div>
+              {[
+                { label: '🧾 N° Factura', key: 'numero_factura', type: 'text' },
+                { label: 'Subtotal ($)', key: 'subtotal', type: 'number' },
+                { label: 'Descuento ($)', key: 'descuento', type: 'number' },
+                { label: 'IVA ($)', key: 'iva', type: 'number' },
+                { label: 'Total ($)', key: 'total', type: 'number' }
+              ].map(({ label, key, type }) => (
+                <div key={key} style={{ marginBottom: '12px' }}>
+                  <div style={{ fontSize: '11px', color: '#777', marginBottom: '3px', fontWeight: '600' }}>{label}</div>
+                  <input
+                    type={type}
+                    value={editForm[key]}
+                    onChange={e => setEditForm(f => ({ ...f, [key]: e.target.value }))}
+                    style={{
+                      width: '100%', boxSizing: 'border-box',
+                      padding: '8px 12px', borderRadius: '8px',
+                      border: '1.5px solid #ddd', fontSize: '13px'
+                    }}
+                  />
+                </div>
+              ))}
+            </>}
+
+            <div style={{ marginBottom: '16px' }}>
+              <div style={{ fontSize: '11px', color: '#777', marginBottom: '3px', fontWeight: '600' }}>Forma de pago</div>
+              <select
+                value={editForm.forma_pago}
+                onChange={e => setEditForm(f => ({ ...f, forma_pago: e.target.value }))}
+                style={{
+                  width: '100%', padding: '8px 12px', borderRadius: '8px',
+                  border: '1.5px solid #ddd', fontSize: '13px'
+                }}
+              >
+                {FORMAS_PAGO.map(f => <option key={f}>{f}</option>)}
+              </select>
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <button onClick={() => setModalEditar(null)} style={{
+                background: '#f0f2f5', border: 'none', borderRadius: '8px',
+                padding: '9px 18px', cursor: 'pointer', fontSize: '13px'
+              }}>
+                Cancelar
+              </button>
+              <button onClick={guardarEdicion} disabled={guardando} style={{
+                background: '#2980b9', color: 'white', border: 'none',
+                borderRadius: '8px', padding: '9px 18px', cursor: 'pointer',
+                fontSize: '13px', fontWeight: 'bold'
+              }}>
+                {guardando ? 'Guardando...' : '💾 Guardar'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

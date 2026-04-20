@@ -7,10 +7,18 @@ import { supabase } from '../../supabase';
 
 const TIPO_OPTIONS = ['Nacional', 'Extranjero'];
 const EMPTY_FORM = {
-  nombre: '', ruc: '', tipo: 'Nacional',
+  nombre: '', razon_social: '', ruc: '', tipo: 'Nacional',
   telefono: '', email: '', direccion: '',
   contacto: '', dias_credito: 0, notas: ''
 };
+
+function tipoIdDoc(ruc) {
+  if (!ruc) return '';
+  const limpio = ruc.replace(/[^0-9]/g, '');
+  if (limpio.length === 13) return '04 — RUC';
+  if (limpio.length === 10) return '05 — Cédula';
+  return '06 — Pasaporte';
+}
 
 export default function TabProveedores({ mobile }) {
   const [proveedores, setProveedores] = useState([]);
@@ -53,6 +61,7 @@ export default function TabProveedores({ mobile }) {
     setEditando(p);
     setForm({
       nombre:       p.nombre       || '',
+      razon_social: p.razon_social || '',
       ruc:          p.ruc          || '',
       tipo:         p.tipo         || 'Nacional',
       telefono:     p.telefono     || '',
@@ -79,6 +88,7 @@ export default function TabProveedores({ mobile }) {
     setError('');
     const payload = {
       nombre:       form.nombre.trim(),
+      razon_social: form.razon_social.trim() || null,
       ruc:          form.ruc.trim() || null,
       tipo:         form.tipo,
       telefono:     form.telefono.trim() || null,
@@ -173,7 +183,7 @@ export default function TabProveedores({ mobile }) {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div style={{ flex: 1 }}>
                 {/* Nombre + badges */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '6px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '4px' }}>
                   <span style={{ fontWeight: 'bold', fontSize: '15px', color: '#1a3a2a' }}>
                     🏢 {p.nombre}
                   </span>
@@ -194,13 +204,19 @@ export default function TabProveedores({ mobile }) {
                   )}
                 </div>
 
+                {p.razon_social && (
+                  <div style={{ fontSize: '12px', color: '#888', marginBottom: '4px', fontStyle: 'italic' }}>
+                    {p.razon_social}
+                  </div>
+                )}
+
                 {/* Datos secundarios */}
                 <div style={{
                   display: 'grid',
                   gridTemplateColumns: mobile ? '1fr' : 'repeat(3, 1fr)',
                   gap: '4px 16px', fontSize: '12px', color: '#555'
                 }}>
-                  {p.ruc      && <span>🪪 RUC/ID: <b>{p.ruc}</b></span>}
+                  {p.ruc && <span>🪪 <b>{p.ruc}</b> <span style={{ color: '#27ae60' }}>({tipoIdDoc(p.ruc)})</span></span>}
                   {p.telefono && <span>📞 {p.telefono}</span>}
                   {p.email    && <span>✉️ {p.email}</span>}
                   {p.contacto && <span>👤 {p.contacto}</span>}
@@ -241,22 +257,34 @@ export default function TabProveedores({ mobile }) {
               {editando ? '✏️ Editar proveedor' : '+ Nuevo proveedor'}
             </h3>
 
-            {/* Nombre */}
+            {/* Nombre comercial */}
             <div style={{ marginBottom: '14px' }}>
-              <label style={labelStyle}>Nombre / Razón social *</label>
+              <label style={labelStyle}>Nombre comercial *</label>
               <input value={form.nombre} onChange={e => setForm(f => ({ ...f, nombre: e.target.value }))}
-                style={inputStyle} placeholder="Ej. Distribuidora Andina S.A." />
+                style={inputStyle} placeholder="Ej. Distribuidora Andina" />
             </div>
 
-            {/* RUC + Tipo */}
+            {/* Razón social */}
+            <div style={{ marginBottom: '14px' }}>
+              <label style={labelStyle}>Razón social (para ATS/SRI)</label>
+              <input value={form.razon_social} onChange={e => setForm(f => ({ ...f, razon_social: e.target.value }))}
+                style={inputStyle} placeholder="Ej. DISTRIBUIDORA ANDINA S.A." />
+            </div>
+
+            {/* RUC + Tipo + TipoId detectado */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
               <div>
                 <label style={labelStyle}>RUC / Cédula / Pasaporte</label>
                 <input value={form.ruc} onChange={e => setForm(f => ({ ...f, ruc: e.target.value }))}
                   style={inputStyle} placeholder="0990000000001" />
+                {form.ruc && (
+                  <div style={{ fontSize: '11px', color: '#27ae60', marginTop: '4px', fontWeight: '600' }}>
+                    🪪 {tipoIdDoc(form.ruc)}
+                  </div>
+                )}
               </div>
               <div>
-                <label style={labelStyle}>Tipo</label>
+                <label style={labelStyle}>Tipo proveedor</label>
                 <select value={form.tipo} onChange={e => setForm(f => ({ ...f, tipo: e.target.value }))}
                   style={inputStyle}>
                   {TIPO_OPTIONS.map(t => <option key={t}>{t}</option>)}

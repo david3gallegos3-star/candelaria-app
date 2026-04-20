@@ -25,8 +25,9 @@ export default function TabIngresoCompra({ mobile, currentUser, userRol }) {
   const [materiales,   setMateriales]   = useState([]); // MP + stock actual
   const [proveedorId,  setProveedorId]  = useState('');
   const [fecha,        setFecha]        = useState(new Date().toISOString().split('T')[0]);
-  const [tieneFactura, setTieneFactura] = useState(false);
-  const [numFactura,   setNumFactura]   = useState('');
+  const [tieneFactura,    setTieneFactura]    = useState(false);
+  const [numFactura,      setNumFactura]      = useState('');
+  const [recordarFactura, setRecordarFactura] = useState(false);
   const [formaPago,    setFormaPago]    = useState('efectivo');
   const [diasCredito,  setDiasCredito]  = useState(30);
   const [notas,        setNotas]        = useState('');
@@ -101,8 +102,9 @@ export default function TabIngresoCompra({ mobile, currentUser, userRol }) {
         proveedor_id:     proveedorId,
         proveedor_nombre: proveedor?.nombre || '',
         fecha,
-        tiene_factura:    tieneFactura,
-        numero_factura:   tieneFactura ? numFactura : null,
+        tiene_factura:      tieneFactura,
+        numero_factura:     tieneFactura ? (numFactura || null) : null,
+        recordar_factura:   tieneFactura && !numFactura && recordarFactura,
         subtotal,
         iva,
         total,
@@ -190,6 +192,7 @@ export default function TabIngresoCompra({ mobile, currentUser, userRol }) {
       setProveedorId('');
       setNumFactura('');
       setTieneFactura(false);
+      setRecordarFactura(false);
       setFormaPago('efectivo');
       setNotas('');
       mostrarExito(`✅ Compra registrada — ${itemsValidos.length} material(es), $${total.toFixed(2)} — inventario actualizado`);
@@ -289,12 +292,33 @@ export default function TabIngresoCompra({ mobile, currentUser, userRol }) {
             </span>
           </label>
           {tieneFactura && (
-            <input
-              type="text" value={numFactura}
-              onChange={e => setNumFactura(e.target.value)}
-              placeholder="Nº factura proveedor"
-              style={{ ...inputStyle, width: 'auto', flex: 1, maxWidth: 240 }}
-            />
+            <>
+              <input
+                type="text" value={numFactura}
+                onChange={e => setNumFactura(e.target.value)}
+                placeholder="Nº factura proveedor"
+                style={{ ...inputStyle, width: 'auto', flex: 1, maxWidth: 240 }}
+              />
+              {!numFactura && (
+                <label style={{
+                  display: 'flex', alignItems: 'center', gap: 5,
+                  cursor: 'pointer', fontSize: '12px',
+                  color: recordarFactura ? '#e67e22' : '#aaa',
+                  background: recordarFactura ? '#fff3e0' : '#f5f5f5',
+                  padding: '5px 10px', borderRadius: 8,
+                  border: `1.5px solid ${recordarFactura ? '#e67e22' : '#ddd'}`,
+                  whiteSpace: 'nowrap', userSelect: 'none'
+                }}>
+                  <input
+                    type="checkbox"
+                    checked={recordarFactura}
+                    onChange={e => setRecordarFactura(e.target.checked)}
+                    style={{ width: 14, height: 14 }}
+                  />
+                  🔔 Recordarme
+                </label>
+              )}
+            </>
           )}
           {!tieneFactura && (
             <span style={{
@@ -440,7 +464,7 @@ export default function TabIngresoCompra({ mobile, currentUser, userRol }) {
               onChange={e => setDiasCredito(parseInt(e.target.value))}
               style={{ ...inputStyle, width: 'auto' }}
             >
-              {[15, 30, 45, 60, 90].map(d => (
+              {[7, 15, 30, 45, 60, 90].map(d => (
                 <option key={d} value={d}>{d} días</option>
               ))}
             </select>

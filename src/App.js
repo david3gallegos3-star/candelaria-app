@@ -25,6 +25,7 @@ import './App.css';
 import html2canvas from 'html2canvas';
 
 // Componentes
+import { checkRecordatoriosFactura } from './utils/helpers';
 import LoginScreen    from './components/LoginScreen';
 import MenuPrincipal  from './components/MenuPrincipal';
 import GestorUsuarios from './components/GestorUsuarios';
@@ -261,7 +262,11 @@ function App() {
   useEffect(() => {
     if (user && userRol?.rol === 'admin') {
       cargarNotificaciones();
-      notifTimer.current = setInterval(cargarNotificaciones, 30000);
+      checkRecordatoriosFactura();
+      notifTimer.current = setInterval(() => {
+        cargarNotificaciones();
+        checkRecordatoriosFactura();
+      }, 30000);
       return () => clearInterval(notifTimer.current);
     }
   }, [user, userRol]);

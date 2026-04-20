@@ -60,7 +60,42 @@ export async function crearNotificacion({
     });
 
     return data;
-  } catch(e) { 
-    console.error('Error notificación:', e); 
+  } catch(e) {
+    console.error('Error notificación:', e);
+  }
+}
+
+export async function checkRecordatoriosFactura() {
+  try {
+    const hace24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+    const { data: compras } = await supabase
+      .from('compras')
+      .select('id, proveedor_nombre, fecha, ultima_notif_factura')
+      .eq('tiene_factura', true)
+      .is('numero_factura', null)
+      .eq('recordar_factura', true);
+
+    if (!compras || compras.length === 0) return;
+
+    for (const c of compras) {
+      const debeNotificar = !c.ultima_notif_factura ||
+        new Date(c.ultima_notif_factura) < new Date(hace24h);
+
+      if (!debeNotificar) continue;
+
+      await supabase.from('notificaciones').insert({
+        tipo:    'recordatorio_factura',
+        origen:  'compras',
+        mensaje: `🔔 Pendiente N° factura — ${c.proveedor_nombre || 'Proveedor'} (compra del ${c.fecha})`,
+        leida:   false
+      });
+
+      await supabase.from('compras')
+        .update({ ultima_notif_factura: new Date().toISOString() })
+        .eq('id', c.id);
+    }
+  } catch(e) {
+    console.error('Error recordatorios factura:', e);
   }
 }

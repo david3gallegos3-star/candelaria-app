@@ -30,6 +30,10 @@ export default function TabCuentasPagar({ mobile }) {
   const [notaPago,   setNotaPago]   = useState('');
   const [guardando,  setGuardando]  = useState(false);
   const [error,      setError]      = useState('');
+  const [modalSeq,    setModalSeq]    = useState(null);
+  const [seqValor,    setSeqValor]    = useState('');
+  const [modalEditar, setModalEditar] = useState(null);
+  const [editForm,    setEditForm]    = useState({});
 
   const cargar = useCallback(async () => {
     setCargando(true);
@@ -37,7 +41,8 @@ export default function TabCuentasPagar({ mobile }) {
       .from('cuentas_pagar')
       .select(`
         *,
-        proveedores ( nombre )
+        proveedores ( nombre, razon_social, ruc ),
+        compras ( numero_factura )
       `)
       .order('fecha_vencimiento', { ascending: true });
     setCuentas(data || []);
@@ -110,6 +115,54 @@ export default function TabCuentasPagar({ mobile }) {
     await cargar();
     setModalPago(null);
     setGuardando(false);
+  }
+
+  function abrirEditar(c) {
+    setEditForm({
+      monto_total:       parseFloat(c.monto_total || 0).toFixed(2),
+      saldo_pendiente:   parseFloat(c.saldo_pendiente || 0).toFixed(2),
+      fecha_vencimiento: c.fecha_vencimiento || '',
+      estado:            c.estado || 'pendiente',
+      forma_pago:        c.forma_pago || 'credito',
+      notas:             c.notas || '',
+      numero_factura:    c.compras?.numero_factura || ''
+    });
+    setModalEditar(c);
+  }
+
+  async function guardarEdicion() {
+    await supabase.from('cuentas_pagar').update({
+      monto_total:       parseFloat(editForm.monto_total)     || 0,
+      saldo_pendiente:   parseFloat(editForm.saldo_pendiente) || 0,
+      fecha_vencimiento: editForm.fecha_vencimiento || null,
+      estado:            editForm.estado,
+      forma_pago:        editForm.forma_pago,
+      notas:             editForm.notas.trim() || null,
+      updated_at:        new Date().toISOString()
+    }).eq('id', modalEditar.id);
+
+    if (modalEditar.compra_id) {
+      const nf = editForm.numero_factura.trim() || null;
+      await supabase.from('compras')
+        .update({
+          numero_factura:   nf,
+          recordar_factura: nf ? false : undefined
+        })
+        .eq('id', modalEditar.compra_id);
+    }
+
+    setModalEditar(null);
+    await cargar();
+  }
+
+  async function guardarSecuencial() {
+    if (!modalSeq) return;
+    await supabase.from('compras')
+      .update({ numero_factura: seqValor.trim() || null })
+      .eq('id', modalSeq.compra_id);
+    setModalSeq(null);
+    setSeqValor('');
+    await cargar();
   }
 
   // ── Estilos ──
@@ -218,6 +271,9 @@ export default function TabCuentasPagar({ mobile }) {
                       </span>
                     )}
                     {c.forma_pago && <span>💳 {c.forma_pago}</span>}
+                    {c.compras?.numero_factura && (
+                      <span style={{ color: '#2980b9' }}>🧾 {c.compras.numero_factura}</span>
+                    )}
                   </div>
 
                   {c.notas && (
@@ -227,17 +283,22 @@ export default function TabCuentasPagar({ mobile }) {
                   )}
                 </div>
 
-                {/* Botón pagar */}
-                {!pagado && (
-                  <button onClick={() => abrirPago(c)} style={{
-                    background: 'linear-gradient(135deg,#1a3a2a,#1e5c3a)',
-                    color: 'white', border: 'none', borderRadius: '8px',
-                    padding: '8px 16px', cursor: 'pointer',
+                {/* Botones */}
+                <div style={{ display: 'flex', gap: '6px', flexShrink: 0, flexWrap: 'wrap' }}>
+                  <button onClick={() => abrirEditar(c)} style={{
+                    background: '#f0f2f5', border: 'none', borderRadius: '8px',
+                    padding: '8px 12px', cursor: 'pointer',
                     fontSize: '12px', fontWeight: 'bold', whiteSpace: 'nowrap'
-                  }}>
-                    💳 Registrar pago
-                  </button>
-                )}
+                  }}>✏️ Editar</button>
+                  {!pagado && (
+                    <button onClick={() => abrirPago(c)} style={{
+                      background: 'linear-gradient(135deg,#1a3a2a,#1e5c3a)',
+                      color: 'white', border: 'none', borderRadius: '8px',
+                      padding: '8px 16px', cursor: 'pointer',
+                      fontSize: '12px', fontWeight: 'bold', whiteSpace: 'nowrap'
+                    }}>💳 Registrar pago</button>
+                  )}
+                </div>
               </div>
             </div>
           );
@@ -319,6 +380,136 @@ export default function TabCuentasPagar({ mobile }) {
               }}>
                 {guardando ? 'Guardando...' : 'Confirmar pago'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal Editar Cuenta ── */}
+      {modalEditar && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
+          zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px'
+        }}>
+          <div style={{
+            background: 'white', borderRadius: '16px', padding: '24px',
+            maxWidth: '480px', width: '100%', boxShadow: '0 8px 32px rgba(0,0,0,0.2)'
+          }}>
+            <h3 style={{ margin: '0 0 4px', color: '#1a3a2a' }}>✏️ Editar cuenta</h3>
+            <div style={{ fontSize: '12px', color: '#888', marginBottom: '18px' }}>
+              {modalEditar.proveedores?.nombre}
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+              <div>
+                <label style={{ fontSize: '11px', fontWeight: '600', color: '#555', display: 'block', marginBottom: '4px' }}>Monto total $</label>
+                <input type="number" min="0" step="0.01"
+                  value={editForm.monto_total}
+                  onChange={e => setEditForm(f => ({ ...f, monto_total: e.target.value }))}
+                  style={inputStyle} />
+              </div>
+              <div>
+                <label style={{ fontSize: '11px', fontWeight: '600', color: '#555', display: 'block', marginBottom: '4px' }}>Saldo pendiente $</label>
+                <input type="number" min="0" step="0.01"
+                  value={editForm.saldo_pendiente}
+                  onChange={e => setEditForm(f => ({ ...f, saldo_pendiente: e.target.value }))}
+                  style={inputStyle} />
+              </div>
+              <div>
+                <label style={{ fontSize: '11px', fontWeight: '600', color: '#555', display: 'block', marginBottom: '4px' }}>Fecha vencimiento</label>
+                <input type="date"
+                  value={editForm.fecha_vencimiento}
+                  onChange={e => setEditForm(f => ({ ...f, fecha_vencimiento: e.target.value }))}
+                  style={inputStyle} />
+              </div>
+              <div>
+                <label style={{ fontSize: '11px', fontWeight: '600', color: '#555', display: 'block', marginBottom: '4px' }}>Estado</label>
+                <select value={editForm.estado}
+                  onChange={e => setEditForm(f => ({ ...f, estado: e.target.value }))}
+                  style={inputStyle}>
+                  <option value="pendiente">⏳ Pendiente</option>
+                  <option value="parcial">⚡ Parcial</option>
+                  <option value="pagado">✅ Pagado</option>
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize: '11px', fontWeight: '600', color: '#555', display: 'block', marginBottom: '4px' }}>Forma de pago</label>
+                <select value={editForm.forma_pago}
+                  onChange={e => setEditForm(f => ({ ...f, forma_pago: e.target.value }))}
+                  style={inputStyle}>
+                  <option value="credito">📅 Crédito</option>
+                  <option value="transferencia">🏦 Transferencia</option>
+                  <option value="efectivo">💵 Efectivo</option>
+                  <option value="cheque">📝 Cheque</option>
+                </select>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: '12px' }}>
+              <label style={{ fontSize: '11px', fontWeight: '600', color: '#555', display: 'block', marginBottom: '4px' }}>🧾 N° Factura proveedor</label>
+              <input value={editForm.numero_factura}
+                onChange={e => setEditForm(f => ({ ...f, numero_factura: e.target.value }))}
+                placeholder="001-001-000000001"
+                style={inputStyle} />
+            </div>
+
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ fontSize: '11px', fontWeight: '600', color: '#555', display: 'block', marginBottom: '4px' }}>Notas</label>
+              <input value={editForm.notas}
+                onChange={e => setEditForm(f => ({ ...f, notas: e.target.value }))}
+                placeholder="Observaciones..."
+                style={inputStyle} />
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <button onClick={() => setModalEditar(null)} style={{
+                background: '#f0f2f5', border: 'none', borderRadius: '8px',
+                padding: '10px 20px', cursor: 'pointer', fontSize: '13px'
+              }}>Cancelar</button>
+              <button onClick={guardarEdicion} style={{
+                background: 'linear-gradient(135deg,#1a3a2a,#1e5c3a)',
+                color: 'white', border: 'none', borderRadius: '8px',
+                padding: '10px 24px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold'
+              }}>Guardar cambios</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal N° Factura / Secuencial ── */}
+      {modalSeq && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
+          zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px'
+        }}>
+          <div style={{
+            background: 'white', borderRadius: '16px', padding: '28px',
+            maxWidth: '400px', width: '100%', boxShadow: '0 8px 32px rgba(0,0,0,0.2)'
+          }}>
+            <h3 style={{ margin: '0 0 16px', color: '#1a3a2a' }}>🧾 N° Factura / Secuencial</h3>
+            <p style={{ fontSize: '13px', color: '#555', marginBottom: '12px' }}>
+              Ingresa el número de la factura del proveedor (ej. 001-001-000000123)
+            </p>
+            <input
+              value={seqValor}
+              onChange={e => setSeqValor(e.target.value)}
+              placeholder="001-001-000000001"
+              style={{
+                width: '100%', padding: '10px 12px', borderRadius: '8px',
+                border: '1.5px solid #2980b9', fontSize: '14px',
+                boxSizing: 'border-box', outline: 'none', marginBottom: '20px'
+              }}
+            />
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <button onClick={() => setModalSeq(null)} style={{
+                background: '#f0f2f5', border: 'none', borderRadius: '8px',
+                padding: '10px 20px', cursor: 'pointer', fontSize: '13px'
+              }}>Cancelar</button>
+              <button onClick={guardarSecuencial} style={{
+                background: 'linear-gradient(135deg,#1a3a2a,#1e5c3a)',
+                color: 'white', border: 'none', borderRadius: '8px',
+                padding: '10px 24px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold'
+              }}>Guardar</button>
             </div>
           </div>
         </div>
