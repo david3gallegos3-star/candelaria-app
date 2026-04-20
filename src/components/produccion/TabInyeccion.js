@@ -17,6 +17,7 @@ export default function TabInyeccion({ currentUser, mobile, onSalmueraChange }) 
   const [exito,               setExito]               = useState('');
   const [notas,               setNotas]               = useState('');
   const [buscadorCorte,       setBuscadorCorte]       = useState('');
+  const [porcentajeSalmuera,  setPorcentajeSalmuera]  = useState(20);
 
   const cargarInicial = useCallback(async () => {
     setCargando(true);
@@ -36,19 +37,23 @@ export default function TabInyeccion({ currentUser, mobile, onSalmueraChange }) 
   useEffect(() => {
     if (!formulaSelec) {
       setIngredientesFormula([]);
+      setPorcentajeSalmuera(20);
       if (onSalmueraChange) onSalmueraChange(null);
       return;
     }
-    supabase.from('formulaciones').select('*')
-      .eq('producto_nombre', formulaSelec.nombre)
-      .order('orden')
-      .then(({ data }) => setIngredientesFormula(data || []));
+    Promise.all([
+      supabase.from('formulaciones').select('*').eq('producto_nombre', formulaSelec.nombre).order('orden'),
+      supabase.from('config_productos').select('porcentaje_salmuera').eq('producto_nombre', formulaSelec.nombre).single()
+    ]).then(([{ data: filas }, { data: cfg }]) => {
+      setIngredientesFormula(filas || []);
+      setPorcentajeSalmuera(parseFloat(cfg?.porcentaje_salmuera) || 20);
+    });
   }, [formulaSelec]);
 
   // Cálculos
   const kgCarneTotal    = filasCort.reduce((s, f) => s + (parseFloat(f.kg) || 0), 0);
   const totalGramosForm = ingredientesFormula.reduce((s, f) => s + (parseFloat(f.gramos) || 0), 0);
-  const kgSalmueraReq   = totalGramosForm > 0 ? (totalGramosForm / 1000) * kgCarneTotal : kgCarneTotal;
+  const kgSalmueraReq   = kgCarneTotal * (porcentajeSalmuera / 100);
   const kgBase          = kgSalmueraReq > 0 ? kgSalmueraReq : 1;
 
   const ingredientesExp = totalGramosForm > 0
@@ -118,7 +123,10 @@ export default function TabInyeccion({ currentUser, mobile, onSalmueraChange }) 
     const costoTotal = ingReales.reduce((s, i) => s + i.costo, 0);
     onSalmueraChange({
       formula: formulaSelec, ingredientes: ingReales, kgBase: totalKg,
-      costoTotal, costoKg: totalKg > 0 ? costoTotal / totalKg : 0, kgCarneTotal,
+      costoTotal, costoKg: totalKg > 0 ? costoTotal / totalKg : 0,
+      kgCarneTotal: kgSalmueraReq,
+      kgCarneBruta: kgCarneTotal,
+      porcentajeSalmuera,
     });
   }, [formulaSelec, ingredientesFormula, mps, inventario, kgCarneTotal]);
 

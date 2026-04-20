@@ -8,7 +8,7 @@ import TabInyeccion from './TabInyeccion';
 
 // ── Detalle de salmuera en columna derecha ────────────────
 function DetalleSalmuera({ datos }) {
-  const { formula, ingredientes, costoKg, kgCarneTotal } = datos;
+  const { formula, ingredientes, costoKg, kgCarneTotal, kgCarneBruta, porcentajeSalmuera } = datos;
   const f = kgCarneTotal > 0 ? kgCarneTotal : 1;
 
   return (
@@ -116,7 +116,7 @@ function DetalleSalmuera({ datos }) {
 
       {/* Lista ingredientes escalados */}
       <div style={{ fontSize:12, fontWeight:'bold', color:'#555', marginBottom:8 }}>
-        Ingredientes {kgCarneTotal > 0 && <span style={{ color:'#2980b9', fontWeight:'normal' }}>escalados × {f.toFixed(3)} kg</span>}
+        Ingredientes {kgCarneTotal > 0 && <span style={{ color:'#2980b9', fontWeight:'normal' }}>para {f.toFixed(3)} kg salmuera ({porcentajeSalmuera ?? 20}% de {(kgCarneBruta || 0).toFixed(1)} kg carne)</span>}
       </div>
       {ingredientes.length === 0 ? (
         <div style={{ color:'#aaa', fontSize:12, textAlign:'center', padding:'20px 0' }}>Sin ingredientes configurados</div>
