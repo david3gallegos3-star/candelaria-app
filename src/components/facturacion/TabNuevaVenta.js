@@ -73,14 +73,14 @@ export default function TabNuevaVenta({ mobile, currentUser }) {
         p.cliente_id === clienteId &&
         p.producto_nombre === productoNombre
       );
-      if (p) return String(parseFloat(p.precio_venta_kg).toFixed(4));
+      if (p) return String(parseFloat(p.precio_venta_kg).toFixed(2));
     }
     // 2. Cualquier precio en precios_clientes para ese producto
     const fallback = precios.find(p => p.producto_nombre === productoNombre);
-    if (fallback) return String(parseFloat(fallback.precio_venta_kg).toFixed(4));
+    if (fallback) return String(parseFloat(fallback.precio_venta_kg).toFixed(2));
     // 3. Precio de la fórmula del producto (config_productos)
     const cfgP = configPrecios.find(p => p.producto_nombre === productoNombre);
-    if (cfgP && cfgP.precio_venta_kg > 0) return String(parseFloat(cfgP.precio_venta_kg).toFixed(4));
+    if (cfgP && cfgP.precio_venta_kg > 0) return String(parseFloat(cfgP.precio_venta_kg).toFixed(2));
     return '';
   }
 
