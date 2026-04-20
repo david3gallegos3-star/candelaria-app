@@ -243,8 +243,8 @@ function DetalleProducto({ item, resumen, mobile }) {
             {item.producto.nombre}
           </div>
           <div style={{ fontSize:'11px', color:'#888', marginTop:'2px' }}>
-            {resumen.paradas} parada{resumen.paradas !== 1 ? 's' : ''} ·
-            base {(resumen.kgTotalCrudo / resumen.paradas * 1000).toFixed(0)} g por parada
+            {resumen.porcentajeSalmuera}% salmuera ·
+            {resumen.kg_salmuera.toFixed(3)} kg salmuera para {resumen.kg_carne.toFixed(1)} kg carne
           </div>
         </div>
         <BadgeEstado
@@ -270,7 +270,7 @@ function DetalleProducto({ item, resumen, mobile }) {
         </div>
 
         {[
-          [`Total crudo (${resumen.paradas} paradas)`, `${resumen.kgTotalCrudo.toFixed(2)} kg`, '#854F0B'],
+          [`Salmuera (${resumen.porcentajeSalmuera}% de ${resumen.kg_carne.toFixed(1)} kg carne)`, `${resumen.kgTotalCrudo.toFixed(2)} kg`, '#854F0B'],
           ['Merma descontada',                          `− ${resumen.mermaKg.toFixed(2)} kg`,    '#A32D2D'],
         ].map(([label, val, color]) => (
           <div key={label} style={{
@@ -443,7 +443,7 @@ export default function TabRegistrar({
   prodSelAdd, setProdSelAdd,
   // funciones
   agregarProducto,
-  actualizarParadas,
+  actualizarKgCarne,
   eliminarProductoDia,
   setProductoSelIdx,
   limpiarTodo,
@@ -591,20 +591,20 @@ export default function TabRegistrar({
                       <div style={{
                         fontSize:'10px', color:'#888',
                         marginBottom:'3px', fontWeight:'500'
-                      }}>Paradas</div>
+                      }}>Kg carne</div>
                       <input
                         type="number"
-                        value={item.paradas}
-                        min="0.1"
-                        step="0.1"
-                        onChange={e => actualizarParadas(idx, e.target.value)}
+                        value={item.kg_carne}
+                        min="0"
+                        step="0.5"
+                        onChange={e => actualizarKgCarne(idx, e.target.value)}
                         onClick={() => setProductoSelIdx(idx)}
                         style={{
                           width:'72px', textAlign:'center',
                           fontSize:'20px', fontWeight:'500',
                           padding:'6px',
                           border: esSel ? '1.5px solid #185FA5' : '1px solid #ddd',
-                          borderRadius:'8px'  
+                          borderRadius:'8px'
                         }}
                       />
                     </div>
@@ -875,16 +875,16 @@ export default function TabRegistrar({
                     </div>
                   </div>
 
-                  {/* Input paradas */}
+                  {/* Input kg carne */}
                   <input
                     type="number"
-                    value={item.paradas}
-                    min="0.1"
-                    step="0.1"
+                    value={item.kg_carne}
+                    min="0"
+                    step="0.5"
                     onClick={e => e.stopPropagation()}
                     onChange={e => {
                       e.stopPropagation();
-                      actualizarParadas(idx, e.target.value);
+                      actualizarKgCarne(idx, e.target.value);
                     }}
                     style={{
                       width:'58px', textAlign:'center',

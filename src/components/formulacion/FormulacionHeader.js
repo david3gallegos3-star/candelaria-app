@@ -233,11 +233,11 @@ export default function FormulacionHeader({
             <label style={{
               fontSize:'11px', fontWeight:'bold',
               color:'#ccc', whiteSpace:'nowrap'
-            }}>Nº PARADAS</label>
+            }}>% SALMUERA</label>
             <NumInput
-              value={config.num_paradas || 1}
+              value={config.porcentaje_salmuera ?? 20}
               onChange={v => {
-                setConfig({ ...config, num_paradas: parseInt(v) || 1 });
+                setConfig({ ...config, porcentaje_salmuera: parseFloat(v) || 0 });
                 programarAutoGuardado();
               }}
               style={{
@@ -248,6 +248,7 @@ export default function FormulacionHeader({
                 background:'rgba(255,255,255,0.15)', color:'white'
               }}
             />
+            <span style={{ fontSize:'13px', color:'#ccc' }}>%</span>
           </div>
 
           {[

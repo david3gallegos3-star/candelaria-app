@@ -85,6 +85,16 @@ export default function ModCif({ onVolver, onVolverMenu, mostrarExito }) {
     }
 
     await supabase.from('config_productos').update({ mod_cif_kg: costoMOCIF_kg });
+
+    // Sincronizar precio_kg de Agua/hielo y Hielo con el costo calculado del CIF de agua
+    const itemAgua = cifItems.find(c => norm(c.detalle) === 'agua');
+    if (itemAgua && produccionKg > 0) {
+      const precioAgua = (parseFloat(itemAgua.valor_mes) || 0) / produccionKg;
+      await supabase.from('materias_primas')
+        .update({ precio_kg: precioAgua })
+        .in('id', ['AG01', 'AG03']);
+    }
+
     setGuardando(false);
     if (mostrarExito) mostrarExito(`✅ MOD+CIF = $${costoMOCIF_kg.toFixed(4)}/kg sincronizado en todas las fórmulas`);
   }

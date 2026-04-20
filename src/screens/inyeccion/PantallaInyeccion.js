@@ -28,6 +28,7 @@ export default function PantallaInyeccion({ onVolver, currentUser }) {
   const [modalRetazos,        setModalRetazos]        = useState(null);
   const [filasRetazos,        setFilasRetazos]        = useState([]);
   const [guardandoRetazos,    setGuardandoRetazos]    = useState(false);
+  const [porcentajeSalmuera,  setPorcentajeSalmuera]  = useState(20);
 
   // ── Carga inicial ─────────────────────────────────────
   const cargarInicial = useCallback(async () => {
@@ -64,18 +65,23 @@ export default function PantallaInyeccion({ onVolver, currentUser }) {
 
   useEffect(() => { cargarInicial(); }, [cargarInicial]);
 
-  // Ingredientes al cambiar fórmula
+  // Ingredientes al cambiar fórmula + cargar porcentaje_salmuera
   useEffect(() => {
-    if (!formulaSelec) { setIngredientesFormula([]); return; }
-    supabase.from('formulaciones').select('*')
-      .eq('producto_nombre', formulaSelec.nombre)
-      .order('orden')
-      .then(({ data }) => setIngredientesFormula(data || []));
+    if (!formulaSelec) { setIngredientesFormula([]); setPorcentajeSalmuera(20); return; }
+    Promise.all([
+      supabase.from('formulaciones').select('*')
+        .eq('producto_nombre', formulaSelec.nombre).order('orden'),
+      supabase.from('config_productos').select('porcentaje_salmuera')
+        .eq('producto_nombre', formulaSelec.nombre).single()
+    ]).then(([{ data: filas }, { data: cfg }]) => {
+      setIngredientesFormula(filas || []);
+      setPorcentajeSalmuera(parseFloat(cfg?.porcentaje_salmuera) || 20);
+    });
   }, [formulaSelec]);
 
   // ── Cálculos ──────────────────────────────────────────
   const kgCarneTotal    = filasCort.reduce((s, f) => s + (parseFloat(f.kg) || 0), 0);
-  const kgSalmueraReq   = kgCarneTotal; // fórmula por 1 kg → escala directa al total
+  const kgSalmueraReq   = kgCarneTotal * (porcentajeSalmuera / 100);
   const totalGramosForm = ingredientesFormula.reduce((s, f) => s + (parseFloat(f.gramos) || 0), 0);
   // kgBase: usa 1 kg cuando aún no hay cortes, para mostrar la fórmula de referencia
   const kgBase = kgSalmueraReq > 0 ? kgSalmueraReq : 1;
@@ -490,7 +496,7 @@ export default function PantallaInyeccion({ onVolver, currentUser }) {
                 </div>
                 {formulaSelec && kgCarneTotal > 0 && (
                   <div style={{ marginTop:10, fontSize:11, color:'rgba(255,255,255,0.6)', textAlign:'center' }}>
-                    Fórmula escalada × {kgCarneTotal.toFixed(3)} kg
+                    {kgCarneTotal.toFixed(1)} kg carne × {porcentajeSalmuera}% = {kgSalmueraReq.toFixed(3)} kg salmuera
                   </div>
                 )}
               </div>

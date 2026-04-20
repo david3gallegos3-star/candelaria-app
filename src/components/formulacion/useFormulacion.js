@@ -17,7 +17,7 @@ export function useFormulacion({ producto, userRol, currentUser }) {
   const [mobile,             setMobile]             = useState(isMobile());
   const [config,             setConfig]             = useState({
     fecha: new Date().toISOString().split('T')[0],
-    num_paradas:1, merma:0.07, margen:0.15, mod_cif_kg:0.487,
+    num_paradas:1, porcentaje_salmuera:20, merma:0.07, margen:0.15, mod_cif_kg:0.487,
     empaque_nombre:'', empaque_precio_kg:0,
     empaque_cantidad:1, empaque_unidad:'Madejas',
     hilo_nombre:'', hilo_precio_kg:0, hilo_kg:0, fundas:[]
@@ -194,7 +194,8 @@ export function useFormulacion({ producto, userRol, currentUser }) {
         producto_nombre:  producto.nombre,
         producto_id:      producto.id,
         fecha:            cfg.fecha,
-        num_paradas:      cfg.num_paradas,
+        num_paradas:           cfg.num_paradas,
+        porcentaje_salmuera:   cfg.porcentaje_salmuera ?? 20,
         merma:            cfg.merma,
         margen:           cfg.margen,
         mod_cif_kg:       cfg.mod_cif_kg,
