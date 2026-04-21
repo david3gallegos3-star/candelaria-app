@@ -39,12 +39,52 @@ export default function TabCobrar({ mobile, currentUser }) {
       .from('cuentas_cobrar')
       .select(`
         *,
-        facturas ( numero, cliente_id, forma_pago )
+        facturas ( numero, cliente_id, forma_pago ),
+        cobros ( fecha, monto )
       `)
       .is('deleted_at', null)
       .order('fecha_vencimiento', { ascending: true });
     setCuentas(data || []);
     setCargando(false);
+  }
+
+  // ── Descargar CSV ─────────────────────────────────────────
+  function descargarCSV() {
+    function num(v) { return parseFloat(v || 0).toFixed(2).replace('.', ','); }
+    function fecha(f) {
+      if (!f) return '';
+      const [y, m, d] = f.split('-');
+      return `${parseInt(d)}/${parseInt(m)}/${y}`;
+    }
+
+    const SEP = ';';
+    const enc = ['forma_pago', 'nombre_cliente', 'valor_cuenta', 'valor_pago', 'fecha_pago', 'pendiente'];
+    const filas = [];
+
+    cuentas
+      .filter(c => c.estado !== 'anulada')
+      .forEach(c => {
+        const cobrosOrdenados = (c.cobros || []).sort((a, b) => b.fecha.localeCompare(a.fecha));
+        const fechaPago = cobrosOrdenados.length > 0 ? cobrosOrdenados[0].fecha : (c.fecha_vencimiento || '');
+        const pendiente = (c.estado === 'pendiente' || c.estado === 'parcial') ? 'PENDIENTE' : '';
+        filas.push([
+          (c.facturas?.forma_pago || '').toUpperCase(),
+          c.cliente_nombre || '',
+          num(c.monto_total),
+          num(c.monto_cobrado),
+          fecha(fechaPago),
+          pendiente
+        ]);
+      });
+
+    const csv = [`sep=${SEP}`, enc.join(SEP), ...filas.map(f => f.join(SEP))].join('\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `cuentas_cobrar_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   // ── Registrar cobro ───────────────────────────────────────
@@ -165,6 +205,15 @@ export default function TabCobrar({ mobile, currentUser }) {
               }}>{op.label}</button>
           ))}
         </div>
+
+        {/* Descargar CSV */}
+        <button
+          onClick={descargarCSV}
+          style={{
+            marginLeft: 'auto', padding: '7px 16px', borderRadius: 8,
+            cursor: 'pointer', fontWeight: 'bold', fontSize: '12px',
+            border: 'none', background: '#1a5276', color: 'white'
+          }}>📥 Descargar CSV</button>
       </div>
 
       {/* Lista */}

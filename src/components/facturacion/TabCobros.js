@@ -61,18 +61,25 @@ export default function TabCobros({ mobile }) {
 
   // ── Exportar CSV ──────────────────────────────────────────
   function exportarExcel() {
+    function txt(v) { return `"${String(v || '').replace(/"/g, '""')}"`; }
+    function num(v) { return parseFloat(v || 0).toFixed(2); }
+    function fecha(f) {
+      if (!f) return '""';
+      const [y, m, d] = f.split('-');
+      return `"${parseInt(d)}/${parseInt(m)}/${y}"`;
+    }
+
+    const SEP  = ';';
     const enc  = ['forma_pago', 'nombre_cliente', 'valor_cuenta', 'valor_pago', 'fecha_pago'];
     const rows = cobrosFiltrados.map(c => [
       (c.forma_pago || '').toUpperCase(),
-      c.clientes?.nombre || '',
-      parseFloat(c.cuentas_cobrar?.monto_total || 0).toFixed(2),
-      parseFloat(c.monto || 0).toFixed(2),
-      c.fecha || ''
+      c.clientes?.nombre || c.cliente_nombre || '',
+      num(c.cuentas_cobrar?.monto_total || 0).replace('.', ','),
+      num(c.monto || 0).replace('.', ','),
+      fecha(c.fecha)
     ]);
-    const csv  = [enc, ...rows]
-      .map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))
-      .join('\n');
-    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const csv  = [`sep=${SEP}`, enc.join(SEP), ...rows.map(r => r.join(SEP))].join('\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
     a.href     = url;

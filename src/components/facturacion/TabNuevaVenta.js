@@ -556,7 +556,7 @@ export default function TabNuevaVenta({ mobile, currentUser }) {
               onChange={e => setDiasCredito(parseInt(e.target.value))}
               style={{ ...inputStyle, width: 'auto' }}
             >
-              {[15, 30, 45, 60, 90].map(d => (
+              {[7, 15, 30, 45, 60, 90].map(d => (
                 <option key={d} value={d}>{d} días</option>
               ))}
             </select>
