@@ -107,6 +107,24 @@ export default function TabPagos({ mobile }) {
   const [modalEditar,  setModalEditar]  = useState(null);
   const [editForm,     setEditForm]     = useState({});
   const [guardando,    setGuardando]    = useState(false);
+  const [xmlEditContent, setXmlEditContent] = useState('');
+
+  function parsearXmlSRI(file, onDone) {
+    const reader = new FileReader();
+    reader.onload = e => {
+      try {
+        const rawXml = e.target.result;
+        const xml    = new DOMParser().parseFromString(rawXml, 'text/xml');
+        const clave  = xml.querySelector('claveAcceso')?.textContent?.trim() || '';
+        const estab  = xml.querySelector('estab')?.textContent?.trim() || '';
+        const pto    = xml.querySelector('ptoEmi')?.textContent?.trim() || '';
+        const secu   = xml.querySelector('secuencial')?.textContent?.trim() || '';
+        const numF   = estab && pto && secu ? `${estab}-${pto}-${secu}` : '';
+        onDone({ autorizacion_sri: clave, numero_factura: numF, xmlContent: rawXml });
+      } catch { /* ignore */ }
+    };
+    reader.readAsText(file);
+  }
 
   const cargar = useCallback(async () => {
     setCargando(true);
@@ -114,7 +132,7 @@ export default function TabPagos({ mobile }) {
       (() => {
         let q = supabase
           .from('pagos_compras')
-          .select(`*, proveedores ( nombre ), compras ( id, numero_factura, subtotal, descuento, iva, total )`)
+          .select(`*, proveedores ( nombre ), compras ( id, numero_factura, autorizacion_sri, xml_sri_url, recordar_factura, subtotal, descuento, iva, total )`)
           .gte('fecha_pago', desde)
           .lte('fecha_pago', hasta)
           .order('fecha_pago', { ascending: false });
@@ -137,15 +155,16 @@ export default function TabPagos({ mobile }) {
 
   function abrirEditar(p) {
     setEditForm({
-      monto:          p.monto || '',
-      forma_pago:     p.forma_pago || 'transferencia',
-      fecha_pago:     p.fecha_pago || hoy,
-      notas:          p.notas || '',
-      numero_factura: p.compras?.numero_factura || '',
-      subtotal:       p.compras?.subtotal || '',
-      descuento:      p.compras?.descuento || '',
-      iva:            p.compras?.iva || '',
-      total:          p.compras?.total || ''
+      monto:           p.monto || '',
+      forma_pago:      p.forma_pago || 'transferencia',
+      fecha_pago:      p.fecha_pago || hoy,
+      notas:           p.notas || '',
+      numero_factura:  p.compras?.numero_factura  || '',
+      autorizacion_sri:p.compras?.autorizacion_sri || '',
+      subtotal:        p.compras?.subtotal || '',
+      descuento:       p.compras?.descuento || '',
+      iva:             p.compras?.iva || '',
+      total:           p.compras?.total || ''
     });
     setModalEditar(p);
   }
@@ -162,12 +181,27 @@ export default function TabPagos({ mobile }) {
 
     if (modalEditar.compras?.id) {
       await supabase.from('compras').update({
-        numero_factura: editForm.numero_factura || null,
-        subtotal:       parseFloat(editForm.subtotal) || 0,
-        descuento:      parseFloat(editForm.descuento) || 0,
-        iva:            parseFloat(editForm.iva) || 0,
-        total:          parseFloat(editForm.total) || 0
+        numero_factura:  editForm.numero_factura   || null,
+        autorizacion_sri:editForm.autorizacion_sri || null,
+        recordar_factura:editForm.numero_factura ? false : undefined,
+        subtotal:        parseFloat(editForm.subtotal) || 0,
+        descuento:       parseFloat(editForm.descuento) || 0,
+        iva:             parseFloat(editForm.iva) || 0,
+        total:           parseFloat(editForm.total) || 0
       }).eq('id', modalEditar.compras.id);
+    }
+
+    // Subir XML a Storage si se cargó uno nuevo
+    if (xmlEditContent && modalEditar.compras?.id) {
+      const blob = new Blob([xmlEditContent], { type: 'text/xml' });
+      const { error: uploadErr } = await supabase.storage.from('xml-sri').upload(`compras/${modalEditar.compras.id}.xml`, blob, { upsert: true, contentType: 'text/xml' });
+      if (uploadErr) {
+        alert('⚠️ Error al subir XML: ' + uploadErr.message);
+      } else {
+        const { data: urlData } = supabase.storage.from('xml-sri').getPublicUrl(`compras/${modalEditar.compras.id}.xml`);
+        await supabase.from('compras').update({ xml_sri_url: urlData.publicUrl }).eq('id', modalEditar.compras.id);
+      }
+      setXmlEditContent('');
     }
 
     setGuardando(false);
@@ -283,48 +317,90 @@ export default function TabPagos({ mobile }) {
           No hay pagos en el período seleccionado.
         </div>
       ) : (
-        filtrados.map(p => (
-          <div key={p.id} style={card}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-              {/* Izquierda */}
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                  <span style={{ fontWeight: 'bold', fontSize: '14px', color: '#1a3a2a' }}>
-                    🏢 {p.proveedores?.nombre || '—'}
-                  </span>
-                  <span style={{
-                    background: '#eaf4ff', color: '#2980b9',
-                    borderRadius: '12px', padding: '2px 10px',
-                    fontSize: '11px', fontWeight: 'bold'
-                  }}>
-                    {FORMA_EMOJI[p.forma_pago] || '💰'} {p.forma_pago || '—'}
-                  </span>
-                </div>
-                <div style={{ fontSize: '12px', color: '#777' }}>
-                  📅 {p.fecha_pago}
-                  {p.notas && <span style={{ marginLeft: '10px', fontStyle: 'italic' }}>📝 {p.notas}</span>}
-                </div>
-              </div>
+        filtrados.map(p => {
+          const sri      = p.compras?.autorizacion_sri || '';
+          const xmlUrl   = p.compras?.xml_sri_url || null;
+          return (
+            <div key={p.id} style={card}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '8px' }}>
 
-              {/* Derecha — monto + editar */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <div style={{
-                  fontSize: mobile ? '18px' : '20px',
-                  fontWeight: 'bold', color: '#27ae60'
-                }}>
-                  ${(p.monto || 0).toFixed(2)}
+                {/* Izquierda — proveedor + fecha */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', flexWrap: 'wrap' }}>
+                    <span style={{ fontWeight: 'bold', fontSize: '14px', color: '#1a3a2a' }}>
+                      🏢 {p.proveedores?.nombre || '—'}
+                    </span>
+                    <span style={{
+                      background: '#eaf4ff', color: '#2980b9',
+                      borderRadius: '12px', padding: '2px 10px',
+                      fontSize: '11px', fontWeight: 'bold'
+                    }}>
+                      {FORMA_EMOJI[p.forma_pago] || '💰'} {p.forma_pago || '—'}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#777' }}>
+                    📅 {p.fecha_pago}
+                    {p.notas && <span style={{ marginLeft: '10px', fontStyle: 'italic' }}>📝 {p.notas}</span>}
+                  </div>
                 </div>
-                <button onClick={() => abrirEditar(p)} style={{
-                  background: '#f0f2f5', border: '1px solid #ddd',
-                  borderRadius: '8px', padding: '5px 10px',
-                  cursor: 'pointer', fontSize: '12px', color: '#555'
-                }}>
-                  ✏️ Editar
-                </button>
+
+                {/* Derecha — monto + botones + XML */}
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px', flexShrink: 0 }}>
+                  {/* Fila 1: monto */}
+                  <div style={{ fontSize: mobile ? '18px' : '20px', fontWeight: 'bold', color: '#27ae60' }}>
+                    ${(p.monto || 0).toFixed(2)}
+                  </div>
+                  {/* Fila 2: Editar | Alerta | XML badge */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                    <button onClick={() => abrirEditar(p)} style={{
+                      background: '#f0f2f5', border: '1px solid #ddd',
+                      borderRadius: '8px', padding: '5px 10px',
+                      cursor: 'pointer', fontSize: '12px', color: '#555'
+                    }}>✏️ Editar</button>
+
+                    {p.compras?.recordar_factura && (
+                      <span style={{
+                        background: '#fff3e0', color: '#e67e22',
+                        borderRadius: '10px', padding: '3px 10px',
+                        fontSize: '11px', fontWeight: 'bold', whiteSpace: 'nowrap'
+                      }}>🔔 Factura pendiente</span>
+                    )}
+
+                    {sri ? (
+                      <span style={{
+                        background: '#eafaf1', color: '#27ae60',
+                        borderRadius: '8px', padding: '3px 10px',
+                        fontSize: '11px', fontWeight: 'bold', whiteSpace: 'nowrap'
+                      }}>✅ XML ···{sri.slice(-8)}</span>
+                    ) : (
+                      <span style={{
+                        background: '#f5f5f5', color: '#bbb',
+                        borderRadius: '8px', padding: '3px 10px',
+                        fontSize: '11px', whiteSpace: 'nowrap'
+                      }}>— Sin XML</span>
+                    )}
+                  </div>
+                  {/* Fila 3: descarga XML o aviso */}
+                  {sri && (
+                    xmlUrl
+                      ? <a href={xmlUrl}
+                          download={`factura_${p.compras?.numero_factura || p.id}.xml`}
+                          target="_blank" rel="noreferrer"
+                          style={{ fontSize: '10px', color: '#2980b9', textDecoration: 'underline', cursor: 'pointer' }}>
+                          📥 descargar XML SRI
+                        </a>
+                      : <span
+                          onClick={() => abrirEditar(p)}
+                          style={{ fontSize: '10px', color: '#aaa', cursor: 'pointer', textDecoration: 'underline' }}
+                          title="Re-sube el XML en Editar para guardarlo">
+                          📎 re-subir XML para descargar
+                        </span>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
-        ))
+          );
+        })
       )}
 
       {/* Modal editar pago */}
@@ -370,8 +446,53 @@ export default function TabPagos({ mobile }) {
               <div style={{ fontSize: '11px', color: '#27ae60', fontWeight: '700', margin: '16px 0 8px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                 Compra
               </div>
+
+              {/* N° Factura + XML */}
+              <div style={{ marginBottom: '12px' }}>
+                <div style={{ fontSize: '11px', color: '#777', marginBottom: '3px', fontWeight: '600' }}>🧾 N° Factura</div>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <input
+                    type="text" value={editForm.numero_factura}
+                    onChange={e => setEditForm(f => ({ ...f, numero_factura: e.target.value }))}
+                    placeholder="001-001-000000001"
+                    style={{ flex: 1, padding: '8px 12px', borderRadius: '8px', border: '1.5px solid #ddd', fontSize: '13px', boxSizing: 'border-box' }}
+                  />
+                  <input id="xml-edit-pagos" type="file" accept=".xml" style={{ display: 'none' }}
+                    onChange={e => {
+                      if (e.target.files[0]) parsearXmlSRI(e.target.files[0], ({ autorizacion_sri, numero_factura, xmlContent }) => {
+                        setEditForm(f => ({
+                          ...f,
+                          autorizacion_sri: autorizacion_sri || f.autorizacion_sri,
+                          numero_factura:   numero_factura   || f.numero_factura
+                        }));
+                        if (xmlContent) setXmlEditContent(xmlContent);
+                      });
+                      e.target.value = '';
+                    }}
+                  />
+                  <label htmlFor="xml-edit-pagos" style={{
+                    background: '#e3f2fd', color: '#1565c0', border: '1.5px solid #90caf9',
+                    borderRadius: '8px', padding: '7px 10px', cursor: 'pointer',
+                    fontSize: '12px', fontWeight: 'bold', whiteSpace: 'nowrap'
+                  }}>📎 XML</label>
+                </div>
+              </div>
+
+              {/* Autorización SRI */}
+              <div style={{ marginBottom: '12px' }}>
+                <div style={{ fontSize: '11px', color: '#777', marginBottom: '3px', fontWeight: '600' }}>Autorización SRI</div>
+                <input
+                  type="text" value={editForm.autorizacion_sri}
+                  onChange={e => setEditForm(f => ({ ...f, autorizacion_sri: e.target.value }))}
+                  placeholder="49 dígitos (clave de acceso)"
+                  style={{ width: '100%', boxSizing: 'border-box', padding: '8px 12px', borderRadius: '8px', border: `1.5px solid ${editForm.autorizacion_sri ? '#27ae60' : '#ddd'}`, fontSize: '11px', fontFamily: 'monospace' }}
+                />
+                {editForm.autorizacion_sri && (
+                  <div style={{ fontSize: '10px', color: '#27ae60', marginTop: '2px' }}>✅ XML cargado</div>
+                )}
+              </div>
+
               {[
-                { label: '🧾 N° Factura', key: 'numero_factura', type: 'text' },
                 { label: 'Subtotal ($)', key: 'subtotal', type: 'number' },
                 { label: 'Descuento ($)', key: 'descuento', type: 'number' },
                 { label: 'IVA ($)', key: 'iva', type: 'number' },
@@ -380,14 +501,9 @@ export default function TabPagos({ mobile }) {
                 <div key={key} style={{ marginBottom: '12px' }}>
                   <div style={{ fontSize: '11px', color: '#777', marginBottom: '3px', fontWeight: '600' }}>{label}</div>
                   <input
-                    type={type}
-                    value={editForm[key]}
+                    type={type} value={editForm[key]}
                     onChange={e => setEditForm(f => ({ ...f, [key]: e.target.value }))}
-                    style={{
-                      width: '100%', boxSizing: 'border-box',
-                      padding: '8px 12px', borderRadius: '8px',
-                      border: '1.5px solid #ddd', fontSize: '13px'
-                    }}
+                    style={{ width: '100%', boxSizing: 'border-box', padding: '8px 12px', borderRadius: '8px', border: '1.5px solid #ddd', fontSize: '13px' }}
                   />
                 </div>
               ))}

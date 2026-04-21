@@ -22,12 +22,24 @@ const FORMAS_PAGO = [
 export default function TabIngresoCompra({ mobile, currentUser, userRol }) {
 
   const [proveedores,  setProveedores]  = useState([]);
-  const [materiales,   setMateriales]   = useState([]); // MP + stock actual
+  const [materiales,   setMateriales]   = useState([]);
   const [proveedorId,  setProveedorId]  = useState('');
   const [fecha,        setFecha]        = useState(new Date().toISOString().split('T')[0]);
   const [tieneFactura,    setTieneFactura]    = useState(false);
   const [numFactura,      setNumFactura]      = useState('');
+  const [autorizacionSri, setAutorizacionSri] = useState('');
+  const [fechaEmision,    setFechaEmision]    = useState('');
+  const [baseIva15,       setBaseIva15]       = useState('');
+  const [baseIva0,        setBaseIva0]        = useState('');
+  const [descuento,       setDescuento]       = useState('');
   const [recordarFactura, setRecordarFactura] = useState(false);
+  const [tieneRetencion,  setTieneRetencion]  = useState(false);
+  const [retFuentePct,    setRetFuentePct]    = useState('');
+  const [retFuenteVal,    setRetFuenteVal]    = useState('');
+  const [retIvaPct,       setRetIvaPct]       = useState('');
+  const [retIvaVal,       setRetIvaVal]       = useState('');
+  const [numRetencion,    setNumRetencion]    = useState('');
+  const [xmlContent,      setXmlContent]      = useState('');
   const [formaPago,    setFormaPago]    = useState('efectivo');
   const [diasCredito,  setDiasCredito]  = useState(30);
   const [notas,        setNotas]        = useState('');
@@ -81,9 +93,14 @@ export default function TabIngresoCompra({ mobile, currentUser, userRol }) {
   function eliminarItem(idx) { setItems(prev => prev.filter((_, i) => i !== idx)); }
 
   // ── Totales ───────────────────────────────────────────────
-  const subtotal = items.reduce((s, i) => s + (parseFloat(i.subtotal) || 0), 0);
-  const iva      = tieneFactura ? parseFloat((subtotal * 0.15).toFixed(2)) : 0;
-  const total    = parseFloat((subtotal + iva).toFixed(2));
+  const subtotal    = items.reduce((s, i) => s + (parseFloat(i.subtotal) || 0), 0);
+  const descuentoN  = parseFloat(descuento || 0);
+  const baseIva     = Math.max(0, subtotal - descuentoN);
+  const iva         = tieneFactura ? parseFloat((baseIva * 0.15).toFixed(2)) : 0;
+  const total       = parseFloat((baseIva + iva).toFixed(2));
+  const retFuenteN  = tieneRetencion ? parseFloat((baseIva * (parseFloat(retFuentePct) || 0) / 100).toFixed(2)) : 0;
+  const retIvaN     = tieneRetencion ? parseFloat((iva * (parseFloat(retIvaPct) || 0) / 100).toFixed(2)) : 0;
+  const netoPagar   = parseFloat((total - retFuenteN - retIvaN).toFixed(2));
 
   // ── Guardar compra ────────────────────────────────────────
   async function guardarCompra() {
@@ -104,10 +121,22 @@ export default function TabIngresoCompra({ mobile, currentUser, userRol }) {
         fecha,
         tiene_factura:      tieneFactura,
         numero_factura:     tieneFactura ? (numFactura || null) : null,
+        autorizacion_sri:   tieneFactura && autorizacionSri ? autorizacionSri : null,
+        fecha_emision:      tieneFactura && fechaEmision ? fechaEmision : null,
+        base_iva15:         tieneFactura && baseIva15 ? parseFloat(baseIva15) : null,
+        base_iva0:          tieneFactura && baseIva0  ? parseFloat(baseIva0)  : null,
         recordar_factura:   tieneFactura && !numFactura && recordarFactura,
         subtotal,
+        descuento:          descuentoN || null,
         iva,
         total,
+        tiene_retencion:    tieneRetencion,
+        ret_fuente_pct:     tieneRetencion && retFuentePct ? parseFloat(retFuentePct) : null,
+        ret_fuente_valor:   tieneRetencion ? retFuenteN : null,
+        ret_iva_pct:        tieneRetencion && retIvaPct ? parseFloat(retIvaPct) : null,
+        ret_iva_valor:      tieneRetencion ? retIvaN    : null,
+        num_retencion:      tieneRetencion && numRetencion ? numRetencion : null,
+        neto_pagar:         tieneRetencion ? netoPagar : null,
         forma_pago:       formaPago,
         dias_credito:     formaPago === 'credito' ? diasCredito : 0,
         estado:           formaPago === 'credito' ? 'pendiente' : 'pagada',
@@ -115,6 +144,16 @@ export default function TabIngresoCompra({ mobile, currentUser, userRol }) {
         created_by:       currentUser?.email || ''
       }).select().single();
       if (errC) throw errC;
+
+      // 1b. Subir XML a Storage si fue cargado
+      if (xmlContent) {
+        const blob = new Blob([xmlContent], { type: 'text/xml' });
+        const { error: uploadErr } = await supabase.storage.from('xml-sri').upload(`compras/${compra.id}.xml`, blob, { upsert: true, contentType: 'text/xml' });
+        if (!uploadErr) {
+          const { data: urlData } = supabase.storage.from('xml-sri').getPublicUrl(`compras/${compra.id}.xml`);
+          await supabase.from('compras').update({ xml_sri_url: urlData.publicUrl }).eq('id', compra.id);
+        }
+      }
 
       // 2. Guardar detalle + actualizar inventario por cada ítem
       for (const item of itemsValidos) {
@@ -191,8 +230,18 @@ export default function TabIngresoCompra({ mobile, currentUser, userRol }) {
       setItems([itemVacio()]);
       setProveedorId('');
       setNumFactura('');
+      setAutorizacionSri('');
+      setFechaEmision('');
+      setBaseIva15('');
+      setBaseIva0('');
+      setDescuento('');
       setTieneFactura(false);
       setRecordarFactura(false);
+      setTieneRetencion(false);
+      setRetFuentePct('');
+      setRetIvaPct('');
+      setNumRetencion('');
+      setXmlContent('');
       setFormaPago('efectivo');
       setNotas('');
       mostrarExito(`✅ Compra registrada — ${itemsValidos.length} material(es), $${total.toFixed(2)} — inventario actualizado`);
@@ -202,6 +251,53 @@ export default function TabIngresoCompra({ mobile, currentUser, userRol }) {
       setError('Error al guardar: ' + e.message);
     }
     setGuardando(false);
+  }
+
+  // ── Parsear XML del SRI ──────────────────────────────────
+  function parsearXmlSRI(file) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const rawXml = e.target.result;
+        setXmlContent(rawXml);
+        const parser = new DOMParser();
+        const xml = parser.parseFromString(rawXml, 'text/xml');
+
+        // Clave de acceso (49 dígitos) = autorización
+        const clave = xml.querySelector('claveAcceso')?.textContent?.trim() || '';
+        if (clave) setAutorizacionSri(clave);
+
+        // Número factura estab-ptoEmi-secuencial
+        const estab  = xml.querySelector('estab')?.textContent?.trim() || '';
+        const ptoEmi = xml.querySelector('ptoEmi')?.textContent?.trim() || '';
+        const secu   = xml.querySelector('secuencial')?.textContent?.trim() || '';
+        if (estab && ptoEmi && secu) setNumFactura(`${estab}-${ptoEmi}-${secu}`);
+
+        // Fecha DD/MM/YYYY → YYYY-MM-DD
+        const fRaw = xml.querySelector('fechaEmision')?.textContent?.trim() || '';
+        if (fRaw) {
+          const [d, m, y] = fRaw.split('/');
+          if (d && m && y) setFechaEmision(`${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`);
+        }
+
+        // Descuento total
+        const totalDesc = parseFloat(xml.querySelector('totalDescuento')?.textContent || '0');
+        if (totalDesc > 0) setDescuento(totalDesc.toFixed(2));
+
+        // Bases imponibles por tasa de IVA
+        xml.querySelectorAll('totalConImpuestos totalImpuesto').forEach(imp => {
+          const cod  = imp.querySelector('codigoPorcentaje')?.textContent?.trim();
+          const base = parseFloat(imp.querySelector('baseImponible')?.textContent || '0');
+          if (cod === '4' || cod === '5') setBaseIva15(base.toFixed(2)); // 15%
+          if (cod === '0')               setBaseIva0(base.toFixed(2));   // 0%
+        });
+
+        setTieneFactura(true);
+      } catch (err) {
+        setError('Error al leer el XML: ' + err.message);
+      }
+    };
+    reader.readAsText(file);
   }
 
   function mostrarExito(msg) {
@@ -280,7 +376,7 @@ export default function TabIngresoCompra({ mobile, currentUser, userRol }) {
         </div>
 
         {/* Factura */}
-        <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
             <input
               type="checkbox" checked={tieneFactura}
@@ -296,9 +392,25 @@ export default function TabIngresoCompra({ mobile, currentUser, userRol }) {
               <input
                 type="text" value={numFactura}
                 onChange={e => setNumFactura(e.target.value)}
-                placeholder="Nº factura proveedor"
+                placeholder="Nº factura (001-001-000000001)"
                 style={{ ...inputStyle, width: 'auto', flex: 1, maxWidth: 240 }}
               />
+              {/* XML SRI upload */}
+              <input
+                id="xml-sri-input" type="file" accept=".xml"
+                style={{ display: 'none' }}
+                onChange={e => { if (e.target.files[0]) parsearXmlSRI(e.target.files[0]); e.target.value = ''; }}
+              />
+              <label htmlFor="xml-sri-input" style={{
+                display: 'flex', alignItems: 'center', gap: 5,
+                cursor: 'pointer', fontSize: '12px', fontWeight: 'bold',
+                color: '#1565c0', background: '#e3f2fd',
+                padding: '6px 12px', borderRadius: 8,
+                border: '1.5px solid #90caf9', whiteSpace: 'nowrap',
+                userSelect: 'none'
+              }}>
+                📎 Cargar XML SRI
+              </label>
               {!numFactura && (
                 <label style={{
                   display: 'flex', alignItems: 'center', gap: 5,
@@ -329,6 +441,160 @@ export default function TabIngresoCompra({ mobile, currentUser, userRol }) {
             </span>
           )}
         </div>
+
+        {/* Campos adicionales de factura SRI */}
+        {tieneFactura && (
+          <div style={{
+            marginTop: 14, display: 'grid',
+            gridTemplateColumns: mobile ? '1fr' : '1fr 1fr',
+            gap: 10
+          }}>
+            <div>
+              <label style={labelStyle}>Autorización SRI (clave de acceso)</label>
+              <input
+                type="text" value={autorizacionSri}
+                onChange={e => setAutorizacionSri(e.target.value)}
+                placeholder="49 dígitos"
+                style={{ ...inputStyle, fontFamily: 'monospace', fontSize: '11px' }}
+              />
+            </div>
+            <div>
+              <label style={labelStyle}>Fecha de emisión</label>
+              <input
+                type="date" value={fechaEmision}
+                onChange={e => setFechaEmision(e.target.value)}
+                style={inputStyle}
+              />
+            </div>
+            <div>
+              <label style={labelStyle}>Base IVA 15% ($)</label>
+              <input
+                type="number" min="0" step="0.01"
+                value={baseIva15}
+                onChange={e => setBaseIva15(e.target.value)}
+                placeholder="0.00"
+                style={inputStyle}
+              />
+            </div>
+            <div>
+              <label style={labelStyle}>Base IVA 0% ($)</label>
+              <input
+                type="number" min="0" step="0.01"
+                value={baseIva0}
+                onChange={e => setBaseIva0(e.target.value)}
+                placeholder="0.00"
+                style={inputStyle}
+              />
+            </div>
+            <div>
+              <label style={labelStyle}>Descuento ($)</label>
+              <input
+                type="number" min="0" step="0.01"
+                value={descuento}
+                onChange={e => setDescuento(e.target.value)}
+                placeholder="0.00"
+                style={inputStyle}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Retención */}
+        {tieneFactura && (
+          <div style={{ marginTop: 14, borderTop: '1px solid #eee', paddingTop: 12 }}>
+            <label style={{
+              display: 'flex', alignItems: 'center', gap: 7,
+              cursor: 'pointer', userSelect: 'none', marginBottom: tieneRetencion ? 12 : 0
+            }}>
+              <input
+                type="checkbox" checked={tieneRetencion}
+                onChange={e => setTieneRetencion(e.target.checked)}
+                style={{ width: 16, height: 16 }}
+              />
+              <span style={{ fontSize: '13px', fontWeight: 'bold', color: tieneRetencion ? '#1565c0' : '#555' }}>
+                📋 Tiene retención
+              </span>
+            </label>
+
+            {tieneRetencion && (
+              <div style={{
+                background: '#f0f4ff', borderRadius: 10, padding: 14,
+                border: '1.5px solid #90caf9'
+              }}>
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: mobile ? '1fr 1fr' : '1fr 1fr 1fr 1fr',
+                  gap: 10, marginBottom: 10
+                }}>
+                  <div>
+                    <label style={labelStyle}>Ret. Fuente %</label>
+                    <input
+                      type="number" min="0" max="100" step="0.01"
+                      value={retFuentePct}
+                      onChange={e => setRetFuentePct(e.target.value)}
+                      placeholder="ej: 1, 2, 8"
+                      style={inputStyle}
+                    />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Valor ret. fuente ($)</label>
+                    <div style={{
+                      padding: '8px 10px', borderRadius: 8,
+                      background: '#fff', fontSize: '14px',
+                      fontWeight: 'bold', color: '#c0392b',
+                      border: '1.5px solid #ddd'
+                    }}>
+                      ${retFuenteN.toFixed(2)}
+                    </div>
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Ret. IVA %</label>
+                    <input
+                      type="number" min="0" max="100" step="0.01"
+                      value={retIvaPct}
+                      onChange={e => setRetIvaPct(e.target.value)}
+                      placeholder="ej: 30, 70, 100"
+                      style={inputStyle}
+                    />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Valor ret. IVA ($)</label>
+                    <div style={{
+                      padding: '8px 10px', borderRadius: 8,
+                      background: '#fff', fontSize: '14px',
+                      fontWeight: 'bold', color: '#c0392b',
+                      border: '1.5px solid #ddd'
+                    }}>
+                      ${retIvaN.toFixed(2)}
+                    </div>
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1fr 1fr', gap: 10 }}>
+                  <div>
+                    <label style={labelStyle}>N° Comprobante retención</label>
+                    <input
+                      type="text" value={numRetencion}
+                      onChange={e => setNumRetencion(e.target.value)}
+                      placeholder="001-001-000000001"
+                      style={inputStyle}
+                    />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Neto a pagar ($)</label>
+                    <div style={{
+                      padding: '8px 10px', borderRadius: 8,
+                      background: '#e8f5e9', fontSize: '18px',
+                      fontWeight: 'bold', color: '#1b5e20',
+                      border: '2px solid #66bb6a'
+                    }}>
+                      ${netoPagar.toFixed(2)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Materiales */}
@@ -490,15 +756,17 @@ export default function TabIngresoCompra({ mobile, currentUser, userRol }) {
         display: 'flex', justifyContent: 'space-between',
         alignItems: 'center', flexWrap: 'wrap', gap: 12
       }}>
-        <div style={{ display: 'flex', gap: mobile ? 16 : 24 }}>
+        <div style={{ display: 'flex', gap: mobile ? 12 : 20, flexWrap: 'wrap' }}>
           {[
-            ['SUBTOTAL', `$${subtotal.toFixed(2)}`,  '#aed6f1'],
-            ['IVA 15%',  `$${iva.toFixed(2)}`,       tieneFactura ? '#f9e79f' : '#666'],
-            ['TOTAL',    `$${total.toFixed(2)}`,      '#a9dfbf'],
+            ['SUBTOTAL',  `$${subtotal.toFixed(2)}`,   '#aed6f1'],
+            ...(descuentoN > 0 ? [['DESC.', `-$${descuentoN.toFixed(2)}`, '#f1948a']] : []),
+            ['IVA 15%',   `$${iva.toFixed(2)}`,        tieneFactura ? '#f9e79f' : '#666'],
+            ['TOTAL',     `$${total.toFixed(2)}`,       '#a9dfbf'],
+            ...(tieneRetencion ? [['NETO PAGAR', `$${netoPagar.toFixed(2)}`, '#fff9c4']] : []),
           ].map(([l, v, col]) => (
             <div key={l} style={{ textAlign: 'center' }}>
               <div style={{ fontSize: '9px', color: '#aaa', fontWeight: 700 }}>{l}</div>
-              <div style={{ fontSize: mobile ? '15px' : '18px', fontWeight: 'bold', color: col }}>
+              <div style={{ fontSize: mobile ? '14px' : '17px', fontWeight: 'bold', color: col }}>
                 {v}
               </div>
             </div>

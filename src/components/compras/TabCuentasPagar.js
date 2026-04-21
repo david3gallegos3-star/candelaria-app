@@ -32,8 +32,26 @@ export default function TabCuentasPagar({ mobile }) {
   const [error,      setError]      = useState('');
   const [modalSeq,    setModalSeq]    = useState(null);
   const [seqValor,    setSeqValor]    = useState('');
-  const [modalEditar, setModalEditar] = useState(null);
-  const [editForm,    setEditForm]    = useState({});
+  const [modalEditar,   setModalEditar]   = useState(null);
+  const [editForm,      setEditForm]      = useState({});
+  const [xmlEditContent,setXmlEditContent]= useState('');
+
+  function parsearXmlSRI(file, onDone) {
+    const reader = new FileReader();
+    reader.onload = e => {
+      try {
+        const rawXml = e.target.result;
+        const xml    = new DOMParser().parseFromString(rawXml, 'text/xml');
+        const clave  = xml.querySelector('claveAcceso')?.textContent?.trim() || '';
+        const estab  = xml.querySelector('estab')?.textContent?.trim() || '';
+        const pto    = xml.querySelector('ptoEmi')?.textContent?.trim() || '';
+        const secu   = xml.querySelector('secuencial')?.textContent?.trim() || '';
+        const numF   = estab && pto && secu ? `${estab}-${pto}-${secu}` : '';
+        onDone({ autorizacion_sri: clave, numero_factura: numF, xmlContent: rawXml });
+      } catch { /* ignore */ }
+    };
+    reader.readAsText(file);
+  }
 
   const cargar = useCallback(async () => {
     setCargando(true);
@@ -42,7 +60,7 @@ export default function TabCuentasPagar({ mobile }) {
       .select(`
         *,
         proveedores ( nombre, razon_social, ruc ),
-        compras ( numero_factura )
+        compras ( numero_factura, autorizacion_sri, xml_sri_url, recordar_factura )
       `)
       .order('fecha_vencimiento', { ascending: true });
     setCuentas(data || []);
@@ -125,7 +143,8 @@ export default function TabCuentasPagar({ mobile }) {
       estado:            c.estado || 'pendiente',
       forma_pago:        c.forma_pago || 'credito',
       notas:             c.notas || '',
-      numero_factura:    c.compras?.numero_factura || ''
+      numero_factura:    c.compras?.numero_factura   || '',
+      autorizacion_sri:  c.compras?.autorizacion_sri || ''
     });
     setModalEditar(c);
   }
@@ -146,9 +165,21 @@ export default function TabCuentasPagar({ mobile }) {
       await supabase.from('compras')
         .update({
           numero_factura:   nf,
+          autorizacion_sri: editForm.autorizacion_sri.trim() || null,
           recordar_factura: nf ? false : undefined
         })
         .eq('id', modalEditar.compra_id);
+    }
+
+    // Subir XML a Storage si se cargó uno nuevo
+    if (xmlEditContent && modalEditar.compra_id) {
+      const blob = new Blob([xmlEditContent], { type: 'text/xml' });
+      const { error: uploadErr } = await supabase.storage.from('xml-sri').upload(`compras/${modalEditar.compra_id}.xml`, blob, { upsert: true, contentType: 'text/xml' });
+      if (!uploadErr) {
+        const { data: urlData } = supabase.storage.from('xml-sri').getPublicUrl(`compras/${modalEditar.compra_id}.xml`);
+        await supabase.from('compras').update({ xml_sri_url: urlData.publicUrl }).eq('id', modalEditar.compra_id);
+      }
+      setXmlEditContent('');
     }
 
     setModalEditar(null);
@@ -273,6 +304,26 @@ export default function TabCuentasPagar({ mobile }) {
                     {c.forma_pago && <span>💳 {c.forma_pago}</span>}
                     {c.compras?.numero_factura && (
                       <span style={{ color: '#2980b9' }}>🧾 {c.compras.numero_factura}</span>
+                    )}
+                    {pagado && c.compras?.recordar_factura && (
+                      <span style={{ background: '#fff3e0', color: '#e67e22', borderRadius: '10px', padding: '1px 8px', fontSize: '11px', fontWeight: 'bold' }}>
+                        🔔 Factura pendiente
+                      </span>
+                    )}
+                    {c.compras?.autorizacion_sri ? (
+                      <span style={{ color: '#27ae60', fontSize: '11px' }}>
+                        ✅ XML ···{c.compras.autorizacion_sri.slice(-8)}
+                      </span>
+                    ) : (
+                      <span style={{ color: '#ccc', fontSize: '11px' }}>— Sin XML</span>
+                    )}
+                    {c.compras?.xml_sri_url && (
+                      <a href={c.compras.xml_sri_url}
+                        download={`factura_${c.compras?.numero_factura || c.id}.xml`}
+                        target="_blank" rel="noreferrer"
+                        style={{ fontSize: '10px', color: '#2980b9', textDecoration: 'none' }}>
+                        📥 descargar XML
+                      </a>
                     )}
                   </div>
 
@@ -445,12 +496,45 @@ export default function TabCuentasPagar({ mobile }) {
               </div>
             </div>
 
+            {/* N° Factura + XML upload */}
             <div style={{ marginBottom: '12px' }}>
               <label style={{ fontSize: '11px', fontWeight: '600', color: '#555', display: 'block', marginBottom: '4px' }}>🧾 N° Factura proveedor</label>
-              <input value={editForm.numero_factura}
-                onChange={e => setEditForm(f => ({ ...f, numero_factura: e.target.value }))}
-                placeholder="001-001-000000001"
-                style={inputStyle} />
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <input value={editForm.numero_factura}
+                  onChange={e => setEditForm(f => ({ ...f, numero_factura: e.target.value }))}
+                  placeholder="001-001-000000001"
+                  style={{ ...inputStyle, flex: 1 }} />
+                <input id="xml-edit-cxp" type="file" accept=".xml" style={{ display: 'none' }}
+                  onChange={e => {
+                    if (e.target.files[0]) parsearXmlSRI(e.target.files[0], ({ autorizacion_sri, numero_factura, xmlContent }) => {
+                      setEditForm(f => ({
+                        ...f,
+                        autorizacion_sri: autorizacion_sri || f.autorizacion_sri,
+                        numero_factura:   numero_factura   || f.numero_factura
+                      }));
+                      if (xmlContent) setXmlEditContent(xmlContent);
+                    });
+                    e.target.value = '';
+                  }}
+                />
+                <label htmlFor="xml-edit-cxp" style={{
+                  background: '#e3f2fd', color: '#1565c0', border: '1.5px solid #90caf9',
+                  borderRadius: '8px', padding: '0 12px', cursor: 'pointer',
+                  fontSize: '12px', fontWeight: 'bold', display: 'flex', alignItems: 'center', whiteSpace: 'nowrap'
+                }}>📎 XML</label>
+              </div>
+            </div>
+
+            {/* Autorización SRI */}
+            <div style={{ marginBottom: '12px' }}>
+              <label style={{ fontSize: '11px', fontWeight: '600', color: '#555', display: 'block', marginBottom: '4px' }}>Autorización SRI (clave de acceso)</label>
+              <input value={editForm.autorizacion_sri}
+                onChange={e => setEditForm(f => ({ ...f, autorizacion_sri: e.target.value }))}
+                placeholder="49 dígitos"
+                style={{ ...inputStyle, fontFamily: 'monospace', fontSize: '11px', borderColor: editForm.autorizacion_sri ? '#27ae60' : '#ddd' }} />
+              {editForm.autorizacion_sri && (
+                <div style={{ fontSize: '10px', color: '#27ae60', marginTop: '2px' }}>✅ XML cargado</div>
+              )}
             </div>
 
             <div style={{ marginBottom: '20px' }}>
