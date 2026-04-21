@@ -607,9 +607,7 @@ export function useFormulacion({ producto, userRol, currentUser }) {
     <table>${COLGROUP}<tbody>
       <tr class="ttl"><td>TOTAL CRUDO</td><td class="r">${Math.round(totalCrudoG)}</td><td class="r">${totalCrudoKg.toFixed(3)}</td></tr>
     </tbody></table>
-    <div class="no-print" style="text-align:center;margin:16px 0">
-      <button onclick="window.print()" style="background:#1a1a2e;color:white;border:none;border-radius:8px;padding:10px 28px;font-size:13pt;cursor:pointer;font-weight:bold">🖨️ Imprimir formulación</button>
-    </div>
+    <script>window.onload=function(){window.print();}<\/script>
     </body></html>`;
     ventana.document.write(html);
     ventana.document.close();

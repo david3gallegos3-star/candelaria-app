@@ -171,11 +171,7 @@ table.sec th{background:#f0f0f0;font-size:8pt;font-weight:bold;text-align:center
 </div>
 
 </div>
-<div style="text-align:center;margin:20px 0;padding:10px" class="no-print">
-  <button onclick="window.print()" style="background:#2c1a4a;color:white;border:none;border-radius:8px;padding:12px 32px;font-size:14pt;cursor:pointer;font-weight:bold">
-    🖨️ Imprimir Rol de Pago
-  </button>
-</div>
+<script>window.onload=function(){window.print();}<\/script>
 </body>
 </html>`;
 
