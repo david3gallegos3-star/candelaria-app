@@ -7,8 +7,7 @@ import React from 'react';
 const TABS = [
   { key: 'nueva',       emoji: '📦', label: 'Nueva compra'   },
   { key: 'proveedores', emoji: '🏢', label: 'Proveedores'    },
-  { key: 'pagar',       emoji: '💳', label: 'Por pagar'      },
-  { key: 'pagos',       emoji: '📋', label: 'Pagos'          },
+  { key: 'pagos',       emoji: '💳', label: 'Pagos'          },
 ];
 
 export default function ComprasHeader({

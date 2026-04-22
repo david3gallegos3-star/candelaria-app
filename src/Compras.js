@@ -1,13 +1,12 @@
 // ============================================
 // Compras.js — módulo principal
-// Nueva compra · Proveedores · Por pagar · Pagos
+// Nueva compra · Proveedores · Pagos
 // ============================================
 import React, { useState, useEffect } from 'react';
-import ComprasHeader      from './components/compras/ComprasHeader';
-import TabIngresoCompra   from './components/compras/TabIngresoCompra';
-import TabProveedores     from './components/compras/TabProveedores';
-import TabCuentasPagar    from './components/compras/TabCuentasPagar';
-import TabPagos           from './components/compras/TabPagos';
+import ComprasHeader         from './components/compras/ComprasHeader';
+import TabIngresoCompra      from './components/compras/TabIngresoCompra';
+import TabProveedores        from './components/compras/TabProveedores';
+import TabPagosUnificado     from './components/compras/TabPagosUnificado';
 
 function Compras({ onVolver, onVolverMenu, userRol, currentUser }) {
 
@@ -47,13 +46,8 @@ function Compras({ onVolver, onVolverMenu, userRol, currentUser }) {
             mobile={mobile}
           />
         )}
-        {tabActiva === 'pagar'       && (
-          <TabCuentasPagar
-            mobile={mobile}
-          />
-        )}
         {tabActiva === 'pagos'       && (
-          <TabPagos
+          <TabPagosUnificado
             mobile={mobile}
           />
         )}
