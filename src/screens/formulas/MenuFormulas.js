@@ -9,6 +9,7 @@ import ModalNuevoProducto from './ModalNuevoProducto';
 import ModalGestionar     from './ModalGestionar';
 
 const EMOJIS_CAT = {};
+const LABEL_CAT = { 'CORTES': 'CORTES DE RES' };
 
 export default function MenuFormulas({
   // auth
@@ -210,7 +211,7 @@ export default function MenuFormulas({
                 gap:10, marginBottom:12
               }}>
                 <span style={{ fontSize:'22px' }}>{EC[categoria]||'📋'}</span>
-                <h3 style={{ margin:0, color:'#1a1a2e', fontSize:'18px' }}>{categoria}</h3>
+                <h3 style={{ margin:0, color:'#1a1a2e', fontSize:'18px' }}>{LABEL_CAT[categoria] || categoria}</h3>
                 <span style={{
                   background:'#e8f4fd', color:'#1a5276',
                   padding:'3px 10px', borderRadius:12,
