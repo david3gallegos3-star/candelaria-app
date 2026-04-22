@@ -22,7 +22,8 @@ export default function TabCobrar({ mobile, currentUser }) {
 
   const [cuentas,      setCuentas]      = useState([]);
   const [cargando,     setCargando]     = useState(true);
-  const [filtroEstado, setFiltroEstado] = useState('pendiente');
+  const [filtroEstado, setFiltroEstado] = useState('todas');
+  const [busqueda,     setBusqueda]     = useState('');
   const [modalCobro,   setModalCobro]   = useState(null); // cuenta seleccionada
   const [montoCobro,   setMontoCobro]   = useState('');
   const [formaCobro,   setFormaCobro]   = useState('efectivo');
@@ -61,21 +62,20 @@ export default function TabCobrar({ mobile, currentUser }) {
     const enc = ['forma_pago', 'nombre_cliente', 'valor_cuenta', 'valor_pago', 'fecha_pago', 'pendiente'];
     const filas = [];
 
-    cuentas
-      .filter(c => c.estado !== 'anulada')
-      .forEach(c => {
-        const cobrosOrdenados = (c.cobros || []).sort((a, b) => b.fecha.localeCompare(a.fecha));
-        const fechaPago = cobrosOrdenados.length > 0 ? cobrosOrdenados[0].fecha : (c.fecha_vencimiento || '');
-        const pendiente = (c.estado === 'pendiente' || c.estado === 'parcial') ? 'PENDIENTE' : '';
-        filas.push([
-          (c.facturas?.forma_pago || '').toUpperCase(),
-          c.cliente_nombre || '',
-          num(c.monto_total),
-          num(c.monto_cobrado),
-          fecha(fechaPago),
-          pendiente
-        ]);
-      });
+    // Exportar solo lo que está filtrado
+    cuentasFiltradas.forEach(c => {
+      const cobrosOrdenados = (c.cobros || []).sort((a, b) => b.fecha.localeCompare(a.fecha));
+      const fechaPago = cobrosOrdenados.length > 0 ? cobrosOrdenados[0].fecha : (c.fecha_vencimiento || '');
+      const pendiente = (c.estado === 'pendiente' || c.estado === 'parcial') ? 'PENDIENTE' : '';
+      filas.push([
+        (c.facturas?.forma_pago || '').toUpperCase(),
+        c.cliente_nombre || '',
+        num(c.monto_total),
+        num(c.monto_cobrado),
+        fecha(fechaPago),
+        pendiente
+      ]);
+    });
 
     const csv = [`sep=${SEP}`, enc.join(SEP), ...filas.map(f => f.join(SEP))].join('\n');
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
@@ -133,9 +133,18 @@ export default function TabCobrar({ mobile, currentUser }) {
   }
 
   // ── Filtros ───────────────────────────────────────────────
-  const cuentasFiltradas = cuentas.filter(c =>
-    filtroEstado === 'todas' ? c.estado !== 'anulada' : c.estado === filtroEstado
-  );
+  const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const cuentasFiltradas = cuentas.filter(c => {
+    const estadoOk =
+      filtroEstado === 'porCobrar' ? (c.estado === 'pendiente' || c.estado === 'parcial') :
+      filtroEstado === 'todas'     ? c.estado !== 'anulada' :
+      c.estado === filtroEstado;
+    const txt = norm(busqueda);
+    const busOk = !txt ||
+      norm(c.cliente_nombre).includes(txt) ||
+      norm(c.facturas?.numero).includes(txt);
+    return estadoOk && busOk;
+  });
 
   const totalPendiente = cuentas
     .filter(c => c.estado === 'pendiente' || c.estado === 'parcial')
@@ -187,13 +196,24 @@ export default function TabCobrar({ mobile, currentUser }) {
           </div>
         </div>
 
+        {/* Buscador */}
+        <input
+          type="text"
+          value={busqueda}
+          onChange={e => setBusqueda(e.target.value)}
+          placeholder="🔍 Buscar cliente o factura..."
+          style={{
+            padding: '7px 12px', borderRadius: 8, border: '1.5px solid #ddd',
+            fontSize: '13px', outline: 'none', flex: 1, minWidth: 180
+          }}
+        />
+
         {/* Filtro estado */}
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           {[
-            { value: 'pendiente', label: '⏳ Pendientes' },
-            { value: 'parcial',   label: '💧 Parciales'  },
-            { value: 'cobrada',   label: '✅ Cobradas'    },
-            { value: 'todas',     label: 'Todas'          },
+            { value: 'porCobrar', label: '⏳ Por cobrar' },
+            { value: 'cobrada',   label: '✅ Cobradas'   },
+            { value: 'todas',     label: 'Todas'         },
           ].map(op => (
             <button key={op.value}
               onClick={() => setFiltroEstado(op.value)}

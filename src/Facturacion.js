@@ -7,7 +7,7 @@ import FacturacionHeader from './components/facturacion/FacturacionHeader';
 import TabNuevaVenta     from './components/facturacion/TabNuevaVenta';
 import TabFacturas       from './components/facturacion/TabFacturas';
 import TabCobrar         from './components/facturacion/TabCobrar';
-import TabCobros         from './components/facturacion/TabCobros';
+import TabCajaChica      from './components/facturacion/TabCajaChica';
 
 function Facturacion({ onVolver, onVolverMenu, userRol, currentUser }) {
 
@@ -47,15 +47,16 @@ function Facturacion({ onVolver, onVolverMenu, userRol, currentUser }) {
             mobile={mobile}
           />
         )}
-        {tabActiva === 'cobrar'   && (
+        {tabActiva === 'cobros'   && (
           <TabCobrar
             mobile={mobile}
             currentUser={currentUser}
           />
         )}
-        {tabActiva === 'cobros'   && (
-          <TabCobros
+        {tabActiva === 'cajachica' && (
+          <TabCajaChica
             mobile={mobile}
+            currentUser={currentUser}
           />
         )}
       </div>
