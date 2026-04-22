@@ -9,6 +9,8 @@ import TabRegistrar        from './components/produccion/TabRegistrar';
 import TabHistorial        from './components/produccion/TabHistorial';
 import TabCierre from './components/produccion/TabCierre';
 import TabMermasCortes from './components/produccion/TabMermasCortes';
+import TabMaduracion      from './components/produccion/TabMaduracion';
+import TabDespacho         from './components/produccion/TabDespacho';
 import ModalRevertir       from './components/produccion/ModalRevertir';
 import ModalNotaProd       from './components/produccion/ModalNotaProd';
 
@@ -77,10 +79,11 @@ function Produccion({ onVolver, onVolverMenu, userRol, currentUser }) {
           boxShadow:'0 1px 4px rgba(0,0,0,0.06)'
         }}>
             {[
-              ['registrar',  '🏭 Registrar producción'],
-              ['cierre',     '✅ Cierre del día'      ],
-              ['historial',  '📋 Historial'          ],
-              ['mermas',     '📉 Mermas Cortes'      ],
+              ['registrar',   '🏭 Registrar producción'],
+              ['cierre',      '✅ Cierre del día'      ],
+              ['maduracion',  '🧊 Maduración'          ],
+              ['despacho',    '📦 Despacho'            ],
+              ['historial',   '📋 Historial'           ],
             ].map(([key, label]) => (
             <button key={key}
               onClick={() => p.setTab(key)}
@@ -137,6 +140,14 @@ function Produccion({ onVolver, onVolverMenu, userRol, currentUser }) {
             esAdmin={p.esAdmin}
             setModalRevertir={p.setModalRevertir}
           />
+        )}
+
+        {p.tab === 'maduracion' && (
+          <TabMaduracion mobile={p.mobile} currentUser={currentUser} />
+        )}
+
+        {p.tab === 'despacho' && (
+          <TabDespacho mobile={p.mobile} currentUser={currentUser} />
         )}
 
         {p.tab === 'mermas' && (

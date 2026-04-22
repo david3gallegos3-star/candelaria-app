@@ -17,21 +17,27 @@ export default function ExpressProduccion({ userRol, currentUser, onLogout }) {
   const [kg,          setKg]          = useState('');
   const [nota,        setNota]        = useState('');
   const [guardando,   setGuardando]   = useState(false);
-  const [exito,       setExito]       = useState('');
-  const [error,       setError]       = useState('');
+  const [exito,         setExito]         = useState('');
+  const [error,         setError]         = useState('');
+  const [lotesListos,   setLotesListos]   = useState([]);
 
   useEffect(() => { cargar(); }, []);
 
   async function cargar() {
     setCargando(true);
-    const [rProd, rHoy] = await Promise.all([
+    const [rProd, rHoy, rLotes] = await Promise.all([
       supabase.from('productos').select('id,nombre').eq('eliminado', false).order('nombre'),
       supabase.from('produccion_diaria')
         .select('*').eq('fecha', hoy).eq('revertida', false)
-        .order('created_at', { ascending: false })
+        .order('created_at', { ascending: false }),
+      supabase.from('lotes_maduracion')
+        .select('lote_id, fecha_salida')
+        .neq('estado', 'completado')
+        .lte('fecha_salida', hoy)
     ]);
     setProductos(rProd.data || []);
     setRegistros(rHoy.data || []);
+    setLotesListos(rLotes.data || []);
     setCargando(false);
   }
 
@@ -115,6 +121,27 @@ export default function ExpressProduccion({ userRol, currentUser, onLogout }) {
             padding: '12px 16px', borderRadius: 10,
             marginBottom: 12, fontWeight: 'bold', fontSize: '13px'
           }}>{exito}</div>
+        )}
+
+        {/* ── Alerta lotes maduración listos ── */}
+        {lotesListos.length > 0 && (
+          <div style={{
+            background: 'linear-gradient(135deg,#e74c3c,#c0392b)',
+            borderRadius: 12, padding: '14px 16px', marginBottom: 14,
+            boxShadow: '0 4px 12px rgba(231,76,60,0.4)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: 28 }}>🚨</span>
+              <div>
+                <div style={{ color: 'white', fontWeight: 'bold', fontSize: 15 }}>
+                  Pesaje de maduración pendiente
+                </div>
+                <div style={{ color: 'rgba(255,255,255,0.85)', fontSize: 12, marginTop: 2 }}>
+                  {lotesListos.map(l => `Lote ${l.lote_id}`).join(' · ')} — ve a Producción › Maduración
+                </div>
+              </div>
+            </div>
+          </div>
         )}
 
         {/* Resumen del día */}

@@ -196,8 +196,42 @@ export default function TabInyeccion({ currentUser, mobile, onSalmueraChange }) 
         if (e3) throw e3;
       }
 
+      // ── Crear lote en maduración ──────────────────────────
+      const [yy, mm, dd] = fecha.split('-');
+      const fechaStr = `${dd}/${mm}/${yy.slice(2)}`;
+      const { count: lotesHoy } = await supabase
+        .from('lotes_maduracion')
+        .select('id', { count: 'exact', head: true })
+        .eq('fecha_entrada', fecha);
+      const loteId = (lotesHoy || 0) === 0 ? fechaStr : `${fechaStr}/${lotesHoy}`;
+
+      const fechaSalidaObj = new Date(fecha + 'T12:00:00');
+      fechaSalidaObj.setDate(fechaSalidaObj.getDate() + 4);
+      const fechaSalida = fechaSalidaObj.toISOString().split('T')[0];
+
+      const { data: lote, error: e4 } = await supabase.from('lotes_maduracion').insert({
+        lote_id:       loteId,
+        produccion_id: prodId,
+        fecha_entrada: fecha,
+        fecha_salida:  fechaSalida,
+        estado:        'madurando',
+      }).select().single();
+      if (e4) throw e4;
+
+      if (filasCorte.length > 0) {
+        await supabase.from('lotes_maduracion_cortes').insert(
+          filasCorte.map(f => ({
+            lote_maduracion_id: lote.id,
+            corte_nombre:       f.corte_nombre,
+            materia_prima_id:   f.materia_prima_id,
+            kg_inyectado:       f.kg_carne_cruda + (f.kg_salmuera_asignada || 0),
+            costo_kg_original:  f.precio_kg_carne,
+          }))
+        );
+      }
+
       setFormulaSelec(null); setFilasCort([]); setNotas('');
-      setExito('✅ Producción registrada — ve a Cierre del día para completar el registro');
+      setExito('✅ Producción registrada — lote en maduración hasta ' + fechaSalida);
       setTimeout(() => setExito(''), 8000);
       await cargarInicial();
     } catch (e) { setError('Error al guardar: ' + e.message); }

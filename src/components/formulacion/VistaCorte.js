@@ -15,6 +15,9 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
   const [kgSalmueraX1kg, setKgSalmueraX1kg] = useState(0);
   const [tabActivo,      setTabActivo]      = useState('costos');
   const [todosCortes,    setTodosCortes]    = useState([]);
+  const [facturas,       setFacturas]       = useState([]);
+  const [precioAserrin,  setPrecioAserrin]  = useState(0);
+  const [precioCarnudo,  setPrecioCarnudo]  = useState(0);
 
   useEffect(() => {
     supabase
@@ -59,10 +62,17 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
           .ilike('nombre_producto', `%${producto.nombre}%`).limit(1);
         if (mps && mps.length > 0) setMpVinculada(mps[0]);
       }
-      // Precio retazo para simulación
+      // Precio retazo para simulación (aserrín como referencia principal)
       const { data: ret } = await supabase.from('materias_primas')
-        .select('precio_kg').eq('nombre', 'Retazos Cortes').limit(1);
-      if (ret?.[0]) setPrecioRetazo(parseFloat(ret[0].precio_kg) || 0);
+        .select('nombre, precio_kg')
+        .in('nombre', ['Aserrín Cortes', 'Retazo Carnudo']);
+      if (ret) {
+        const as = ret.find(r => r.nombre === 'Aserrín Cortes');
+        const ca = ret.find(r => r.nombre === 'Retazo Carnudo');
+        setPrecioRetazo(parseFloat(as?.precio_kg || 0));
+        setPrecioAserrin(parseFloat(as?.precio_kg || 0));
+        setPrecioCarnudo(parseFloat(ca?.precio_kg || 0));
+      }
 
       // Kg de salmuera para 1 kg: leer total de la fórmula usada en el último lote
       const ultimaFormula = (data || [])[0]?.produccion_inyeccion?.formula_salmuera;
@@ -77,6 +87,20 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
     }
     cargar();
   }, [producto.nombre, producto.mp_vinculado_id]);
+
+  // Cargar facturas que coincidan con este corte
+  useEffect(() => {
+    async function cargarFacturas() {
+      const { data: fd } = await supabase
+        .from('facturas_detalle')
+        .select('*, facturas(numero, created_at, estado)')
+        .ilike('producto_nombre', `%${producto.nombre}%`)
+        .order('created_at', { ascending: false })
+        .limit(30);
+      setFacturas(fd || []);
+    }
+    cargarFacturas();
+  }, [producto.nombre]);
 
   // Referencia: primer registro con datos reales
   const refH = historial.find(h => parseFloat(h.kg_carne_cruda) > 0 && parseFloat(h.kg_carne_limpia) > 0);
@@ -135,7 +159,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
 
       {/* ── Tabs ── */}
       <div style={{ display: 'flex', background: 'white', borderRadius: 10, padding: 4, marginBottom: 14, gap: 4, boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
-        {[['costos', '📐 Costos e Inyección'], ['mermas', '📉 Historial Mermas']].map(([key, label]) => (
+        {[['costos', '📐 Costos'], ['comparador', '📊 Rentabilidad'], ['mermas', '📉 Mermas']].map(([key, label]) => (
           <button key={key} onClick={() => setTabActivo(key)} style={{
             flex: 1, padding: '9px 12px', border: 'none', borderRadius: 7, cursor: 'pointer',
             fontSize: 13, fontWeight: 'bold',
@@ -145,6 +169,141 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
           }}>{label}</button>
         ))}
       </div>
+
+      {/* ── Tab Rentabilidad: Comparador Costo vs Factura ── */}
+      {tabActivo === 'comparador' && (() => {
+        // Para cada factura, buscar el costo de producción más cercano anterior a esa fecha
+        const facturasConCosto = facturas.map(f => {
+          const fechaFact = f.facturas?.created_at?.split('T')[0] || '';
+          const prodRef = historial.find(h => {
+            const fp = h.produccion_inyeccion?.fecha || '';
+            return parseFloat(h.costo_final_kg) > 0 && fp <= fechaFact;
+          });
+          const costoRef = parseFloat(prodRef?.costo_final_kg || 0);
+          const precioF  = parseFloat(f.precio_unitario || 0);
+          const margen   = costoRef > 0 && precioF > 0
+            ? ((precioF - costoRef) / precioF) * 100 : null;
+          return { ...f, costoRef, precioF, margen, fechaFact };
+        });
+
+        const validas    = facturasConCosto.filter(f => f.precioF > 0 && f.costoRef > 0);
+        const margenProm = validas.length > 0
+          ? validas.reduce((s, f) => s + f.margen, 0) / validas.length : null;
+        const precioProm = validas.length > 0
+          ? validas.reduce((s, f) => s + f.precioF, 0) / validas.length : 0;
+
+        const semColor = m => m === null ? '#aaa' : m >= 30 ? '#27ae60' : m >= 15 ? '#e67e22' : '#e74c3c';
+        const semIcon  = m => m === null ? '—' : m >= 30 ? '🟢' : m >= 15 ? '🟡' : '🔴';
+
+        return (
+          <div>
+            {/* Tarjetas resumen */}
+            <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr 1fr' : 'repeat(3,1fr)', gap: 10, marginBottom: 14 }}>
+              <div style={{ background: '#1a3a5c', borderRadius: 10, padding: '14px 16px' }}>
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', marginBottom: 4 }}>Costo prom/kg</div>
+                <div style={{ fontWeight: 'bold', color: '#f39c12', fontSize: 20 }}>
+                  {costoPromedio > 0 ? `$${costoPromedio.toFixed(4)}` : '—'}
+                </div>
+              </div>
+              <div style={{ background: '#2980b9', borderRadius: 10, padding: '14px 16px' }}>
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', marginBottom: 4 }}>Precio prom facturado</div>
+                <div style={{ fontWeight: 'bold', color: 'white', fontSize: 20 }}>
+                  {precioProm > 0 ? `$${precioProm.toFixed(4)}` : '—'}
+                </div>
+              </div>
+              <div style={{ background: semColor(margenProm), borderRadius: 10, padding: '14px 16px' }}>
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', marginBottom: 4 }}>Margen promedio</div>
+                <div style={{ fontWeight: 'bold', color: 'white', fontSize: 20 }}>
+                  {margenProm !== null ? `${margenProm.toFixed(1)}%` : '—'}
+                </div>
+                {margenProm !== null && margenProm < 30 && (
+                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.8)', marginTop: 2 }}>
+                    ⚠️ Bajo el 30% mínimo
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Fórmula de costo real */}
+            <div style={{ background: '#f8f9fa', borderRadius: 10, padding: '12px 16px', marginBottom: 12, fontSize: 12, color: '#555', border: '1px solid #e0e0e0' }}>
+              <div style={{ fontWeight: 'bold', color: '#1a1a2e', marginBottom: 6 }}>📐 Costo Real/kg incluye</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 20px', lineHeight: 2 }}>
+                <span>🥩 Carne</span>
+                <span>+ 🧂 Salmuera</span>
+                <span>− 💰 Crédito Aserrín (<strong>${precioAserrin.toFixed(2)}/kg</strong>)</span>
+                <span>− 💰 Crédito Carnudo (<strong>${precioCarnudo.toFixed(2)}/kg</strong>)</span>
+                <span style={{ color: '#e74c3c' }}>🦴 Hueso = pérdida (sin crédito)</span>
+              </div>
+            </div>
+
+            {/* Tabla comparador */}
+            {facturas.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: 40, background: 'white', borderRadius: 12, color: '#aaa', fontSize: 13 }}>
+                Sin facturas encontradas para "{producto.nombre}".<br/>
+                <span style={{ fontSize: 11 }}>Las facturas aparecen cuando el nombre del producto coincide.</span>
+              </div>
+            ) : (
+              <div style={{ background: 'white', borderRadius: 12, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+                <div style={{ background: '#1a3a5c', padding: '8px 14px' }}>
+                  <span style={{ color: 'white', fontWeight: 'bold', fontSize: 13 }}>📊 Facturas vs Costo Real</span>
+                  <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11, marginLeft: 10 }}>{facturas.length} registro(s)</span>
+                </div>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                    <thead>
+                      <tr style={{ background: '#f5f5f5' }}>
+                        {['Fecha', 'N° Factura', 'Producto facturado', 'Cant.', 'Precio cobrado', 'Costo ref/kg', 'Margen', '🚦'].map(h => (
+                          <th key={h} style={{ padding: '8px 10px', textAlign: ['Fecha','N° Factura','Producto facturado'].includes(h) ? 'left' : 'right', color: '#555', fontWeight: 700, borderBottom: '1px solid #e0e0e0', fontSize: 11, whiteSpace: 'nowrap' }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {facturasConCosto.map((f, i) => (
+                        <tr key={f.id} style={{ background: i%2===0 ? 'white' : '#fafafa', borderBottom: '1px solid #f0f0f0' }}>
+                          <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>{f.fechaFact || '—'}</td>
+                          <td style={{ padding: '8px 10px', fontSize: 11, color: '#555' }}>{f.facturas?.numero || '—'}</td>
+                          <td style={{ padding: '8px 10px', fontSize: 11, color: '#555', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.producto_nombre}</td>
+                          <td style={{ padding: '8px 10px', textAlign: 'right' }}>{parseFloat(f.cantidad||0).toFixed(2)}</td>
+                          <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 'bold', color: '#2980b9' }}>
+                            {f.precioF > 0 ? `$${f.precioF.toFixed(4)}` : '—'}
+                          </td>
+                          <td style={{ padding: '8px 10px', textAlign: 'right', color: '#e67e22' }}>
+                            {f.costoRef > 0 ? `$${f.costoRef.toFixed(4)}` : <span style={{ color: '#ccc', fontSize: 10 }}>sin prod.</span>}
+                          </td>
+                          <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 'bold', color: semColor(f.margen) }}>
+                            {f.margen !== null ? `${f.margen.toFixed(1)}%` : '—'}
+                          </td>
+                          <td style={{ padding: '8px 10px', textAlign: 'center', fontSize: 16 }}>
+                            {semIcon(f.margen)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div style={{ padding: '8px 14px', fontSize: 10, color: '#aaa', borderTop: '1px solid #f0f0f0' }}>
+                  * Costo ref/kg = costo de la producción más reciente antes de esa factura. Precio cobrado = precio_unitario de la factura.
+                </div>
+              </div>
+            )}
+
+            {/* Simulador rentabilidad */}
+            {costoPromedio > 0 && (
+              <div style={{ marginTop: 12, background: '#f0f8ff', borderRadius: 10, padding: '12px 16px', border: '1px solid #aed6f1' }}>
+                <div style={{ fontWeight: 'bold', color: '#1a5276', marginBottom: 8, fontSize: 13 }}>🎯 Precio de venta sugerido (sobre costo promedio)</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8, fontSize: 12 }}>
+                  {[['30%', 0.70], ['35%', 0.65], ['40%', 0.60]].map(([label, div]) => (
+                    <div key={label} style={{ background: 'white', borderRadius: 8, padding: '8px 12px', textAlign: 'center', border: '1px solid #d6eaf8' }}>
+                      <div style={{ color: '#888', fontSize: 10, marginBottom: 2 }}>Margen {label}</div>
+                      <div style={{ fontWeight: 'bold', color: '#1a5276', fontSize: 15 }}>${(costoPromedio / div).toFixed(4)}/kg</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* ── Tab Historial Mermas (todos los cortes, agrupados por fecha) ── */}
       {tabActivo === 'mermas' && (() => {
@@ -332,6 +491,16 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
               <div>Crédito retazo: <strong style={{ color: '#27ae60' }}>${simResult.credito}</strong></div>
               <div style={{ marginTop: 4, fontSize: 13, fontWeight: 'bold', color: '#1a5276' }}>
                 Costo/kg: ${simResult.costoFinal}
+              </div>
+              <div style={{ marginTop: 6, borderTop: '1px solid #aed6f1', paddingTop: 6 }}>
+                <div style={{ fontSize: 10, color: '#888', marginBottom: 2 }}>Precio venta sugerido:</div>
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {[['30%', 0.70], ['35%', 0.65], ['40%', 0.60]].map(([pct, div]) => (
+                    <span key={pct} style={{ background: '#e8f4fd', borderRadius: 5, padding: '2px 6px', fontSize: 11, fontWeight: 'bold', color: '#1a5276' }}>
+                      {pct}: ${(parseFloat(simResult.costoFinal) / div).toFixed(4)}
+                    </span>
+                  ))}
+                </div>
               </div>
             </div>
           ) : (
