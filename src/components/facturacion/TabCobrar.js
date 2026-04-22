@@ -59,21 +59,25 @@ export default function TabCobrar({ mobile, currentUser }) {
     }
 
     const SEP = ';';
-    const enc = ['forma_pago', 'nombre_cliente', 'valor_cuenta', 'valor_pago', 'fecha_pago', 'pendiente'];
+    const enc = ['forma_pago', 'nombre_cliente', 'valor_cuenta', 'valor_pago', 'fecha_pago', 'pendiente', 'valor_pendiente'];
     const filas = [];
 
     // Exportar solo lo que está filtrado
     cuentasFiltradas.forEach(c => {
       const cobrosOrdenados = (c.cobros || []).sort((a, b) => b.fecha.localeCompare(a.fecha));
       const fechaPago = cobrosOrdenados.length > 0 ? cobrosOrdenados[0].fecha : (c.fecha_vencimiento || '');
-      const pendiente = (c.estado === 'pendiente' || c.estado === 'parcial') ? 'PENDIENTE' : '';
+      const esPendiente = c.estado === 'pendiente' || c.estado === 'parcial';
+      const valorPendiente = esPendiente
+        ? num(parseFloat(c.monto_total || 0) - parseFloat(c.monto_cobrado || 0))
+        : '';
       filas.push([
         (c.facturas?.forma_pago || '').toUpperCase(),
         c.cliente_nombre || '',
         num(c.monto_total),
         num(c.monto_cobrado),
         fecha(fechaPago),
-        pendiente
+        esPendiente ? 'PENDIENTE' : '',
+        valorPendiente
       ]);
     });
 
