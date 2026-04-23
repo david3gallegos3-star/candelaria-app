@@ -27,23 +27,23 @@ function PantallaMaterias({
         await cargarCategoriasMpDB();
       }
       const { data: mp } = await supabase.from('materias_primas')
-        .select('id').eq('nombre', 'Retazos Cortes').limit(1);
+        .select('id').in('nombre', ['Retazos Cortes', 'Aserrín Cortes']).limit(1);
       if (!mp || mp.length === 0) {
         const { error: eIns } = await supabase.from('materias_primas').insert({
           id:              'RET001',
-          nombre:          'Retazos Cortes',
-          nombre_producto: 'Retazos Cortes',
+          nombre:          'Aserrín Cortes',
+          nombre_producto: 'Aserrín Cortes',
           categoria:       'Retazos',
           precio_kg:       0,
           precio_lb:       0,
           precio_gr:       0,
           proveedor:       '',
-          notas:           'Precio de venta de retazos de cortes — editable, no eliminar',
+          notas:           'Precio de venta de aserrín de cortes — editable, no eliminar',
           estado:          'ACTIVO',
           eliminado:       false,
           tipo:            'MATERIAS PRIMAS',
         });
-        if (eIns) console.error('Seed Retazos Cortes:', eIns.message);
+        if (eIns) console.error('Seed Aserrín Cortes:', eIns.message);
         await cargarMaterias();
       }
     }
