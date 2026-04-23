@@ -25,7 +25,7 @@ import './App.css';
 import html2canvas from 'html2canvas';
 
 // Componentes
-import { checkRecordatoriosFactura } from './utils/helpers';
+import { checkRecordatoriosFactura, crearNotificacion } from './utils/helpers';
 import LoginScreen    from './components/LoginScreen';
 import MenuPrincipal  from './components/MenuPrincipal';
 import GestorUsuarios from './components/GestorUsuarios';
@@ -346,6 +346,14 @@ function App() {
       .select().single();
     if (error) return alert('Error: ' + error.message);
     if (MP_CAT_MAP[catSel]) await sincronizarFormulaMP(nuevoNombre.trim(), 0, MP_CAT_MAP[catSel].cat, MP_CAT_MAP[catSel].pref);
+    await crearNotificacion({
+      tipo:            'nuevo_producto',
+      origen:          'formulacion',
+      usuario_nombre:  userRol?.nombre || 'Usuario',
+      user_id:         user?.id || null,
+      producto_nombre: nuevoNombre.trim(),
+      mensaje:         `➕ Nuevo producto "${nuevoNombre.trim()}" creado en categoría ${catSel}`
+    });
     setModalNuevo(false);
     setNuevoNombre('');
     setNuevoMpVinculado(null);
@@ -417,6 +425,13 @@ function App() {
     const { error } = await supabase.from('categorias_productos')
       .insert([{ nombre, emoji: nuevaCatEmoji, orden }]);
     if (error) return alert('Error: ' + error.message);
+    await crearNotificacion({
+      tipo:           'nueva_categoria',
+      origen:         'formulacion',
+      usuario_nombre: userRol?.nombre || 'Usuario',
+      user_id:        user?.id || null,
+      mensaje:        `📂 Nueva categoría "${nombre}" ${nuevaCatEmoji} creada en Formulación`
+    });
     EMOJIS_CAT[nombre] = nuevaCatEmoji;
     setModalNuevaCat(false);
     setNuevaCatNombre('');

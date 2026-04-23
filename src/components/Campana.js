@@ -9,8 +9,10 @@ import { supabase } from '../supabase';
 function colorTipo(tipo) {
   if (tipo === 'precio_mp' || tipo === 'cambio_precio') return '#e74c3c';
   if (tipo === 'nota_formulador' || tipo === 'nota_produccion') return '#e67e22';
-  if (tipo === 'nueva_mp')    return '#27ae60';
-  if (tipo === 'stock_bajo')  return '#f39c12';
+  if (tipo === 'nueva_mp')        return '#27ae60';
+  if (tipo === 'nuevo_producto')  return '#8e44ad';
+  if (tipo === 'nueva_categoria') return '#2980b9';
+  if (tipo === 'stock_bajo')      return '#f39c12';
   if (tipo === 'produccion')  return '#3498db';
   if (tipo === 'perdida')     return '#c0392b';
   return '#8e44ad';
@@ -20,8 +22,10 @@ function iconTipo(tipo) {
   if (tipo === 'precio_mp' || tipo === 'cambio_precio') return '💰';
   if (tipo === 'nota_formulador') return '🧪';
   if (tipo === 'nota_produccion') return '🏭';
-  if (tipo === 'nueva_mp')   return '📦';
-  if (tipo === 'stock_bajo') return '⚠️';
+  if (tipo === 'nueva_mp')        return '📦';
+  if (tipo === 'nuevo_producto')  return '➕';
+  if (tipo === 'nueva_categoria') return '📂';
+  if (tipo === 'stock_bajo')      return '⚠️';
   if (tipo === 'produccion') return '✅';
   if (tipo === 'perdida')    return '🗑️';
   return '🔔';
