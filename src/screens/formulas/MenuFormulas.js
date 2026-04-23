@@ -63,7 +63,10 @@ export default function MenuFormulas({
   return (
     <div style={{ minHeight:'100vh', background:'#f0f2f5', fontFamily:'Arial,sans-serif' }}>
 
-      {/* ── Header ── */}
+      {/* ── Sticky top: header + botones ── */}
+      <div style={{ position:'sticky', top:0, zIndex:200 }}>
+
+      {/* Header */}
       <div style={{
         background:'linear-gradient(135deg,#1a1a2e,#16213e)',
         padding:'12px 16px', boxShadow:'0 2px 10px rgba(0,0,0,0.3)'
@@ -139,7 +142,58 @@ export default function MenuFormulas({
         )}
       </div>
 
-      {/* ── Contenido ── */}
+      {/* Barra de botones admin — dentro del sticky */}
+      {userRol?.rol === 'admin' && (
+        <div style={{
+          background:'#f0f2f5', borderBottom:'2px solid #dde3ea',
+          padding:'8px 16px', display:'flex', gap:8,
+          flexWrap:'wrap', alignItems:'center',
+          boxShadow:'0 2px 6px rgba(0,0,0,0.07)'
+        }}>
+          <button
+            onClick={() => fileRefProductos.current.click()}
+            disabled={importando}
+            style={{
+              padding:'8px 14px', background:'#8e44ad', color:'white',
+              border:'none', borderRadius:8, cursor:'pointer',
+              fontSize:'13px', fontWeight:'bold'
+            }}
+          >📤 Importar Excel</button>
+          <input
+            ref={fileRefProductos}
+            type="file"
+            accept=".xlsx,.xlsm"
+            style={{ display:'none' }}
+            onChange={importarProductosExcel}
+          />
+
+          <button onClick={() => setModalNuevo(true)} style={{
+            padding:'8px 14px', background:'#27ae60', color:'white',
+            border:'none', borderRadius:8, cursor:'pointer',
+            fontSize:'13px', fontWeight:'bold'
+          }}>➕ Nuevo producto</button>
+
+          <button onClick={() => { setModalGestionar(true); setTabGestionar('productos'); }} style={{
+            padding:'8px 14px', background:'#2980b9', color:'white',
+            border:'none', borderRadius:8, cursor:'pointer',
+            fontSize:'13px', fontWeight:'bold'
+          }}>⚙️ Gestionar</button>
+
+          <div style={{
+            marginLeft:'auto', background:'white',
+            padding:'8px 14px', borderRadius:8,
+            fontSize:'13px', color:'#555',
+            boxShadow:'0 1px 4px rgba(0,0,0,0.08)'
+          }}>
+            <strong>{productos.length}</strong> prods ·{' '}
+            <strong>{Object.keys(categoriasConfig).length}</strong> cats
+          </div>
+        </div>
+      )}
+
+      </div>{/* fin sticky */}
+
+      {/* ── Contenido scrollable ── */}
       <div style={{ padding:'12px 16px' }}>
 
         {msgExito && (
@@ -156,50 +210,6 @@ export default function MenuFormulas({
             padding:'10px 16px', borderRadius:'8px',
             marginBottom:12, fontWeight:'bold', fontSize:'13px'
           }}>⏳ {progreso}</div>
-        )}
-
-        {/* Botones admin */}
-        {userRol?.rol === 'admin' && (
-          <div style={{ display:'flex', gap:8, marginBottom:16, flexWrap:'wrap' }}>
-            <button
-              onClick={() => fileRefProductos.current.click()}
-              disabled={importando}
-              style={{
-                padding:'9px 14px', background:'#8e44ad', color:'white',
-                border:'none', borderRadius:8, cursor:'pointer',
-                fontSize:'13px', fontWeight:'bold'
-              }}
-            >📤 Importar Excel</button>
-            <input
-              ref={fileRefProductos}
-              type="file"
-              accept=".xlsx,.xlsm"
-              style={{ display:'none' }}
-              onChange={importarProductosExcel}
-            />
-
-            <button onClick={() => setModalNuevo(true)} style={{
-              padding:'9px 14px', background:'#27ae60', color:'white',
-              border:'none', borderRadius:8, cursor:'pointer',
-              fontSize:'13px', fontWeight:'bold'
-            }}>➕ Nuevo producto</button>
-
-            <button onClick={() => { setModalGestionar(true); setTabGestionar('productos'); }} style={{
-              padding:'9px 14px', background:'#2980b9', color:'white',
-              border:'none', borderRadius:8, cursor:'pointer',
-              fontSize:'13px', fontWeight:'bold'
-            }}>⚙️ Gestionar</button>
-
-            <div style={{
-              marginLeft:'auto', background:'white',
-              padding:'9px 14px', borderRadius:8,
-              fontSize:'13px', color:'#555',
-              boxShadow:'0 1px 4px rgba(0,0,0,0.08)'
-            }}>
-              <strong>{productos.length}</strong> prods ·{' '}
-              <strong>{Object.keys(categoriasConfig).length}</strong> cats
-            </div>
-          </div>
         )}
 
         {/* ── Grid productos por categoría ── */}
