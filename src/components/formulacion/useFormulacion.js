@@ -304,15 +304,17 @@ export function useFormulacion({ producto, userRol, currentUser }) {
   const precioVentaKg       = margen < 1 ? costoTotalKg / (1 - margen) : 0;
   const precioVentaSalmuera = margen < 1 ? costoMPkg / (1 - margen) : 0;
 
-  // Sincronizar precio_kg en materias_primas cuando cambia el costo de una salmuera
+  // Sincronizar precio_kg en materias_primas cuando cambia el costo (salmueras, inmersión, marinados)
   useEffect(() => {
-    if (producto?.categoria !== 'SALMUERAS') return;
+    const mpCatMap = { 'SALMUERAS': 'Salmuera', 'INMERSIÓN': 'Inmersión', 'MARINADOS': 'Marinados' };
+    const mpCat = mpCatMap[producto?.categoria];
+    if (!mpCat) return;
     if (precioVentaSalmuera <= 0) return;
     const timer = setTimeout(async () => {
       await supabase.from('materias_primas')
         .update({ precio_kg: precioVentaSalmuera })
         .eq('nombre_producto', producto.nombre)
-        .eq('categoria', 'Salmuera');
+        .eq('categoria', mpCat);
     }, 3000);
     return () => clearTimeout(timer);
   }, [precioVentaSalmuera, producto?.nombre, producto?.categoria]);

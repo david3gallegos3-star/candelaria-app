@@ -164,8 +164,10 @@ function App() {
     const maxOrden   = (cats?.[0]?.orden ?? 0);
 
     const nuevas = [
-      { nombre: 'SALMUERAS', emoji: '🧂' },
-      { nombre: 'CORTES',    emoji: '🥩' },
+      { nombre: 'SALMUERAS',  emoji: '🧂' },
+      { nombre: 'CORTES',     emoji: '🥩' },
+      { nombre: 'INMERSIÓN',  emoji: '💧' },
+      { nombre: 'MARINADOS',  emoji: '🫙' },
     ].filter(c => !existentes.includes(c.nombre));
 
     for (let i = 0; i < nuevas.length; i++) {
@@ -176,9 +178,11 @@ function App() {
     const mpExistentes = (mpCats || []).map(c => c.nombre);
     const maxOrdenMp   = (mpCats?.[0]?.orden ?? 0);
     let ordenMp = maxOrdenMp;
-    if (!mpExistentes.includes('Salmuera')) {
-      ordenMp++;
-      await supabase.from('categorias_mp').insert({ nombre: 'Salmuera', orden: ordenMp });
+    for (const mpCat of ['Salmuera', 'Inmersión', 'Marinados']) {
+      if (!mpExistentes.includes(mpCat)) {
+        ordenMp++;
+        await supabase.from('categorias_mp').insert({ nombre: mpCat, orden: ordenMp });
+      }
     }
     if (!mpExistentes.includes('Retazos')) {
       ordenMp++;
@@ -296,37 +300,35 @@ function App() {
     }
   }
 
-  const CATS_PROTEGIDAS = ['SALMUERAS', 'CORTES'];
+  const CATS_PROTEGIDAS = ['SALMUERAS', 'CORTES', 'INMERSIÓN', 'MARINADOS'];
 
-  async function sincronizarSalmueraMP(nombre, precio_kg) {
-    // Buscar si ya existe
+  // Mapa categoría producto → { cat: categoría MP, pref: prefijo ID }
+  const MP_CAT_MAP = {
+    'SALMUERAS': { cat: 'Salmuera',  pref: 'SAL' },
+    'INMERSIÓN': { cat: 'Inmersión', pref: 'INM' },
+    'MARINADOS': { cat: 'Marinados', pref: 'MAR' },
+  };
+
+  async function sincronizarFormulaMP(nombre, precio_kg, categoriaMp, prefijo) {
     const { data: ex } = await supabase.from('materias_primas')
-      .select('id').eq('nombre_producto', nombre).eq('categoria', 'Salmuera').maybeSingle();
+      .select('id').eq('nombre_producto', nombre).eq('categoria', categoriaMp).maybeSingle();
     if (ex) {
       await supabase.from('materias_primas').update({ precio_kg }).eq('id', ex.id);
       return;
     }
-    // Generar ID único tipo SAL001
-    const { data: salMPs } = await supabase.from('materias_primas')
-      .select('id').eq('categoria', 'Salmuera');
-    const nums = (salMPs || [])
+    const { data: existentes } = await supabase.from('materias_primas')
+      .select('id').eq('categoria', categoriaMp);
+    const nums = (existentes || [])
       .map(m => parseInt((m.id || '').replace(/\D/g, '') || '0'))
       .filter(n => !isNaN(n));
     const nextNum = nums.length > 0 ? Math.max(...nums) + 1 : 1;
-    const newId = 'SAL' + String(nextNum).padStart(3, '0');
-
+    const newId = prefijo + String(nextNum).padStart(3, '0');
     const { error } = await supabase.from('materias_primas').insert({
-      id:              newId,
-      nombre:          nombre,
-      nombre_producto: nombre,
-      categoria:       'Salmuera',
-      precio_kg:       parseFloat(precio_kg) || 0,
-      precio_lb:       0,
-      precio_gr:       0,
-      estado:          'ACTIVO',
-      eliminado:       false,
+      id: newId, nombre, nombre_producto: nombre,
+      categoria: categoriaMp, precio_kg: parseFloat(precio_kg) || 0,
+      precio_lb: 0, precio_gr: 0, estado: 'ACTIVO', eliminado: false,
     });
-    if (error) console.error('Error sync salmuera MP:', error.message);
+    if (error) console.error(`Error sync ${categoriaMp} MP:`, error.message);
   }
 
   async function crearProducto() {
@@ -343,12 +345,12 @@ function App() {
       }])
       .select().single();
     if (error) return alert('Error: ' + error.message);
-    if (catSel === 'SALMUERAS') await sincronizarSalmueraMP(nuevoNombre.trim(), 0);
+    if (MP_CAT_MAP[catSel]) await sincronizarFormulaMP(nuevoNombre.trim(), 0, MP_CAT_MAP[catSel].cat, MP_CAT_MAP[catSel].pref);
     setModalNuevo(false);
     setNuevoNombre('');
     setNuevoMpVinculado(null);
     await cargarCategorias();
-    if (catSel === 'SALMUERAS') await cargarMaterias();
+    if (MP_CAT_MAP[catSel]) await cargarMaterias();
     mostrarExito('✅ Producto creado');
     setProductoActivo(data);
     navegarA('formulacion');
@@ -364,14 +366,14 @@ function App() {
         eliminado_por: userRol?.nombre || 'Admin',
         estado:        'INACTIVO'
       }).eq('id', prod.id);
-      if (prod.categoria === 'SALMUERAS') {
+      if (MP_CAT_MAP[prod.categoria]) {
         await supabase.from('materias_primas')
           .update({ eliminado: true })
-          .eq('nombre_producto', nombre).eq('categoria', 'Salmuera');
+          .eq('nombre_producto', nombre).eq('categoria', MP_CAT_MAP[prod.categoria].cat);
       }
     }
     await cargarCategorias();
-    if (prod?.categoria === 'SALMUERAS') await cargarMaterias();
+    if (MP_CAT_MAP[prod?.categoria]) await cargarMaterias();
     mostrarExito('🗑️ Eliminado — recupéralo en Gestionar → Eliminados');
   }
 
@@ -384,20 +386,20 @@ function App() {
       .update({ producto_nombre: editando.nuevoNombre }).eq('producto_nombre', editando.nombre);
     await supabase.from('config_productos')
       .update({ producto_nombre: editando.nuevoNombre }).eq('producto_nombre', editando.nombre);
-    if (prod?.categoria === 'SALMUERAS') {
+    if (MP_CAT_MAP[prod?.categoria]) {
       await supabase.from('materias_primas')
         .update({ nombre: editando.nuevoNombre, nombre_producto: editando.nuevoNombre })
-        .eq('nombre_producto', editando.nombre).eq('categoria', 'Salmuera');
+        .eq('nombre_producto', editando.nombre).eq('categoria', MP_CAT_MAP[prod.categoria].cat);
     }
     setEditando(null);
     await cargarCategorias();
-    if (prod?.categoria === 'SALMUERAS') await cargarMaterias();
+    if (MP_CAT_MAP[prod?.categoria]) await cargarMaterias();
     mostrarExito('✅ Nombre actualizado');
   }
 
   async function moverCategoria(nombre, catActual, nuevaCat) {
     if (CATS_PROTEGIDAS.includes(catActual) || CATS_PROTEGIDAS.includes(nuevaCat)) {
-      alert('Las categorías SALMUERAS y CORTES son protegidas — no se pueden mover productos.');
+      alert('Las categorías SALMUERAS, CORTES, INMERSIÓN y MARINADOS son protegidas — no se pueden mover productos.');
       return;
     }
     await supabase.from('productos')
