@@ -184,12 +184,13 @@ function App() {
       ordenMp++;
       await supabase.from('categorias_mp').insert({ nombre: 'Retazos', orden: ordenMp });
     }
-    // Asegurar que exista la MP "Retazos Cortes"
+    // Asegurar que exista la MP de retazos (puede estar como nombre viejo o nuevo)
     const { data: mpRetazos } = await supabase.from('materias_primas')
-      .select('id').eq('nombre', 'Retazos Cortes').limit(1);
+      .select('id').in('nombre', ['Retazos Cortes', 'Aserrín Cortes']).limit(1);
     if (!mpRetazos || mpRetazos.length === 0) {
       await supabase.from('materias_primas').insert({
-        nombre: 'Retazos Cortes', nombre_producto: 'Retazos Cortes',
+        id: 'RET001',
+        nombre: 'Aserrín Cortes', nombre_producto: 'Aserrín Cortes',
         categoria: 'Retazos', precio_kg: 0,
         estado: 'ACTIVO', eliminado: false,
       });
