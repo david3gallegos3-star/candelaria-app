@@ -106,6 +106,7 @@ function MateriasModalAgregar({
               setData={setModalEditar}
               categoriasMp={categoriasMp}
               generarSiguienteId={generarSiguienteId}
+              esEdicion={true}
             />
 
             {/* Botones */}

@@ -6,7 +6,7 @@
 
 import React from 'react';
 
-function MateriasForm({ data, setData, categoriasMp, generarSiguienteId }) {
+function MateriasForm({ data, setData, categoriasMp, generarSiguienteId, esEdicion = false }) {
   return (
     <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px' }}>
 
@@ -19,8 +19,8 @@ function MateriasForm({ data, setData, categoriasMp, generarSiguienteId }) {
           value={data.categoria}
           onChange={e => {
             const nuevaCat = e.target.value;
-            const idSugerido = generarSiguienteId(nuevaCat);
-            setData({ ...data, categoria: nuevaCat, id: idSugerido || data.id });
+            const idSugerido = esEdicion ? data.id : (generarSiguienteId(nuevaCat) || data.id);
+            setData({ ...data, categoria: nuevaCat, id: idSugerido });
           }}
           style={{
             padding:'7px', borderRadius:'6px',
