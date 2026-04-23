@@ -234,7 +234,7 @@ export function useFormulacion({ producto, userRol, currentUser }) {
       setIngredientesAD([filaVacia('AD', 0)]);
     }
     const { data: cfg } = await supabase.from('config_productos').select('*')
-      .eq('producto_nombre', producto.nombre).single();
+      .eq('producto_nombre', producto.nombre).maybeSingle();
     if (cfg) setConfig(prev => ({
       ...prev, ...cfg,
       fundas: cfg.fundas || [],
