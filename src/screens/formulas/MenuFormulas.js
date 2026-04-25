@@ -70,12 +70,15 @@ export default function MenuFormulas({
   // Categorías + productos filtrados por búsqueda
   const bNorm = busqueda.toLowerCase().trim();
   const categoriasFiltradas = Object.entries(categoriasConfig)
-    .map(([cat, prods]) => ({
-      cat,
-      prods: bNorm
-        ? prods.filter(n => n.toLowerCase().includes(bNorm))
-        : prods
-    }))
+    .map(([cat, prods]) => {
+      if (!bNorm) return { cat, prods };
+      const catCoincide = (LABEL_CAT[cat] || cat).toLowerCase().includes(bNorm);
+      // Si la categoría coincide, mostrar todos sus productos; si no, filtrar productos
+      return {
+        cat,
+        prods: catCoincide ? prods : prods.filter(n => n.toLowerCase().includes(bNorm))
+      };
+    })
     .filter(({ prods }) => prods.length > 0);
 
   useEffect(() => {
