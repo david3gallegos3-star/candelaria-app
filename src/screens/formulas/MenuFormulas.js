@@ -2,11 +2,12 @@
 // MenuFormulas.js
 // Pantalla menú de fórmulas — grid de productos
 // ============================================
-import React, { useRef } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import Campana   from '../../components/Campana';
 import GeminiChat from '../../GeminiChat';
 import ModalNuevoProducto from './ModalNuevoProducto';
 import ModalGestionar     from './ModalGestionar';
+import { supabase } from '../../supabase';
 
 const EMOJIS_CAT = {};
 const LABEL_CAT = { 'CORTES': 'CORTES DE RES' };
@@ -59,6 +60,19 @@ export default function MenuFormulas({
   const fileRefProductos = useRef();
   // EMOJIS_CAT viene del padre como prop
   const EC = emojisExterno || EMOJIS_CAT;
+
+  // Productos que tienen al menos una formulación guardada
+  const [conFormula, setConFormula] = useState(new Set());
+
+  useEffect(() => {
+    supabase
+      .from('formulaciones')
+      .select('producto_nombre')
+      .then(({ data }) => {
+        const nombres = new Set((data || []).map(f => f.producto_nombre).filter(Boolean));
+        setConFormula(nombres);
+      });
+  }, [productos]); // recarga cuando cambian los productos
 
   return (
     <div style={{ minHeight:'100vh', background:'#f0f2f5', fontFamily:'Arial,sans-serif' }}>
@@ -235,15 +249,15 @@ export default function MenuFormulas({
                 gap:12
               }}>
                 {nombresProductos.map(nombre => {
-                  const existe = productos.find(p => p.nombre === nombre);
+                  const tieneFormula = conFormula.has(nombre);
                   return (
                     <button
                       key={nombre}
                       onClick={() => abrirProducto(nombre)}
                       style={{
                         padding:'16px 14px',
-                        background: existe ? 'white' : '#fff9e6',
-                        border: existe ? '2px solid #e8f4fd' : '2px dashed #f39c12',
+                        background: 'white',
+                        border: tieneFormula ? '2px solid #e8f4fd' : '2px solid #fdecea',
                         borderRadius:12, cursor:'pointer', textAlign:'left',
                         boxShadow:'0 2px 8px rgba(0,0,0,0.06)', transition:'all 0.2s'
                       }}
@@ -265,10 +279,10 @@ export default function MenuFormulas({
                       }}>{nombre}</div>
                       <div style={{
                         fontSize:'11px',
-                        color: existe ? '#27ae60' : '#f39c12',
+                        color: tieneFormula ? '#27ae60' : '#e74c3c',
                         marginTop:6, fontWeight:'bold'
                       }}>
-                        {existe ? '✅ Con fórmula' : '⚠️ Sin datos aún'}
+                        {tieneFormula ? '✅ Con fórmula' : '🔴 Sin fórmula'}
                       </div>
                     </button>
                   );
