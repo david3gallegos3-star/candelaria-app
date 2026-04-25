@@ -64,6 +64,20 @@ export default function MenuFormulas({
   // Productos que tienen al menos una formulación guardada
   const [conFormula, setConFormula] = useState(new Set());
 
+  // Búsqueda
+  const [busqueda, setBusqueda] = useState('');
+
+  // Categorías + productos filtrados por búsqueda
+  const bNorm = busqueda.toLowerCase().trim();
+  const categoriasFiltradas = Object.entries(categoriasConfig)
+    .map(([cat, prods]) => ({
+      cat,
+      prods: bNorm
+        ? prods.filter(n => n.toLowerCase().includes(bNorm))
+        : prods
+    }))
+    .filter(({ prods }) => prods.length > 0);
+
   useEffect(() => {
     supabase
       .from('formulaciones')
@@ -205,6 +219,41 @@ export default function MenuFormulas({
         </div>
       )}
 
+      {/* ── Barra búsqueda ── */}
+      <div style={{
+        background:'white', borderBottom:'2px solid #e8edf2',
+        padding:'8px 16px', boxShadow:'0 2px 6px rgba(0,0,0,0.05)'
+      }}>
+        <div style={{ position:'relative' }}>
+          <span style={{
+            position:'absolute', left:10, top:'50%', transform:'translateY(-50%)',
+            fontSize:15, color:'#aaa', pointerEvents:'none'
+          }}>🔍</span>
+          <input
+            type="text"
+            placeholder="Buscar fórmula..."
+            value={busqueda}
+            onChange={e => setBusqueda(e.target.value)}
+            style={{
+              width:'100%', padding:'8px 12px 8px 34px',
+              borderRadius:8, border:'1.5px solid #dde3ea',
+              fontSize:14, outline:'none', boxSizing:'border-box',
+              background:'#f8f9fa'
+            }}
+          />
+          {busqueda && (
+            <button
+              onClick={() => setBusqueda('')}
+              style={{
+                position:'absolute', right:8, top:'50%', transform:'translateY(-50%)',
+                background:'none', border:'none', cursor:'pointer',
+                fontSize:16, color:'#aaa', padding:0, lineHeight:1
+              }}
+            >✕</button>
+          )}
+        </div>
+      </div>
+
       </div>{/* fin sticky */}
 
       {/* ── Contenido scrollable ── */}
@@ -227,9 +276,14 @@ export default function MenuFormulas({
         )}
 
         {/* ── Grid productos por categoría ── */}
-        {Object.entries(categoriasConfig).map(([categoria, nombresProductos]) =>
+        {busqueda && categoriasFiltradas.length === 0 && (
+          <div style={{ textAlign:'center', padding:'40px 20px', color:'#aaa', fontSize:14 }}>
+            Sin resultados para "<strong>{busqueda}</strong>"
+          </div>
+        )}
+        {categoriasFiltradas.map(({ cat: categoria, prods: nombresProductos }) =>
           nombresProductos.length === 0 ? null : (
-            <div key={categoria} style={{ marginBottom:24 }}>
+            <div key={categoria} id={`cat-${categoria}`} style={{ marginBottom:24, scrollMarginTop:180 }}>
               <div style={{
                 display:'flex', alignItems:'center',
                 gap:10, marginBottom:12
