@@ -159,7 +159,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
 
       {/* ── Tabs ── */}
       <div style={{ display: 'flex', background: 'white', borderRadius: 10, padding: 4, marginBottom: 14, gap: 4, boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
-        {[['costos', '📐 Costos'], ['comparador', '📊 Rentabilidad'], ['mermas', '📉 Mermas']].map(([key, label]) => (
+        {[['costos', '📐 Costos'], ['pruebas', '🧪 Pruebas'], ['comparador', '📊 Rentabilidad'], ['mermas', '📉 Mermas']].map(([key, label]) => (
           <button key={key} onClick={() => setTabActivo(key)} style={{
             flex: 1, padding: '9px 12px', border: 'none', borderRadius: 7, cursor: 'pointer',
             fontSize: 13, fontWeight: 'bold',
@@ -402,6 +402,113 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
         );
       })()}
 
+      {/* ── Tab Pruebas: Simulador + % Inyección ── */}
+      {tabActivo === 'pruebas' && (
+        <div>
+          {/* Fórmula merma + % actual */}
+          <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1fr 1fr', gap: 10, marginBottom: 12 }}>
+            <div style={{ background: '#fff8f0', borderRadius: 10, padding: '14px 16px', fontSize: 12, color: '#555', border: '1px solid #f5cba7' }}>
+              <div style={{ fontWeight: 'bold', color: '#784212', marginBottom: 8, fontSize: 13 }}>📉 Fórmula de Merma</div>
+              <div style={{ lineHeight: 2 }}>Merma kg = <span style={{ color: '#2980b9', fontWeight: 'bold' }}>Inyectado</span> − <span style={{ color: '#27ae60', fontWeight: 'bold' }}>Post-Corte</span></div>
+              <div style={{ lineHeight: 2 }}>% Merma = (<span style={{ color: '#e74c3c', fontWeight: 'bold' }}>Merma ÷ Inyectado</span>) × 100</div>
+            </div>
+            <div style={{ background: pctActual > 15 ? '#fdecea' : '#fff8f0', borderRadius: 10, padding: '14px 16px', border: `1px solid ${pctActual > 15 ? '#e74c3c' : '#f5cba7'}`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+              <div style={{ fontSize: 11, color: '#888', marginBottom: 6 }}>% Merma actual</div>
+              <div style={{ fontSize: 36, fontWeight: 'bold', color: pctActual > 15 ? '#e74c3c' : '#e67e22', lineHeight: 1 }}>
+                {pctActual > 0 ? `${pctActual.toFixed(1)}%` : '—'}
+              </div>
+              {pctActual > 15 && <div style={{ fontSize: 11, color: '#e74c3c', marginTop: 6 }}>↑ Alta — revisar proceso</div>}
+            </div>
+          </div>
+
+          {/* Simulador de costo */}
+          <div style={{ background: '#f0f8ff', borderRadius: 12, padding: '16px 18px', border: '1.5px solid #aed6f1', marginBottom: 12 }}>
+            <div style={{ fontWeight: 'bold', color: '#1a5276', marginBottom: 12, fontSize: 14 }}>🧪 Simulador de costo por kg</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+              <label style={{ fontSize: 12, color: '#555', fontWeight: 600 }}>% de merma a simular:</label>
+              <input
+                type="number" min="0" max="100" step="0.1"
+                placeholder={pctActual > 0 ? pctActual.toFixed(1) : '0.0'}
+                value={mermaSimPct}
+                onChange={e => setMermaSimPct(e.target.value)}
+                style={{ width: '80px', padding: '8px 10px', borderRadius: 8, border: '2px solid #2980b9', fontSize: 15, textAlign: 'right', fontWeight: 'bold', outline: 'none' }}
+              />
+              <span style={{ fontSize: 13, color: '#555' }}>%</span>
+            </div>
+
+            {simResult ? (
+              <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : 'repeat(2,1fr)', gap: 10 }}>
+                {/* Resultado simulación */}
+                <div style={{ background: 'white', borderRadius: 10, padding: '12px 14px', border: '1px solid #d6eaf8' }}>
+                  <div style={{ fontSize: 11, fontWeight: 'bold', color: '#888', marginBottom: 8 }}>RESULTADO (por 1 kg carne)</div>
+                  <div style={{ fontSize: 12, color: '#555', lineHeight: 2 }}>
+                    <div>Inyectado: <strong style={{ color: '#2980b9' }}>{simResult.pesoInj} kg</strong></div>
+                    <div>Post-corte: <strong>{simResult.pesoPost} kg</strong></div>
+                    <div>Merma: <strong style={{ color: '#e74c3c' }}>{simResult.mermaKg} kg</strong></div>
+                    <div>Crédito retazo: <strong style={{ color: '#27ae60' }}>${simResult.credito}</strong></div>
+                    <div style={{ marginTop: 4, fontSize: 14, fontWeight: 'bold', color: '#1a1a2e' }}>
+                      Costo/kg: <span style={{ color: '#2980b9' }}>${simResult.costoFinal}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Precios sugeridos */}
+                <div style={{ background: 'white', borderRadius: 10, padding: '12px 14px', border: '1px solid #d6eaf8' }}>
+                  <div style={{ fontSize: 11, fontWeight: 'bold', color: '#888', marginBottom: 8 }}>PRECIO DE VENTA SUGERIDO</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {[['30%', 0.70, '#27ae60'], ['35%', 0.65, '#2980b9'], ['40%', 0.60, '#8e44ad']].map(([pct, div, color]) => (
+                      <div key={pct} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8f9fa', borderRadius: 8, padding: '8px 12px' }}>
+                        <span style={{ fontSize: 12, color: '#555' }}>Con margen <strong>{pct}</strong></span>
+                        <span style={{ fontSize: 15, fontWeight: 'bold', color }}>${(parseFloat(simResult.costoFinal) / div).toFixed(4)}/kg</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div style={{ textAlign: 'center', padding: '20px', color: '#aaa', fontSize: 13 }}>
+                Sin datos de referencia — registra producciones de inyección primero
+              </div>
+            )}
+          </div>
+
+          {/* Porcentaje inyección de referencia */}
+          {historial.length > 0 && (
+            <div style={{ background: 'white', borderRadius: 12, padding: '14px 16px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+              <div style={{ fontWeight: 'bold', color: '#1a1a2e', marginBottom: 10, fontSize: 13 }}>💉 % Inyección en producciones anteriores</div>
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                  <thead>
+                    <tr style={{ background: '#f5f5f5' }}>
+                      {['Fecha', 'Salmuera', 'Kg Carne', 'Kg Salmuera', '% Inyección'].map(h => (
+                        <th key={h} style={{ padding: '7px 10px', textAlign: h === 'Fecha' || h === 'Salmuera' ? 'left' : 'right', color: '#555', fontWeight: 700, borderBottom: '1px solid #e0e0e0', fontSize: 11, whiteSpace: 'nowrap' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {historial.map((h, i) => {
+                      const prod = h.produccion_inyeccion;
+                      const kgCarne = parseFloat(h.kg_carne_cruda || 0);
+                      const kgSal   = parseFloat(h.kg_salmuera_asignada || 0);
+                      const pctInj  = kgCarne > 0 ? ((kgSal / kgCarne) * 100).toFixed(1) : '—';
+                      return (
+                        <tr key={h.id} style={{ background: i%2===0 ? 'white' : '#fafafa', borderBottom: '1px solid #f0f0f0' }}>
+                          <td style={{ padding: '7px 10px' }}>{prod?.fecha || '—'}</td>
+                          <td style={{ padding: '7px 10px', fontSize: 11, color: '#555' }}>{prod?.formula_salmuera || '—'}</td>
+                          <td style={{ padding: '7px 10px', textAlign: 'right' }}>{kgCarne.toFixed(2)} kg</td>
+                          <td style={{ padding: '7px 10px', textAlign: 'right', color: '#2980b9' }}>{kgSal.toFixed(3)} kg</td>
+                          <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 'bold', color: '#8e44ad' }}>{pctInj}{pctInj !== '—' ? '%' : ''}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ── Tab Costos ── */}
       {tabActivo === 'costos' && <>
 
@@ -444,68 +551,6 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
           Costo Final/kg = <span style={{ color: '#e74c3c', fontWeight: 'bold' }}>[(Costo Carne + Costo Salmuera) − Ingreso Retazos]</span>
           {' ÷ '}
           <span style={{ color: '#27ae60', fontWeight: 'bold' }}>kg Carne Limpia</span>
-        </div>
-      </div>
-
-      {/* Merma: fórmula + % actual + simulador */}
-      <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1.4fr 0.8fr 1.4fr', gap: 10, marginBottom: 12 }}>
-
-        {/* Fórmula */}
-        <div style={{ background: '#fff8f0', borderRadius: 10, padding: '12px 14px', fontSize: 12, color: '#555', border: '1px solid #f5cba7' }}>
-          <div style={{ fontWeight: 'bold', color: '#784212', marginBottom: 6, fontSize: 13 }}>📉 Fórmula de Merma</div>
-          <div style={{ lineHeight: 2 }}>
-            Merma kg = <span style={{ color: '#2980b9', fontWeight: 'bold' }}>Inyectado</span> − <span style={{ color: '#27ae60', fontWeight: 'bold' }}>Post-Corte</span>
-          </div>
-          <div style={{ lineHeight: 2 }}>
-            % Merma = (<span style={{ color: '#e74c3c', fontWeight: 'bold' }}>Merma ÷ Inyectado</span>) × 100
-          </div>
-        </div>
-
-        {/* % Actual */}
-        <div style={{ background: pctActual > 15 ? '#fdecea' : '#fff8f0', borderRadius: 10, padding: '12px 14px', border: `1px solid ${pctActual > 15 ? '#e74c3c' : '#f5cba7'}`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>% Merma actual</div>
-          <div style={{ fontSize: 30, fontWeight: 'bold', color: pctActual > 15 ? '#e74c3c' : '#e67e22', lineHeight: 1 }}>
-            {pctActual > 0 ? `${pctActual.toFixed(1)}%` : '—'}
-          </div>
-          {pctActual > 15 && <div style={{ fontSize: 10, color: '#e74c3c', marginTop: 4 }}>↑ Alta</div>}
-        </div>
-
-        {/* Simulador */}
-        <div style={{ background: '#f0f8ff', borderRadius: 10, padding: '12px 14px', border: '1px solid #aed6f1' }}>
-          <div style={{ fontWeight: 'bold', color: '#1a5276', marginBottom: 8, fontSize: 13 }}>🧪 Prueba (1 kg)</div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-            <input
-              type="number" min="0" max="100" step="0.1"
-              placeholder={pctActual > 0 ? pctActual.toFixed(1) : '0.0'}
-              value={mermaSimPct}
-              onChange={e => setMermaSimPct(e.target.value)}
-              style={{ width: '70px', padding: '6px 8px', borderRadius: 7, border: '1.5px solid #2980b9', fontSize: 14, textAlign: 'right', fontWeight: 'bold' }}
-            />
-            <span style={{ fontSize: 13, color: '#555' }}>% merma</span>
-          </div>
-          {simResult ? (
-            <div style={{ fontSize: 11, color: '#555', lineHeight: 1.8 }}>
-              <div>Inyectado: <strong>{simResult.pesoInj} kg</strong></div>
-              <div>Post-corte: <strong>{simResult.pesoPost} kg</strong></div>
-              <div>Merma: <strong style={{ color: '#e74c3c' }}>{simResult.mermaKg} kg</strong></div>
-              <div>Crédito retazo: <strong style={{ color: '#27ae60' }}>${simResult.credito}</strong></div>
-              <div style={{ marginTop: 4, fontSize: 13, fontWeight: 'bold', color: '#1a5276' }}>
-                Costo/kg: ${simResult.costoFinal}
-              </div>
-              <div style={{ marginTop: 6, borderTop: '1px solid #aed6f1', paddingTop: 6 }}>
-                <div style={{ fontSize: 10, color: '#888', marginBottom: 2 }}>Precio venta sugerido:</div>
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  {[['30%', 0.70], ['35%', 0.65], ['40%', 0.60]].map(([pct, div]) => (
-                    <span key={pct} style={{ background: '#e8f4fd', borderRadius: 5, padding: '2px 6px', fontSize: 11, fontWeight: 'bold', color: '#1a5276' }}>
-                      {pct}: ${(parseFloat(simResult.costoFinal) / div).toFixed(4)}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div style={{ fontSize: 11, color: '#aaa' }}>Sin datos de referencia</div>
-          )}
         </div>
       </div>
 

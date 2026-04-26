@@ -59,6 +59,15 @@ export default function TabMaduracion({ mobile, currentUser }) {
     setExpandidos(prev => ({ ...prev, [id]: !prev[id] }));
   }
 
+  async function forzarListo(lote) {
+    const d = new Date();
+    const fechaLocal = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    await supabase.from('lotes_maduracion')
+      .update({ fecha_salida: fechaLocal })
+      .eq('id', lote.id);
+    await cargar();
+  }
+
   function abrirEditar(lote) {
     const picortes = lote.produccion_inyeccion?.produccion_inyeccion_cortes || [];
     const init = {};
@@ -108,90 +117,95 @@ export default function TabMaduracion({ mobile, currentUser }) {
   }
 
   function abrirPesaje(lote) {
+    const picortes = lote.produccion_inyeccion?.produccion_inyeccion_cortes || [];
     const init = {};
-    (lote.lotes_maduracion_cortes || []).forEach(c => { init[c.id] = ''; });
+    picortes.forEach(p => { init[p.corte_nombre] = ''; });
     setPesajes(init);
     setError('');
     setModalPesaje(lote);
   }
 
   async function confirmarPesaje() {
-    const cortes = modalPesaje.lotes_maduracion_cortes || [];
-    for (const c of cortes) {
-      if (!pesajes[c.id] || parseFloat(pesajes[c.id]) <= 0) {
-        setError(`Ingresa el peso de "${c.corte_nombre}"`);
+    const picortes = modalPesaje.produccion_inyeccion?.produccion_inyeccion_cortes || [];
+    for (const p of picortes) {
+      if (!pesajes[p.corte_nombre] || parseFloat(pesajes[p.corte_nombre]) <= 0) {
+        setError(`Ingresa el peso actual de "${p.corte_nombre}"`);
         return;
       }
     }
     setGuardando(true);
     setError('');
     try {
-      // 1. Actualizar cada corte con kg_madurado y costo ajustado
-      for (const c of cortes) {
-        const kgMad  = parseFloat(pesajes[c.id]);
-        const costoAdj = c.kg_inyectado > 0
-          ? (c.costo_kg_original * c.kg_inyectado) / kgMad
-          : c.costo_kg_original;
+      for (const p of picortes) {
+        const kgMad = parseFloat(pesajes[p.corte_nombre]);
 
-        await supabase.from('lotes_maduracion_cortes').update({
-          kg_madurado:       kgMad,
-          costo_kg_ajustado: costoAdj,
-        }).eq('id', c.id);
-
-        // 2. Buscar o crear materia prima con categoría Congelación
-        let mpId = c.materia_prima_id;
-
+        // Buscar o crear MP en Inyectados
         const { data: mpExist } = await supabase
-          .from('materias_primas')
-          .select('id')
-          .eq('nombre', c.corte_nombre)
-          .eq('categoria', 'Congelación')
-          .maybeSingle();
+          .from('materias_primas').select('id')
+          .eq('nombre', p.corte_nombre).eq('categoria', 'Inyectados').maybeSingle();
 
+        let mpId;
         if (mpExist) {
           mpId = mpExist.id;
-          // Actualizar precio con costo ajustado
-          await supabase.from('materias_primas')
-            .update({ precio_kg: costoAdj })
-            .eq('id', mpId);
         } else {
-          // Crear nueva MP en categoría Congelación
-          const { data: nuevaMp } = await supabase.from('materias_primas').insert({
-            nombre:           c.corte_nombre,
-            nombre_producto:  c.corte_nombre,
-            categoria:        'Congelación',
-            precio_kg:        costoAdj,
-            eliminado:        false,
+          // Generar ID único tipo INY001
+          const { data: existIds } = await supabase.from('materias_primas')
+            .select('id').eq('categoria', 'Inyectados');
+          const nums = (existIds || [])
+            .map(m => parseInt((m.id || '').replace(/\D/g, '') || '0'))
+            .filter(n => !isNaN(n));
+          const nextNum = nums.length > 0 ? Math.max(...nums) + 1 : 1;
+          const newId = 'INY' + String(nextNum).padStart(3, '0');
+
+          const { data: nuevaMp, error: errMp } = await supabase.from('materias_primas').insert({
+            id: newId,
+            nombre: p.corte_nombre, nombre_producto: p.corte_nombre,
+            categoria: 'Inyectados', precio_kg: 0,
+            tipo: 'MATERIAS PRIMAS', estado: 'ACTIVO', eliminado: false,
           }).select('id').single();
+          if (errMp) throw new Error('Error creando MP: ' + errMp.message);
           mpId = nuevaMp?.id;
         }
 
-        // 3. Actualizar stock en inventario_mp
+        // Actualizar stock
         if (mpId) {
-          const { data: invExist } = await supabase
-            .from('inventario_mp')
-            .select('id, stock_kg')
-            .eq('materia_prima_id', mpId)
-            .maybeSingle();
-
-          if (invExist) {
+          const { data: inv } = await supabase.from('inventario_mp')
+            .select('id, stock_kg').eq('materia_prima_id', mpId).maybeSingle();
+          if (inv) {
             await supabase.from('inventario_mp')
-              .update({ stock_kg: (invExist.stock_kg || 0) + kgMad })
-              .eq('id', invExist.id);
+              .update({ stock_kg: (inv.stock_kg || 0) + kgMad }).eq('id', inv.id);
           } else {
             await supabase.from('inventario_mp').insert({
-              materia_prima_id: mpId,
-              stock_kg:         kgMad,
-              nombre:           c.corte_nombre,
+              materia_prima_id: mpId, stock_kg: kgMad, nombre: p.corte_nombre,
             });
           }
+          // Registrar movimiento ENTRADA en inventario
+          await supabase.from('inventario_movimientos').insert({
+            materia_prima_id: mpId,
+            nombre_mp:        p.corte_nombre,
+            tipo:             'entrada',
+            kg:               kgMad,
+            motivo:           `Pesaje maduración — Lote ${modalPesaje.lote_id}`,
+            usuario_nombre:   currentUser?.email || '',
+            user_id:          currentUser?.id || null,
+            fecha:            new Date().toISOString().split('T')[0],
+          });
+          // Insertar en stock_lotes_inyectados para rastreo por lote
+          await supabase.from('stock_lotes_inyectados').insert({
+            lote_id:           modalPesaje.lote_id,
+            lote_maduracion_id: modalPesaje.id,
+            corte_nombre:      p.corte_nombre,
+            materia_prima_id:  mpId,
+            kg_inicial:        kgMad,
+            kg_disponible:     kgMad,
+            fecha_entrada:     new Date().toISOString().split('T')[0],
+          });
         }
       }
 
-      // 4. Marcar lote como completado
+      // Marcar lote completado
       await supabase.from('lotes_maduracion')
-        .update({ estado: 'completado' })
-        .eq('id', modalPesaje.id);
+        .update({ estado: 'completado' }).eq('id', modalPesaje.id);
 
       setModalPesaje(null);
       setExito(`✅ Lote ${modalPesaje.lote_id} pasó a Stock de Congelación`);
@@ -384,6 +398,14 @@ export default function TabMaduracion({ mobile, currentUser }) {
                       background: '#f0f2f5', border: '1px solid #ddd', borderRadius: 8,
                       padding: '8px 14px', cursor: 'pointer', fontSize: 12, fontWeight: 'bold', color: '#333'
                     }}>✏️ Editar kg</button>
+                    {!listo && (
+                      <button onClick={() => {
+                        if (window.confirm('¿Marcar este lote como listo ahora? (modo prueba)')) forzarListo(lote);
+                      }} style={{
+                        background: '#fff3cd', border: '1px solid #f39c12', borderRadius: 8,
+                        padding: '8px 14px', cursor: 'pointer', fontSize: 12, fontWeight: 'bold', color: '#856404'
+                      }}>🧪 Prueba</button>
+                    )}
                     {listo && (
                       <button onClick={() => abrirPesaje(lote)} style={{
                         background: 'linear-gradient(135deg,#e74c3c,#c0392b)',
@@ -610,64 +632,65 @@ export default function TabMaduracion({ mobile, currentUser }) {
                 <div style={{ textAlign: 'right' }}>DIFERENCIA</div>
               </div>
 
-              {(modalPesaje.lotes_maduracion_cortes || []).map(c => {
-                const kgHoy  = parseFloat(pesajes[c.id] || 0);
-                const diff   = kgHoy > 0 ? kgHoy - c.kg_inyectado : null;
+              {(modalPesaje.produccion_inyeccion?.produccion_inyeccion_cortes || []).map(p => {
+                const kgInj  = parseFloat(p.kg_carne_cruda || 0) + parseFloat(p.kg_salmuera_asignada || 0);
+                const kgHoy  = parseFloat(pesajes[p.corte_nombre] || 0);
+                const diff   = kgHoy > 0 ? kgInj - kgHoy : null;
                 return (
-                  <div key={c.id} style={{
+                  <div key={p.corte_nombre} style={{
                     display: 'grid', gridTemplateColumns: '1fr 90px 90px 80px',
                     gap: 8, padding: '10px 12px',
                     borderTop: '1px solid #e0e0e0', alignItems: 'center'
                   }}>
                     <div style={{ fontWeight: 'bold', fontSize: 13, color: '#1a1a2e' }}>
-                      {c.corte_nombre}
+                      🥩 {p.corte_nombre}
                       <div style={{ fontSize: 10, color: '#888', fontWeight: 'normal' }}>
-                        Costo orig: ${(c.costo_kg_original||0).toFixed(4)}/kg
+                        {parseFloat(p.kg_carne_cruda||0).toFixed(3)} carne + {parseFloat(p.kg_salmuera_asignada||0).toFixed(3)} sal
                       </div>
                     </div>
-                    <div style={{ textAlign: 'right', fontSize: 13, color: '#555' }}>
-                      {(c.kg_inyectado||0).toFixed(3)}
+                    <div style={{ textAlign: 'right', fontSize: 13, color: '#2980b9', fontWeight: 'bold' }}>
+                      {kgInj.toFixed(3)}
                     </div>
                     <div>
                       <input
                         type="number" min="0" step="0.001"
-                        value={pesajes[c.id]}
-                        onChange={e => setPesajes(prev => ({ ...prev, [c.id]: e.target.value }))}
+                        value={pesajes[p.corte_nombre] ?? ''}
+                        onChange={e => setPesajes(prev => ({ ...prev, [p.corte_nombre]: e.target.value }))}
                         placeholder="0.000"
-                        style={{ ...inputStyle, textAlign: 'right', borderColor: pesajes[c.id] ? '#27ae60' : '#ddd' }}
+                        style={{ ...inputStyle, textAlign: 'right', borderColor: pesajes[p.corte_nombre] ? '#27ae60' : '#ddd' }}
                       />
                     </div>
                     <div style={{
                       textAlign: 'right', fontSize: 12, fontWeight: 'bold',
-                      color: diff === null ? '#ccc' : diff < 0 ? '#e74c3c' : '#27ae60'
+                      color: diff === null ? '#ccc' : diff > 0 ? '#e74c3c' : '#27ae60'
                     }}>
-                      {diff === null ? '—' : `${diff > 0 ? '+' : ''}${diff.toFixed(3)}`}
+                      {diff === null ? '—' : `-${diff.toFixed(3)}`}
                     </div>
                   </div>
                 );
               })}
             </div>
 
-            {/* Resumen costo ajustado */}
-            {(modalPesaje.lotes_maduracion_cortes || []).some(c => parseFloat(pesajes[c.id]) > 0) && (
+            {/* Resumen merma */}
+            {(modalPesaje.produccion_inyeccion?.produccion_inyeccion_cortes || []).some(p => parseFloat(pesajes[p.corte_nombre]) > 0) && (
               <div style={{
                 background: '#fff3e0', borderRadius: 10,
                 padding: '10px 14px', marginBottom: 16, fontSize: 12
               }}>
                 <div style={{ fontWeight: 'bold', color: '#e65100', marginBottom: 6 }}>
-                  💡 Costo ajustado por pérdida:
+                  📉 Merma de maduración:
                 </div>
-                {(modalPesaje.lotes_maduracion_cortes || []).map(c => {
-                  const kgMad = parseFloat(pesajes[c.id] || 0);
+                {(modalPesaje.produccion_inyeccion?.produccion_inyeccion_cortes || []).map(p => {
+                  const kgMad = parseFloat(pesajes[p.corte_nombre] || 0);
                   if (!kgMad) return null;
-                  const costoAdj = c.kg_inyectado > 0
-                    ? (c.costo_kg_original * c.kg_inyectado) / kgMad
-                    : c.costo_kg_original;
+                  const kgInj  = parseFloat(p.kg_carne_cruda || 0) + parseFloat(p.kg_salmuera_asignada || 0);
+                  const merma  = kgInj - kgMad;
+                  const pctM   = kgInj > 0 ? (merma / kgInj * 100).toFixed(1) : '0.0';
                   return (
-                    <div key={c.id} style={{ color: '#555', marginBottom: 2 }}>
-                      <b>{c.corte_nombre}</b>: ${(c.costo_kg_original||0).toFixed(4)} →{' '}
-                      <span style={{ color: '#e65100', fontWeight: 'bold' }}>
-                        ${costoAdj.toFixed(4)}/kg
+                    <div key={p.corte_nombre} style={{ color: '#555', marginBottom: 2 }}>
+                      <b>{p.corte_nombre}</b>: {kgInj.toFixed(3)} → {kgMad.toFixed(3)} kg{' '}
+                      <span style={{ color: merma > 0 ? '#e65100' : '#27ae60', fontWeight: 'bold' }}>
+                        ({merma > 0 ? '-' : '+'}{Math.abs(merma).toFixed(3)} kg · {pctM}%)
                       </span>
                     </div>
                   );

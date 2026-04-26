@@ -218,16 +218,48 @@ export default function TabInyeccion({ currentUser, mobile, onSalmueraChange }) 
       }).select().single();
       if (e4) throw e4;
 
-      if (filasCorte.length > 0) {
-        await supabase.from('lotes_maduracion_cortes').insert(
-          filasCorte.map(f => ({
-            lote_maduracion_id: lote.id,
-            corte_nombre:       f.corte_nombre,
-            materia_prima_id:   f.materia_prima_id,
-            kg_inyectado:       f.kg_carne_cruda + (f.kg_salmuera_asignada || 0),
-            costo_kg_original:  f.precio_kg_carne,
-          }))
-        );
+      // ── Descontar stock del inventario ────────────────────
+      const fechaHoy = new Date().toISOString().split('T')[0];
+      // 1. Descontar carnes (cortes) + registrar movimiento SALIDA
+      for (const f of filasCorte) {
+        const { data: inv } = await supabase.from('inventario_mp')
+          .select('id, stock_kg').eq('materia_prima_id', f.materia_prima_id).maybeSingle();
+        if (inv) {
+          await supabase.from('inventario_mp')
+            .update({ stock_kg: Math.max(0, (inv.stock_kg || 0) - f.kg_carne_cruda) })
+            .eq('id', inv.id);
+          await supabase.from('inventario_movimientos').insert({
+            materia_prima_id: f.materia_prima_id,
+            nombre_mp:        f.corte_nombre,
+            tipo:             'salida',
+            kg:               f.kg_carne_cruda,
+            motivo:           `Inyección — ${formulaSelec.nombre}`,
+            usuario_nombre:   currentUser?.email || '',
+            user_id:          currentUser?.id || null,
+            fecha:            fechaHoy,
+          });
+        }
+      }
+      // 2. Descontar ingredientes de salmuera + registrar movimiento SALIDA
+      for (const i of ingredientesExp) {
+        if (!i.materia_prima_id) continue;
+        const { data: inv } = await supabase.from('inventario_mp')
+          .select('id, stock_kg').eq('materia_prima_id', i.materia_prima_id).maybeSingle();
+        if (inv) {
+          await supabase.from('inventario_mp')
+            .update({ stock_kg: Math.max(0, (inv.stock_kg || 0) - i.kgUsados) })
+            .eq('id', inv.id);
+          await supabase.from('inventario_movimientos').insert({
+            materia_prima_id: i.materia_prima_id,
+            nombre_mp:        i.nombre,
+            tipo:             'salida',
+            kg:               i.kgUsados,
+            motivo:           `Inyección — ${formulaSelec.nombre}`,
+            usuario_nombre:   currentUser?.email || '',
+            user_id:          currentUser?.id || null,
+            fecha:            fechaHoy,
+          });
+        }
       }
 
       setFormulaSelec(null); setFilasCort([]); setNotas('');

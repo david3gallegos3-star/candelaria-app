@@ -178,7 +178,7 @@ function App() {
     const mpExistentes = (mpCats || []).map(c => c.nombre);
     const maxOrdenMp   = (mpCats?.[0]?.orden ?? 0);
     let ordenMp = maxOrdenMp;
-    for (const mpCat of ['Salmuera', 'Inmersión', 'Marinados']) {
+    for (const mpCat of ['Salmuera', 'Inmersión', 'Marinados', 'Inyectados']) {
       if (!mpExistentes.includes(mpCat)) {
         ordenMp++;
         await supabase.from('categorias_mp').insert({ nombre: mpCat, orden: ordenMp });
