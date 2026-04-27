@@ -114,12 +114,16 @@ export default function TabDespacho({ mobile, currentUser }) {
     try {
       const payload = {
         fecha,
-        corte_nombre:  corteSelec,
-        peso_antes:    antes,
-        peso_funda:    funda,
+        corte_nombre:   corteSelec,
+        peso_antes:     antes,
+        peso_funda:     funda,
         peso_remanente: remanente,
         usuario_nombre: currentUser?.email || '',
         user_id:        currentUser?.id    || null,
+        // Fase 3: ficha de costo
+        c_mad_kg:   loteData ? parseFloat(loteData.costo_mad_kg || 0) : 0,
+        kg_gastado: Math.max(0, antes - remanente),
+        lote_ref:   loteData?.lote_id || '',
       };
 
       if (editando) {
@@ -199,6 +203,55 @@ export default function TabDespacho({ mobile, currentUser }) {
     await cargar();
   }
 
+  async function calcularFase4(fechaDia, cierrePayload) {
+    // Precios de subproductos desde MP Retazos
+    const { data: retazos } = await supabase.from('materias_primas')
+      .select('nombre, precio_kg')
+      .in('nombre', ['Aserrín Cortes', 'Retazo Carnudo']);
+    const precioAserrin = parseFloat(retazos?.find(r => r.nombre === 'Aserrín Cortes')?.precio_kg || 0);
+    const precioCarnudo = parseFloat(retazos?.find(r => r.nombre === 'Retazo Carnudo')?.precio_kg || 0);
+
+    // Todos los cortes del día
+    const { data: cortes } = await supabase.from('despacho_cortes')
+      .select('*').eq('fecha', fechaDia);
+    if (!cortes || cortes.length === 0) return;
+
+    // Merma individual y total
+    const cortesM = cortes.map(r => ({
+      ...r,
+      merma: Math.max(0, (r.peso_antes||0) - (r.peso_funda||0) - (r.peso_remanente||0))
+    }));
+    const mermaTotal = cortesM.reduce((s, r) => s + r.merma, 0);
+    if (mermaTotal <= 0) return;
+
+    const pesoH = parseFloat(cierrePayload.peso_hueso   || 0);
+    const pesoA = parseFloat(cierrePayload.peso_aserrin || 0);
+    const pesoC = parseFloat(cierrePayload.peso_carnudo || 0);
+    const mermaMaquina = Math.max(0, mermaTotal - pesoH - pesoA - pesoC);
+
+    for (const r of cortesM) {
+      const prop = mermaTotal > 0 ? r.merma / mermaTotal : 0;
+
+      const kg_aserrin_asig = pesoA * prop;
+      const kg_carnudo_asig = pesoC * prop;
+      const kg_hueso_asig   = pesoH * prop;
+      const kg_maq_asig     = mermaMaquina * prop;
+
+      const credito_retazos = (kg_aserrin_asig * precioAserrin) + (kg_carnudo_asig * precioCarnudo);
+
+      const c_mad      = parseFloat(r.c_mad_kg   || 0);
+      const peso_antes = parseFloat(r.peso_antes  || 0);
+      const peso_neto  = Math.max(0, peso_antes - kg_maq_asig - kg_hueso_asig);
+      const costo_total_corte = peso_antes * c_mad;
+      const c_final_kg = peso_neto > 0 ? (costo_total_corte - credito_retazos) / peso_neto : 0;
+
+      await supabase.from('despacho_cortes').update({
+        kg_aserrin_asig, kg_carnudo_asig, kg_hueso_asig,
+        kg_maq_asig, credito_retazos, c_final_kg,
+      }).eq('id', r.id);
+    }
+  }
+
   async function guardarCierre() {
     setGuardandoCierre(true);
     try {
@@ -214,8 +267,10 @@ export default function TabDespacho({ mobile, currentUser }) {
       } else {
         await supabase.from('despacho_cierre_dia').insert(payload);
       }
+      // Fase 4: calcular C_final para todos los cortes del día
+      await calcularFase4(fecha, payload);
       setModalCierre(false);
-      mostrarExito('✅ Cierre del día registrado');
+      mostrarExito('✅ Cierre del día registrado — costos finales calculados');
       await cargar();
     } catch (e) { setError('Error: ' + e.message); }
     setGuardandoCierre(false);
@@ -526,7 +581,7 @@ export default function TabDespacho({ mobile, currentUser }) {
 
               {/* Panel de balance */}
               {mermaTotalDia > 0 && (
-                <div style={{ background: mermaEnMaquina < 0 ? '#fdecea' : '#f0f8ff', borderRadius:10, padding:'12px 14px', marginBottom:16, border:`1.5px solid ${mermaEnMaquina < 0 ? '#e74c3c' : '#aed6f1'}` }}>
+                <div style={{ background: mermaEnMaquina < 0 ? '#fdecea' : '#f0f8ff', borderRadius:10, padding:'12px 14px', marginBottom:12, border:`1.5px solid ${mermaEnMaquina < 0 ? '#e74c3c' : '#aed6f1'}` }}>
                   <div style={{ fontWeight:'bold', fontSize:12, color:'#1a5276', marginBottom:8 }}>⚖️ Balance de merma del día</div>
                   <div style={{ fontSize:12, color:'#555', display:'flex', flexDirection:'column', gap:4 }}>
                     <div style={{ display:'flex', justifyContent:'space-between' }}>
@@ -551,6 +606,48 @@ export default function TabDespacho({ mobile, currentUser }) {
                   </div>
                 </div>
               )}
+
+              {/* Fase 4: desglose C_final por corte en tiempo real */}
+              {mermaTotalDia > 0 && resumenCortes.length > 0 && (() => {
+                const maqTotal = Math.max(0, mermaTotalDia - totalIdentificado);
+                return (
+                  <div style={{ background:'#f8f9fa', borderRadius:10, padding:'10px 14px', marginBottom:12, border:'1px solid #e0e0e0' }}>
+                    <div style={{ fontWeight:'bold', fontSize:12, color:'#1a1a2e', marginBottom:8 }}>🧮 Fase 4 — C_final por corte (vista previa)</div>
+                    {resumenCortes.map(c => {
+                      const prop = mermaTotalDia > 0 ? c.merma / mermaTotalDia : 0;
+                      const regC = registros.filter(r => r.corte_nombre === c.corte);
+                      const totalAntes = regC.reduce((s, r) => s + (r.peso_antes||0), 0);
+                      const cMadProm   = regC.length > 0
+                        ? regC.reduce((s, r) => s + parseFloat(r.c_mad_kg||0), 0) / regC.length : 0;
+                      const kgMaq   = maqTotal * prop;
+                      const kgHueso = parseFloat(pesoHueso||0) * prop;
+                      const pesoNeto = Math.max(0, totalAntes - kgMaq - kgHueso);
+                      const cFinal   = (cMadProm > 0 && pesoNeto > 0) ? (totalAntes * cMadProm) / pesoNeto : 0;
+                      return (
+                        <div key={c.corte} style={{ marginBottom:8, padding:'8px 10px', background:'white', borderRadius:8, border:'1px solid #e8f4fd' }}>
+                          <div style={{ fontWeight:'bold', fontSize:12, color:'#1a3a5c', marginBottom:4 }}>
+                            🥩 {c.corte} <span style={{ color:'#888', fontWeight:'normal' }}>({(prop*100).toFixed(1)}% de la merma)</span>
+                          </div>
+                          <div style={{ fontSize:11, color:'#555', display:'grid', gridTemplateColumns:'1fr 1fr', gap:'2px 12px' }}>
+                            <span>Merma asignada: <b style={{ color:'#e74c3c' }}>{c.merma.toFixed(3)} kg</b></span>
+                            <span>En máquina: <b style={{ color:'#e74c3c' }}>{kgMaq.toFixed(3)} kg</b></span>
+                            <span>Aserrín: <b>{(parseFloat(pesoAserrin||0)*prop).toFixed(3)} kg</b></span>
+                            <span>Carnudo: <b>{(parseFloat(pesoCarnudo||0)*prop).toFixed(3)} kg</b></span>
+                            <span>Hueso: <b>{kgHueso.toFixed(3)} kg</b></span>
+                            <span>Peso neto: <b>{pesoNeto.toFixed(3)} kg</b></span>
+                          </div>
+                          {cMadProm > 0 && (
+                            <div style={{ marginTop:4, fontSize:12, color:'#1a6b3c', fontWeight:'bold' }}>
+                              C_mad: ${cMadProm.toFixed(4)} → C_final ≈ ${cFinal.toFixed(4)}/kg
+                              <span style={{ fontSize:10, color:'#aaa', marginLeft:6 }}>(crédito retazos ajusta al confirmar)</span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
 
               <div style={{ display:'flex', gap:10, justifyContent:'flex-end' }}>
                 <button onClick={() => setModalCierre(false)} style={{ background:'#f0f2f5', border:'none', borderRadius:8, padding:'10px 20px', cursor:'pointer', fontSize:13 }}>Cancelar</button>
