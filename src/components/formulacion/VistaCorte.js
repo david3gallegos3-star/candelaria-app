@@ -11,6 +11,16 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
   const [cargando,       setCargando]       = useState(true);
   const [mpVinculada,    setMpVinculada]    = useState(null);
   const [mermaSimPct,    setMermaSimPct]    = useState('');
+  const [simPeso,        setSimPeso]        = useState('1.000');
+  const [simPctInj,      setSimPctInj]      = useState('');
+  const [simPctMad,      setSimPctMad]      = useState('');
+  const [simPctSie,      setSimPctSie]      = useState('');
+  const [simPctAs,       setSimPctAs]       = useState('');
+  const [simPctCa,       setSimPctCa]       = useState('');
+  const [simPctHu,       setSimPctHu]       = useState('');
+  const [simFunda,       setSimFunda]       = useState('');
+  const [simEmpSel,      setSimEmpSel]      = useState('');
+  const [simEtiSel,      setSimEtiSel]      = useState('');
   const [precioRetazo,   setPrecioRetazo]   = useState(0);
   const [kgSalmueraX1kg, setKgSalmueraX1kg] = useState(0);
   const [tabActivo,      setTabActivo]      = useState('costos');
@@ -460,112 +470,295 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
         );
       })()}
 
-      {/* ── Tab Pruebas: Simulador + % Inyección ── */}
-      {tabActivo === 'pruebas' && (
-        <div>
-          {/* Fórmula merma + % actual */}
-          <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1fr 1fr', gap: 10, marginBottom: 12 }}>
-            <div style={{ background: '#fff8f0', borderRadius: 10, padding: '14px 16px', fontSize: 12, color: '#555', border: '1px solid #f5cba7' }}>
-              <div style={{ fontWeight: 'bold', color: '#784212', marginBottom: 8, fontSize: 13 }}>📉 Fórmula de Merma</div>
-              <div style={{ lineHeight: 2 }}>Merma kg = <span style={{ color: '#2980b9', fontWeight: 'bold' }}>Inyectado</span> − <span style={{ color: '#27ae60', fontWeight: 'bold' }}>Post-Corte</span></div>
-              <div style={{ lineHeight: 2 }}>% Merma = (<span style={{ color: '#e74c3c', fontWeight: 'bold' }}>Merma ÷ Inyectado</span>) × 100</div>
-            </div>
-            <div style={{ background: pctActual > 15 ? '#fdecea' : '#fff8f0', borderRadius: 10, padding: '14px 16px', border: `1px solid ${pctActual > 15 ? '#e74c3c' : '#f5cba7'}`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-              <div style={{ fontSize: 11, color: '#888', marginBottom: 6 }}>% Merma actual</div>
-              <div style={{ fontSize: 36, fontWeight: 'bold', color: pctActual > 15 ? '#e74c3c' : '#e67e22', lineHeight: 1 }}>
-                {pctActual > 0 ? `${pctActual.toFixed(1)}%` : '—'}
-              </div>
-              {pctActual > 15 && <div style={{ fontSize: 11, color: '#e74c3c', marginTop: 6 }}>↑ Alta — revisar proceso</div>}
-            </div>
-          </div>
+      {/* ── Tab Pruebas: Simulador paso a paso ── */}
+      {tabActivo === 'pruebas' && (() => {
+        const base    = parseFloat(simPeso)   || 0;
+        const pctInj  = parseFloat(simPctInj) || 0;
+        const pctMad  = parseFloat(simPctMad) || 0;
+        const pctSie  = parseFloat(simPctSie) || 0;
+        const pctAs   = parseFloat(simPctAs)  || 0;
+        const pctCa   = parseFloat(simPctCa)  || 0;
+        const pctHu   = parseFloat(simPctHu)  || 0;
+        const pctMa   = Math.max(0, pctSie - pctAs - pctCa - pctHu);
+        const funda   = parseFloat(simFunda)  || 0;
 
-          {/* Simulador de costo */}
-          <div style={{ background: '#f0f8ff', borderRadius: 12, padding: '16px 18px', border: '1.5px solid #aed6f1', marginBottom: 12 }}>
-            <div style={{ fontWeight: 'bold', color: '#1a5276', marginBottom: 12, fontSize: 14 }}>🧪 Simulador de costo por kg</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-              <label style={{ fontSize: 12, color: '#555', fontWeight: 600 }}>% de merma a simular:</label>
-              <input
-                type="number" min="0" max="100" step="0.1"
-                placeholder={pctActual > 0 ? pctActual.toFixed(1) : '0.0'}
-                value={mermaSimPct}
-                onChange={e => setMermaSimPct(e.target.value)}
-                style={{ width: '80px', padding: '8px 10px', borderRadius: 8, border: '2px solid #2980b9', fontSize: 15, textAlign: 'right', fontWeight: 'bold', outline: 'none' }}
-              />
-              <span style={{ fontSize: 13, color: '#555' }}>%</span>
+        const kgSal   = base * pctInj / 100;
+        const kgInj   = base + kgSal;
+        const kgLost  = kgInj * pctMad / 100;
+        const kgMad   = kgInj - kgLost;
+        const kgAs    = kgMad * pctAs / 100;
+        const kgCa    = kgMad * pctCa / 100;
+        const kgHu    = kgMad * pctHu / 100;
+        const kgMaq   = kgMad * pctMa / 100;
+        const kgNet   = kgMad - kgHu - kgMaq;
+        const credito = kgAs * precioAserrin + kgCa * precioCarnudo;
+
+        const precioCarne = parseFloat(mpVinculada?.precio_kg || 0);
+        const salRef      = refH ? parseFloat(refH.costo_salmuera_asignado || 0) / Math.max(parseFloat(refH.kg_carne_cruda || 1), 0.001) : 0;
+        const costoInj    = base * precioCarne + base * salRef;
+        const cIny        = kgInj  > 0 ? costoInj / kgInj  : 0;
+        const cMad        = kgMad  > 0 ? costoInj / kgMad  : 0;
+        const cFinal      = kgNet  > 0 ? (kgMad * cMad - credito) / kgNet : 0;
+
+        const empaqueMp   = mpsEmpaque.find(m => String(m.id) === simEmpSel);
+        const etiquetaMp  = mpsEtiqueta.find(m => String(m.id) === simEtiSel);
+        const costoEmp    = parseFloat(empaqueMp?.precio_kg  || 0);
+        const costoEti    = parseFloat(etiquetaMp?.precio_kg || 0);
+        const costoFunda  = funda > 0 && cFinal > 0 ? funda * cFinal + costoEmp + costoEti : null;
+
+        const subExcede   = (pctAs + pctCa + pctHu) > pctSie && pctSie > 0;
+        const tieneBase   = base > 0 && pctInj > 0 && precioCarne > 0;
+
+        return (
+          <div>
+            <div style={{ fontWeight: 700, color: '#1a5276', marginBottom: 14, fontSize: 15 }}>
+              Simulador de Costo
+              <span style={{ fontWeight: 400, fontSize: 11, color: '#888', marginLeft: 8 }}>sin afectar datos reales</span>
             </div>
 
-            {simResult ? (
-              <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : 'repeat(2,1fr)', gap: 10 }}>
-                {/* Resultado simulación */}
-                <div style={{ background: 'white', borderRadius: 10, padding: '12px 14px', border: '1px solid #d6eaf8' }}>
-                  <div style={{ fontSize: 11, fontWeight: 'bold', color: '#888', marginBottom: 8 }}>RESULTADO (por 1 kg carne)</div>
-                  <div style={{ fontSize: 12, color: '#555', lineHeight: 2 }}>
-                    <div>Inyectado: <strong style={{ color: '#2980b9' }}>{simResult.pesoInj} kg</strong></div>
-                    <div>Post-corte: <strong>{simResult.pesoPost} kg</strong></div>
-                    <div>Merma: <strong style={{ color: '#e74c3c' }}>{simResult.mermaKg} kg</strong></div>
-                    <div>Crédito retazo: <strong style={{ color: '#27ae60' }}>${simResult.credito}</strong></div>
-                    <div style={{ marginTop: 4, fontSize: 14, fontWeight: 'bold', color: '#1a1a2e' }}>
-                      Costo/kg: <span style={{ color: '#2980b9' }}>${simResult.costoFinal}</span>
-                    </div>
-                  </div>
+            <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1fr 1fr', gap: 12, marginBottom: 14 }}>
+
+              {/* ── PASO 1 ── */}
+              <div style={{ background: '#f0f8ff', borderRadius: 12, padding: 16, border: '1.5px solid #aed6f1' }}>
+                <div style={{ fontWeight: 700, color: '#1a5276', marginBottom: 12, fontSize: 13 }}>Paso 1 — Variables</div>
+
+                {/* Peso base */}
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ fontSize: 11, color: '#555', fontWeight: 600, display: 'block', marginBottom: 4 }}>Peso Base del Corte (kg crudo)</label>
+                  <input
+                    type="number" min="0" step="0.001"
+                    value={simPeso}
+                    onChange={e => setSimPeso(e.target.value)}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '2px solid #2980b9', fontSize: 14, fontWeight: 'bold', boxSizing: 'border-box' }}
+                  />
+                  {precioCarne > 0 && base > 0 && (
+                    <div style={{ fontSize: 10, color: '#888', marginTop: 2 }}>Costo carne: ${(base * precioCarne).toFixed(4)}</div>
+                  )}
                 </div>
 
-                {/* Precios sugeridos */}
-                <div style={{ background: 'white', borderRadius: 10, padding: '12px 14px', border: '1px solid #d6eaf8' }}>
-                  <div style={{ fontSize: 11, fontWeight: 'bold', color: '#888', marginBottom: 8 }}>PRECIO DE VENTA SUGERIDO</div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {[['30%', 0.70, '#27ae60'], ['35%', 0.65, '#2980b9'], ['40%', 0.60, '#8e44ad']].map(([pct, div, color]) => (
-                      <div key={pct} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8f9fa', borderRadius: 8, padding: '8px 12px' }}>
-                        <span style={{ fontSize: 12, color: '#555' }}>Con margen <strong>{pct}</strong></span>
-                        <span style={{ fontSize: 15, fontWeight: 'bold', color }}>${(parseFloat(simResult.costoFinal) / div).toFixed(4)}/kg</span>
+                {/* % Inyección */}
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ fontSize: 11, color: '#555', fontWeight: 600, display: 'block', marginBottom: 4 }}>% Inyección</label>
+                  <input
+                    type="number" min="0" max="100" step="0.1"
+                    placeholder="ej: 20"
+                    value={simPctInj}
+                    onChange={e => setSimPctInj(e.target.value)}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '2px solid #2980b9', fontSize: 14, fontWeight: 'bold', boxSizing: 'border-box' }}
+                  />
+                  {pctInj > 0 && base > 0 && (
+                    <div style={{ fontSize: 10, color: '#2980b9', marginTop: 2 }}>
+                      + {kgSal.toFixed(3)} kg de salmuera → {kgInj.toFixed(3)} kg inyectado
+                    </div>
+                  )}
+                </div>
+
+                {/* % Merma Maduración */}
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ fontSize: 11, color: '#555', fontWeight: 600, display: 'block', marginBottom: 4 }}>% Merma Maduración</label>
+                  <input
+                    type="number" min="0" max="100" step="0.1"
+                    placeholder="ej: 3.5"
+                    value={simPctMad}
+                    onChange={e => setSimPctMad(e.target.value)}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '2px solid #e67e22', fontSize: 14, fontWeight: 'bold', boxSizing: 'border-box' }}
+                  />
+                  {pctMad > 0 && kgInj > 0 && (
+                    <div style={{ fontSize: 10, color: '#e74c3c', marginTop: 2 }}>
+                      − {kgLost.toFixed(3)} kg perdidos → {kgMad.toFixed(3)} kg post-mad
+                    </div>
+                  )}
+                </div>
+
+                {/* % Merma Sierra */}
+                <div>
+                  <label style={{ fontSize: 11, color: '#555', fontWeight: 600, display: 'block', marginBottom: 4 }}>% Merma Sierra (Total)</label>
+                  <input
+                    type="number" min="0" max="100" step="0.1"
+                    placeholder="ej: 10"
+                    value={simPctSie}
+                    onChange={e => setSimPctSie(e.target.value)}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '2px solid #8e44ad', fontSize: 14, fontWeight: 'bold', boxSizing: 'border-box' }}
+                  />
+                  {pctSie > 0 && (
+                    <div style={{ marginTop: 8, background: 'white', borderRadius: 8, padding: '10px 12px', border: '1px solid #d7bde2' }}>
+                      <div style={{ fontSize: 10, color: '#8e44ad', fontWeight: 700, marginBottom: 8 }}>DESGLOSE (editable)</div>
+                      {[
+                        ['Aserrín', simPctAs, setSimPctAs, kgAs,  '#7f8c8d'],
+                        ['Carnudo', simPctCa, setSimPctCa, kgCa,  '#e67e22'],
+                        ['Hueso',   simPctHu, setSimPctHu, kgHu,  '#e74c3c'],
+                      ].map(([lbl, val, setter, kg, col]) => (
+                        <div key={lbl} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                          <span style={{ width: 52, fontSize: 11, color: col, fontWeight: 600 }}>{lbl}</span>
+                          <input
+                            type="number" min="0" max={pctSie} step="0.1"
+                            placeholder="0"
+                            value={val}
+                            onChange={e => setter(e.target.value)}
+                            style={{ width: 52, padding: '4px 6px', borderRadius: 6, border: `1.5px solid ${col}`, fontSize: 12, textAlign: 'right', fontWeight: 'bold' }}
+                          />
+                          <span style={{ fontSize: 10, color: '#888' }}>%</span>
+                          {kgMad > 0 && <span style={{ fontSize: 10, color: col, marginLeft: 2 }}>{kg.toFixed(3)} kg</span>}
+                        </div>
+                      ))}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingTop: 6, borderTop: '1px solid #f0e6ff' }}>
+                        <span style={{ width: 52, fontSize: 11, color: '#95a5a6', fontWeight: 600 }}>Máquina</span>
+                        <span style={{ width: 52, padding: '4px 6px', textAlign: 'right', fontSize: 12, fontWeight: 'bold', color: '#95a5a6' }}>{pctMa.toFixed(1)}</span>
+                        <span style={{ fontSize: 10, color: '#888' }}>%</span>
+                        {kgMad > 0 && <span style={{ fontSize: 10, color: '#95a5a6', marginLeft: 2 }}>{kgMaq.toFixed(3)} kg</span>}
                       </div>
+                      {subExcede && (
+                        <div style={{ fontSize: 10, color: '#e74c3c', marginTop: 6, fontWeight: 600 }}>⚠ Sub-% exceden el total sierra</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* ── PASO 2 ── */}
+              <div style={{ background: '#f9f9f9', borderRadius: 12, padding: 16, border: '1.5px solid #ddd' }}>
+                <div style={{ fontWeight: 700, color: '#444', marginBottom: 12, fontSize: 13 }}>Paso 2 — Insumos por Funda</div>
+
+                {/* Peso funda */}
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ fontSize: 11, color: '#555', fontWeight: 600, display: 'block', marginBottom: 4 }}>Peso por Funda (kg)</label>
+                  <input
+                    type="number" min="0" step="0.001"
+                    placeholder="ej: 0.400"
+                    value={simFunda}
+                    onChange={e => setSimFunda(e.target.value)}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '2px solid #27ae60', fontSize: 14, fontWeight: 'bold', boxSizing: 'border-box' }}
+                  />
+                  {funda > 0 && cFinal > 0 && (
+                    <div style={{ fontSize: 10, color: '#27ae60', marginTop: 2 }}>Costo carne/funda: ${(funda * cFinal).toFixed(4)}</div>
+                  )}
+                </div>
+
+                {/* Empaque */}
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ fontSize: 11, color: '#555', fontWeight: 600, display: 'block', marginBottom: 4 }}>Empaque / Funda</label>
+                  <select
+                    value={simEmpSel}
+                    onChange={e => setSimEmpSel(e.target.value)}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1.5px solid #bbb', fontSize: 13, background: 'white', boxSizing: 'border-box' }}
+                  >
+                    <option value="">— sin empaque —</option>
+                    {mpsEmpaque.map(m => (
+                      <option key={m.id} value={String(m.id)}>
+                        {m.nombre_producto || m.nombre} — ${parseFloat(m.precio_kg || 0).toFixed(4)}/u
+                      </option>
                     ))}
+                  </select>
+                  {empaqueMp && <div style={{ fontSize: 10, color: '#888', marginTop: 2 }}>${costoEmp.toFixed(4)} por unidad</div>}
+                </div>
+
+                {/* Etiqueta */}
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ fontSize: 11, color: '#555', fontWeight: 600, display: 'block', marginBottom: 4 }}>Etiqueta</label>
+                  <select
+                    value={simEtiSel}
+                    onChange={e => setSimEtiSel(e.target.value)}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1.5px solid #bbb', fontSize: 13, background: 'white', boxSizing: 'border-box' }}
+                  >
+                    <option value="">— sin etiqueta —</option>
+                    {mpsEtiqueta.map(m => (
+                      <option key={m.id} value={String(m.id)}>
+                        {m.nombre_producto || m.nombre} — ${parseFloat(m.precio_kg || 0).toFixed(4)}/u
+                      </option>
+                    ))}
+                  </select>
+                  {etiquetaMp && <div style={{ fontSize: 10, color: '#888', marginTop: 2 }}>${costoEti.toFixed(4)} por unidad</div>}
+                </div>
+
+                {/* Precios referencia */}
+                <div style={{ background: '#f0fff4', borderRadius: 8, padding: '10px 12px', border: '1px solid #a9dfbf', fontSize: 11, color: '#555' }}>
+                  <div style={{ fontWeight: 700, color: '#27ae60', marginBottom: 6, fontSize: 11 }}>PRECIOS DE MP</div>
+                  <div>Carne: <strong>${precioCarne.toFixed(4)}/kg</strong></div>
+                  <div>Aserrín: <strong>${precioAserrin.toFixed(4)}/kg</strong></div>
+                  <div>Carnudo: <strong>${precioCarnudo.toFixed(4)}/kg</strong></div>
+                  {salRef > 0 && <div>Salmuera/kg carne: <strong>${salRef.toFixed(4)}</strong></div>}
+                </div>
+              </div>
+            </div>
+
+            {/* ── RESULTADO ── */}
+            {tieneBase ? (
+              <div style={{ background: 'white', borderRadius: 12, padding: '16px 18px', boxShadow: '0 2px 8px rgba(0,0,0,0.08)', border: '2px solid #2980b9' }}>
+                <div style={{ fontWeight: 700, color: '#1a5276', marginBottom: 14, fontSize: 14 }}>Resultado Simulado</div>
+
+                {/* Cadena de pesos */}
+                <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginBottom: 16 }}>
+                  {[
+                    { label: `${base.toFixed(3)} kg`, sub: 'Crudo',         color: '#7f8c8d' },
+                    '→',
+                    { label: `${kgInj.toFixed(3)} kg`, sub: `+${kgSal.toFixed(3)} sal`, color: '#2980b9' },
+                    ...(pctMad > 0 ? ['→', { label: `${kgMad.toFixed(3)} kg`, sub: `−${kgLost.toFixed(3)} mad`, color: '#e67e22' }] : []),
+                    ...(pctSie > 0 && kgNet > 0 ? ['→', { label: `${kgNet.toFixed(3)} kg`, sub: 'Neto fundas', color: '#27ae60' }] : []),
+                  ].map((n, i) =>
+                    n === '→'
+                      ? <span key={i} style={{ color: '#bbb', fontSize: 16 }}>→</span>
+                      : <div key={i} style={{ textAlign: 'center', background: '#f8f9fa', borderRadius: 8, padding: '6px 10px', border: `1.5px solid ${n.color}` }}>
+                          <div style={{ fontWeight: 700, color: n.color, fontSize: 13 }}>{n.label}</div>
+                          <div style={{ fontSize: 9, color: '#888' }}>{n.sub}</div>
+                        </div>
+                  )}
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : costoFunda !== null ? 'repeat(2,1fr)' : '1fr', gap: 10 }}>
+
+                  {/* Desglose costo/kg */}
+                  <div style={{ background: '#f8f9fa', borderRadius: 10, padding: '12px 14px' }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: '#888', marginBottom: 8 }}>DESGLOSE COSTO/KG</div>
+                    <div style={{ fontSize: 12, lineHeight: 2.2 }}>
+                      <div>C_iny: <strong style={{ color: '#2980b9' }}>${cIny.toFixed(4)}/kg</strong></div>
+                      {pctMad > 0 && <div>C_mad: <strong style={{ color: '#e67e22' }}>${cMad.toFixed(4)}/kg</strong></div>}
+                      {pctSie > 0 && credito > 0 && (
+                        <div>Crédito retazos: <strong style={{ color: '#27ae60' }}>−${credito.toFixed(4)}</strong></div>
+                      )}
+                      {pctSie > 0 && kgNet > 0 && (
+                        <div style={{ marginTop: 4, fontSize: 14, fontWeight: 'bold', borderTop: '1px solid #eee', paddingTop: 6 }}>
+                          C_final: <span style={{ color: '#1a5276' }}>${cFinal.toFixed(4)}/kg</span>
+                        </div>
+                      )}
+                      {pctSie === 0 && (
+                        <div style={{ fontSize: 11, color: '#aaa', marginTop: 4 }}>Ingresa % Sierra para ver C_final</div>
+                      )}
+                    </div>
                   </div>
+
+                  {/* Costo por funda + precios sugeridos */}
+                  {costoFunda !== null && (
+                    <div style={{ background: '#f0fff4', borderRadius: 10, padding: '12px 14px', border: '1px solid #a9dfbf' }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: '#888', marginBottom: 8 }}>COSTO POR FUNDA ({funda.toFixed(3)} kg)</div>
+                      <div style={{ fontSize: 12, lineHeight: 2 }}>
+                        <div>Carne: <strong>${(funda * cFinal).toFixed(4)}</strong></div>
+                        {costoEmp > 0 && <div>Empaque: <strong>${costoEmp.toFixed(4)}</strong></div>}
+                        {costoEti > 0 && <div>Etiqueta: <strong>${costoEti.toFixed(4)}</strong></div>}
+                        <div style={{ marginTop: 4, fontSize: 15, fontWeight: 'bold', borderTop: '1px solid #a9dfbf', paddingTop: 6 }}>
+                          Total: <span style={{ color: '#27ae60' }}>${costoFunda.toFixed(4)}</span>
+                        </div>
+                      </div>
+                      <div style={{ marginTop: 10 }}>
+                        <div style={{ fontSize: 10, color: '#888', marginBottom: 6, fontWeight: 700 }}>PRECIO VENTA SUGERIDO</div>
+                        {[['30%', 0.70, '#27ae60'], ['35%', 0.65, '#2980b9'], ['40%', 0.60, '#8e44ad']].map(([pct, div, color]) => (
+                          <div key={pct} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'white', borderRadius: 6, padding: '5px 8px', marginBottom: 4 }}>
+                            <span style={{ fontSize: 11, color: '#555' }}>Margen <strong>{pct}</strong></span>
+                            <span style={{ fontSize: 13, fontWeight: 'bold', color }}>${(costoFunda / div).toFixed(4)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             ) : (
-              <div style={{ textAlign: 'center', padding: '20px', color: '#aaa', fontSize: 13 }}>
-                Sin datos de referencia — registra producciones de inyección primero
+              <div style={{ textAlign: 'center', padding: '30px 20px', color: '#aaa', fontSize: 13, background: 'white', borderRadius: 12, border: '1px dashed #ddd' }}>
+                Ingresa Peso Base y % Inyección para ver el resultado simulado
               </div>
             )}
           </div>
-
-          {/* Porcentaje inyección de referencia */}
-          {historial.length > 0 && (
-            <div style={{ background: 'white', borderRadius: 12, padding: '14px 16px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
-              <div style={{ fontWeight: 'bold', color: '#1a1a2e', marginBottom: 10, fontSize: 13 }}>💉 % Inyección en producciones anteriores</div>
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                  <thead>
-                    <tr style={{ background: '#f5f5f5' }}>
-                      {['Fecha', 'Salmuera', 'Kg Carne', 'Kg Salmuera', '% Inyección'].map(h => (
-                        <th key={h} style={{ padding: '7px 10px', textAlign: h === 'Fecha' || h === 'Salmuera' ? 'left' : 'right', color: '#555', fontWeight: 700, borderBottom: '1px solid #e0e0e0', fontSize: 11, whiteSpace: 'nowrap' }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {historial.map((h, i) => {
-                      const prod = h.produccion_inyeccion;
-                      const kgCarne = parseFloat(h.kg_carne_cruda || 0);
-                      const kgSal   = parseFloat(h.kg_salmuera_asignada || 0);
-                      const pctInj  = kgCarne > 0 ? ((kgSal / kgCarne) * 100).toFixed(1) : '—';
-                      return (
-                        <tr key={h.id} style={{ background: i%2===0 ? 'white' : '#fafafa', borderBottom: '1px solid #f0f0f0' }}>
-                          <td style={{ padding: '7px 10px' }}>{prod?.fecha || '—'}</td>
-                          <td style={{ padding: '7px 10px', fontSize: 11, color: '#555' }}>{prod?.formula_salmuera || '—'}</td>
-                          <td style={{ padding: '7px 10px', textAlign: 'right' }}>{kgCarne.toFixed(2)} kg</td>
-                          <td style={{ padding: '7px 10px', textAlign: 'right', color: '#2980b9' }}>{kgSal.toFixed(3)} kg</td>
-                          <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 'bold', color: '#8e44ad' }}>{pctInj}{pctInj !== '—' ? '%' : ''}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
+        );
+      })()}
 
       {/* ── Tab Costos ── */}
       {tabActivo === 'costos' && <>
