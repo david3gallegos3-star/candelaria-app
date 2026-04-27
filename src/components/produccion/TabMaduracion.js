@@ -137,7 +137,11 @@ export default function TabMaduracion({ mobile, currentUser }) {
     setError('');
     try {
       for (const p of picortes) {
-        const kgMad = parseFloat(pesajes[p.corte_nombre]);
+        const kgMad     = parseFloat(pesajes[p.corte_nombre]);
+        const kgInj     = parseFloat(p.kg_carne_cruda || 0) + parseFloat(p.kg_salmuera_asignada || 0);
+        const costoTotal = parseFloat(p.costo_carne || 0) + parseFloat(p.costo_salmuera_asignado || 0);
+        const costoInyKg = kgInj     > 0 ? costoTotal / kgInj  : 0; // C_iny
+        const costoMadKg = kgMad     > 0 ? costoTotal / kgMad  : 0; // C_mad
 
         // Buscar o crear MP en Inyectados
         const { data: mpExist } = await supabase
@@ -192,13 +196,17 @@ export default function TabMaduracion({ mobile, currentUser }) {
           });
           // Insertar en stock_lotes_inyectados para rastreo por lote
           await supabase.from('stock_lotes_inyectados').insert({
-            lote_id:           modalPesaje.lote_id,
+            lote_id:            modalPesaje.lote_id,
             lote_maduracion_id: modalPesaje.id,
-            corte_nombre:      p.corte_nombre,
-            materia_prima_id:  mpId,
-            kg_inicial:        kgMad,
-            kg_disponible:     kgMad,
-            fecha_entrada:     new Date().toISOString().split('T')[0],
+            corte_nombre:       p.corte_nombre,
+            materia_prima_id:   mpId,
+            kg_inicial:         kgMad,
+            kg_disponible:      kgMad,
+            fecha_entrada:      new Date().toISOString().split('T')[0],
+            kg_inyectado:       kgInj,
+            costo_total:        costoTotal,
+            costo_iny_kg:       costoInyKg,
+            costo_mad_kg:       costoMadKg,
           });
         }
       }

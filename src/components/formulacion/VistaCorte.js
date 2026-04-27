@@ -88,6 +88,17 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
     cargar();
   }, [producto.nombre, producto.mp_vinculado_id]);
 
+  const [lotesStock, setLotesStock] = useState([]);
+
+  useEffect(() => {
+    supabase.from('stock_lotes_inyectados')
+      .select('*')
+      .eq('corte_nombre', producto.nombre)
+      .order('fecha_entrada', { ascending: false })
+      .limit(10)
+      .then(({ data }) => setLotesStock(data || []));
+  }, [producto.nombre]);
+
   // Cargar facturas que coincidan con este corte
   useEffect(() => {
     async function cargarFacturas() {
@@ -590,6 +601,97 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
                   </div>
                 );
               })()}
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* ── Fase 2: Maduración ── */}
+      <div style={{ background: 'white', borderRadius: 12, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', marginBottom: 12 }}>
+        <div style={{ background: 'linear-gradient(135deg,#1a6b3c,#27ae60)', padding: '10px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ color: 'white', fontWeight: 'bold', fontSize: 13 }}>🧊 Fase 2 — Maduración</span>
+          <span style={{ color: 'rgba(255,255,255,0.7)', fontSize: 11 }}>C_mad = Costo Total ÷ KG pesados hoy</span>
+        </div>
+        <div style={{ padding: '14px 16px' }}>
+          {lotesStock.length === 0 ? (
+            <div style={{ textAlign: 'center', color: '#aaa', fontSize: 13, padding: '16px 0' }}>
+              Sin lotes madurados — confirma el pesaje en Producción › Maduración
+            </div>
+          ) : (
+            <>
+              {/* C_mad último y promedio */}
+              {(() => {
+                const lotesConCosto = lotesStock.filter(l => parseFloat(l.costo_mad_kg||0) > 0);
+                const ultimoCMad   = lotesConCosto[0] ? parseFloat(lotesConCosto[0].costo_mad_kg) : 0;
+                const promCMad     = lotesConCosto.length > 0
+                  ? lotesConCosto.reduce((s, l) => s + parseFloat(l.costo_mad_kg||0), 0) / lotesConCosto.length : 0;
+                return (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
+                    <div style={{ background: '#1a6b3c', borderRadius: 10, padding: '12px 14px' }}>
+                      <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.6)', marginBottom: 4 }}>Último C_mad/kg</div>
+                      <div style={{ fontWeight: 'bold', color: '#a9dfbf', fontSize: 20 }}>
+                        {ultimoCMad > 0 ? `$${ultimoCMad.toFixed(4)}` : '—'}
+                      </div>
+                    </div>
+                    <div style={{ background: '#27ae60', borderRadius: 10, padding: '12px 14px' }}>
+                      <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.6)', marginBottom: 4 }}>C_mad promedio</div>
+                      <div style={{ fontWeight: 'bold', color: 'white', fontSize: 20 }}>
+                        {promCMad > 0 ? `$${promCMad.toFixed(4)}` : '—'}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Historial de lotes madurados */}
+              <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                  <thead>
+                    <tr style={{ background: '#f5f5f5' }}>
+                      {['Lote', 'Fecha', 'KG Inyectado', 'KG Madurado', 'Merma', 'Costo Total', 'C_iny/kg', 'C_mad/kg'].map(h => (
+                        <th key={h} style={{ padding: '7px 10px', textAlign: h === 'Lote' || h === 'Fecha' ? 'left' : 'right', color: '#555', fontWeight: 700, borderBottom: '1px solid #e0e0e0', fontSize: 11, whiteSpace: 'nowrap' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lotesStock.map((l, i) => {
+                      const kgInj   = parseFloat(l.kg_inyectado  || 0);
+                      const kgMad   = parseFloat(l.kg_inicial     || 0);
+                      const mermaKg = kgInj > 0 ? kgInj - kgMad : 0;
+                      const mermaP  = kgInj > 0 ? ((mermaKg / kgInj) * 100).toFixed(2) : '—';
+                      const cTotal  = parseFloat(l.costo_total    || 0);
+                      const cIny    = parseFloat(l.costo_iny_kg   || 0);
+                      const cMad    = parseFloat(l.costo_mad_kg   || 0);
+                      return (
+                        <tr key={l.id} style={{ background: i%2===0 ? 'white' : '#fafafa', borderBottom: '1px solid #f0f0f0' }}>
+                          <td style={{ padding: '7px 10px', fontWeight: 'bold', color: '#1a1a2e' }}>{l.lote_id}</td>
+                          <td style={{ padding: '7px 10px', color: '#555' }}>{l.fecha_entrada}</td>
+                          <td style={{ padding: '7px 10px', textAlign: 'right', color: '#2980b9' }}>{kgInj > 0 ? `${kgInj.toFixed(3)} kg` : '—'}</td>
+                          <td style={{ padding: '7px 10px', textAlign: 'right' }}>{kgMad.toFixed(3)} kg</td>
+                          <td style={{ padding: '7px 10px', textAlign: 'right', color: '#e74c3c', fontWeight: 'bold' }}>
+                            {kgInj > 0 ? <>{mermaKg.toFixed(3)} kg <span style={{ fontSize: 10, color: '#aaa' }}>({mermaP}%)</span></> : '—'}
+                          </td>
+                          <td style={{ padding: '7px 10px', textAlign: 'right' }}>{cTotal > 0 ? `$${cTotal.toFixed(4)}` : '—'}</td>
+                          <td style={{ padding: '7px 10px', textAlign: 'right', color: '#2980b9' }}>{cIny > 0 ? `$${cIny.toFixed(4)}` : '—'}</td>
+                          <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 'bold', color: '#1a6b3c' }}>
+                            {cMad > 0 ? `$${cMad.toFixed(4)}` : '—'}
+                            {cMad > 0 && cIny > 0 && (
+                              <div style={{ fontSize: 10, color: '#e74c3c', fontWeight: 'normal' }}>
+                                +${(cMad - cIny).toFixed(4)} vs C_iny
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              {lotesStock.length > 0 && (
+                <div style={{ fontSize: 11, color: '#27ae60', marginTop: 8, fontWeight: 'bold' }}>
+                  → C_mad viaja a Fase 3 (Despacho/Fraccionamiento)
+                </div>
+              )}
             </>
           )}
         </div>
