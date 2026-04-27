@@ -194,23 +194,40 @@ export default function TabDespacho({ mobile, currentUser }) {
   }
 
   async function calcularFase4(fechaDia, cierrePayload) {
-    // Precios de subproductos desde MP Retazos
     const { data: retazos } = await supabase.from('materias_primas')
       .select('nombre, precio_kg')
       .in('nombre', ['Aserrín Cortes', 'Retazo Carnudo']);
     const precioAserrin = parseFloat(retazos?.find(r => r.nombre === 'Aserrín Cortes')?.precio_kg || 0);
     const precioCarnudo = parseFloat(retazos?.find(r => r.nombre === 'Retazo Carnudo')?.precio_kg || 0);
 
-    // Todos los cortes del día
     const { data: cortes } = await supabase.from('despacho_cortes')
       .select('*').eq('fecha', fechaDia);
     if (!cortes || cortes.length === 0) return;
 
-    // Merma individual y total
+    // Leer costo_mad_kg FRESCO desde stock_lotes_inyectados para no depender
+    // del valor que se copió al momento del despacho (que podía ser 0)
+    const corteNombres = [...new Set(cortes.map(r => r.corte_nombre).filter(Boolean))];
+    const { data: lotesStock } = await supabase.from('stock_lotes_inyectados')
+      .select('lote_id, corte_nombre, costo_mad_kg')
+      .in('corte_nombre', corteNombres)
+      .gt('costo_mad_kg', 0);
+
+    const porLoteId   = {};  // lote_id → costo_mad_kg
+    const porCorte    = {};  // corte_nombre → costo_mad_kg (primer lote encontrado)
+    (lotesStock || []).forEach(l => {
+      porLoteId[l.lote_id] = parseFloat(l.costo_mad_kg);
+      if (!porCorte[l.corte_nombre]) porCorte[l.corte_nombre] = parseFloat(l.costo_mad_kg);
+    });
+
     const cortesM = cortes.map(r => ({
       ...r,
-      merma: Math.max(0, (r.peso_antes||0) - (r.peso_funda||0) - (r.peso_remanente||0))
+      merma: Math.max(0, (r.peso_antes||0) - (r.peso_funda||0) - (r.peso_remanente||0)),
+      // Prioridad: lote exacto → por nombre → valor cacheado en despacho_cortes
+      c_mad_real: (r.lote_ref && porLoteId[r.lote_ref])
+                  || porCorte[r.corte_nombre]
+                  || parseFloat(r.c_mad_kg || 0),
     }));
+
     const mermaTotal = cortesM.reduce((s, r) => s + r.merma, 0);
     if (mermaTotal <= 0) return;
 
@@ -221,23 +238,21 @@ export default function TabDespacho({ mobile, currentUser }) {
 
     for (const r of cortesM) {
       const prop = mermaTotal > 0 ? r.merma / mermaTotal : 0;
-
       const kg_aserrin_asig = pesoA * prop;
       const kg_carnudo_asig = pesoC * prop;
       const kg_hueso_asig   = pesoH * prop;
       const kg_maq_asig     = mermaMaquina * prop;
-
       const credito_retazos = (kg_aserrin_asig * precioAserrin) + (kg_carnudo_asig * precioCarnudo);
 
-      const c_mad      = parseFloat(r.c_mad_kg   || 0);
+      const c_mad      = r.c_mad_real;
       const peso_antes = parseFloat(r.peso_antes  || 0);
       const peso_neto  = Math.max(0, peso_antes - kg_maq_asig - kg_hueso_asig);
-      const costo_total_corte = peso_antes * c_mad;
-      const c_final_kg = peso_neto > 0 ? (costo_total_corte - credito_retazos) / peso_neto : 0;
+      const c_final_kg = peso_neto > 0 ? ((peso_antes * c_mad) - credito_retazos) / peso_neto : 0;
 
       await supabase.from('despacho_cortes').update({
         kg_aserrin_asig, kg_carnudo_asig, kg_hueso_asig,
         kg_maq_asig, credito_retazos, c_final_kg,
+        c_mad_kg: c_mad,   // actualizar también el c_mad_kg con el valor fresco
       }).eq('id', r.id);
     }
   }

@@ -835,92 +835,6 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
         </div>
       )}
 
-      {/* ── Historial producciones (movido al final) ── */}
-      <div style={{ background: 'white', borderRadius: 10, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', marginBottom: 12 }}>
-        <div style={{ background: '#6c3483', padding: '8px 14px' }}>
-          <span style={{ color: 'white', fontWeight: 'bold', fontSize: 13 }}>📋 Historial de Producciones</span>
-        </div>
-        {historial.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '30px', color: '#aaa', fontSize: 13 }}>
-            Sin producciones registradas para este corte.<br/>
-            <span style={{ fontSize: 12 }}>Registra producciones desde el módulo de Inyección.</span>
-          </div>
-        ) : (
-          <div style={{ overflowX: 'auto' }}>
-            {(() => {
-              const mermas = historial.map(h => {
-                const inj  = parseFloat(h.kg_carne_limpia || 0) + parseFloat(h.kg_retazos || 0);
-                const post = parseFloat(h.kg_carne_limpia || 0);
-                return inj > 0 ? ((inj - post) / inj) * 100 : 0;
-              });
-              const maxMerma = Math.max(...mermas);
-              return (
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-              <thead>
-                <tr style={{ background: '#f5f5f5' }}>
-                  {['Fecha', 'Salmuera', 'Kg Carne', 'Peso Inyectado (kg)', 'Peso Post-Corte (kg)', 'Kg Retazo', 'Costo kg/Retazo', 'Costo/kg', '% Merma', 'Estado'].map(h => (
-                    <th key={h} style={{ padding: '7px 10px', textAlign: h === 'Fecha' || h === 'Salmuera' ? 'left' : 'right', color: '#555', fontWeight: 700, borderBottom: '1px solid #e0e0e0', whiteSpace: 'nowrap', fontSize: 11 }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {historial.map((h, i) => {
-                  const prod = h.produccion_inyeccion;
-                  const costoFinal = parseFloat(h.costo_final_kg || 0);
-                  const pctMerma = mermas[i];
-                  const esMayorMerma = pctMerma > 0 && pctMerma === maxMerma;
-                  return (
-                    <tr key={h.id} style={{ background: i % 2 === 0 ? 'white' : '#fafafa', borderBottom: '1px solid #f0f0f0' }}>
-                      <td style={{ padding: '7px 10px', fontWeight: 500 }}>{prod?.fecha || '—'}</td>
-                      <td style={{ padding: '7px 10px', color: '#555', fontSize: 11 }}>{prod?.formula_salmuera || '—'}</td>
-                      <td style={{ padding: '7px 10px', textAlign: 'right' }}>
-                        <div style={{ fontWeight: 600 }}>{parseFloat(h.kg_carne_cruda || 0).toFixed(2)}</div>
-                        {prod?.kg_carne_total > 0 && (
-                          <div style={{ fontSize: 10, color: '#888', marginTop: 1 }}>Lote: {parseFloat(prod.kg_carne_total).toFixed(2)}</div>
-                        )}
-                      </td>
-                      <td style={{ padding: '7px 10px', textAlign: 'right', color: '#2980b9' }}>
-                        <div style={{ fontWeight: 600 }}>{(parseFloat(h.kg_carne_limpia || 0) + parseFloat(h.kg_retazos || 0)).toFixed(2)}</div>
-                        {parseFloat(h.costo_salmuera_asignado || 0) > 0 && (
-                          <div style={{ fontSize: 10, color: '#8e44ad', marginTop: 1 }}>Salmuera: ${parseFloat(h.costo_salmuera_asignado).toFixed(4)}</div>
-                        )}
-                      </td>
-                      <td style={{ padding: '7px 10px', textAlign: 'right' }}>{parseFloat(h.kg_carne_limpia || 0).toFixed(2)}</td>
-                      <td style={{ padding: '7px 10px', textAlign: 'right', color: '#e67e22' }}>
-                        <div style={{ fontWeight: 600 }}>{parseFloat(h.kg_retazos || 0).toFixed(2)}</div>
-                        {parseFloat(h.ingreso_retazos || 0) > 0 && (
-                          <div style={{ fontSize: 10, color: '#27ae60', marginTop: 1 }}>Crédito: ${parseFloat(h.ingreso_retazos).toFixed(4)}</div>
-                        )}
-                      </td>
-                      <td style={{ padding: '7px 10px', textAlign: 'right', color: '#8e44ad' }}>
-                        {parseFloat(h.precio_venta_retazo_kg || 0) > 0 ? `$${parseFloat(h.precio_venta_retazo_kg).toFixed(4)}` : '—'}
-                      </td>
-                      <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 'bold', color: costoFinal > 0 ? '#27ae60' : '#aaa' }}>
-                        {costoFinal > 0 ? `$${costoFinal.toFixed(4)}` : '—'}
-                      </td>
-                      <td style={{ padding: '7px 10px', textAlign: 'right' }}>
-                        {pctMerma > 0 ? (
-                          <span style={{ fontWeight: 'bold', color: esMayorMerma ? '#e74c3c' : '#e67e22' }}>
-                            {esMayorMerma && <span style={{ marginRight: 2 }}>↑</span>}
-                            {pctMerma.toFixed(1)}%
-                          </span>
-                        ) : '—'}
-                      </td>
-                      <td style={{ padding: '7px 10px', textAlign: 'right' }}>
-                        <span style={{ background: { abierto: '#d4edda', cerrado: '#cce5ff', revertido: '#fdecea' }[prod?.estado] || '#f5f5f5', color: { abierto: '#155724', cerrado: '#004085', revertido: '#721c24' }[prod?.estado] || '#555', borderRadius: 10, padding: '2px 8px', fontSize: 10, fontWeight: 'bold' }}>
-                          {prod?.estado || '—'}
-                        </span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-              );
-            })()}
-          </div>
-        )}
-      </div>
 
       {/* ── Fase 5: Producto Terminado ── */}
       {(() => {
@@ -1061,6 +975,64 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
           </div>
         );
       })()}
+
+      {/* ── Historial de Producciones (Inyección) ── */}
+      <div style={{ background: 'white', borderRadius: 10, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', marginBottom: 12 }}>
+        <div style={{ background: '#555', padding: '8px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ color: 'white', fontWeight: 'bold', fontSize: 13 }}>📋 Historial de Inyecciones</span>
+          <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: 11 }}>datos de la fase de salmuera</span>
+        </div>
+        {historial.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '30px', color: '#aaa', fontSize: 13 }}>
+            Sin producciones registradas para este corte.
+          </div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+              <thead>
+                <tr style={{ background: '#f5f5f5' }}>
+                  {['Fecha', 'Salmuera', 'Kg Carne', 'Kg Salmuera', 'Total Inyectado', 'C_iny/kg', 'Estado'].map(col => (
+                    <th key={col} style={{ padding: '7px 10px', textAlign: col === 'Fecha' || col === 'Salmuera' ? 'left' : 'right', color: '#555', fontWeight: 700, borderBottom: '1px solid #e0e0e0', whiteSpace: 'nowrap', fontSize: 11 }}>{col}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {historial.map((h, i) => {
+                  const prod    = h.produccion_inyeccion;
+                  const cIny    = calcCiny(h);
+                  const kgCarne = parseFloat(h.kg_carne_cruda || 0);
+                  const kgSal   = parseFloat(h.kg_salmuera_asignada || 0);
+                  const kgTotal = kgCarne + kgSal;
+                  return (
+                    <tr key={h.id} style={{ background: i % 2 === 0 ? 'white' : '#fafafa', borderBottom: '1px solid #f0f0f0' }}>
+                      <td style={{ padding: '7px 10px', fontWeight: 500 }}>{prod?.fecha || '—'}</td>
+                      <td style={{ padding: '7px 10px', color: '#555', fontSize: 11 }}>{prod?.formula_salmuera || '—'}</td>
+                      <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 600 }}>{kgCarne.toFixed(3)} kg</td>
+                      <td style={{ padding: '7px 10px', textAlign: 'right', color: '#2980b9' }}>{kgSal.toFixed(3)} kg</td>
+                      <td style={{ padding: '7px 10px', textAlign: 'right', color: '#8e44ad', fontWeight: 600 }}>{kgTotal > 0 ? `${kgTotal.toFixed(3)} kg` : '—'}</td>
+                      <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 'bold', color: cIny > 0 ? '#1a3a5c' : '#aaa' }}>
+                        {cIny > 0 ? `$${cIny.toFixed(4)}` : '—'}
+                      </td>
+                      <td style={{ padding: '7px 10px', textAlign: 'right' }}>
+                        <span style={{
+                          background: { abierto: '#fff3cd', cerrado: '#cce5ff', revertido: '#fdecea' }[prod?.estado] || '#f5f5f5',
+                          color:      { abierto: '#856404', cerrado: '#004085', revertido: '#721c24' }[prod?.estado] || '#555',
+                          borderRadius: 10, padding: '2px 8px', fontSize: 10, fontWeight: 'bold'
+                        }}>
+                          {prod?.estado || '—'}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <div style={{ padding: '6px 14px', fontSize: 10, color: '#aaa', borderTop: '1px solid #f0f0f0' }}>
+              "abierto" = lote activo — normal en el flujo de cortes. La merma de sierra se registra en Fase 3 (Despacho).
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Botón ir a inyección */}
       {onAbrirInyeccion && (
