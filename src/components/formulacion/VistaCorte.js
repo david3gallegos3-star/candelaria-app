@@ -111,16 +111,25 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
       .gt('c_final_kg', 0)
       .order('created_at', { ascending: false })
       .limit(20)
-      .then(({ data }) => setCFinalHistorial(data || []));
+      .then(({ data }) => {
+        setCFinalHistorial(data || []);
+        // Auto-llenar peso funda con el último despacho
+        if (data && data.length > 0 && parseFloat(data[0].peso_funda || 0) > 0) {
+          setFase5Funda(String(parseFloat(data[0].peso_funda).toFixed(3)));
+        }
+      });
 
-    // Materias primas de empaque y etiqueta
+    // Materias primas de empaque y etiqueta (búsqueda flexible por nombre de categoría)
     supabase.from('materias_primas')
       .select('id, nombre, nombre_producto, precio_kg, categoria')
-      .in('categoria', ['Empaque', 'Etiqueta', 'EMPAQUE', 'ETIQUETA'])
+      .or('categoria.ilike.%empaque%,categoria.ilike.%etiqueta%,categoria.ilike.%envase%,categoria.ilike.%funda%')
       .eq('eliminado', false)
       .then(({ data }) => {
         const mps = data || [];
-        setMpsEmpaque(mps.filter(m => m.categoria?.toUpperCase().includes('EMPAQUE')));
+        setMpsEmpaque(mps.filter(m => {
+          const cat = m.categoria?.toUpperCase() || '';
+          return cat.includes('EMPAQUE') || cat.includes('ENVASE') || cat.includes('FUNDA');
+        }));
         setMpsEtiqueta(mps.filter(m => m.categoria?.toUpperCase().includes('ETIQUETA')));
       });
   }, [producto.nombre]);
