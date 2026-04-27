@@ -88,7 +88,13 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
     cargar();
   }, [producto.nombre, producto.mp_vinculado_id]);
 
-  const [lotesStock, setLotesStock] = useState([]);
+  const [lotesStock,    setLotesStock]    = useState([]);
+  const [cFinalHistorial, setCFinalHistorial] = useState([]);  // despacho_cortes c_final_kg
+  const [mpsEmpaque,    setMpsEmpaque]    = useState([]);
+  const [mpsEtiqueta,   setMpsEtiqueta]   = useState([]);
+  const [fase5Funda,    setFase5Funda]    = useState('0.4');   // kg
+  const [fase5Empaque,  setFase5Empaque]  = useState('');      // id MP
+  const [fase5Etiqueta, setFase5Etiqueta] = useState('');      // id MP
 
   useEffect(() => {
     supabase.from('stock_lotes_inyectados')
@@ -97,6 +103,26 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
       .order('fecha_entrada', { ascending: false })
       .limit(10)
       .then(({ data }) => setLotesStock(data || []));
+
+    // Historial c_final de despacho_cortes para este corte
+    supabase.from('despacho_cortes')
+      .select('fecha, c_final_kg, c_mad_kg, peso_funda, lote_ref, credito_retazos')
+      .eq('corte_nombre', producto.nombre)
+      .gt('c_final_kg', 0)
+      .order('created_at', { ascending: false })
+      .limit(20)
+      .then(({ data }) => setCFinalHistorial(data || []));
+
+    // Materias primas de empaque y etiqueta
+    supabase.from('materias_primas')
+      .select('id, nombre, nombre_producto, precio_kg, categoria')
+      .in('categoria', ['Empaque', 'Etiqueta', 'EMPAQUE', 'ETIQUETA'])
+      .eq('eliminado', false)
+      .then(({ data }) => {
+        const mps = data || [];
+        setMpsEmpaque(mps.filter(m => m.categoria?.toUpperCase().includes('EMPAQUE')));
+        setMpsEtiqueta(mps.filter(m => m.categoria?.toUpperCase().includes('ETIQUETA')));
+      });
   }, [producto.nombre]);
 
   // Cargar facturas que coincidan con este corte
@@ -783,6 +809,137 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
           </div>
         )}
       </div>
+
+      {/* ── Fase 5: Producto Terminado ── */}
+      {(() => {
+        const ultimoCFinal = cFinalHistorial[0] ? parseFloat(cFinalHistorial[0].c_final_kg || 0) : 0;
+        const ultimoCMad   = cFinalHistorial[0] ? parseFloat(cFinalHistorial[0].c_mad_kg   || 0) : 0;
+        const factorSierra = ultimoCFinal > 0 && ultimoCMad > 0 ? ultimoCFinal - ultimoCMad : 0;
+
+        const kgFunda    = parseFloat(fase5Funda || 0);
+        const mpEmpaque  = mpsEmpaque.find(m => m.id === fase5Empaque);
+        const mpEtiqueta = mpsEtiqueta.find(m => m.id === fase5Etiqueta);
+
+        const costoCarne    = ultimoCFinal > 0 ? kgFunda * ultimoCFinal : 0;
+        const costoEmpaque  = mpEmpaque  ? parseFloat(mpEmpaque.precio_kg  || 0) : 0;
+        const costoEtiqueta = mpEtiqueta ? parseFloat(mpEtiqueta.precio_kg || 0) : 0;
+        const costoTotal    = costoCarne + costoEmpaque + costoEtiqueta;
+
+        return (
+          <div style={{ background: 'white', borderRadius: 12, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', marginBottom: 12 }}>
+            <div style={{ background: 'linear-gradient(135deg,#6c3483,#8e44ad)', padding: '10px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ color: 'white', fontWeight: 'bold', fontSize: 13 }}>📦 Fase 5 — Producto Terminado</span>
+              <span style={{ color: 'rgba(255,255,255,0.7)', fontSize: 11 }}>Costo final por funda = carne + empaque + etiqueta</span>
+            </div>
+            <div style={{ padding: '14px 16px' }}>
+
+              {/* Resumen cadena de costos */}
+              {ultimoCFinal > 0 && (
+                <div style={{ background: '#f8f9fa', borderRadius: 10, padding: '10px 14px', marginBottom: 14, fontSize: 12 }}>
+                  <div style={{ fontWeight: 'bold', color: '#555', marginBottom: 8 }}>📊 Cadena de costos (último lote)</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {[
+                      { label: 'C_iny', val: ultimoCosto > 0 ? `$${ultimoCosto.toFixed(4)}` : '—', color: '#2980b9', tip: 'Fase 1' },
+                      { label: '→ C_mad', val: ultimoCMad > 0 ? `$${ultimoCMad.toFixed(4)}` : '—', color: '#27ae60', tip: 'Fase 2' },
+                      { label: '→ +sierra', val: factorSierra > 0 ? `+$${factorSierra.toFixed(4)}` : '—', color: '#e67e22', tip: 'Fase 4' },
+                      { label: '= C_final', val: ultimoCFinal > 0 ? `$${ultimoCFinal.toFixed(4)}/kg` : '—', color: '#6c3483', tip: 'Fase 4' },
+                    ].map(({ label, val, color, tip }) => (
+                      <div key={label} style={{ background: 'white', borderRadius: 8, padding: '6px 12px', border: `1.5px solid ${color}20`, textAlign: 'center', minWidth: 90 }}>
+                        <div style={{ fontSize: 10, color: '#aaa', marginBottom: 2 }}>{tip}</div>
+                        <div style={{ fontSize: 11, color: '#888' }}>{label}</div>
+                        <div style={{ fontWeight: 'bold', color, fontSize: 13 }}>{val}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Calculadora Fase 5 */}
+              <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1fr 1fr 1fr', gap: 12, marginBottom: 14 }}>
+                {/* Peso funda */}
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 600, color: '#6c3483', display: 'block', marginBottom: 4 }}>Peso de la funda (kg)</label>
+                  <input
+                    type="number" min="0" step="0.001"
+                    value={fase5Funda}
+                    onChange={e => setFase5Funda(e.target.value)}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1.5px solid #8e44ad', fontSize: 14, textAlign: 'right', outline: 'none', boxSizing: 'border-box', fontWeight: 'bold' }}
+                  />
+                  <div style={{ fontSize: 10, color: '#aaa', marginTop: 2 }}>ej: 0.4 = 400g</div>
+                </div>
+
+                {/* Empaque */}
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 600, color: '#2980b9', display: 'block', marginBottom: 4 }}>📦 Empaque / Funda</label>
+                  <select value={fase5Empaque} onChange={e => setFase5Empaque(e.target.value)}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1.5px solid #2980b9', fontSize: 13, outline: 'none', boxSizing: 'border-box' }}>
+                    <option value="">— Sin empaque —</option>
+                    {mpsEmpaque.map(m => (
+                      <option key={m.id} value={m.id}>
+                        {m.nombre_producto || m.nombre} — ${parseFloat(m.precio_kg||0).toFixed(4)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Etiqueta */}
+                <div>
+                  <label style={{ fontSize: 11, fontWeight: 600, color: '#27ae60', display: 'block', marginBottom: 4 }}>🏷️ Etiqueta</label>
+                  <select value={fase5Etiqueta} onChange={e => setFase5Etiqueta(e.target.value)}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1.5px solid #27ae60', fontSize: 13, outline: 'none', boxSizing: 'border-box' }}>
+                    <option value="">— Sin etiqueta —</option>
+                    {mpsEtiqueta.map(m => (
+                      <option key={m.id} value={m.id}>
+                        {m.nombre_producto || m.nombre} — ${parseFloat(m.precio_kg||0).toFixed(4)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Resultado */}
+              {kgFunda > 0 && (
+                <div style={{ background: costoTotal > 0 ? 'linear-gradient(135deg,#6c3483,#8e44ad)' : '#f8f9fa', borderRadius: 12, padding: '14px 18px' }}>
+                  <div style={{ fontSize: 12, color: costoTotal > 0 ? 'rgba(255,255,255,0.7)' : '#888', marginBottom: 8, fontWeight: 'bold' }}>
+                    COSTO TOTAL — funda de {(kgFunda * 1000).toFixed(0)}g
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', color: costoTotal > 0 ? 'rgba(255,255,255,0.85)' : '#555' }}>
+                      <span>🥩 Carne ({kgFunda} kg × ${ultimoCFinal > 0 ? ultimoCFinal.toFixed(4) : '?'}/kg)</span>
+                      <span style={{ fontWeight: 'bold' }}>{ultimoCFinal > 0 ? `$${costoCarne.toFixed(4)}` : '—'}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', color: costoTotal > 0 ? 'rgba(255,255,255,0.85)' : '#555' }}>
+                      <span>📦 {mpEmpaque ? (mpEmpaque.nombre_producto || mpEmpaque.nombre) : 'Empaque'}</span>
+                      <span style={{ fontWeight: 'bold' }}>{mpEmpaque ? `$${costoEmpaque.toFixed(4)}` : '—'}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', color: costoTotal > 0 ? 'rgba(255,255,255,0.85)' : '#555' }}>
+                      <span>🏷️ {mpEtiqueta ? (mpEtiqueta.nombre_producto || mpEtiqueta.nombre) : 'Etiqueta'}</span>
+                      <span style={{ fontWeight: 'bold' }}>{mpEtiqueta ? `$${costoEtiqueta.toFixed(4)}` : '—'}</span>
+                    </div>
+                    <div style={{ borderTop: `1px solid ${costoTotal > 0 ? 'rgba(255,255,255,0.3)' : '#ddd'}`, paddingTop: 8, marginTop: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontWeight: 'bold', fontSize: 14, color: costoTotal > 0 ? 'white' : '#333' }}>TOTAL FUNDA</span>
+                      <span style={{ fontWeight: 'bold', fontSize: 22, color: costoTotal > 0 ? '#f9e79f' : '#6c3483' }}>
+                        {costoTotal > 0 ? `$${costoTotal.toFixed(4)}` : '—'}
+                      </span>
+                    </div>
+                    {costoTotal > 0 && kgFunda > 0 && (
+                      <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', textAlign: 'right' }}>
+                        = ${(costoTotal / kgFunda).toFixed(4)}/kg
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {ultimoCFinal === 0 && (
+                <div style={{ textAlign: 'center', color: '#aaa', fontSize: 12, padding: '10px 0' }}>
+                  Sin C_final disponible — confirma el cierre del día en Despacho primero
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Botón ir a inyección */}
       {onAbrirInyeccion && (
