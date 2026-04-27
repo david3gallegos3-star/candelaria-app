@@ -35,6 +35,48 @@ export default function TabHistorial({
       .then(({ data }) => setCortesDespacho(data || []));
   }, []);
 
+  async function recalcularFase4(fechaDia, cierrePayload) {
+    const { data: retazos } = await supabase.from('materias_primas')
+      .select('nombre, precio_kg')
+      .in('nombre', ['Aserrín Cortes', 'Retazo Carnudo']);
+    const precioAserrin = parseFloat(retazos?.find(r => r.nombre === 'Aserrín Cortes')?.precio_kg || 0);
+    const precioCarnudo = parseFloat(retazos?.find(r => r.nombre === 'Retazo Carnudo')?.precio_kg || 0);
+
+    const { data: cortes } = await supabase.from('despacho_cortes')
+      .select('*').eq('fecha', fechaDia);
+    if (!cortes || cortes.length === 0) return;
+
+    const cortesM = cortes.map(r => ({
+      ...r,
+      merma: Math.max(0, (r.peso_antes||0) - (r.peso_funda||0) - (r.peso_remanente||0))
+    }));
+    const mermaTotal = cortesM.reduce((s, r) => s + r.merma, 0);
+    if (mermaTotal <= 0) return;
+
+    const pesoH = parseFloat(cierrePayload.peso_hueso   || 0);
+    const pesoA = parseFloat(cierrePayload.peso_aserrin || 0);
+    const pesoC = parseFloat(cierrePayload.peso_carnudo || 0);
+    const mermaMaquina = Math.max(0, mermaTotal - pesoH - pesoA - pesoC);
+
+    for (const r of cortesM) {
+      const prop             = r.merma / mermaTotal;
+      const kg_aserrin_asig  = pesoA * prop;
+      const kg_carnudo_asig  = pesoC * prop;
+      const kg_hueso_asig    = pesoH * prop;
+      const kg_maq_asig      = mermaMaquina * prop;
+      const credito_retazos  = (kg_aserrin_asig * precioAserrin) + (kg_carnudo_asig * precioCarnudo);
+      const peso_antes       = parseFloat(r.peso_antes || 0);
+      const peso_neto        = Math.max(0, peso_antes - kg_maq_asig - kg_hueso_asig);
+      const c_mad            = parseFloat(r.c_mad_kg || 0);
+      const c_final_kg       = peso_neto > 0 ? ((peso_antes * c_mad) - credito_retazos) / peso_neto : 0;
+
+      await supabase.from('despacho_cortes').update({
+        kg_aserrin_asig, kg_carnudo_asig, kg_hueso_asig,
+        kg_maq_asig, credito_retazos, c_final_kg,
+      }).eq('id', r.id);
+    }
+  }
+
   async function guardarEdicionCierre() {
     if (!editandoCierre) return;
     setGuardandoCierre(true);
@@ -48,8 +90,13 @@ export default function TabHistorial({
     } else {
       await supabase.from('despacho_cierre_dia').insert({ ...payload, fecha: editandoCierre.fecha, usuario_nombre: '' });
     }
+    // Recalcular C_final para todos los cortes de ese día con los nuevos valores
+    await recalcularFase4(editandoCierre.fecha, payload);
+
     const { data } = await supabase.from('despacho_cierre_dia').select('*').order('fecha', { ascending: false }).limit(60);
     setCierresDespacho(data || []);
+    const { data: dc } = await supabase.from('despacho_cortes').select('*').order('fecha', { ascending: false }).limit(300);
+    setCortesDespacho(dc || []);
     setEditandoCierre(null);
     setGuardandoCierre(false);
   }
