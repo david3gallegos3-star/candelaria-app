@@ -104,8 +104,9 @@ export default function TabDespacho({ mobile, currentUser }) {
     const mpId      = corteData?.materia_prima_id || null;
     const usado     = antes - remanente;
 
-    if (!editando && loteData && usado > parseFloat(loteData.kg_disponible) + 0.01) {
-      setErrorModal(`El lote ${loteData.lote_id} solo tiene ${parseFloat(loteData.kg_disponible).toFixed(3)} kg disponibles`);
+    // peso_antes no puede superar lo que hay en el lote (sí puede ser menor por merma de congelación)
+    if (!editando && loteData && antes > parseFloat(loteData.kg_disponible) + 0.1) {
+      setErrorModal(`El lote ${loteData.lote_id} solo tiene ${parseFloat(loteData.kg_disponible).toFixed(3)} kg. El peso antes (${antes} kg) no puede ser mayor.`);
       return;
     }
 
@@ -127,28 +128,17 @@ export default function TabDespacho({ mobile, currentUser }) {
       };
 
       if (editando) {
-        const usadoAnterior = editando.peso_antes - (editando.peso_remanente || 0);
-        const diff = usadoAnterior - usado; // positivo = devolver stock, negativo = quitar más
         await supabase.from('despacho_cortes').update(payload).eq('id', editando.id);
-
-        // Ajustar lote seleccionado
-        const { data: loteAnt } = await supabase.from('stock_lotes_inyectados')
-          .select('kg_disponible, kg_inicial').eq('id', loteSelecId).maybeSingle();
-        if (loteAnt) {
-          const nuevo = Math.min(parseFloat(loteAnt.kg_inicial), Math.max(0, parseFloat(loteAnt.kg_disponible) + diff));
-          await supabase.from('stock_lotes_inyectados').update({ kg_disponible: nuevo }).eq('id', loteSelecId);
-        }
+        // El lote queda con lo que vuelve al congelador (remanente)
+        await supabase.from('stock_lotes_inyectados')
+          .update({ kg_disponible: remanente })
+          .eq('id', loteSelecId);
       } else {
         await supabase.from('despacho_cortes').insert(payload);
-
-        // Descontar del lote seleccionado
-        const { data: loteAct } = await supabase.from('stock_lotes_inyectados')
-          .select('kg_disponible').eq('id', loteSelecId).maybeSingle();
-        if (loteAct) {
-          await supabase.from('stock_lotes_inyectados')
-            .update({ kg_disponible: Math.max(0, parseFloat(loteAct.kg_disponible) - usado) })
-            .eq('id', loteSelecId);
-        }
+        // El lote queda con lo que vuelve al congelador (remanente)
+        await supabase.from('stock_lotes_inyectados')
+          .update({ kg_disponible: remanente })
+          .eq('id', loteSelecId);
       }
 
       // Actualizar inventario_mp total buscando por nombre del corte
@@ -494,20 +484,31 @@ export default function TabDespacho({ mobile, currentUser }) {
               ))}
             </div>
 
-            {pesoAntes && pesoFunda && (
-              <div style={{ background:'#f0f4f8', borderRadius:10, padding:'12px 14px', marginBottom:16 }}>
-                <div style={{ fontSize:11, fontWeight:'bold', color:'#555', marginBottom:8 }}>📊 Comparación</div>
-                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8, fontSize:12 }}>
-                  <div><div style={{ color:'#888', marginBottom:2 }}>Antes</div><div style={{ fontWeight:'bold', color:'#1a3a5c', fontSize:14 }}>{parseFloat(pesoAntes||0).toFixed(3)} kg</div></div>
-                  <div><div style={{ color:'#888', marginBottom:2 }}>Funda + Rem.</div><div style={{ fontWeight:'bold', color:'#27ae60', fontSize:14 }}>{(parseFloat(pesoFunda||0)+parseFloat(pesoRemanente||0)).toFixed(3)} kg</div></div>
-                  <div><div style={{ color:'#888', marginBottom:2 }}>Merma</div>
-                    <div style={{ fontWeight:'bold', fontSize:14, color: (parseFloat(pesoAntes||0)-parseFloat(pesoFunda||0)-parseFloat(pesoRemanente||0))>0.001 ? '#e74c3c':'#27ae60' }}>
-                      {(parseFloat(pesoAntes||0)-parseFloat(pesoFunda||0)-parseFloat(pesoRemanente||0)).toFixed(3)} kg
+            {pesoAntes && pesoFunda && (() => {
+              const kgLote       = loteSelecId ? (() => { const ld = stockLotes.find(s=>s.corte_nombre===corteSelec)?.lotes?.find(l=>l.id===loteSelecId); return parseFloat(ld?.kg_disponible||0); })() : 0;
+              const mermaCongel  = Math.max(0, kgLote - parseFloat(pesoAntes||0));
+              const mermaSierra  = parseFloat(pesoAntes||0) - parseFloat(pesoFunda||0) - parseFloat(pesoRemanente||0);
+              return (
+                <div style={{ background:'#f0f4f8', borderRadius:10, padding:'12px 14px', marginBottom:16 }}>
+                  <div style={{ fontSize:11, fontWeight:'bold', color:'#555', marginBottom:8 }}>📊 Comparación</div>
+                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8, fontSize:12, marginBottom: mermaCongel > 0.05 ? 8 : 0 }}>
+                    <div><div style={{ color:'#888', marginBottom:2 }}>Antes (sierra)</div><div style={{ fontWeight:'bold', color:'#1a3a5c', fontSize:14 }}>{parseFloat(pesoAntes||0).toFixed(3)} kg</div></div>
+                    <div><div style={{ color:'#888', marginBottom:2 }}>Funda + Rem.</div><div style={{ fontWeight:'bold', color:'#27ae60', fontSize:14 }}>{(parseFloat(pesoFunda||0)+parseFloat(pesoRemanente||0)).toFixed(3)} kg</div></div>
+                    <div><div style={{ color:'#888', marginBottom:2 }}>Merma sierra</div>
+                      <div style={{ fontWeight:'bold', fontSize:14, color: mermaSierra > 0.001 ? '#e74c3c':'#27ae60' }}>
+                        {mermaSierra.toFixed(3)} kg
+                      </div>
                     </div>
                   </div>
+                  {mermaCongel > 0.05 && (
+                    <div style={{ background:'#fff3cd', borderRadius:8, padding:'6px 10px', fontSize:11, color:'#856404', display:'flex', justifyContent:'space-between' }}>
+                      <span>❄️ Merma congelación (lote tenía {kgLote.toFixed(3)} kg)</span>
+                      <span style={{ fontWeight:'bold' }}>−{mermaCongel.toFixed(3)} kg</span>
+                    </div>
+                  )}
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
             {errorModal && <div style={{ background:'#ffeaea', border:'1px solid #e74c3c', borderRadius:8, padding:'10px 14px', color:'#e74c3c', fontSize:13, marginBottom:14 }}>{errorModal}</div>}
 
