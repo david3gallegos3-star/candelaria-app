@@ -526,31 +526,72 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
         </div>
       )}
 
-      {/* Resumen costos */}
-      {historial.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
-          <div style={{ background: '#1a3a5c', borderRadius: 10, padding: '14px 16px' }}>
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', marginBottom: 4 }}>Último costo/kg</div>
-            <div style={{ fontWeight: 'bold', color: '#f39c12', fontSize: 22 }}>
-              {ultimoCosto > 0 ? `$${ultimoCosto.toFixed(4)}` : '—'}
-            </div>
-          </div>
-          <div style={{ background: '#27ae60', borderRadius: 10, padding: '14px 16px' }}>
-            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', marginBottom: 4 }}>Costo promedio ({historico_costos.length} prod.)</div>
-            <div style={{ fontWeight: 'bold', color: 'white', fontSize: 22 }}>
-              {costoPromedio > 0 ? `$${costoPromedio.toFixed(4)}` : '—'}
-            </div>
-          </div>
+      {/* ── Fase 1: Inyección ── */}
+      <div style={{ background: 'white', borderRadius: 12, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', marginBottom: 12 }}>
+        <div style={{ background: 'linear-gradient(135deg,#1a3a5c,#2980b9)', padding: '10px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ color: 'white', fontWeight: 'bold', fontSize: 13 }}>💉 Fase 1 — Inyección</span>
+          <span style={{ color: 'rgba(255,255,255,0.7)', fontSize: 11 }}>C_iny = (Carne + Salmuera) ÷ kg Total inyectado</span>
         </div>
-      )}
+        <div style={{ padding: '14px 16px' }}>
+          {historial.length === 0 ? (
+            <div style={{ textAlign: 'center', color: '#aaa', fontSize: 13, padding: '16px 0' }}>
+              Sin producciones registradas — registra desde Producción › Inyección
+            </div>
+          ) : (
+            <>
+              {/* Tarjetas C_iny */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, marginBottom: 14 }}>
+                <div style={{ background: '#1a3a5c', borderRadius: 10, padding: '12px 14px' }}>
+                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.6)', marginBottom: 4 }}>Último C_iny/kg</div>
+                  <div style={{ fontWeight: 'bold', color: '#f39c12', fontSize: 20 }}>
+                    {ultimoCosto > 0 ? `$${ultimoCosto.toFixed(4)}` : '—'}
+                  </div>
+                </div>
+                <div style={{ background: '#27ae60', borderRadius: 10, padding: '12px 14px' }}>
+                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.6)', marginBottom: 4 }}>C_iny promedio</div>
+                  <div style={{ fontWeight: 'bold', color: 'white', fontSize: 20 }}>
+                    {costoPromedio > 0 ? `$${costoPromedio.toFixed(4)}` : '—'}
+                  </div>
+                </div>
+                <div style={{ background: mpVinculada ? '#f8f9fa' : '#f8f9fa', borderRadius: 10, padding: '12px 14px', border: '1px solid #e0e0e0' }}>
+                  <div style={{ fontSize: 10, color: '#888', marginBottom: 4 }}>Precio carne ref.</div>
+                  <div style={{ fontWeight: 'bold', color: '#1a1a2e', fontSize: 20 }}>
+                    {mpVinculada ? `$${parseFloat(mpVinculada.precio_kg||0).toFixed(4)}` : '—'}
+                  </div>
+                </div>
+              </div>
 
-      {/* Fórmula de costo */}
-      <div style={{ background: '#f8f9fa', borderRadius: 10, padding: '12px 16px', marginBottom: 12, fontSize: 12, color: '#555', border: '1px solid #e0e0e0' }}>
-        <div style={{ fontWeight: 'bold', color: '#1a1a2e', marginBottom: 6, fontSize: 13 }}>📐 Fórmula de costo (Inyección)</div>
-        <div style={{ lineHeight: 1.8 }}>
-          Costo Final/kg = <span style={{ color: '#e74c3c', fontWeight: 'bold' }}>[(Costo Carne + Costo Salmuera) − Ingreso Retazos]</span>
-          {' ÷ '}
-          <span style={{ color: '#27ae60', fontWeight: 'bold' }}>kg Carne Limpia</span>
+              {/* Último desglose C_iny */}
+              {historial[0] && (() => {
+                const h = historial[0];
+                const kgCarne = parseFloat(h.kg_carne_cruda || 0);
+                const kgSal   = parseFloat(h.kg_salmuera_asignada || 0);
+                const kgTotal = kgCarne + kgSal;
+                const cCarne  = parseFloat(h.costo_carne || 0);
+                const cSal    = parseFloat(h.costo_salmuera_asignado || 0);
+                const ciny    = parseFloat(h.costo_final_kg || 0);
+                return (
+                  <div style={{ background: '#f0f4f8', borderRadius: 10, padding: '12px 14px', fontSize: 12 }}>
+                    <div style={{ fontWeight: 'bold', color: '#1a3a5c', marginBottom: 8, fontSize: 12 }}>
+                      Último lote — {h.produccion_inyeccion?.fecha || '—'} · {h.produccion_inyeccion?.formula_salmuera || '—'}
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: '6px 20px', color: '#555', lineHeight: 2 }}>
+                      <div>🥩 Carne: <strong>{kgCarne.toFixed(3)} kg</strong> × ${parseFloat(h.precio_kg_carne||0).toFixed(4)} = <strong style={{ color: '#e74c3c' }}>${cCarne.toFixed(4)}</strong></div>
+                      <div>🧂 Salmuera: <strong>{kgSal.toFixed(3)} kg</strong> → <strong style={{ color: '#2980b9' }}>${cSal.toFixed(4)}</strong></div>
+                      <div>⚖️ Total inyectado: <strong>{kgTotal.toFixed(3)} kg</strong></div>
+                      <div>💰 Costo total: <strong>${(cCarne + cSal).toFixed(4)}</strong></div>
+                    </div>
+                    <div style={{ marginTop: 8, borderTop: '1px solid #dde3ea', paddingTop: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 12, color: '#555' }}>C_iny =</span>
+                      <span style={{ fontSize: 12, color: '#555' }}>${(cCarne+cSal).toFixed(4)} ÷ {kgTotal.toFixed(3)} kg =</span>
+                      <span style={{ fontWeight: 'bold', fontSize: 16, color: '#1a3a5c' }}>${ciny > 0 ? ciny.toFixed(4) : ((cCarne+cSal)/kgTotal).toFixed(4)}/kg</span>
+                      <span style={{ marginLeft: 'auto', fontSize: 11, color: '#27ae60', fontWeight: 'bold' }}>→ viaja a Fase 2 (Maduración)</span>
+                    </div>
+                  </div>
+                );
+              })()}
+            </>
+          )}
         </div>
       </div>
 

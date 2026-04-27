@@ -172,14 +172,23 @@ export default function TabInyeccion({ currentUser, mobile, onSalmueraChange }) 
       if (e1) throw e1;
       const prodId = prod.id;
 
-      const filasCorte = cortesConCosto.filter(f => parseFloat(f.kg) > 0).map(f => ({
-        produccion_id: prodId, corte_nombre: f.mp.nombre_producto || f.mp.nombre,
-        materia_prima_id: f.mp.id, kg_carne_cruda: parseFloat(f.kg),
-        precio_kg_carne: parseFloat(f.precio_kg), costo_carne: f.costoCarne,
-        kg_salmuera_asignada: kgCarneTotal > 0 ? kgSalmueraReq * (parseFloat(f.kg) / kgCarneTotal) : 0,
-        costo_salmuera_asignado: f.costoSal, kg_retazos: 0,
-        kg_carne_limpia: parseFloat(f.kg), costo_final_kg: 0,
-      }));
+      const filasCorte = cortesConCosto.filter(f => parseFloat(f.kg) > 0).map(f => {
+        const kgCarne    = parseFloat(f.kg);
+        const kgSal      = kgCarneTotal > 0 ? kgSalmueraReq * (kgCarne / kgCarneTotal) : 0;
+        const costoSal   = f.costoSal || 0;
+        const costoCarne = f.costoCarne || 0;
+        const kgTotal    = kgCarne + kgSal;
+        // C_iny = (costo_carne + costo_salmuera) / (kg_carne + kg_salmuera)
+        const costo_final_kg = kgTotal > 0 ? (costoCarne + costoSal) / kgTotal : 0;
+        return {
+          produccion_id: prodId, corte_nombre: f.mp.nombre_producto || f.mp.nombre,
+          materia_prima_id: f.mp.id, kg_carne_cruda: kgCarne,
+          precio_kg_carne: parseFloat(f.precio_kg), costo_carne: costoCarne,
+          kg_salmuera_asignada: kgSal, costo_salmuera_asignado: costoSal,
+          kg_retazos: 0, kg_carne_limpia: kgCarne,
+          costo_final_kg,
+        };
+      });
       if (filasCorte.length > 0) {
         const { error: e2 } = await supabase.from('produccion_inyeccion_cortes').insert(filasCorte);
         if (e2) throw e2;
