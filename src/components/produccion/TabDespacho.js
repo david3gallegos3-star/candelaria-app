@@ -615,32 +615,42 @@ export default function TabDespacho({ mobile, currentUser }) {
                   <div style={{ background:'#f8f9fa', borderRadius:10, padding:'10px 14px', marginBottom:12, border:'1px solid #e0e0e0' }}>
                     <div style={{ fontWeight:'bold', fontSize:12, color:'#1a1a2e', marginBottom:8 }}>🧮 Fase 4 — C_final por corte (vista previa)</div>
                     {resumenCortes.map(c => {
-                      const prop = mermaTotalDia > 0 ? c.merma / mermaTotalDia : 0;
-                      const regC = registros.filter(r => r.corte_nombre === c.corte);
+                      const prop       = mermaTotalDia > 0 ? c.merma / mermaTotalDia : 0;
+                      const regC       = registros.filter(r => r.corte_nombre === c.corte);
                       const totalAntes = regC.reduce((s, r) => s + (r.peso_antes||0), 0);
                       const cMadProm   = regC.length > 0
                         ? regC.reduce((s, r) => s + parseFloat(r.c_mad_kg||0), 0) / regC.length : 0;
-                      const kgMaq   = maqTotal * prop;
-                      const kgHueso = parseFloat(pesoHueso||0) * prop;
-                      const pesoNeto = Math.max(0, totalAntes - kgMaq - kgHueso);
-                      const cFinal   = (cMadProm > 0 && pesoNeto > 0) ? (totalAntes * cMadProm) / pesoNeto : 0;
+                      const kgAserrin  = parseFloat(pesoAserrin||0) * prop;
+                      const kgCarnudo  = parseFloat(pesoCarnudo||0) * prop;
+                      const kgHueso    = parseFloat(pesoHueso||0)   * prop;
+                      const kgMaq      = maqTotal * prop;
+                      // Crédito en dólares (usando precios del estado del componente padre — aprox)
+                      const creditoAserrin = kgAserrin * 2.50; // referencia — el valor exacto viene de MP al confirmar
+                      const creditoCarnudo = kgCarnudo * 2.00;
+                      const credito        = creditoAserrin + creditoCarnudo;
+                      const pesoNeto       = Math.max(0, totalAntes - kgMaq - kgHueso);
+                      const costoBase      = totalAntes * cMadProm;
+                      const cFinal         = (cMadProm > 0 && pesoNeto > 0) ? (costoBase - credito) / pesoNeto : 0;
                       return (
-                        <div key={c.corte} style={{ marginBottom:8, padding:'8px 10px', background:'white', borderRadius:8, border:'1px solid #e8f4fd' }}>
-                          <div style={{ fontWeight:'bold', fontSize:12, color:'#1a3a5c', marginBottom:4 }}>
-                            🥩 {c.corte} <span style={{ color:'#888', fontWeight:'normal' }}>({(prop*100).toFixed(1)}% de la merma)</span>
+                        <div key={c.corte} style={{ marginBottom:8, padding:'10px 12px', background:'white', borderRadius:8, border:'1px solid #e8f4fd' }}>
+                          <div style={{ fontWeight:'bold', fontSize:12, color:'#1a3a5c', marginBottom:8 }}>
+                            🥩 {c.corte} <span style={{ color:'#888', fontWeight:'normal' }}>({(prop*100).toFixed(1)}% de la merma total)</span>
                           </div>
-                          <div style={{ fontSize:11, color:'#555', display:'grid', gridTemplateColumns:'1fr 1fr', gap:'2px 12px' }}>
-                            <span>Merma asignada: <b style={{ color:'#e74c3c' }}>{c.merma.toFixed(3)} kg</b></span>
+                          <div style={{ fontSize:11, color:'#555', display:'grid', gridTemplateColumns:'1fr 1fr', gap:'4px 16px', marginBottom:8 }}>
+                            <span>Merma sierra: <b style={{ color:'#e74c3c' }}>{c.merma.toFixed(3)} kg</b></span>
                             <span>En máquina: <b style={{ color:'#e74c3c' }}>{kgMaq.toFixed(3)} kg</b></span>
-                            <span>Aserrín: <b>{(parseFloat(pesoAserrin||0)*prop).toFixed(3)} kg</b></span>
-                            <span>Carnudo: <b>{(parseFloat(pesoCarnudo||0)*prop).toFixed(3)} kg</b></span>
-                            <span>Hueso: <b>{kgHueso.toFixed(3)} kg</b></span>
-                            <span>Peso neto: <b>{pesoNeto.toFixed(3)} kg</b></span>
+                            <span>Aserrín asig.: <b>{kgAserrin.toFixed(3)} kg</b> <span style={{ color:'#27ae60' }}>= +${creditoAserrin.toFixed(2)}</span></span>
+                            <span>Carnudo asig.: <b>{kgCarnudo.toFixed(3)} kg</b> <span style={{ color:'#27ae60' }}>= +${creditoCarnudo.toFixed(2)}</span></span>
+                            <span>Hueso asig.: <b style={{ color:'#e74c3c' }}>{kgHueso.toFixed(3)} kg</b> <span style={{ color:'#aaa' }}>(sin crédito)</span></span>
+                            <span>Peso neto final: <b>{pesoNeto.toFixed(3)} kg</b></span>
                           </div>
                           {cMadProm > 0 && (
-                            <div style={{ marginTop:4, fontSize:12, color:'#1a6b3c', fontWeight:'bold' }}>
-                              C_mad: ${cMadProm.toFixed(4)} → C_final ≈ ${cFinal.toFixed(4)}/kg
-                              <span style={{ fontSize:10, color:'#aaa', marginLeft:6 }}>(crédito retazos ajusta al confirmar)</span>
+                            <div style={{ background:'#f0faf5', borderRadius:6, padding:'6px 10px', fontSize:11 }}>
+                              <span style={{ color:'#555' }}>Crédito retazos: <b style={{ color:'#27ae60' }}>${credito.toFixed(4)}</b></span>
+                              <span style={{ margin:'0 8px', color:'#ccc' }}>|</span>
+                              <span style={{ color:'#555' }}>C_mad: <b>${cMadProm.toFixed(4)}</b></span>
+                              <span style={{ margin:'0 8px', color:'#ccc' }}>→</span>
+                              <span style={{ fontWeight:'bold', color:'#6c3483', fontSize:12 }}>C_final ≈ ${cFinal.toFixed(4)}/kg</span>
                             </div>
                           )}
                         </div>
