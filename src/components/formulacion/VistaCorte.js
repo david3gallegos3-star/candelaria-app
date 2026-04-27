@@ -88,13 +88,14 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
     cargar();
   }, [producto.nombre, producto.mp_vinculado_id]);
 
-  const [lotesStock,    setLotesStock]    = useState([]);
-  const [cFinalHistorial, setCFinalHistorial] = useState([]);  // despacho_cortes c_final_kg
-  const [mpsEmpaque,    setMpsEmpaque]    = useState([]);
-  const [mpsEtiqueta,   setMpsEtiqueta]   = useState([]);
-  const [fase5Funda,    setFase5Funda]    = useState('0.4');   // kg
-  const [fase5Empaque,  setFase5Empaque]  = useState('');      // id MP
-  const [fase5Etiqueta, setFase5Etiqueta] = useState('');      // id MP
+  const [lotesStock,      setLotesStock]      = useState([]);
+  const [despachoCortes,  setDespachoCortes]  = useState([]);  // Fase 3: todos los registros
+  const [cFinalHistorial, setCFinalHistorial] = useState([]);  // Fase 4: registros con c_final
+  const [mpsEmpaque,      setMpsEmpaque]      = useState([]);
+  const [mpsEtiqueta,     setMpsEtiqueta]     = useState([]);
+  const [fase5Funda,      setFase5Funda]      = useState('0.4');
+  const [fase5Empaque,    setFase5Empaque]    = useState('');
+  const [fase5Etiqueta,   setFase5Etiqueta]   = useState('');
 
   useEffect(() => {
     supabase.from('stock_lotes_inyectados')
@@ -104,20 +105,27 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
       .limit(10)
       .then(({ data }) => setLotesStock(data || []));
 
-    // Historial c_final de despacho_cortes para este corte
+    // Fase 3: todos los registros de despacho (con o sin c_final)
     supabase.from('despacho_cortes')
-      .select('fecha, c_final_kg, c_mad_kg, peso_funda, lote_ref, credito_retazos')
+      .select('*')
+      .ilike('corte_nombre', `%${producto.nombre}%`)
+      .order('created_at', { ascending: false })
+      .limit(30)
+      .then(({ data }) => {
+        setDespachoCortes(data || []);
+        // Auto-llenar peso funda con el último peso_funda registrado
+        const ultimo = (data || []).find(r => parseFloat(r.peso_funda || 0) > 0);
+        if (ultimo) setFase5Funda(String(parseFloat(ultimo.peso_funda).toFixed(3)));
+      });
+
+    // Fase 4: registros con c_final calculado (después del cierre)
+    supabase.from('despacho_cortes')
+      .select('fecha, c_final_kg, c_mad_kg, peso_funda, peso_antes, lote_ref, credito_retazos, kg_aserrin_asig, kg_carnudo_asig, kg_hueso_asig, kg_maq_asig')
       .ilike('corte_nombre', `%${producto.nombre}%`)
       .gt('c_final_kg', 0)
       .order('created_at', { ascending: false })
       .limit(20)
-      .then(({ data }) => {
-        setCFinalHistorial(data || []);
-        // Auto-llenar peso funda con el último despacho
-        if (data && data.length > 0 && parseFloat(data[0].peso_funda || 0) > 0) {
-          setFase5Funda(String(parseFloat(data[0].peso_funda).toFixed(3)));
-        }
-      });
+      .then(({ data }) => setCFinalHistorial(data || []));
 
     // Materias primas de empaque y etiqueta (búsqueda flexible por nombre de categoría)
     supabase.from('materias_primas')
@@ -174,13 +182,17 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
     };
   })();
 
-  const historico_costos = historial
-    .filter(h => parseFloat(h.costo_final_kg) > 0)
-    .map(h => parseFloat(h.costo_final_kg));
+  // Calcular C_iny desde los campos crudos (no depende de costo_final_kg que puede ser 0 en DB)
+  const calcCiny = h => {
+    const kgInj  = parseFloat(h.kg_carne_cruda||0) + parseFloat(h.kg_salmuera_asignada||0);
+    const costoT = parseFloat(h.costo_carne||0)    + parseFloat(h.costo_salmuera_asignado||0);
+    return kgInj > 0 ? costoT / kgInj : 0;
+  };
+  const historico_costos = historial.map(h => calcCiny(h)).filter(v => v > 0);
   const costoPromedio = historico_costos.length > 0
     ? historico_costos.reduce((a, b) => a + b, 0) / historico_costos.length
     : 0;
-  const ultimoCosto = historial.length > 0 ? parseFloat(historial[0]?.costo_final_kg || 0) : 0;
+  const ultimoCosto = historial.length > 0 ? calcCiny(historial[0]) : 0;
 
   if (cargando) return (
     <div style={{ textAlign: 'center', padding: '40px', color: '#888' }}>Cargando historial...</div>
@@ -732,7 +744,98 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
         </div>
       </div>
 
-      {/* Historial producciones */}
+      {/* ── Fase 3: Despacho / Fraccionamiento ── */}
+      <div style={{ background: 'white', borderRadius: 12, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', marginBottom: 12 }}>
+        <div style={{ background: 'linear-gradient(135deg,#e67e22,#d35400)', padding: '10px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ color: 'white', fontWeight: 'bold', fontSize: 13 }}>🔪 Fase 3 — Despacho / Fraccionamiento</span>
+          <span style={{ color: 'rgba(255,255,255,0.7)', fontSize: 11 }}>Registros de sierra por lote</span>
+        </div>
+        <div style={{ padding: '12px 16px' }}>
+          {despachoCortes.length === 0 ? (
+            <div style={{ textAlign: 'center', color: '#aaa', fontSize: 12, padding: '20px 0' }}>
+              Sin registros de despacho — ve a Producción › Despacho para registrar cortes
+            </div>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                <thead>
+                  <tr style={{ background: '#fef9f0' }}>
+                    {['Fecha', 'Lote', 'Antes (kg)', 'Fundas (kg)', 'Remanente', 'Merma sierra', 'C_mad/kg', 'C_final/kg'].map(h => (
+                      <th key={h} style={{ padding: '7px 10px', textAlign: h === 'Fecha' || h === 'Lote' ? 'left' : 'right', color: '#d35400', fontWeight: 700, borderBottom: '2px solid #fdebd0', fontSize: 11, whiteSpace: 'nowrap' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {despachoCortes.map((r, i) => {
+                    const merma    = Math.max(0, (r.peso_antes||0) - (r.peso_funda||0) - (r.peso_remanente||0));
+                    const pctMerma = r.peso_antes > 0 ? ((merma / r.peso_antes) * 100).toFixed(1) : '0';
+                    const cFinal   = parseFloat(r.c_final_kg || 0);
+                    const cMad     = parseFloat(r.c_mad_kg   || 0);
+                    return (
+                      <tr key={r.id} style={{ background: i%2===0 ? 'white' : '#fffaf5', borderBottom: '1px solid #fdebd0' }}>
+                        <td style={{ padding: '7px 10px' }}>{r.fecha}</td>
+                        <td style={{ padding: '7px 10px', fontSize: 11, color: '#888' }}>{r.lote_ref || '—'}</td>
+                        <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 600 }}>{parseFloat(r.peso_antes||0).toFixed(3)}</td>
+                        <td style={{ padding: '7px 10px', textAlign: 'right', color: '#27ae60', fontWeight: 600 }}>{parseFloat(r.peso_funda||0).toFixed(3)}</td>
+                        <td style={{ padding: '7px 10px', textAlign: 'right', color: '#2980b9' }}>{parseFloat(r.peso_remanente||0).toFixed(3)}</td>
+                        <td style={{ padding: '7px 10px', textAlign: 'right', color: '#e74c3c', fontWeight: 600 }}>
+                          {merma.toFixed(3)} <span style={{ fontSize: 10, color: '#aaa' }}>({pctMerma}%)</span>
+                        </td>
+                        <td style={{ padding: '7px 10px', textAlign: 'right', color: '#e67e22' }}>{cMad > 0 ? `$${cMad.toFixed(4)}` : '—'}</td>
+                        <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 'bold', color: cFinal > 0 ? '#6c3483' : '#ccc' }}>
+                          {cFinal > 0 ? `$${cFinal.toFixed(4)}` : <span style={{ fontSize: 10 }}>pendiente cierre</span>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Fase 4: C_final después del Cierre ── */}
+      {cFinalHistorial.length > 0 && (
+        <div style={{ background: 'white', borderRadius: 12, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', marginBottom: 12 }}>
+          <div style={{ background: 'linear-gradient(135deg,#8e44ad,#6c3483)', padding: '10px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ color: 'white', fontWeight: 'bold', fontSize: 13 }}>⚙️ Fase 4 — Distribución Merma y C_final</span>
+            <span style={{ color: 'rgba(255,255,255,0.7)', fontSize: 11 }}>Resultado del Cierre del Día</span>
+          </div>
+          <div style={{ padding: '12px 16px', overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+              <thead>
+                <tr style={{ background: '#f5eef8' }}>
+                  {['Fecha', 'Antes (kg)', 'Aserrín', 'Carnudo', 'Hueso', 'Máquina', 'Crédito', 'Peso neto', 'C_mad', 'C_final'].map(h => (
+                    <th key={h} style={{ padding: '7px 10px', textAlign: h === 'Fecha' ? 'left' : 'right', color: '#6c3483', fontWeight: 700, borderBottom: '2px solid #e8daef', fontSize: 11, whiteSpace: 'nowrap' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {cFinalHistorial.map((r, i) => {
+                  const pesoNeto = Math.max(0, (r.peso_antes||0) - (r.kg_maq_asig||0) - (r.kg_hueso_asig||0));
+                  return (
+                    <tr key={i} style={{ background: i%2===0 ? 'white' : '#fdf2ff', borderBottom: '1px solid #f0e6f6' }}>
+                      <td style={{ padding: '7px 10px' }}>{r.fecha}</td>
+                      <td style={{ padding: '7px 10px', textAlign: 'right' }}>{parseFloat(r.peso_antes||0).toFixed(3)}</td>
+                      <td style={{ padding: '7px 10px', textAlign: 'right', color: '#27ae60' }}>{parseFloat(r.kg_aserrin_asig||0).toFixed(3)}</td>
+                      <td style={{ padding: '7px 10px', textAlign: 'right', color: '#27ae60' }}>{parseFloat(r.kg_carnudo_asig||0).toFixed(3)}</td>
+                      <td style={{ padding: '7px 10px', textAlign: 'right', color: '#e74c3c' }}>{parseFloat(r.kg_hueso_asig||0).toFixed(3)}</td>
+                      <td style={{ padding: '7px 10px', textAlign: 'right', color: '#e74c3c' }}>{parseFloat(r.kg_maq_asig||0).toFixed(3)}</td>
+                      <td style={{ padding: '7px 10px', textAlign: 'right', color: '#27ae60', fontWeight: 'bold' }}>${parseFloat(r.credito_retazos||0).toFixed(4)}</td>
+                      <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 600 }}>{pesoNeto.toFixed(3)}</td>
+                      <td style={{ padding: '7px 10px', textAlign: 'right', color: '#e67e22' }}>${parseFloat(r.c_mad_kg||0).toFixed(4)}</td>
+                      <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 'bold', color: '#6c3483', fontSize: 13 }}>${parseFloat(r.c_final_kg||0).toFixed(4)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── Historial producciones (movido al final) ── */}
       <div style={{ background: 'white', borderRadius: 10, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', marginBottom: 12 }}>
         <div style={{ background: '#6c3483', padding: '8px 14px' }}>
           <span style={{ color: 'white', fontWeight: 'bold', fontSize: 13 }}>📋 Historial de Producciones</span>
@@ -829,7 +932,11 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
         const mpEmpaque  = mpsEmpaque.find(m => m.id === fase5Empaque);
         const mpEtiqueta = mpsEtiqueta.find(m => m.id === fase5Etiqueta);
 
-        const costoCarne    = ultimoCFinal > 0 ? kgFunda * ultimoCFinal : 0;
+        // Usar C_final si existe, si no usar C_mad como referencia provisional
+        const costoBase     = ultimoCFinal > 0 ? ultimoCFinal
+                            : (lotesStock[0] ? parseFloat(lotesStock[0].costo_mad_kg || 0) : 0);
+        const esCFinal      = ultimoCFinal > 0;
+        const costoCarne    = costoBase > 0 ? kgFunda * costoBase : 0;
         const costoEmpaque  = mpEmpaque  ? parseFloat(mpEmpaque.precio_kg  || 0) : 0;
         const costoEtiqueta = mpEtiqueta ? parseFloat(mpEtiqueta.precio_kg || 0) : 0;
         const costoTotal    = costoCarne + costoEmpaque + costoEtiqueta;
@@ -914,8 +1021,8 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', color: costoTotal > 0 ? 'rgba(255,255,255,0.85)' : '#555' }}>
-                      <span>🥩 Carne ({kgFunda} kg × ${ultimoCFinal > 0 ? ultimoCFinal.toFixed(4) : '?'}/kg)</span>
-                      <span style={{ fontWeight: 'bold' }}>{ultimoCFinal > 0 ? `$${costoCarne.toFixed(4)}` : '—'}</span>
+                      <span>🥩 Carne ({kgFunda} kg × ${costoBase > 0 ? costoBase.toFixed(4) : '?'}/kg{!esCFinal && costoBase > 0 ? ' ≈C_mad' : ''})</span>
+                      <span style={{ fontWeight: 'bold' }}>{costoBase > 0 ? `$${costoCarne.toFixed(4)}` : '—'}</span>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', color: costoTotal > 0 ? 'rgba(255,255,255,0.85)' : '#555' }}>
                       <span>📦 {mpEmpaque ? (mpEmpaque.nombre_producto || mpEmpaque.nombre) : 'Empaque'}</span>
@@ -940,9 +1047,14 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
                 </div>
               )}
 
-              {ultimoCFinal === 0 && (
+              {!esCFinal && costoBase > 0 && (
+                <div style={{ background: '#fff3cd', borderRadius: 8, padding: '8px 12px', fontSize: 11, color: '#856404', marginTop: 8 }}>
+                  ⚠️ Usando C_mad como referencia — el C_final real se calcula al hacer el Cierre del Día en Despacho
+                </div>
+              )}
+              {costoBase === 0 && (
                 <div style={{ textAlign: 'center', color: '#aaa', fontSize: 12, padding: '10px 0' }}>
-                  Sin C_final disponible — confirma el cierre del día en Despacho primero
+                  Sin datos de costo — confirma el pesaje en Maduración primero
                 </div>
               )}
             </div>
