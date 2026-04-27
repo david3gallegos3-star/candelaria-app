@@ -99,7 +99,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
   useEffect(() => {
     supabase.from('stock_lotes_inyectados')
       .select('*')
-      .eq('corte_nombre', producto.nombre)
+      .ilike('corte_nombre', `%${producto.nombre}%`)
       .order('fecha_entrada', { ascending: false })
       .limit(10)
       .then(({ data }) => setLotesStock(data || []));
@@ -107,7 +107,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
     // Historial c_final de despacho_cortes para este corte
     supabase.from('despacho_cortes')
       .select('fecha, c_final_kg, c_mad_kg, peso_funda, lote_ref, credito_retazos')
-      .eq('corte_nombre', producto.nombre)
+      .ilike('corte_nombre', `%${producto.nombre}%`)
       .gt('c_final_kg', 0)
       .order('created_at', { ascending: false })
       .limit(20)
