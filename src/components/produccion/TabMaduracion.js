@@ -23,16 +23,14 @@ export default function TabMaduracion({ mobile, currentUser }) {
   const [error,          setError]          = useState('');
   const [exito,          setExito]          = useState('');
 
-  // ── Modal Deshuese (NY → Lomo Bife / Rib Eye → Ojo de Bife) ──
-  // modalDeshuese = array de { corteNombre, nombreHijo, stockId, kgMad, cMadKg, costoTotal, loteId }
+  // ── Modal Deshuese (dinámico desde deshuese_config) ──
   const [modalDeshuese,  setModalDeshuese]  = useState(null);
-  const [dshData,        setDshData]        = useState({}); // {[corteNombre]: {kgEntrada,kgResS,kgPuntas,kgDesecho}}
+  const [dshData,        setDshData]        = useState({});
   const [guardDeshuese,  setGuardDeshuese]  = useState(false);
   const [errorDeshuese,  setErrorDeshuese]  = useState('');
   const [mpDeshuese,     setMpDeshuese]     = useState({ resS: null, puntas: null });
+  const [deshueseMap,    setDeshueseMap]    = useState({}); // { corte_padre: corte_hijo }
 
-  // Mapa: corte padre → producto hijo del deshuese
-  const DESHUESE_MAP = { 'New York Steak': 'Lomo Bife', 'Rib eye steack': 'Ojo de Bife' };
   function setDsh(corte, field, val) {
     setDshData(prev => ({ ...prev, [corte]: { ...prev[corte], [field]: val } }));
   }
@@ -70,6 +68,7 @@ export default function TabMaduracion({ mobile, currentUser }) {
   useEffect(() => { cargar(); }, [cargar]);
 
   useEffect(() => {
+    // Precios subproductos deshuese
     supabase.from('materias_primas')
       .select('id, nombre, precio_kg')
       .in('id', ['C031', 'RET002'])
@@ -78,6 +77,15 @@ export default function TabMaduracion({ mobile, currentUser }) {
           resS:   (data || []).find(m => m.id === 'C031')   || null,
           puntas: (data || []).find(m => m.id === 'RET002') || null,
         });
+      });
+    // Mapa deshuese dinámico desde DB
+    supabase.from('deshuese_config')
+      .select('corte_padre, corte_hijo')
+      .eq('activo', true)
+      .then(({ data }) => {
+        const map = {};
+        (data || []).forEach(r => { map[r.corte_padre] = r.corte_hijo; });
+        setDeshueseMap(map);
       });
   }, []);
 
@@ -231,11 +239,11 @@ export default function TabMaduracion({ mobile, currentUser }) {
             costo_mad_kg:       costoMadKg,
           }).select('id').single();
 
-          // Si es un corte con deshuese (NY o Rib Eye), guardar para modal
-          if (DESHUESE_MAP[p.corte_nombre] && stockEntry) {
+          // Si es un corte con deshuese configurado, guardar para modal
+          if (deshueseMap[p.corte_nombre] && stockEntry) {
             deshueseEntries.push({
               corteNombre: p.corte_nombre,
-              nombreHijo:  DESHUESE_MAP[p.corte_nombre],
+              nombreHijo:  deshueseMap[p.corte_nombre],
               stockId:     stockEntry.id,
               kgMad,
               cMadKg:      costoMadKg,

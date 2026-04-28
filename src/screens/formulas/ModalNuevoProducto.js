@@ -13,17 +13,25 @@ export default function ModalNuevoProducto({
   onCrear,
   onCerrar
 }) {
-  const [mps,       setMps]       = useState([]);
-  const [buscador,  setBuscador]  = useState('');
+  const [mps,            setMps]            = useState([]);
+  const [buscador,       setBuscador]       = useState('');
+  const [tieneDeshuese,  setTieneDeshuese]  = useState(false);
+  const [dshTipo,        setDshTipo]        = useState('padre'); // 'padre' = este es el principal
+  const [dshNombreHijo,  setDshNombreHijo]  = useState('');
+  const [cortesExist,    setCortesExist]    = useState([]);  // productos CORTES existentes
 
   const esCorte = nuevaCategoria === 'Cortes' || nuevaCategoria === 'CORTES';
 
   useEffect(() => {
-    if (!esCorte) return;
+    if (!esCorte) { setTieneDeshuese(false); setDshNombreHijo(''); return; }
     supabase.from('materias_primas')
       .select('id,nombre,nombre_producto,precio_kg,categoria')
       .eq('eliminado', false).order('nombre')
       .then(({ data }) => setMps(data || []));
+    supabase.from('productos')
+      .select('nombre').or('categoria.eq.Cortes,categoria.eq.CORTES')
+      .eq('estado', 'ACTIVO').order('nombre')
+      .then(({ data }) => setCortesExist((data || []).map(p => p.nombre)));
   }, [esCorte]);
 
   const mpsFiltradas = mps.filter(m => {
@@ -123,12 +131,87 @@ export default function ModalNuevoProducto({
           </div>
         )}
 
+        {/* ── Configuración Deshuese — solo para CORTES ── */}
+        {esCorte && (
+          <div style={{ marginTop: 20, borderTop: '1px solid #eee', paddingTop: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+              <input
+                type="checkbox"
+                id="chk-deshuese"
+                checked={tieneDeshuese}
+                onChange={e => { setTieneDeshuese(e.target.checked); setDshNombreHijo(''); }}
+                style={{ width: 16, height: 16, cursor: 'pointer' }}
+              />
+              <label htmlFor="chk-deshuese" style={{ fontSize: 13, fontWeight: 700, color: '#6c3483', cursor: 'pointer' }}>
+                🦴 Este corte tiene un producto de deshuese
+              </label>
+            </div>
+
+            {tieneDeshuese && (
+              <div style={{ background: '#f5eef8', borderRadius: 10, padding: '14px 16px', border: '1.5px solid #d7bde2' }}>
+                <div style={{ fontSize: 11, color: '#6c3483', fontWeight: 700, marginBottom: 10 }}>RELACIÓN DE DESHUESE</div>
+
+                <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                  {[
+                    { val: 'padre', label: '👑 Este es el PRINCIPAL', sub: 'ej: New York Steak' },
+                    { val: 'hijo',  label: '🔽 Este es el HIJO',      sub: 'ej: Lomo Bife' },
+                  ].map(({ val, label, sub }) => (
+                    <button key={val} onClick={() => setDshTipo(val)} style={{
+                      flex: 1, padding: '8px 6px', borderRadius: 8, cursor: 'pointer', textAlign: 'center',
+                      border: `2px solid ${dshTipo === val ? '#6c3483' : '#ddd'}`,
+                      background: dshTipo === val ? '#6c3483' : 'white',
+                      color: dshTipo === val ? 'white' : '#555',
+                    }}>
+                      <div style={{ fontSize: 12, fontWeight: 700 }}>{label}</div>
+                      <div style={{ fontSize: 10, opacity: 0.8 }}>{sub}</div>
+                    </button>
+                  ))}
+                </div>
+
+                {dshTipo === 'padre' ? (
+                  <div>
+                    <label style={{ fontSize: 11, fontWeight: 600, color: '#555', display: 'block', marginBottom: 4 }}>
+                      Nombre del producto HIJO (que saldrá del deshuese)
+                    </label>
+                    <input
+                      placeholder="ej: Lomo Bife"
+                      value={dshNombreHijo}
+                      onChange={e => setDshNombreHijo(e.target.value)}
+                      style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1.5px solid #6c3483', fontSize: 13, boxSizing: 'border-box' }}
+                    />
+                    <div style={{ fontSize: 10, color: '#888', marginTop: 4 }}>
+                      Al confirmar pesaje de maduración de <b>{nuevoNombre || 'este corte'}</b>, el sistema pedirá cuántos kg van a <b>{dshNombreHijo || '...'}</b>.
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <label style={{ fontSize: 11, fontWeight: 600, color: '#555', display: 'block', marginBottom: 4 }}>
+                      Selecciona el corte PRINCIPAL del que deriva
+                    </label>
+                    <select
+                      value={dshNombreHijo}
+                      onChange={e => setDshNombreHijo(e.target.value)}
+                      style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1.5px solid #6c3483', fontSize: 13, boxSizing: 'border-box', background: 'white' }}
+                    >
+                      <option value="">— selecciona el padre —</option>
+                      {cortesExist.map(n => <option key={n} value={n}>{n}</option>)}
+                    </select>
+                    <div style={{ fontSize: 10, color: '#888', marginTop: 4 }}>
+                      Al crear la relación, <b>{dshNombreHijo || '...'}</b> generará <b>{nuevoNombre || 'este producto'}</b> en el deshuese.
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
         <div style={{ display:'flex', gap:10, marginTop:20, justifyContent:'flex-end' }}>
           <button onClick={onCerrar} style={{
             padding:'10px 20px', background:'#95a5a6', color:'white',
             border:'none', borderRadius:8, cursor:'pointer'
           }}>Cancelar</button>
-          <button onClick={onCrear} style={{
+          <button onClick={() => onCrear(tieneDeshuese ? { dshTipo, dshNombreHijo: dshNombreHijo.trim() } : null)} style={{
             padding:'10px 20px', background:'#27ae60', color:'white',
             border:'none', borderRadius:8, cursor:'pointer', fontWeight:'bold'
           }}>Crear y abrir</button>

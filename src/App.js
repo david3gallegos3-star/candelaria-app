@@ -331,7 +331,7 @@ function App() {
     if (error) console.error(`Error sync ${categoriaMp} MP:`, error.message);
   }
 
-  async function crearProducto() {
+  async function crearProducto(deshueseConfig = null) {
     if (!nuevoNombre.trim()) return alert('Escribe el nombre del producto');
     const catSel = nuevaCategoria || Object.keys(categoriasConfig)[0];
     const esCorte = catSel === 'Cortes' || catSel === 'CORTES';
@@ -345,6 +345,15 @@ function App() {
       }])
       .select().single();
     if (error) return alert('Error: ' + error.message);
+
+    // Guardar relación de deshuese si fue configurada
+    if (esCorte && deshueseConfig && deshueseConfig.dshNombreHijo) {
+      const padre = deshueseConfig.dshTipo === 'padre' ? nuevoNombre.trim() : deshueseConfig.dshNombreHijo;
+      const hijo  = deshueseConfig.dshTipo === 'padre' ? deshueseConfig.dshNombreHijo : nuevoNombre.trim();
+      if (padre && hijo) {
+        await supabase.from('deshuese_config').upsert({ corte_padre: padre, corte_hijo: hijo, activo: true }, { onConflict: 'corte_padre' });
+      }
+    }
     if (MP_CAT_MAP[catSel]) await sincronizarFormulaMP(nuevoNombre.trim(), 0, MP_CAT_MAP[catSel].cat, MP_CAT_MAP[catSel].pref);
     await crearNotificacion({
       tipo:            'nuevo_producto',
