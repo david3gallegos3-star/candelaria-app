@@ -214,8 +214,9 @@ export default function TabInyeccion({ currentUser, mobile, onSalmueraChange }) 
         .eq('fecha_entrada', fecha);
       const loteId = (lotesHoy || 0) === 0 ? fechaStr : `${fechaStr}/${lotesHoy}`;
 
+      const diasMad = (formulaSelec?.nombre || '').toLowerCase().includes('pastrame') ? 3 : 4;
       const fechaSalidaObj = new Date(fecha + 'T12:00:00');
-      fechaSalidaObj.setDate(fechaSalidaObj.getDate() + 4);
+      fechaSalidaObj.setDate(fechaSalidaObj.getDate() + diasMad);
       const fechaSalida = fechaSalidaObj.toISOString().split('T')[0];
 
       const { data: lote, error: e4 } = await supabase.from('lotes_maduracion').insert({
