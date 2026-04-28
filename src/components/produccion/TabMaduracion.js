@@ -23,6 +23,16 @@ export default function TabMaduracion({ mobile, currentUser }) {
   const [error,          setError]          = useState('');
   const [exito,          setExito]          = useState('');
 
+  // ── Modal Deshuese Lomo Bife ──
+  const [modalDeshuese,  setModalDeshuese]  = useState(null); // {stockId, kgMad, cMadKg, costoTotal, loteId}
+  const [dshKgEntrada,   setDshKgEntrada]   = useState('');
+  const [dshKgResS,      setDshKgResS]      = useState('');
+  const [dshKgPuntas,    setDshKgPuntas]    = useState('');
+  const [dshKgDesecho,   setDshKgDesecho]   = useState('');
+  const [guardDeshuese,  setGuardDeshuese]  = useState(false);
+  const [errorDeshuese,  setErrorDeshuese]  = useState('');
+  const [mpDeshuese,     setMpDeshuese]     = useState({ resS: null, puntas: null });
+
   // ── Modal editar cortes ──
   const [modalEditar,    setModalEditar]    = useState(null);  // lote
   const [editKgs,        setEditKgs]        = useState({});    // {idx: kg}
@@ -54,6 +64,18 @@ export default function TabMaduracion({ mobile, currentUser }) {
   }, []);
 
   useEffect(() => { cargar(); }, [cargar]);
+
+  useEffect(() => {
+    supabase.from('materias_primas')
+      .select('id, nombre, precio_kg')
+      .in('id', ['C031', 'RET002'])
+      .then(({ data }) => {
+        setMpDeshuese({
+          resS:   (data || []).find(m => m.id === 'C031')   || null,
+          puntas: (data || []).find(m => m.id === 'RET002') || null,
+        });
+      });
+  }, []);
 
   function toggleExpandido(id) {
     setExpandidos(prev => ({ ...prev, [id]: !prev[id] }));
@@ -136,12 +158,15 @@ export default function TabMaduracion({ mobile, currentUser }) {
     setGuardando(true);
     setError('');
     try {
+      let nyEntryParaDeshuese = null;
+      const hoy = new Date().toISOString().split('T')[0];
+
       for (const p of picortes) {
-        const kgMad     = parseFloat(pesajes[p.corte_nombre]);
-        const kgInj     = parseFloat(p.kg_carne_cruda || 0) + parseFloat(p.kg_salmuera_asignada || 0);
+        const kgMad      = parseFloat(pesajes[p.corte_nombre]);
+        const kgInj      = parseFloat(p.kg_carne_cruda || 0) + parseFloat(p.kg_salmuera_asignada || 0);
         const costoTotal = parseFloat(p.costo_carne || 0) + parseFloat(p.costo_salmuera_asignado || 0);
-        const costoInyKg = kgInj     > 0 ? costoTotal / kgInj  : 0; // C_iny
-        const costoMadKg = kgMad     > 0 ? costoTotal / kgMad  : 0; // C_mad
+        const costoInyKg = kgInj > 0 ? costoTotal / kgInj : 0;
+        const costoMadKg = kgMad > 0 ? costoTotal / kgMad : 0;
 
         // Buscar o crear MP en Inyectados
         const { data: mpExist } = await supabase
@@ -152,7 +177,6 @@ export default function TabMaduracion({ mobile, currentUser }) {
         if (mpExist) {
           mpId = mpExist.id;
         } else {
-          // Generar ID único tipo INY001
           const { data: existIds } = await supabase.from('materias_primas')
             .select('id').eq('categoria', 'Inyectados');
           const nums = (existIds || [])
@@ -160,7 +184,6 @@ export default function TabMaduracion({ mobile, currentUser }) {
             .filter(n => !isNaN(n));
           const nextNum = nums.length > 0 ? Math.max(...nums) + 1 : 1;
           const newId = 'INY' + String(nextNum).padStart(3, '0');
-
           const { data: nuevaMp, error: errMp } = await supabase.from('materias_primas').insert({
             id: newId,
             nombre: p.corte_nombre, nombre_producto: p.corte_nombre,
@@ -171,7 +194,6 @@ export default function TabMaduracion({ mobile, currentUser }) {
           mpId = nuevaMp?.id;
         }
 
-        // Actualizar stock
         if (mpId) {
           const { data: inv } = await supabase.from('inventario_mp')
             .select('id, stock_kg').eq('materia_prima_id', mpId).maybeSingle();
@@ -183,31 +205,38 @@ export default function TabMaduracion({ mobile, currentUser }) {
               materia_prima_id: mpId, stock_kg: kgMad, nombre: p.corte_nombre,
             });
           }
-          // Registrar movimiento ENTRADA en inventario
           await supabase.from('inventario_movimientos').insert({
-            materia_prima_id: mpId,
-            nombre_mp:        p.corte_nombre,
-            tipo:             'entrada',
-            kg:               kgMad,
-            motivo:           `Pesaje maduración — Lote ${modalPesaje.lote_id}`,
-            usuario_nombre:   currentUser?.email || '',
-            user_id:          currentUser?.id || null,
-            fecha:            new Date().toISOString().split('T')[0],
+            materia_prima_id: mpId, nombre_mp: p.corte_nombre,
+            tipo: 'entrada', kg: kgMad,
+            motivo: `Pesaje maduración — Lote ${modalPesaje.lote_id}`,
+            usuario_nombre: currentUser?.email || '', user_id: currentUser?.id || null, fecha: hoy,
           });
-          // Insertar en stock_lotes_inyectados para rastreo por lote
-          await supabase.from('stock_lotes_inyectados').insert({
+
+          // Insertar en stock_lotes_inyectados y capturar ID para NY
+          const { data: stockEntry } = await supabase.from('stock_lotes_inyectados').insert({
             lote_id:            modalPesaje.lote_id,
             lote_maduracion_id: modalPesaje.id,
             corte_nombre:       p.corte_nombre,
             materia_prima_id:   mpId,
             kg_inicial:         kgMad,
             kg_disponible:      kgMad,
-            fecha_entrada:      new Date().toISOString().split('T')[0],
+            fecha_entrada:      hoy,
             kg_inyectado:       kgInj,
             costo_total:        costoTotal,
             costo_iny_kg:       costoInyKg,
             costo_mad_kg:       costoMadKg,
-          });
+          }).select('id').single();
+
+          // Si es New York Steak, guardar referencia para deshuese
+          if (p.corte_nombre === 'New York Steak' && stockEntry) {
+            nyEntryParaDeshuese = {
+              stockId:   stockEntry.id,
+              kgMad,
+              cMadKg:    costoMadKg,
+              costoTotal,
+              loteId:    modalPesaje.lote_id,
+            };
+          }
         }
       }
 
@@ -215,14 +244,160 @@ export default function TabMaduracion({ mobile, currentUser }) {
       await supabase.from('lotes_maduracion')
         .update({ estado: 'completado' }).eq('id', modalPesaje.id);
 
+      const loteIdGuardado = modalPesaje.lote_id;
       setModalPesaje(null);
-      setExito(`✅ Lote ${modalPesaje.lote_id} pasó a Stock de Congelación`);
-      setTimeout(() => setExito(''), 6000);
       await cargar();
+
+      // Si hay NY, abrir modal de deshuese automáticamente
+      if (nyEntryParaDeshuese) {
+        setDshKgEntrada('');
+        setDshKgResS('');
+        setDshKgPuntas('');
+        setDshKgDesecho('');
+        setErrorDeshuese('');
+        setModalDeshuese(nyEntryParaDeshuese);
+      } else {
+        setExito(`✅ Lote ${loteIdGuardado} pasó a Stock de Congelación`);
+        setTimeout(() => setExito(''), 6000);
+      }
     } catch (e) {
       setError('Error: ' + e.message);
     }
     setGuardando(false);
+  }
+
+  async function confirmarDeshuese() {
+    const kgEntrada = parseFloat(dshKgEntrada) || 0;
+    const kgResS    = parseFloat(dshKgResS)    || 0;
+    const kgPuntas  = parseFloat(dshKgPuntas)  || 0;
+    const kgDesecho = parseFloat(dshKgDesecho) || 0;
+    const kgLomo    = kgEntrada - kgResS - kgPuntas - kgDesecho;
+
+    if (kgEntrada <= 0) { setErrorDeshuese('Ingresa los kg de New York que van a Lomo Bife'); return; }
+    if (kgEntrada > modalDeshuese.kgMad) { setErrorDeshuese(`Máximo ${modalDeshuese.kgMad.toFixed(3)} kg disponibles`); return; }
+    if (kgLomo <= 0) { setErrorDeshuese('Los subproductos superan los kg de entrada'); return; }
+
+    setGuardDeshuese(true);
+    setErrorDeshuese('');
+    try {
+      const precioResS   = parseFloat(mpDeshuese.resS?.precio_kg  || 0);
+      const precioPuntas = parseFloat(mpDeshuese.puntas?.precio_kg || 0);
+      const valorResS    = kgResS   * precioResS;
+      const valorPuntas  = kgPuntas * precioPuntas;
+      const costoEntrada = kgEntrada * modalDeshuese.cMadKg;
+      const cLimpio      = (costoEntrada - valorResS - valorPuntas) / kgLomo;
+      const hoy          = new Date().toISOString().split('T')[0];
+
+      // ── 1. Buscar o crear MP Lomo Bife en Inyectados ──
+      const { data: mpLomoExist } = await supabase.from('materias_primas')
+        .select('id').eq('nombre', 'Lomo Bife').eq('categoria', 'Inyectados').maybeSingle();
+      let mpLomoId;
+      if (mpLomoExist) {
+        mpLomoId = mpLomoExist.id;
+      } else {
+        const { data: existIds } = await supabase.from('materias_primas').select('id').eq('categoria', 'Inyectados');
+        const nums = (existIds || []).map(m => parseInt((m.id || '').replace(/\D/g, '') || '0')).filter(n => !isNaN(n));
+        const nextNum = nums.length > 0 ? Math.max(...nums) + 1 : 1;
+        const newId = 'INY' + String(nextNum).padStart(3, '0');
+        const { data: nueva } = await supabase.from('materias_primas').insert({
+          id: newId, nombre: 'Lomo Bife', nombre_producto: 'Lomo Bife',
+          categoria: 'Inyectados', precio_kg: 0,
+          tipo: 'MATERIAS PRIMAS', estado: 'ACTIVO', eliminado: false,
+        }).select('id').single();
+        mpLomoId = nueva?.id;
+      }
+
+      // ── 2. Sumar Lomo Bife a inventario_mp ──
+      const { data: invLomo } = await supabase.from('inventario_mp')
+        .select('id, stock_kg').eq('materia_prima_id', mpLomoId).maybeSingle();
+      if (invLomo) {
+        await supabase.from('inventario_mp').update({ stock_kg: (invLomo.stock_kg || 0) + kgLomo }).eq('id', invLomo.id);
+      } else {
+        await supabase.from('inventario_mp').insert({ materia_prima_id: mpLomoId, stock_kg: kgLomo, nombre: 'Lomo Bife' });
+      }
+      await supabase.from('inventario_movimientos').insert({
+        materia_prima_id: mpLomoId, nombre_mp: 'Lomo Bife', tipo: 'entrada', kg: kgLomo,
+        motivo: `Deshuese Lote ${modalDeshuese.loteId} — ${kgEntrada.toFixed(3)} kg NY → ${kgLomo.toFixed(3)} kg Lomo`,
+        usuario_nombre: currentUser?.email || '', user_id: currentUser?.id || null, fecha: hoy,
+      });
+
+      // ── 3. Registrar Lomo Bife en stock_lotes_inyectados ──
+      await supabase.from('stock_lotes_inyectados').insert({
+        lote_id:          modalDeshuese.loteId,
+        corte_nombre:     'Lomo Bife',
+        materia_prima_id: mpLomoId,
+        kg_inicial:       kgLomo,
+        kg_disponible:    kgLomo,
+        fecha_entrada:    hoy,
+        kg_inyectado:     kgEntrada,
+        costo_total:      costoEntrada - valorResS - valorPuntas,
+        costo_iny_kg:     modalDeshuese.cMadKg,
+        costo_mad_kg:     cLimpio,
+      });
+
+      // ── 4. Reducir kg_disponible del NY en stock_lotes_inyectados ──
+      const { data: nyStock } = await supabase.from('stock_lotes_inyectados')
+        .select('kg_disponible').eq('id', modalDeshuese.stockId).single();
+      await supabase.from('stock_lotes_inyectados')
+        .update({ kg_disponible: Math.max(0, (nyStock?.kg_disponible || 0) - kgEntrada) })
+        .eq('id', modalDeshuese.stockId);
+
+      // ── 5. Sumar Res Segunda (C031) al stock ──
+      if (kgResS > 0) {
+        const { data: invRes } = await supabase.from('inventario_mp')
+          .select('id, stock_kg').eq('materia_prima_id', 'C031').maybeSingle();
+        if (invRes) {
+          await supabase.from('inventario_mp').update({ stock_kg: (invRes.stock_kg || 0) + kgResS }).eq('id', invRes.id);
+        } else {
+          await supabase.from('inventario_mp').insert({ materia_prima_id: 'C031', stock_kg: kgResS, nombre: 'Res Segunda' });
+        }
+        await supabase.from('inventario_movimientos').insert({
+          materia_prima_id: 'C031', nombre_mp: 'Res Segunda', tipo: 'entrada', kg: kgResS,
+          motivo: `Deshuese New York — Lote ${modalDeshuese.loteId}`,
+          usuario_nombre: currentUser?.email || '', user_id: currentUser?.id || null, fecha: hoy,
+        });
+      }
+
+      // ── 6. Sumar Puntas Cortes Especiales (RET002) al stock ──
+      if (kgPuntas > 0) {
+        const { data: invPun } = await supabase.from('inventario_mp')
+          .select('id, stock_kg').eq('materia_prima_id', 'RET002').maybeSingle();
+        if (invPun) {
+          await supabase.from('inventario_mp').update({ stock_kg: (invPun.stock_kg || 0) + kgPuntas }).eq('id', invPun.id);
+        } else {
+          await supabase.from('inventario_mp').insert({ materia_prima_id: 'RET002', stock_kg: kgPuntas, nombre: 'Puntas de cortes especiales' });
+        }
+        await supabase.from('inventario_movimientos').insert({
+          materia_prima_id: 'RET002', nombre_mp: 'Puntas de cortes especiales', tipo: 'entrada', kg: kgPuntas,
+          motivo: `Deshuese New York — Lote ${modalDeshuese.loteId}`,
+          usuario_nombre: currentUser?.email || '', user_id: currentUser?.id || null, fecha: hoy,
+        });
+      }
+
+      // ── 7. Guardar registro de deshuese ──
+      await supabase.from('deshuese_registros').insert({
+        fecha:                hoy,
+        lote_id:              modalDeshuese.loteId,
+        stock_lotes_id_ny:    modalDeshuese.stockId,
+        kg_entrada:           kgEntrada,
+        kg_res_segunda:       kgResS,
+        kg_puntas_especiales: kgPuntas,
+        kg_desecho:           kgDesecho,
+        kg_lomo_limpio:       kgLomo,
+        costo_entrada_kg:     modalDeshuese.cMadKg,
+        valor_res_segunda:    valorResS,
+        valor_puntas:         valorPuntas,
+        c_limpio_kg:          cLimpio,
+      });
+
+      const loteId = modalDeshuese.loteId;
+      setModalDeshuese(null);
+      setExito(`✅ Lote ${loteId} — ${kgLomo.toFixed(3)} kg Lomo Bife registrado · C_limpio $${cLimpio.toFixed(4)}/kg · Res Segunda +${kgResS.toFixed(3)} kg`);
+      setTimeout(() => setExito(''), 9000);
+    } catch (e) {
+      setErrorDeshuese('Error: ' + e.message);
+    }
+    setGuardDeshuese(false);
   }
 
   const inputStyle = {
@@ -603,6 +778,124 @@ export default function TabMaduracion({ mobile, currentUser }) {
           </div>
         </div>
       )}
+
+      {/* ══ Modal Deshuese Lomo Bife ══ */}
+      {modalDeshuese && (() => {
+        const kgEntrada = parseFloat(dshKgEntrada) || 0;
+        const kgResS    = parseFloat(dshKgResS)    || 0;
+        const kgPuntas  = parseFloat(dshKgPuntas)  || 0;
+        const kgDesecho = parseFloat(dshKgDesecho) || 0;
+        const kgLomo    = kgEntrada - kgResS - kgPuntas - kgDesecho;
+        const precioResS   = parseFloat(mpDeshuese.resS?.precio_kg  || 0);
+        const precioPuntas = parseFloat(mpDeshuese.puntas?.precio_kg || 0);
+        const valorResS    = kgResS   * precioResS;
+        const valorPuntas  = kgPuntas * precioPuntas;
+        const costoEntrada = kgEntrada * modalDeshuese.cMadKg;
+        const cLimpio      = kgLomo > 0 ? (costoEntrada - valorResS - valorPuntas) / kgLomo : 0;
+        const valido       = kgEntrada > 0 && kgLomo > 0 && kgEntrada <= modalDeshuese.kgMad;
+
+        return (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+            <div style={{ background: 'white', borderRadius: 16, padding: 24, width: '100%', maxWidth: 500, boxShadow: '0 8px 32px rgba(0,0,0,0.3)', maxHeight: '92vh', overflowY: 'auto' }}>
+
+              <div style={{ fontWeight: 'bold', fontSize: 17, color: '#1a1a2e', marginBottom: 2 }}>🦴 Deshuese de Lomo Bife</div>
+              <div style={{ fontSize: 12, color: '#888', marginBottom: 18 }}>
+                Lote {modalDeshuese.loteId} · <b>{modalDeshuese.kgMad.toFixed(3)} kg</b> New York madurado · C_mad <b>${modalDeshuese.cMadKg.toFixed(4)}/kg</b>
+              </div>
+
+              {/* Kg entrada */}
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ fontSize: 11, fontWeight: 700, color: '#555', display: 'block', marginBottom: 4 }}>Kg de New York que van a Lomo Bife *</label>
+                <input
+                  type="number" min="0" max={modalDeshuese.kgMad} step="0.001"
+                  placeholder={`máx ${modalDeshuese.kgMad.toFixed(3)}`}
+                  value={dshKgEntrada}
+                  onChange={e => setDshKgEntrada(e.target.value)}
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '2px solid #1a1a2e', fontSize: 15, fontWeight: 'bold', boxSizing: 'border-box' }}
+                />
+                {kgEntrada > 0 && <div style={{ fontSize: 10, color: '#888', marginTop: 2 }}>Costo entrada: ${costoEntrada.toFixed(4)}</div>}
+              </div>
+
+              {/* Subproductos */}
+              <div style={{ background: '#f8f9fa', borderRadius: 10, padding: '14px', marginBottom: 14 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#555', marginBottom: 10 }}>SUBPRODUCTOS DEL DESHUESE</div>
+
+                {[
+                  { label: 'Res Segunda', id: 'C031', precio: precioResS,   valor: valorResS,   val: dshKgResS,   set: setDshKgResS,   color: '#e67e22' },
+                  { label: 'Puntas Cortes Esp.', id: 'RET002', precio: precioPuntas, valor: valorPuntas, val: dshKgPuntas, set: setDshKgPuntas, color: '#8e44ad' },
+                ].map(({ label, id, precio, valor, val, set, color }) => (
+                  <div key={id} style={{ marginBottom: 10 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <label style={{ fontSize: 11, fontWeight: 600, color }}>{label} <span style={{ color: '#888', fontWeight: 400 }}>({id} · ${precio.toFixed(4)}/kg)</span></label>
+                      {parseFloat(val) > 0 && <span style={{ fontSize: 11, color: '#27ae60', fontWeight: 700 }}>crédito −${valor.toFixed(4)}</span>}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <input
+                        type="number" min="0" step="0.001" placeholder="0.000"
+                        value={val}
+                        onChange={e => set(e.target.value)}
+                        style={{ flex: 1, padding: '7px 10px', borderRadius: 8, border: `1.5px solid ${color}`, fontSize: 13, fontWeight: 'bold', textAlign: 'right' }}
+                      />
+                      <span style={{ fontSize: 11, color: '#888' }}>kg → sube a stock</span>
+                    </div>
+                  </div>
+                ))}
+
+                <div style={{ marginBottom: 0 }}>
+                  <label style={{ fontSize: 11, fontWeight: 600, color: '#7f8c8d', display: 'block', marginBottom: 4 }}>Desecho / Hueso blanco <span style={{ fontWeight: 400 }}>(sin valor)</span></label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <input
+                      type="number" min="0" step="0.001" placeholder="0.000"
+                      value={dshKgDesecho}
+                      onChange={e => setDshKgDesecho(e.target.value)}
+                      style={{ flex: 1, padding: '7px 10px', borderRadius: 8, border: '1.5px solid #bbb', fontSize: 13, fontWeight: 'bold', textAlign: 'right' }}
+                    />
+                    <span style={{ fontSize: 11, color: '#888' }}>kg</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Resultado calculado */}
+              {kgEntrada > 0 && (
+                <div style={{ background: kgLomo > 0 ? '#f0fff4' : '#ffeaea', borderRadius: 10, padding: '12px 14px', marginBottom: 14, border: `1px solid ${kgLomo > 0 ? '#a9dfbf' : '#e74c3c'}` }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#555', marginBottom: 8 }}>RESULTADO DESHUESE</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, fontSize: 12 }}>
+                    <div>Entrada NY: <b>{kgEntrada.toFixed(3)} kg</b></div>
+                    <div style={{ color: '#27ae60' }}>Crédito total: <b>−${(valorResS + valorPuntas).toFixed(4)}</b></div>
+                    <div>Subproductos: <b>{(kgResS + kgPuntas + kgDesecho).toFixed(3)} kg</b></div>
+                    <div style={{ color: kgLomo > 0 ? '#1a5276' : '#e74c3c', fontWeight: 'bold', fontSize: 14, gridColumn: '1/-1', borderTop: '1px solid #ddd', paddingTop: 6, marginTop: 4 }}>
+                      Lomo Bife Limpio: {kgLomo > 0 ? `${kgLomo.toFixed(3)} kg` : '⚠ revisar kg'}
+                      {kgLomo > 0 && <span style={{ marginLeft: 10, color: '#2980b9' }}>C_limpio: ${cLimpio.toFixed(4)}/kg</span>}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {errorDeshuese && (
+                <div style={{ background: '#ffeaea', border: '1px solid #e74c3c', borderRadius: 8, padding: '10px 14px', color: '#e74c3c', fontSize: 13, marginBottom: 14 }}>{errorDeshuese}</div>
+              )}
+
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                <button onClick={() => {
+                  setModalDeshuese(null);
+                  setExito(`✅ Lote ${modalDeshuese.loteId} pasó a Stock de Congelación (sin deshuese)`);
+                  setTimeout(() => setExito(''), 6000);
+                }} style={{ background: '#f0f2f5', border: 'none', borderRadius: 8, padding: '10px 20px', cursor: 'pointer', fontSize: 13 }}>
+                  Omitir
+                </button>
+                <button onClick={confirmarDeshuese} disabled={!valido || guardDeshuese} style={{
+                  background: !valido || guardDeshuese ? '#aaa' : 'linear-gradient(135deg,#27ae60,#1e8449)',
+                  color: 'white', border: 'none', borderRadius: 8,
+                  padding: '10px 24px', cursor: !valido || guardDeshuese ? 'default' : 'pointer',
+                  fontSize: 13, fontWeight: 'bold'
+                }}>
+                  {guardDeshuese ? 'Guardando...' : '🦴 Registrar Deshuese'}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ══ Modal Pesaje ══ */}
       {modalPesaje && (
