@@ -32,6 +32,7 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
   const [autoGuardando,setAutoGuardando]= useState(false);
   const [versiones,    setVersiones]    = useState([]);
   const [modalVer,     setModalVer]     = useState(false);
+  const [verDetalle,   setVerDetalle]   = useState(null); // índice de versión expandida
   const [cfg,          setCfg]          = useState(CFG_DEF);
 
   const [costoSalmuera, setCostoSalmuera] = useState(0);
@@ -438,27 +439,105 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
       {/* ══ Modal Versiones ══ */}
       {modalVer && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-          <div style={{ background: 'white', borderRadius: 16, padding: 24, width: '100%', maxWidth: 500, maxHeight: '80vh', overflowY: 'auto', boxShadow: '0 8px 32px rgba(0,0,0,0.25)' }}>
+          <div style={{ background: 'white', borderRadius: 16, padding: 24, width: '100%', maxWidth: 580, maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 8px 32px rgba(0,0,0,0.25)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
               <div style={{ fontWeight: 'bold', fontSize: 16, color: '#1a1a2e' }}>🔄 Versiones guardadas</div>
-              <button onClick={() => setModalVer(false)} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#888' }}>✕</button>
+              <button onClick={() => { setModalVer(false); setVerDetalle(null); }} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#888' }}>✕</button>
             </div>
             {versiones.length === 0 ? (
               <div style={{ textAlign: 'center', color: '#aaa', padding: 20 }}>Sin versiones — usa "Guardar Historial" para guardar una versión</div>
             ) : (
-              versiones.map((v, i) => (
-                <div key={i} style={{ background: '#f8f9fa', borderRadius: 10, padding: '12px 14px', marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div>
-                    <div style={{ fontWeight: 700, fontSize: 13 }}>Versión {versiones.length - i} — {v.fecha}</div>
-                    <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>
-                      C_mad estimada · Merma mad {v.merma_mad_pct}% · Horno {v.merma_horno_pct}% · Margen {v.margen}%
+              versiones.map((v, i) => {
+                const expandido = verDetalle === i;
+                const mpCarneV   = mps.find(m => m.id === v.mp_carne_id);
+                const mpMostazaV = mps.find(m => m.id === v.mp_mostaza_id);
+
+                // calcular C_final de esta versión para mostrar
+                const costoSalV   = v.kg_sal_base > 0 ? costoSalmuera / v.kg_sal_base : 0;
+                const costoMostV  = (parseFloat(v.gramos_mostaza || 0) / 1000) * parseFloat(mpMostazaV?.precio_kg || 0);
+                const costoRubV   = v.kg_rub_base > 0 ? costoRub / v.kg_rub_base : 0;
+                const precioCarneV= parseFloat(mpCarneV?.precio_kg || 0);
+                const costoInputV = precioCarneV + costoSalV + costoMostV + costoRubV;
+                const kgInjV      = 1 + 1 * (pctSalmuera / 100);
+                const kgPostMadV  = kgInjV * (1 - (v.merma_mad_pct || 0) / 100);
+                const kgFinalV    = kgPostMadV * (1 - (v.merma_horno_pct || 0) / 100);
+                const cFinalV     = kgFinalV > 0 ? costoInputV / kgFinalV : 0;
+                const pvV         = v.margen < 100 ? cFinalV / (1 - (v.margen || 15) / 100) : 0;
+
+                return (
+                  <div key={i} style={{ background: '#f8f9fa', borderRadius: 12, marginBottom: 10, overflow: 'hidden', border: expandido ? '2px solid #8e44ad' : '1px solid #e0e0e0' }}>
+                    {/* Cabecera de versión */}
+                    <div style={{ padding: '12px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: 13 }}>Versión {versiones.length - i} — {v.fecha}</div>
+                        <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>
+                          Merma mad {v.merma_mad_pct}% · Horno {v.merma_horno_pct}% · Margen {v.margen}%
+                          {cFinalV > 0 && <span style={{ color: '#27ae60', fontWeight: 700, marginLeft: 8 }}>· C_final ${cFinalV.toFixed(4)}/kg</span>}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button onClick={() => setVerDetalle(expandido ? null : i)}
+                          style={{ background: expandido ? '#f0e6ff' : 'white', color: '#8e44ad', border: '1.5px solid #8e44ad', borderRadius: 8, padding: '5px 10px', cursor: 'pointer', fontSize: 11, fontWeight: 700 }}>
+                          {expandido ? '▲ Ocultar' : '▼ Ver'}
+                        </button>
+                        <button onClick={() => restaurarVersion(v)}
+                          style={{ background: '#8e44ad', color: 'white', border: 'none', borderRadius: 8, padding: '6px 12px', cursor: 'pointer', fontSize: 12, fontWeight: 'bold' }}>
+                          Restaurar
+                        </button>
+                      </div>
                     </div>
+
+                    {/* Detalle expandido */}
+                    {expandido && (
+                      <div style={{ borderTop: '1px solid #e0e0e0', padding: '14px 16px', background: 'white' }}>
+                        {/* Configuración */}
+                        <div style={{ fontWeight: 700, fontSize: 11, color: '#888', marginBottom: 10, letterSpacing: 1 }}>CONFIGURACIÓN</div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 14 }}>
+                          <DetalleItem label="⏱ Maduración" valor={`${v.horas_mad || 0}h ${v.minutos_mad || 0}m`} />
+                          <DetalleItem label="🟡 Mostaza" valor={`${v.gramos_mostaza || 0}g = ${((v.gramos_mostaza || 0)/1000).toFixed(3)} kg`} />
+                        </div>
+
+                        {/* Ingredientes */}
+                        <div style={{ fontWeight: 700, fontSize: 11, color: '#888', marginBottom: 10, letterSpacing: 1 }}>INGREDIENTES Y COSTOS</div>
+                        {[
+                          { label: '💉 Salmuera',  val: v.formula_salmuera || '—', extra: v.kg_sal_base  ? `para ${v.kg_sal_base} kg carne` : '', costo: costoSalV,   color: '#2980b9' },
+                          { label: '🥩 Carne',     val: mpCarneV ? (mpCarneV.nombre_producto || mpCarneV.nombre) : (v.mp_carne_id ? '(MP no encontrada)' : '—'), costo: precioCarneV, color: '#e74c3c' },
+                          { label: '🟡 Mostaza',   val: mpMostazaV ? (mpMostazaV.nombre_producto || mpMostazaV.nombre) : (v.mp_mostaza_id ? '(MP no encontrada)' : '—'), costo: costoMostV,  color: '#f39c12' },
+                          { label: '🌶️ Rub',       val: v.formula_rub || '—',      extra: v.kg_rub_base  ? `para ${v.kg_rub_base} kg carne` : '', costo: costoRubV,   color: '#6c3483' },
+                        ].map(r => (
+                          <div key={r.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '6px 0', borderBottom: '1px solid #f5f5f5', fontSize: 12 }}>
+                            <div>
+                              <span style={{ fontWeight: 700, color: r.color }}>{r.label}</span>
+                              <span style={{ color: '#555', marginLeft: 6 }}>{r.val}</span>
+                              {r.extra && <span style={{ color: '#aaa', fontSize: 10, marginLeft: 6 }}>{r.extra}</span>}
+                            </div>
+                            <span style={{ fontWeight: 700, color: r.color, whiteSpace: 'nowrap', marginLeft: 10 }}>${r.costo.toFixed(4)}/kg</span>
+                          </div>
+                        ))}
+
+                        {/* Mermas */}
+                        <div style={{ fontWeight: 700, fontSize: 11, color: '#888', margin: '14px 0 10px', letterSpacing: 1 }}>MERMAS Y RESULTADO</div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
+                          <DetalleItem label="📉 Merma Maduración" valor={`${v.merma_mad_pct || 0}%`} color="#8e44ad" />
+                          <DetalleItem label="📉 Merma Horneado"   valor={`${v.merma_horno_pct || 0}%`} color="#e74c3c" />
+                        </div>
+
+                        {/* Resultado */}
+                        <div style={{ background: '#1a1a2e', borderRadius: 10, padding: '12px 14px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                          <div style={{ textAlign: 'center' }}>
+                            <div style={{ fontSize: 10, color: '#aaa' }}>C_final</div>
+                            <div style={{ fontSize: 18, fontWeight: 'bold', color: '#27ae60' }}>${cFinalV.toFixed(4)}/kg</div>
+                          </div>
+                          <div style={{ textAlign: 'center' }}>
+                            <div style={{ fontSize: 10, color: '#aaa' }}>Precio venta ({v.margen}%)</div>
+                            <div style={{ fontSize: 18, fontWeight: 'bold', color: '#f39c12' }}>${pvV.toFixed(4)}/kg</div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                  <button onClick={() => restaurarVersion(v)} style={{ background: '#8e44ad', color: 'white', border: 'none', borderRadius: 8, padding: '6px 12px', cursor: 'pointer', fontSize: 12, fontWeight: 'bold' }}>
-                    Restaurar
-                  </button>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>
@@ -526,6 +605,15 @@ function FilaCosto({ icon, titulo, color, costoKg, nota, children }) {
       </div>
       {children}
       {nota && <div style={{ fontSize: 10, color: '#aaa', marginTop: 6 }}>{nota}</div>}
+    </div>
+  );
+}
+
+function DetalleItem({ label, valor, color = '#333' }) {
+  return (
+    <div style={{ background: '#f8f9fa', borderRadius: 8, padding: '7px 10px' }}>
+      <div style={{ fontSize: 10, color: '#aaa', marginBottom: 2 }}>{label}</div>
+      <div style={{ fontSize: 13, fontWeight: 700, color }}>{valor}</div>
     </div>
   );
 }
