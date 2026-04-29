@@ -8,6 +8,7 @@ import { norm }                from './components/formulacion/FormulacionInputs'
 import FormulacionHeader       from './components/formulacion/FormulacionHeader';
 import VistaFormulador         from './components/formulacion/VistaFormulador';
 import VistaCorte              from './components/formulacion/VistaCorte';
+import VistaHorneado           from './components/formulacion/VistaHorneado';
 import VistaLimpia             from './components/formulacion/VistaLimpia';
 import SeccionIngredientes     from './components/formulacion/SeccionIngredientes';
 import PanelCostos             from './components/formulacion/PanelCostos';
@@ -21,6 +22,7 @@ function Formulacion({ producto, onVolver, onVolverMenu, onAbrirMaterias, userRo
   const f = useFormulacion({ producto, userRol, currentUser });
   const esFormulador = userRol?.rol === 'formulador';
   const esCorte      = producto?.categoria === 'Cortes' || producto?.categoria === 'CORTES';
+  const esHorneado   = producto?.categoria === 'AHUMADOS - HORNEADOS' || producto?.categoria === 'AHUMADOS-HORNEADOS';
   const [versionesAbierto, setVersionesAbierto] = useState(false);
   const [tabVersiones,     setTabVersiones]     = useState('versiones');
 
@@ -52,6 +54,24 @@ function Formulacion({ producto, onVolver, onVolverMenu, onAbrirMaterias, userRo
     });
     return () => { if (onIngredientesFormula) onIngredientesFormula(null); };
   }, [f.ingredientesMP, f.ingredientesAD]);
+
+  // ── Vista horneado (AHUMADOS - HORNEADOS) ────────────────
+  if (esHorneado) return (
+    <div style={{ minHeight:'100vh', background:'#f0f2f5', fontFamily:'"Segoe UI", system-ui, sans-serif' }}>
+      <div style={{ background:'linear-gradient(135deg,#922b21,#6e2517)', padding:'14px 20px', position:'sticky', top:0, zIndex:50 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+          <button onClick={onVolver} style={{ background:'rgba(255,255,255,0.15)', color:'white', border:'none', borderRadius:8, padding:'7px 12px', cursor:'pointer', fontSize:13 }}>← Volver</button>
+          <div>
+            <div style={{ color:'white', fontWeight:'bold', fontSize:17 }}>🔥 {producto.nombre}</div>
+            <div style={{ color:'rgba(255,255,255,0.65)', fontSize:11 }}>Ahumado / Horneado — costos por fase</div>
+          </div>
+        </div>
+      </div>
+      <div style={{ padding: f.mobile ? '10px' : '16px 24px' }}>
+        <VistaHorneado producto={producto} mobile={f.mobile} />
+      </div>
+    </div>
+  );
 
   // ── Vista corte (categoría Cortes) ───────────────────────
   if (esCorte) return (
