@@ -338,12 +338,30 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
                   <span style={{ color: '#a9dfbf' }}>{(kgFinal * 1000).toFixed(0)}g por kg carne ({(kgFinal * 100).toFixed(1)}%)</span>
                 </div>
               </div>
+              {/* C_final con fórmula */}
               <div style={{ background: 'rgba(39,174,96,0.15)', borderRadius: 10, padding: '12px 16px', marginTop: 8 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                   <span style={{ fontSize: 12, color: '#a9dfbf' }}>C_final (con mermas)</span>
                   <span style={{ fontSize: 24, fontWeight: 'bold', color: '#27ae60' }}>${cFinal.toFixed(4)}/kg</span>
                 </div>
+                {/* Fórmula C_final */}
+                <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: 8, padding: '10px 12px', fontSize: 11, color: '#a9dfbf', lineHeight: 1.8 }}>
+                  <div style={{ color: '#fff', fontWeight: 700, marginBottom: 4, fontSize: 10, letterSpacing: 1 }}>FÓRMULA:</div>
+                  <div>
+                    C_final = Costo total ÷ Rendimiento final
+                  </div>
+                  <div style={{ color: '#7dcea0' }}>
+                    = (${precioCarne.toFixed(4)} + ${costoSalKg.toFixed(4)} + ${costoMostKg.toFixed(4)} + ${costoRubKg.toFixed(4)}) ÷ {(kgFinal).toFixed(4)} kg
+                  </div>
+                  <div style={{ color: '#a9dfbf' }}>
+                    = ${costoInput.toFixed(4)} ÷ [(1 − {cfg.merma_mad_pct}%) × (1 − {cfg.merma_horno_pct}%) × {kgInyectado.toFixed(3)}]
+                  </div>
+                  <div style={{ color: '#27ae60', fontWeight: 700 }}>
+                    = ${costoInput.toFixed(4)} ÷ {kgFinal.toFixed(4)} = <span style={{ fontSize: 13 }}>${cFinal.toFixed(4)}/kg</span>
+                  </div>
+                </div>
               </div>
+
               {/* Margen */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 14 }}>
                 <label style={{ fontSize: 12, color: '#aaa', fontWeight: 700, whiteSpace: 'nowrap' }}>Margen ganancia</label>
@@ -359,6 +377,24 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
                   </div>
                 )}
               </div>
+
+              {/* Fórmula precio de venta */}
+              {cfg.margen > 0 && (
+                <div style={{ background: 'rgba(243,156,18,0.1)', borderRadius: 8, padding: '10px 12px', marginTop: 10, fontSize: 11, color: '#f9ca74', lineHeight: 1.8 }}>
+                  <div style={{ color: '#fff', fontWeight: 700, marginBottom: 4, fontSize: 10, letterSpacing: 1 }}>FÓRMULA PRECIO DE VENTA:</div>
+                  <div>Precio = C_final ÷ (1 − Margen)</div>
+                  <div style={{ color: '#f0b429' }}>
+                    = ${cFinal.toFixed(4)} ÷ (1 − {cfg.margen}%)
+                  </div>
+                  <div style={{ color: '#f0b429' }}>
+                    = ${cFinal.toFixed(4)} ÷ {((100 - cfg.margen) / 100).toFixed(2)}
+                  </div>
+                  <div style={{ color: '#f39c12', fontWeight: 700 }}>
+                    = <span style={{ fontSize: 13 }}>${precioVenta.toFixed(4)}/kg</span>
+                    <span style={{ fontSize: 10, color: '#aaa', marginLeft: 8 }}>(el {cfg.margen}% restante = ganancia)</span>
+                  </div>
+                </div>
+              )}
             </div>
 
             {!modoEdicion && (
