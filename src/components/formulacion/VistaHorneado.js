@@ -92,27 +92,72 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
     })();
   }, [cfg.formula_rub, mps]);
 
+  // ── Helper: guarda config_horneado de forma segura ──────────
+  async function saveConfigHorneado(payload) {
+    // Verificar si ya existe un registro en config_productos
+    const { data: existing } = await supabase
+      .from('config_productos')
+      .select('id')
+      .eq('producto_nombre', producto.nombre)
+      .maybeSingle();
+
+    if (existing) {
+      // Ya existe → solo actualizar el campo config_horneado
+      const { error } = await supabase
+        .from('config_productos')
+        .update({ config_horneado: payload })
+        .eq('producto_nombre', producto.nombre);
+      if (error) throw error;
+    } else {
+      // No existe → insertar registro completo con defaults
+      const { error } = await supabase.from('config_productos').insert({
+        producto_nombre:   producto.nombre,
+        producto_id:       producto.id,
+        fecha:             new Date().toISOString().split('T')[0],
+        num_paradas:       1,
+        porcentaje_salmuera: 15,
+        merma:             0.07,
+        margen:            cfg.margen / 100,
+        mod_cif_kg:        0,
+        empaque_nombre:    '',
+        empaque_precio_kg: 0,
+        empaque_cantidad:  1,
+        empaque_unidad:    'Unidades',
+        hilo_nombre:       '',
+        hilo_precio_kg:    0,
+        hilo_kg:           0,
+        fundas:            [],
+        precio_venta_kg:   0,
+        costo_total_kg:    0,
+        config_horneado:   payload,
+      });
+      if (error) throw error;
+    }
+  }
+
   // ── Guardar config (Fijar cambios) ─────────────────────────
   async function fijarCambios() {
     setGuardando(true);
-    await supabase.from('config_productos').upsert(
-      { producto_nombre: producto.nombre, producto_id: producto.id, config_horneado: { ...cfg, versiones } },
-      { onConflict: 'producto_nombre' }
-    );
+    try {
+      await saveConfigHorneado({ ...cfg, versiones });
+      setModoEdicion(false);
+    } catch (e) {
+      alert('Error al guardar: ' + e.message);
+    }
     setGuardando(false);
-    setModoEdicion(false);
   }
 
   // ── Guardar historial (versión) ────────────────────────────
   async function guardarHistorial() {
     setAutoGuardando(true);
-    const snap = { fecha: new Date().toISOString().split('T')[0], ...cfg };
-    const nuevasVer = [snap, ...versiones].slice(0, 20);
-    setVersiones(nuevasVer);
-    await supabase.from('config_productos').upsert(
-      { producto_nombre: producto.nombre, producto_id: producto.id, config_horneado: { ...cfg, versiones: nuevasVer } },
-      { onConflict: 'producto_nombre' }
-    );
+    try {
+      const snap      = { fecha: new Date().toISOString().split('T')[0], ...cfg };
+      const nuevasVer = [snap, ...versiones].slice(0, 20);
+      await saveConfigHorneado({ ...cfg, versiones: nuevasVer });
+      setVersiones(nuevasVer);
+    } catch (e) {
+      alert('Error al guardar historial: ' + e.message);
+    }
     setAutoGuardando(false);
   }
 
