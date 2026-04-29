@@ -18,6 +18,7 @@ export default function TabInyeccion({ currentUser, mobile, onSalmueraChange }) 
   const [notas,               setNotas]               = useState('');
   const [buscadorCorte,       setBuscadorCorte]       = useState('');
   const [porcentajeSalmuera,  setPorcentajeSalmuera]  = useState(20);
+  const [diasMaduracion,      setDiasMaduracion]      = useState(5);
 
   const cargarInicial = useCallback(async () => {
     setCargando(true);
@@ -43,10 +44,11 @@ export default function TabInyeccion({ currentUser, mobile, onSalmueraChange }) 
     }
     Promise.all([
       supabase.from('formulaciones').select('*').eq('producto_nombre', formulaSelec.nombre).order('orden'),
-      supabase.from('config_productos').select('porcentaje_salmuera').eq('producto_nombre', formulaSelec.nombre).single()
+      supabase.from('config_productos').select('porcentaje_salmuera,dias_maduracion').eq('producto_nombre', formulaSelec.nombre).single()
     ]).then(([{ data: filas }, { data: cfg }]) => {
       setIngredientesFormula(filas || []);
       setPorcentajeSalmuera(parseFloat(cfg?.porcentaje_salmuera) || 20);
+      setDiasMaduracion(parseFloat(cfg?.dias_maduracion) || 5);
     });
   }, [formulaSelec]);
 
@@ -214,9 +216,8 @@ export default function TabInyeccion({ currentUser, mobile, onSalmueraChange }) 
         .eq('fecha_entrada', fecha);
       const loteId = (lotesHoy || 0) === 0 ? fechaStr : `${fechaStr}/${lotesHoy}`;
 
-      const diasMad = (formulaSelec?.nombre || '').toLowerCase().includes('pastrame') ? 3 : 4;
       const fechaSalidaObj = new Date(fecha + 'T12:00:00');
-      fechaSalidaObj.setDate(fechaSalidaObj.getDate() + diasMad);
+      fechaSalidaObj.setDate(fechaSalidaObj.getDate() + Math.round(diasMaduracion));
       const fechaSalida = fechaSalidaObj.toISOString().split('T')[0];
 
       const { data: lote, error: e4 } = await supabase.from('lotes_maduracion').insert({

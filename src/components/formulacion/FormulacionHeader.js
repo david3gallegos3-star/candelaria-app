@@ -251,6 +251,30 @@ export default function FormulacionHeader({
             <span style={{ fontSize:'13px', color:'#ccc' }}>%</span>
           </div>
 
+          {/* Días de maduración — visible para cortes, ahumados, marinados, inmersión */}
+          {['Cortes','CORTES','AHUMADOS - HORNEADOS','AHUMADOS-HORNEADOS','MARINADOS','INMERSIÓN','INMERSION'].includes(producto?.categoria) && (
+            <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+              <label style={{ fontSize:'11px', fontWeight:'bold', color:'#a9dfbf', whiteSpace:'nowrap' }}>
+                🕐 DÍAS MAD.
+              </label>
+              <NumInput
+                value={config.dias_maduracion ?? 5}
+                onChange={v => {
+                  setConfig({ ...config, dias_maduracion: parseFloat(v) || 1 });
+                  programarAutoGuardado();
+                }}
+                style={{
+                  width: mobile ? 50 : 55,
+                  padding: mobile ? '7px' : '5px',
+                  borderRadius:'7px', border:'1.5px solid #a9dfbf',
+                  fontSize:'14px', fontWeight:'bold', textAlign:'center',
+                  background:'rgba(39,174,96,0.2)', color:'#a9dfbf'
+                }}
+              />
+              <span style={{ fontSize:'11px', color:'#a9dfbf' }}>días</span>
+            </div>
+          )}
+
           {[
             ['TOTAL CRUDO',     `${totalCrudoG.toLocaleString()} g`, 'rgba(255,255,255,0.1)', 'white'   ],
             ['COSTO BATCH',     `$${totalCostoMP.toFixed(2)}`,       'rgba(255,255,255,0.1)', '#f39c12' ],
