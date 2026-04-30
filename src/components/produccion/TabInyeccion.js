@@ -189,9 +189,12 @@ export default function TabInyeccion({ currentUser, mobile, onSalmueraChange }) 
       const fecha = new Date().toISOString().split('T')[0];
       const costoCarneTotal = cortesConCosto.reduce((s, c) => s + c.costoCarne, 0);
 
+      // Ratio para ajustar cada corte al peso neto (descontando sub-producto de inyección)
+      const ratioNeto = kgCarneTotal > 0 ? kgCarneNeta / kgCarneTotal : 1;
+
       const { data: prod, error: e1 } = await supabase.from('produccion_inyeccion').insert({
         fecha, formula_salmuera: formulaSelec.nombre, porcentaje_inyeccion: 100,
-        kg_carne_total: kgCarneTotal, kg_salmuera_requerida: kgSalmueraReq,
+        kg_carne_total: kgCarneNeta, kg_salmuera_requerida: kgSalmueraReq,
         costo_carne_total: costoCarneTotal, costo_salmuera_total: costoSalmueraTotal,
         costo_total: costoCarneTotal + costoSalmueraTotal, estado: 'abierto',
         usuario_nombre: currentUser?.email || '', user_id: currentUser?.id || null,
@@ -201,16 +204,17 @@ export default function TabInyeccion({ currentUser, mobile, onSalmueraChange }) 
       const prodId = prod.id;
 
       const filasCorte = cortesConCosto.filter(f => parseFloat(f.kg) > 0).map(f => {
-        const kgCarne    = parseFloat(f.kg);
-        const kgSal      = kgCarneTotal > 0 ? kgSalmueraReq * (kgCarne / kgCarneTotal) : 0;
+        const kgCarne    = parseFloat(f.kg) * ratioNeto; // kg neto que realmente se inyecta
+        const kgSal      = kgCarneNeta > 0 ? kgSalmueraReq * (kgCarne / kgCarneNeta) : 0;
         const costoSal   = f.costoSal || 0;
         const costoCarne = f.costoCarne || 0;
         const kgTotal    = kgCarne + kgSal;
-        // C_iny = (costo_carne + costo_salmuera) / (kg_carne + kg_salmuera)
+        // C_iny = (costo_carne + costo_salmuera) / (kg_carne_neta + kg_salmuera)
         const costo_final_kg = kgTotal > 0 ? (costoCarne + costoSal) / kgTotal : 0;
         return {
           produccion_id: prodId, corte_nombre: f.mp.nombre_producto || f.mp.nombre,
           materia_prima_id: f.mp.id, kg_carne_cruda: kgCarne,
+          kg_original: parseFloat(f.kg), // kg bruto original para descontar stock
           precio_kg_carne: parseFloat(f.precio_kg), costo_carne: costoCarne,
           kg_salmuera_asignada: kgSal, costo_salmuera_asignado: costoSal,
           kg_retazos: 0, kg_carne_limpia: kgCarne,
@@ -262,14 +266,15 @@ export default function TabInyeccion({ currentUser, mobile, onSalmueraChange }) 
         const { data: inv } = await supabase.from('inventario_mp')
           .select('id, stock_kg').eq('materia_prima_id', f.materia_prima_id).maybeSingle();
         if (inv) {
+          const kgDescontar = f.kg_original || f.kg_carne_cruda; // usar kg bruto para el stock
           await supabase.from('inventario_mp')
-            .update({ stock_kg: Math.max(0, (inv.stock_kg || 0) - f.kg_carne_cruda) })
+            .update({ stock_kg: Math.max(0, (inv.stock_kg || 0) - kgDescontar) })
             .eq('id', inv.id);
           await supabase.from('inventario_movimientos').insert({
             materia_prima_id: f.materia_prima_id,
             nombre_mp:        f.corte_nombre,
             tipo:             'salida',
-            kg:               f.kg_carne_cruda,
+            kg:               kgDescontar,
             motivo:           `Inyección — ${formulaSelec.nombre}`,
             usuario_nombre:   currentUser?.email || '',
             user_id:          currentUser?.id || null,
