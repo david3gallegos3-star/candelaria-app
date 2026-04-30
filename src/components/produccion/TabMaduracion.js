@@ -314,9 +314,9 @@ export default function TabMaduracion({ mobile, currentUser }) {
         (hc.producto_nombre || '').toLowerCase().includes('pastrame')
       )?.config) || {};
 
-      // Sub-productos activos en la config del producto (incluye perdida para registrar merma real)
+      // Sub-productos activos en la config del producto (excluye inyeccion — ya se maneja en TabInyeccion)
       const spActivosConf = Object.entries(cfgHorn.subproductos || {})
-        .filter(([, sp]) => sp?.activo)
+        .filter(([fase, sp]) => sp?.activo && fase !== 'inyeccion')
         .map(([fase, sp]) => ({ fase, sp }));
 
       // Preparar datos para wizard horneado si aplica
