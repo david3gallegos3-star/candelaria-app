@@ -326,87 +326,90 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
               </div>
             </Seccion>
 
-            {/* Resultado */}
-            <div style={{ background: '#1a1a2e', borderRadius: 12, padding: '18px 20px', marginBottom: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }}>
-              <div style={{ fontWeight: 700, fontSize: 13, color: '#aaa', marginBottom: 14 }}>CÁLCULO FINAL — 1 KG CARNE INPUT</div>
-              {[
-                { label: 'Carne',    val: precioCarne, color: '#e74c3c' },
-                { label: 'Salmuera', val: costoSalKg,  color: '#2980b9' },
-                { label: 'Mostaza',  val: costoMostKg, color: '#f39c12' },
-                { label: 'Rub',      val: costoRubKg,  color: '#c39bd3' },
-              ].map(r => (
-                <div key={r.label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 5 }}>
-                  <span style={{ color: '#888' }}>{r.label}</span>
-                  <span style={{ color: r.color, fontWeight: 700 }}>${r.val.toFixed(4)}/kg</span>
+            {/* ── RESULTADO A: Inversión Total ── */}
+            <div style={{ background: '#1a1a2e', borderRadius: 12, padding: '18px 20px', marginBottom: 10, boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }}>
+
+              {/* Bloque A */}
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                  <div style={{ background: '#e74c3c', borderRadius: 6, padding: '2px 10px', fontSize: 11, fontWeight: 700, color: 'white' }}>A</div>
+                  <span style={{ fontWeight: 700, fontSize: 12, color: '#ddd', letterSpacing: 1 }}>ENTRADA DE INSUMOS (por 1 kg de carne)</span>
                 </div>
-              ))}
-              <div style={{ borderTop: '1px solid #333', margin: '10px 0', paddingTop: 10 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 4 }}>
-                  <span style={{ color: '#aaa' }}>Costo total input</span>
-                  <span style={{ color: 'white', fontWeight: 700 }}>${costoInput.toFixed(4)}/kg</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
-                  <span style={{ color: '#aaa' }}>Rendimiento final</span>
-                  <span style={{ color: '#a9dfbf' }}>{(kgFinal * 1000).toFixed(0)}g por kg carne ({(kgFinal * 100).toFixed(1)}%)</span>
-                </div>
-              </div>
-              {/* C_final con fórmula */}
-              <div style={{ background: 'rgba(39,174,96,0.15)', borderRadius: 10, padding: '12px 16px', marginTop: 8 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <span style={{ fontSize: 12, color: '#a9dfbf' }}>C_final (con mermas)</span>
-                  <span style={{ fontSize: 24, fontWeight: 'bold', color: '#27ae60' }}>${cFinal.toFixed(4)}/kg</span>
-                </div>
-                {/* Fórmula C_final */}
-                <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: 8, padding: '10px 12px', fontSize: 11, color: '#a9dfbf', lineHeight: 1.8 }}>
-                  <div style={{ color: '#fff', fontWeight: 700, marginBottom: 4, fontSize: 10, letterSpacing: 1 }}>FÓRMULA:</div>
-                  <div>
-                    C_final = Costo total ÷ Rendimiento final
+                {[
+                  { label: 'Carne',    val: precioCarne, color: '#e74c3c' },
+                  { label: 'Salmuera', val: costoSalKg,  color: '#2980b9' },
+                  { label: 'Mostaza',  val: costoMostKg, color: '#f39c12' },
+                  { label: 'Rub',      val: costoRubKg,  color: '#c39bd3' },
+                ].map(r => (
+                  <div key={r.label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 5, paddingLeft: 8 }}>
+                    <span style={{ color: '#888' }}>+ {r.label}</span>
+                    <span style={{ color: r.color, fontWeight: 700 }}>${r.val.toFixed(4)}</span>
                   </div>
-                  <div style={{ color: '#7dcea0' }}>
-                    = (${precioCarne.toFixed(4)} + ${costoSalKg.toFixed(4)} + ${costoMostKg.toFixed(4)} + ${costoRubKg.toFixed(4)}) ÷ {(kgFinal).toFixed(4)} kg
-                  </div>
-                  <div style={{ color: '#a9dfbf' }}>
-                    = ${costoInput.toFixed(4)} ÷ [(1 − {cfg.merma_mad_pct}%) × (1 − {cfg.merma_horno_pct}%) × {kgInyectado.toFixed(3)}]
-                  </div>
-                  <div style={{ color: '#27ae60', fontWeight: 700 }}>
-                    = ${costoInput.toFixed(4)} ÷ {kgFinal.toFixed(4)} = <span style={{ fontSize: 13 }}>${cFinal.toFixed(4)}/kg</span>
-                  </div>
+                ))}
+                <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #333', paddingTop: 8, marginTop: 4 }}>
+                  <span style={{ color: 'white', fontWeight: 700, fontSize: 13 }}>= Inversión Total (Resultado A)</span>
+                  <span style={{ color: 'white', fontWeight: 'bold', fontSize: 16 }}>${costoInput.toFixed(4)}</span>
                 </div>
               </div>
 
-              {/* Margen */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 14 }}>
-                <label style={{ fontSize: 12, color: '#aaa', fontWeight: 700, whiteSpace: 'nowrap' }}>Margen ganancia</label>
-                <input type="number" min="0" max="99" step="1" disabled={!modoEdicion}
-                  value={cfg.margen}
-                  onChange={e => upd('margen', Math.min(99, Math.max(0, parseFloat(e.target.value) || 0)))}
-                  style={{ width: 70, padding: '6px 8px', borderRadius: 8, fontSize: 14, fontWeight: 'bold', textAlign: 'center', border: `1.5px solid ${modoEdicion ? '#27ae60' : '#444'}`, background: 'rgba(255,255,255,0.1)', color: 'white', outline: 'none' }} />
-                <span style={{ fontSize: 13, color: '#aaa' }}>%</span>
-                {cfg.margen > 0 && (
-                  <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
-                    <div style={{ fontSize: 10, color: '#aaa' }}>Precio de venta</div>
-                    <div style={{ fontSize: 18, fontWeight: 'bold', color: '#f39c12' }}>${precioVenta.toFixed(4)}/kg</div>
+              {/* Bloque B */}
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                  <div style={{ background: '#8e44ad', borderRadius: 6, padding: '2px 10px', fontSize: 11, fontWeight: 700, color: 'white' }}>B</div>
+                  <span style={{ fontWeight: 700, fontSize: 12, color: '#ddd', letterSpacing: 1 }}>PROCESO DE MERMAS</span>
+                </div>
+                <div style={{ paddingLeft: 8 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 5 }}>
+                    <span style={{ color: '#888' }}>Kg inyectado (carne + salmuera)</span>
+                    <span style={{ color: '#7ec8f7', fontWeight: 700 }}>{kgInyectado.toFixed(4)} kg</span>
                   </div>
-                )}
-              </div>
-
-              {/* Fórmula precio de venta */}
-              {cfg.margen > 0 && (
-                <div style={{ background: 'rgba(243,156,18,0.1)', borderRadius: 8, padding: '10px 12px', marginTop: 10, fontSize: 11, color: '#f9ca74', lineHeight: 1.8 }}>
-                  <div style={{ color: '#fff', fontWeight: 700, marginBottom: 4, fontSize: 10, letterSpacing: 1 }}>FÓRMULA PRECIO DE VENTA:</div>
-                  <div>Precio = C_final ÷ (1 − Margen)</div>
-                  <div style={{ color: '#f0b429' }}>
-                    = ${cFinal.toFixed(4)} ÷ (1 − {cfg.margen}%)
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 5 }}>
+                    <span style={{ color: '#888' }}>− Merma maduración ({cfg.merma_mad_pct}%)</span>
+                    <span style={{ color: '#c39bd3', fontWeight: 700 }}>−{mermaGrMad.toFixed(0)} g</span>
                   </div>
-                  <div style={{ color: '#f0b429' }}>
-                    = ${cFinal.toFixed(4)} ÷ {((100 - cfg.margen) / 100).toFixed(2)}
-                  </div>
-                  <div style={{ color: '#f39c12', fontWeight: 700 }}>
-                    = <span style={{ fontSize: 13 }}>${precioVenta.toFixed(4)}/kg</span>
-                    <span style={{ fontSize: 10, color: '#aaa', marginLeft: 8 }}>(el {cfg.margen}% restante = ganancia)</span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 8 }}>
+                    <span style={{ color: '#888' }}>− Merma horneado ({cfg.merma_horno_pct}%)</span>
+                    <span style={{ color: '#e74c3c', fontWeight: 700 }}>−{mermaGrHorno.toFixed(0)} g</span>
                   </div>
                 </div>
-              )}
+                <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #333', paddingTop: 8 }}>
+                  <span style={{ color: 'white', fontWeight: 700, fontSize: 13 }}>= Peso Total de Salida (Resultado B)</span>
+                  <span style={{ color: 'white', fontWeight: 'bold', fontSize: 16 }}>{(kgFinal * 1000).toFixed(0)} g · {kgFinal.toFixed(4)} kg</span>
+                </div>
+              </div>
+
+              {/* Costo Real = A / B */}
+              <div style={{ background: 'rgba(39,174,96,0.15)', borderRadius: 10, padding: '14px 16px', marginBottom: 14 }}>
+                <div style={{ fontSize: 11, color: '#a9dfbf', marginBottom: 6 }}>
+                  Costo Real/kg = Resultado A ÷ Resultado B
+                </div>
+                <div style={{ fontSize: 12, color: '#7dcea0', marginBottom: 6 }}>
+                  = ${costoInput.toFixed(4)} ÷ {kgFinal.toFixed(4)} kg
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontWeight: 700, fontSize: 13, color: '#a9dfbf' }}>COSTO REAL POR KG</span>
+                  <span style={{ fontSize: 26, fontWeight: 'bold', color: '#27ae60' }}>${cFinal.toFixed(4)}</span>
+                </div>
+              </div>
+
+              {/* Margen → Precio de venta */}
+              <div style={{ background: 'rgba(243,156,18,0.12)', borderRadius: 10, padding: '14px 16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                  <span style={{ fontSize: 12, color: '#f9ca74', fontWeight: 700 }}>Margen de ganancia</span>
+                  <input type="number" min="0" max="99" step="1" disabled={!modoEdicion}
+                    value={cfg.margen}
+                    onChange={e => upd('margen', Math.min(99, Math.max(0, parseFloat(e.target.value) || 0)))}
+                    style={{ width: 60, padding: '5px 8px', borderRadius: 8, fontSize: 14, fontWeight: 'bold', textAlign: 'center', border: `1.5px solid ${modoEdicion ? '#f39c12' : '#555'}`, background: 'rgba(255,255,255,0.08)', color: 'white', outline: 'none' }} />
+                  <span style={{ fontSize: 13, color: '#f9ca74' }}>%</span>
+                </div>
+                <div style={{ fontSize: 11, color: '#f0b429', marginBottom: 6 }}>
+                  Precio = ${cFinal.toFixed(4)} ÷ (1 − {cfg.margen}%) = ${cFinal.toFixed(4)} ÷ {((100 - cfg.margen) / 100).toFixed(2)}
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontWeight: 700, fontSize: 13, color: '#f9ca74' }}>PRECIO DE VENTA/KG</span>
+                  <span style={{ fontSize: 26, fontWeight: 'bold', color: '#f39c12' }}>${precioVenta.toFixed(4)}</span>
+                </div>
+              </div>
             </div>
 
             {!modoEdicion && (
