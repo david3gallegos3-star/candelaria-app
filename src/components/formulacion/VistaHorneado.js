@@ -483,7 +483,7 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
                     </div>
                   ))}
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 5 }}>
-                    <span style={{ color: '#888' }}>− Merma maduración ({cfg.merma_mad_pct}%) sobre {(kgEntradaMad * 1000).toFixed(0)} g</span>
+                    <span style={{ color: '#888' }}>− Merma maduración ({cfg.merma_mad_pct}%) sobre {(kgInyectado * 1000).toFixed(0)} g</span>
                     <span style={{ color: '#c39bd3', fontWeight: 700 }}>−{mermaGrMad.toFixed(0)} g</span>
                   </div>
                   {/* Sub-productos entre maduración y horneado */}
