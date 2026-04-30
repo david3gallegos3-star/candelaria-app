@@ -156,7 +156,7 @@ export default function TabInyeccion({ currentUser, mobile, onSalmueraChange }) 
       kgCarneBruta: kgCarneTotal,
       porcentajeSalmuera,
     });
-  }, [formulaSelec, ingredientesFormula, mps, inventario, kgCarneTotal]);
+  }, [formulaSelec, ingredientesFormula, mps, inventario, kgCarneTotal, kgSalmueraReq]);
 
   const mpsFiltradas = mps.filter(m => {
     const txt = buscadorCorte.toLowerCase();
