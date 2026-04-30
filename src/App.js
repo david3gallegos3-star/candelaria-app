@@ -192,12 +192,12 @@ function App() {
     const { data: mpRetazos } = await supabase.from('materias_primas')
       .select('id').in('nombre', ['Retazos Cortes', 'Aserrín Cortes']).limit(1);
     if (!mpRetazos || mpRetazos.length === 0) {
-      await supabase.from('materias_primas').insert({
+      await supabase.from('materias_primas').upsert({
         id: 'RET001',
         nombre: 'Aserrín Cortes', nombre_producto: 'Aserrín Cortes',
         categoria: 'Retazos', precio_kg: 0,
         estado: 'ACTIVO', eliminado: false,
-      });
+      }, { onConflict: 'id', ignoreDuplicates: true });
     }
   }
 
