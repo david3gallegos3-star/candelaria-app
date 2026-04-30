@@ -72,7 +72,7 @@ export default function PantallaInyeccion({ onVolver, currentUser }) {
       supabase.from('formulaciones').select('*')
         .eq('producto_nombre', formulaSelec.nombre).order('orden'),
       supabase.from('config_productos').select('porcentaje_salmuera')
-        .eq('producto_nombre', formulaSelec.nombre).single()
+        .eq('producto_nombre', formulaSelec.nombre).maybeSingle()
     ]).then(([{ data: filas }, { data: cfg }]) => {
       setIngredientesFormula(filas || []);
       setPorcentajeSalmuera(parseFloat(cfg?.porcentaje_salmuera) || 20);
