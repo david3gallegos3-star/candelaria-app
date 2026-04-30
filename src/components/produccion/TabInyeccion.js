@@ -19,6 +19,9 @@ export default function TabInyeccion({ currentUser, mobile, onSalmueraChange }) 
   const [buscadorCorte,       setBuscadorCorte]       = useState('');
   const [porcentajeSalmuera,  setPorcentajeSalmuera]  = useState(20);
   const [diasMaduracion,      setDiasMaduracion]      = useState(5);
+  const [horneadoCfgInj,      setHorneadoCfgInj]      = useState(null); // config del producto que usa esta salmuera
+  const [kgSubprodIny,        setKgSubprodIny]        = useState('');   // kg reales de sub-producto inyección
+  const [spInyMp,             setSpInyMp]             = useState(null); // info MP para mp_existente
 
   const cargarInicial = useCallback(async () => {
     setCargando(true);
@@ -44,18 +47,41 @@ export default function TabInyeccion({ currentUser, mobile, onSalmueraChange }) 
     }
     Promise.all([
       supabase.from('formulaciones').select('*').eq('producto_nombre', formulaSelec.nombre).order('orden'),
-      supabase.from('config_productos').select('porcentaje_salmuera,dias_maduracion').eq('producto_nombre', formulaSelec.nombre).single()
-    ]).then(([{ data: filas }, { data: cfg }]) => {
+      supabase.from('config_productos').select('porcentaje_salmuera,dias_maduracion').eq('producto_nombre', formulaSelec.nombre).single(),
+      supabase.from('vista_horneado_config').select('config'),
+    ]).then(async ([{ data: filas }, { data: cfg }, { data: hcfgs }]) => {
       setIngredientesFormula(filas || []);
       setPorcentajeSalmuera(parseFloat(cfg?.porcentaje_salmuera) || 20);
       setDiasMaduracion(parseFloat(cfg?.dias_maduracion) || 5);
+
+      // Buscar config del producto horneado que usa esta salmuera
+      const match = (hcfgs || []).find(c =>
+        (c.config?.formula_salmuera || '').toLowerCase() === formulaSelec.nombre.toLowerCase()
+      );
+      const cfgH = match?.config || null;
+      setHorneadoCfgInj(cfgH);
+      setKgSubprodIny('');
+
+      // Cargar info de la MP si es mp_existente
+      const spInyConf = cfgH?.subproductos?.inyeccion;
+      if (spInyConf?.activo && spInyConf?.tipo === 'mp_existente' && spInyConf?.mp_id) {
+        const { data: mpSp } = await supabase.from('materias_primas')
+          .select('id,nombre,nombre_producto,precio_kg').eq('id', spInyConf.mp_id).maybeSingle();
+        setSpInyMp(mpSp || null);
+      } else {
+        setSpInyMp(null);
+      }
     });
   }, [formulaSelec]);
 
   // Cálculos
   const kgCarneTotal    = filasCort.reduce((s, f) => s + (parseFloat(f.kg) || 0), 0);
   const totalGramosForm = ingredientesFormula.reduce((s, f) => s + (parseFloat(f.gramos) || 0), 0);
-  const kgSalmueraReq   = kgCarneTotal * (porcentajeSalmuera / 100);
+  const spIny           = horneadoCfgInj?.subproductos?.inyeccion;
+  const haySpIny        = spIny?.activo;
+  const kgSubprodInyNum = haySpIny ? Math.max(0, parseFloat(kgSubprodIny) || 0) : 0;
+  const kgCarneNeta     = Math.max(0, kgCarneTotal - kgSubprodInyNum); // peso que realmente se inyecta
+  const kgSalmueraReq   = kgCarneNeta * (porcentajeSalmuera / 100);
   const kgBase          = kgSalmueraReq > 0 ? kgSalmueraReq : 1;
 
   const ingredientesExp = totalGramosForm > 0
@@ -273,7 +299,46 @@ export default function TabInyeccion({ currentUser, mobile, onSalmueraChange }) 
         }
       }
 
-      setFormulaSelec(null); setFilasCort([]); setNotas('');
+      // Sub-producto de inyección → inventario (si aplica)
+      if (haySpIny && kgSubprodInyNum > 0 && spIny.tipo !== 'perdida') {
+        let mpSpId = null;
+        let mpSpNombre = '';
+        if (spIny.tipo === 'mp_existente' && spIny.mp_id) {
+          mpSpId     = spIny.mp_id;
+          mpSpNombre = spInyMp?.nombre_producto || spInyMp?.nombre || spIny.mp_id;
+        } else if (spIny.tipo === 'nueva_mp' && spIny.nombre) {
+          const { data: mpEx } = await supabase.from('materias_primas')
+            .select('id').ilike('nombre', spIny.nombre).maybeSingle();
+          if (mpEx) {
+            mpSpId = mpEx.id;
+          } else {
+            const { data: nueva } = await supabase.from('materias_primas').insert({
+              nombre: spIny.nombre, nombre_producto: spIny.nombre,
+              categoria: 'SUB-PRODUCTOS', precio_kg: parseFloat(spIny.precio_kg || 0),
+              tipo: 'MATERIAS PRIMAS', estado: 'ACTIVO', eliminado: false,
+            }).select('id').single();
+            mpSpId = nueva?.id;
+          }
+          mpSpNombre = spIny.nombre;
+        }
+        if (mpSpId) {
+          const { data: invSp } = await supabase.from('inventario_mp')
+            .select('id,stock_kg').eq('materia_prima_id', mpSpId).maybeSingle();
+          if (invSp) {
+            await supabase.from('inventario_mp').update({ stock_kg: (invSp.stock_kg || 0) + kgSubprodInyNum }).eq('id', invSp.id);
+          } else {
+            await supabase.from('inventario_mp').insert({ materia_prima_id: mpSpId, stock_kg: kgSubprodInyNum, nombre: mpSpNombre });
+          }
+          await supabase.from('inventario_movimientos').insert({
+            materia_prima_id: mpSpId, nombre_mp: mpSpNombre,
+            tipo: 'entrada', kg: kgSubprodInyNum,
+            motivo: `Sub-producto Inyección — ${fecha}`,
+            usuario_nombre: currentUser?.email || '', user_id: currentUser?.id || null, fecha,
+          });
+        }
+      }
+
+      setFormulaSelec(null); setFilasCort([]); setNotas(''); setKgSubprodIny('');
       setExito('✅ Producción registrada — lote en maduración hasta ' + fechaSalida);
       setTimeout(() => setExito(''), 8000);
       await cargarInicial();
@@ -389,6 +454,55 @@ export default function TabInyeccion({ currentUser, mobile, onSalmueraChange }) 
               )}
             </div>
           </div>
+
+          {/* 2b. Sub-producto Inyección */}
+          {haySpIny && filasCort.length > 0 && kgCarneTotal > 0 && (() => {
+            const nombre = spIny.tipo === 'nueva_mp'     ? spIny.nombre
+                         : spIny.tipo === 'mp_existente' ? (spInyMp?.nombre_producto || spInyMp?.nombre || 'MP existente')
+                         : (spIny.nombre || 'Merma/retazos');
+            const esPerd = spIny.tipo === 'perdida';
+            const color  = esPerd ? '#e74c3c' : '#e67e22';
+            return (
+              <div style={{ background:'white', borderRadius:12, padding:16, boxShadow:'0 2px 8px rgba(0,0,0,0.07)', border:`2px solid ${color}33` }}>
+                <h4 style={{ margin:'0 0 4px', color, fontSize:14, borderBottom:`2px solid ${color}44`, paddingBottom:6 }}>
+                  {esPerd ? '❌' : '📦'} {nombre}
+                </h4>
+                <div style={{ fontSize:11, color:'#888', marginBottom:12 }}>
+                  {esPerd
+                    ? 'Retira esta merma ANTES de inyectar. La salmuera se calcula sobre el peso neto que queda.'
+                    : 'Retira este sub-producto ANTES de inyectar. Entra a inventario y la salmuera usa el peso neto.'}
+                </div>
+                <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom: kgSubprodInyNum > 0 ? 10 : 0 }}>
+                  <input type="number" min="0" step="0.001"
+                    value={kgSubprodIny}
+                    onChange={e => setKgSubprodIny(e.target.value)}
+                    placeholder="0.000"
+                    style={{ flex:1, padding:'10px 12px', borderRadius:8, border:`2px solid ${color}88`, fontSize:16, fontWeight:'bold', textAlign:'right', outline:'none' }} />
+                  <span style={{ fontWeight:700, color:'#555', fontSize:14 }}>kg</span>
+                </div>
+                {kgSubprodInyNum > 0 && (
+                  <div style={{ background:'#f8f9fa', borderRadius:8, padding:'10px 12px', fontSize:12 }}>
+                    <div style={{ display:'flex', justifyContent:'space-between' }}>
+                      <span style={{ color:'#555' }}>Total carne entrada</span>
+                      <span style={{ fontWeight:700 }}>{kgCarneTotal.toFixed(3)} kg</span>
+                    </div>
+                    <div style={{ display:'flex', justifyContent:'space-between', color }}>
+                      <span>− {nombre}</span>
+                      <span style={{ fontWeight:700 }}>−{kgSubprodInyNum.toFixed(3)} kg</span>
+                    </div>
+                    <div style={{ display:'flex', justifyContent:'space-between', color:'#2980b9', fontWeight:700, borderTop:`1px solid #eee`, marginTop:6, paddingTop:6 }}>
+                      <span>= Carne a inyectar</span>
+                      <span>{kgCarneNeta.toFixed(3)} kg</span>
+                    </div>
+                    <div style={{ display:'flex', justifyContent:'space-between', color:'#2980b9', marginTop:3 }}>
+                      <span>Salmuera ({porcentajeSalmuera}% de {kgCarneNeta.toFixed(3)} kg)</span>
+                      <span style={{ fontWeight:700 }}>{kgSalmueraReq.toFixed(3)} kg</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Notas */}
           <div style={{ background:'white', borderRadius:12, padding:16, boxShadow:'0 2px 8px rgba(0,0,0,0.07)' }}>
