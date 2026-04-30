@@ -47,7 +47,7 @@ export default function TabInyeccion({ currentUser, mobile, onSalmueraChange }) 
     }
     Promise.all([
       supabase.from('formulaciones').select('*').eq('producto_nombre', formulaSelec.nombre).order('orden'),
-      supabase.from('config_productos').select('porcentaje_salmuera,dias_maduracion').eq('producto_nombre', formulaSelec.nombre).single(),
+      supabase.from('config_productos').select('porcentaje_salmuera,dias_maduracion').eq('producto_nombre', formulaSelec.nombre).maybeSingle(),
       supabase.from('vista_horneado_config').select('config'),
     ]).then(async ([{ data: filas }, { data: cfg }, { data: hcfgs }]) => {
       setIngredientesFormula(filas || []);
