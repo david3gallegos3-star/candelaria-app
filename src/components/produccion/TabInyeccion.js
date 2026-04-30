@@ -223,7 +223,7 @@ export default function TabInyeccion({ currentUser, mobile, onSalmueraChange }) 
         return {
           produccion_id: prodId, corte_nombre: f.mp.nombre_producto || f.mp.nombre,
           materia_prima_id: f.mp.id, kg_carne_cruda: kgCarne,
-          kg_original: parseFloat(f.kg), // kg bruto original para descontar stock
+          _kg_original: parseFloat(f.kg), // solo para uso interno (stock), no se guarda en DB
           precio_kg_carne: parseFloat(f.precio_kg), costo_carne: costoCarne,
           kg_salmuera_asignada: kgSal, costo_salmuera_asignado: costoSal,
           kg_retazos: 0, kg_carne_limpia: kgCarne,
@@ -231,7 +231,9 @@ export default function TabInyeccion({ currentUser, mobile, onSalmueraChange }) 
         };
       });
       if (filasCorte.length > 0) {
-        const { error: e2 } = await supabase.from('produccion_inyeccion_cortes').insert(filasCorte);
+        // Quitar campo interno antes de insertar en DB
+        const filasDB = filasCorte.map(({ _kg_original, ...rest }) => rest);
+        const { error: e2 } = await supabase.from('produccion_inyeccion_cortes').insert(filasDB);
         if (e2) throw e2;
       }
 
@@ -275,7 +277,7 @@ export default function TabInyeccion({ currentUser, mobile, onSalmueraChange }) 
         const { data: inv } = await supabase.from('inventario_mp')
           .select('id, stock_kg').eq('materia_prima_id', f.materia_prima_id).maybeSingle();
         if (inv) {
-          const kgDescontar = f.kg_original || f.kg_carne_cruda; // usar kg bruto para el stock
+          const kgDescontar = f._kg_original || f.kg_carne_cruda; // usar kg bruto para el stock
           await supabase.from('inventario_mp')
             .update({ stock_kg: Math.max(0, (inv.stock_kg || 0) - kgDescontar) })
             .eq('id', inv.id);
