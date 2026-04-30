@@ -153,7 +153,7 @@ export default function TabInyeccion({ currentUser, mobile, onSalmueraChange }) 
       formula: formulaSelec, ingredientes: ingReales, kgBase: totalKg,
       costoTotal, costoKg: totalKg > 0 ? costoTotal / totalKg : 0,
       kgCarneTotal: kgSalmueraReq,
-      kgCarneBruta: kgCarneTotal,
+      kgCarneBruta: kgCarneNeta,
       porcentajeSalmuera,
     });
   }, [formulaSelec, ingredientesFormula, mps, inventario, kgCarneTotal, kgSalmueraReq]);
