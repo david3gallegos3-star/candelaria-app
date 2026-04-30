@@ -42,22 +42,21 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
   // ── Carga inicial ──────────────────────────────────────────
   const cargar = useCallback(async () => {
     setCargando(true);
-    const [{ data: mpData }, { data: frmData }, { data: horneados }, { data: cfgDB }] = await Promise.all([
+    const [{ data: mpData }, { data: frmData }, { data: horneados }, { data: cfgDB }, { data: mpVinc }] = await Promise.all([
       supabase.from('materias_primas').select('id,nombre,nombre_producto,precio_kg,categoria').eq('eliminado', false).order('nombre'),
       supabase.from('productos').select('id,nombre,categoria').eq('estado', 'ACTIVO').order('nombre'),
       supabase.from('produccion_horneado_lotes').select('*').ilike('producto_nombre', `%${producto.nombre}%`).order('created_at', { ascending: false }).limit(15),
-      supabase.from('config_productos').select('config_horneado,mp_vinculado_id').eq('producto_nombre', producto.nombre).maybeSingle(),
+      supabase.from('vista_horneado_config').select('config,versiones').eq('producto_nombre', producto.nombre).maybeSingle(),
+      supabase.from('config_productos').select('mp_vinculado_id').eq('producto_nombre', producto.nombre).maybeSingle(),
     ]);
     setMps(mpData || []);
     setFormulas(frmData || []);
     setLotes(horneados || []);
-    const saved = cfgDB?.config_horneado;
-    if (saved && Object.keys(saved).length > 0) {
-      setVersiones(saved.versiones || []);
-      const { versiones: _v, ...resto } = saved;
-      setCfg(prev => ({ ...prev, ...resto }));
-    } else if (cfgDB?.mp_vinculado_id) {
-      setCfg(prev => ({ ...prev, mp_carne_id: cfgDB.mp_vinculado_id }));
+    if (cfgDB?.config && Object.keys(cfgDB.config).length > 0) {
+      setCfg(prev => ({ ...prev, ...cfgDB.config }));
+      setVersiones(cfgDB.versiones || []);
+    } else if (mpVinc?.mp_vinculado_id) {
+      setCfg(prev => ({ ...prev, mp_carne_id: mpVinc.mp_vinculado_id }));
     }
     setCargando(false);
   }, [producto.nombre]);
@@ -92,57 +91,25 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
     })();
   }, [cfg.formula_rub, mps]);
 
-  // ── Helper: guarda config_horneado de forma segura ──────────
-  async function saveConfigHorneado(payload) {
-    // Verificar si ya existe un registro en config_productos
-    const { data: existing } = await supabase
-      .from('config_productos')
-      .select('id')
-      .eq('producto_nombre', producto.nombre)
-      .maybeSingle();
-
-    if (existing) {
-      // Ya existe → solo actualizar el campo config_horneado
-      const { error } = await supabase
-        .from('config_productos')
-        .update({ config_horneado: payload })
-        .eq('producto_nombre', producto.nombre);
-      if (error) throw error;
-    } else {
-      // No existe → insertar registro completo con defaults
-      const { error } = await supabase.from('config_productos').insert({
-        producto_nombre:   producto.nombre,
-        producto_id:       producto.id,
-        fecha:             new Date().toISOString().split('T')[0],
-        num_paradas:       1,
-        porcentaje_salmuera: 15,
-        merma:             0.07,
-        margen:            cfg.margen / 100,
-        mod_cif_kg:        0,
-        empaque_nombre:    '',
-        empaque_precio_kg: 0,
-        empaque_cantidad:  1,
-        empaque_unidad:    'Unidades',
-        hilo_nombre:       '',
-        hilo_precio_kg:    0,
-        hilo_kg:           0,
-        fundas:            [],
-        precio_venta_kg:   0,
-        costo_total_kg:    0,
-        config_horneado:   payload,
-      });
-      if (error) throw error;
-    }
+  // ── Helper: guarda en vista_horneado_config ───────────────
+  async function saveConfigHorneado(cfgToSave, versionesToSave) {
+    const { error } = await supabase
+      .from('vista_horneado_config')
+      .upsert(
+        { producto_nombre: producto.nombre, config: cfgToSave, versiones: versionesToSave, updated_at: new Date().toISOString() },
+        { onConflict: 'producto_nombre' }
+      );
+    if (error) throw error;
   }
 
   // ── Guardar config (Fijar cambios) ─────────────────────────
   async function fijarCambios() {
     setGuardando(true);
     try {
-      await saveConfigHorneado({ ...cfg, versiones });
+      await saveConfigHorneado(cfg, versiones);
       setModoEdicion(false);
     } catch (e) {
-      alert('Error al guardar: ' + e.message);
+      alert('Error al fijar: ' + e.message);
     }
     setGuardando(false);
   }
@@ -153,7 +120,7 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
     try {
       const snap      = { fecha: new Date().toISOString().split('T')[0], ...cfg };
       const nuevasVer = [snap, ...versiones].slice(0, 20);
-      await saveConfigHorneado({ ...cfg, versiones: nuevasVer });
+      await saveConfigHorneado(cfg, nuevasVer);
       setVersiones(nuevasVer);
     } catch (e) {
       alert('Error al guardar historial: ' + e.message);
