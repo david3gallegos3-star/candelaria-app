@@ -4,6 +4,7 @@
 // ============================================
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../supabase';
+import { crearNotificacion } from '../../utils/helpers';
 
 function diasParaSalida(fechaSalida) {
   const hoy  = new Date(); hoy.setHours(0,0,0,0);
@@ -23,16 +24,20 @@ export default function TabMaduracion({ mobile, currentUser }) {
   const [error,          setError]          = useState('');
   const [exito,          setExito]          = useState('');
 
-  // ── Modal Horneado (Pastrame) ──
-  const [modalHorneado,  setModalHorneado]  = useState(null); // {loteId, kgMad, costoTotal, cMadKg}
-  const [hrnMostazaKg,   setHrnMostazaKg]   = useState('');
-  const [hrnRubKg,       setHrnRubKg]       = useState('');
+  // ── Modal Horneado (Pastrame) — wizard 3 pasos ──
+  const [modalHorneado,  setModalHorneado]  = useState(null); // {loteId,kgMad,kgCarne,costoTotal,cMadKg,cfg}
+  const [horneadoPaso,   setHorneadoPaso]   = useState(1);    // 1=mostaza 2=rub 3=horno
   const [hrnHornoKg,     setHrnHornoKg]     = useState('');
   const [hrnReposoKg,    setHrnReposoKg]    = useState('');
   const [guardHorneado,  setGuardHorneado]  = useState(false);
   const [errorHorneado,  setErrorHorneado]  = useState('');
   const [mpMostaza,      setMpMostaza]      = useState(null);
   const [rubCostoKg,     setRubCostoKg]     = useState(0);
+  const [rubFilas,       setRubFilas]       = useState([]); // ingredientes del Rub escalados
+  const [paso1Listo,     setPaso1Listo]     = useState(false); // mostaza ya descontada
+  const [paso2Listo,     setPaso2Listo]     = useState(false); // rub ya descontado
+  const [imprevisto,     setImprevisto]     = useState({ activo: false, kgDaniado: '', motivo: '' });
+  const [horneadoCfgs,   setHorneadoCfgs]   = useState([]); // configs de vista_horneado_config
 
   // ── Modal Deshuese (dinámico desde deshuese_config) ──
   const [modalDeshuese,  setModalDeshuese]  = useState(null);
@@ -107,6 +112,9 @@ export default function TabMaduracion({ mobile, currentUser }) {
         }, 0);
         setRubCostoKg(totalGr > 0 ? totalCosto / (totalGr / 1000) : 0);
       });
+    // Configs de productos horneados (para wizard)
+    supabase.from('vista_horneado_config').select('producto_nombre,config')
+      .then(({ data }) => setHorneadoCfgs(data || []));
     // Mapa deshuese dinámico desde DB
     supabase.from('deshuese_config')
       .select('corte_padre, corte_hijo')
@@ -291,15 +299,55 @@ export default function TabMaduracion({ mobile, currentUser }) {
       setModalPesaje(null);
       await cargar();
 
-      // Detectar Pastrame (por nombre de salmuera) → flujo horneado
-      const esPastrame = (modalPesaje.produccion_inyeccion?.formula_salmuera || '').toLowerCase().includes('pastrame');
+      // Detectar Pastrame (por nombre de salmuera) → wizard horneado
+      const formulaSal = (modalPesaje.produccion_inyeccion?.formula_salmuera || '').toLowerCase();
+      const esPastrame = formulaSal.includes('pastrame');
       if (esPastrame) {
-        const p0 = picortes[0];
+        const p0        = picortes[0];
         const kgMad0    = parseFloat(pesajes[p0?.corte_nombre]);
+        const kgCarne0  = parseFloat(p0?.kg_carne_cruda || 0);
         const costoTot0 = parseFloat(p0?.costo_carne || 0) + parseFloat(p0?.costo_salmuera_asignado || 0);
-        setHrnMostazaKg(''); setHrnRubKg(''); setHrnHornoKg(''); setHrnReposoKg('');
+
+        // Buscar config del producto horneado que usa esta salmuera
+        const cfgHorn = (horneadoCfgs.find(hc =>
+          (hc.config?.formula_salmuera || '').toLowerCase().includes('pastrame') ||
+          (hc.producto_nombre || '').toLowerCase().includes('pastrame')
+        )?.config) || {};
+
+        // Cargar mostaza desde el MP configurado en la fórmula
+        if (cfgHorn.mp_mostaza_id) {
+          const { data: mpMos } = await supabase.from('materias_primas')
+            .select('id,nombre,precio_kg').eq('id', cfgHorn.mp_mostaza_id).maybeSingle();
+          setMpMostaza(mpMos || null);
+        }
+
+        // Cargar ingredientes del Rub con sus precios
+        let rubF = [];
+        if (cfgHorn.formula_rub) {
+          const { data: rubRows } = await supabase.from('formulaciones')
+            .select('ingrediente_nombre,gramos,materia_prima_id')
+            .eq('producto_nombre', cfgHorn.formula_rub);
+          const ids = (rubRows || []).map(r => r.materia_prima_id).filter(Boolean);
+          const { data: rubMps } = ids.length
+            ? await supabase.from('materias_primas').select('id,nombre,nombre_producto,precio_kg').in('id', ids)
+            : { data: [] };
+          rubF = (rubRows || []).map(r => {
+            const mp = (rubMps || []).find(m => m.id === r.materia_prima_id);
+            return { ...r, mp, precioKg: parseFloat(mp?.precio_kg || 0) };
+          });
+        }
+        setRubFilas(rubF);
+        setHrnHornoKg('');
         setErrorHorneado('');
-        setModalHorneado({ loteId: loteIdGuardado, kgMad: kgMad0, costoTotal: costoTot0, cMadKg: kgMad0 > 0 ? costoTot0 / kgMad0 : 0 });
+        setPaso1Listo(false);
+        setPaso2Listo(false);
+        setImprevisto({ activo: false, kgDaniado: '', motivo: '' });
+        setHorneadoPaso(1);
+        setModalHorneado({
+          loteId: loteIdGuardado, kgMad: kgMad0, kgCarne: kgCarne0,
+          costoTotal: costoTot0, cMadKg: kgMad0 > 0 ? costoTot0 / kgMad0 : 0,
+          cfg: cfgHorn,
+        });
       // Si hay cortes con deshuese, abrir modal
       } else if (deshueseEntries.length > 0) {
         const initData = {};
@@ -319,29 +367,192 @@ export default function TabMaduracion({ mobile, currentUser }) {
     setGuardando(false);
   }
 
+  // ── Paso 1: descontar Mostaza y avanzar ───────────────────
+  async function registrarMostaza() {
+    if (paso1Listo) { setHorneadoPaso(2); return; }
+    const cfg     = modalHorneado?.cfg || {};
+    const kgCarne = modalHorneado?.kgCarne || 0;
+    const kgMos   = (parseFloat(cfg.gramos_mostaza || 0) / 1000) * kgCarne;
+    if (!mpMostaza || kgMos <= 0) { setPaso1Listo(true); setHorneadoPaso(2); return; }
+    setGuardHorneado(true);
+    const hoy = new Date().toISOString().split('T')[0];
+    try {
+      const { data: inv } = await supabase.from('inventario_mp')
+        .select('id,stock_kg').eq('materia_prima_id', mpMostaza.id).maybeSingle();
+      const stockActual = parseFloat(inv?.stock_kg || 0);
+      if (stockActual < kgMos) {
+        const ok = window.confirm(
+          `⚠️ Stock insuficiente de ${mpMostaza.nombre}.\n` +
+          `Disponible: ${stockActual.toFixed(3)} kg\n` +
+          `Necesario: ${kgMos.toFixed(3)} kg\n\n¿Continuar de todas formas?`
+        );
+        if (!ok) { setGuardHorneado(false); return; }
+      }
+      if (inv) {
+        await supabase.from('inventario_mp')
+          .update({ stock_kg: Math.max(0, stockActual - kgMos) }).eq('id', inv.id);
+      }
+      await supabase.from('inventario_movimientos').insert({
+        materia_prima_id: mpMostaza.id,
+        nombre_mp: mpMostaza.nombre,
+        tipo: 'salida', kg: kgMos,
+        motivo: `Mostaza Pastrame — Lote ${modalHorneado.loteId} (${kgCarne.toFixed(3)} kg carne)`,
+        fecha: hoy,
+      });
+      setPaso1Listo(true);
+      setHorneadoPaso(2);
+    } catch (e) {
+      alert('Error al descontar mostaza: ' + e.message);
+    }
+    setGuardHorneado(false);
+  }
+
+  // ── Paso 2: descontar Rub y avanzar ───────────────────────
+  async function registrarRub() {
+    if (paso2Listo) { setHorneadoPaso(3); return; }
+    if (!modalHorneado?.cfg?.formula_rub || rubFilas.length === 0) {
+      setPaso2Listo(true); setHorneadoPaso(3); return;
+    }
+    const kgCarne   = modalHorneado.kgCarne || 0;
+    const kgRubBase = parseFloat(modalHorneado.cfg.kg_rub_base || 1);
+    const escala    = kgRubBase > 0 ? kgCarne / kgRubBase : 1;
+    const hoy       = new Date().toISOString().split('T')[0];
+    setGuardHorneado(true);
+    try {
+      // Verificar si algún ingrediente tiene stock insuficiente
+      const bajos = [];
+      for (const f of rubFilas) {
+        if (!f.materia_prima_id) continue;
+        const kgUsar = (parseFloat(f.gramos || 0) / 1000) * escala;
+        const { data: inv } = await supabase.from('inventario_mp')
+          .select('stock_kg').eq('materia_prima_id', f.materia_prima_id).maybeSingle();
+        if (parseFloat(inv?.stock_kg || 0) < kgUsar) {
+          bajos.push(`• ${f.ingrediente_nombre}: hay ${parseFloat(inv?.stock_kg||0).toFixed(3)} kg, necesario ${kgUsar.toFixed(3)} kg`);
+        }
+      }
+      if (bajos.length > 0) {
+        const ok = window.confirm(`⚠️ Stock insuficiente en:\n${bajos.join('\n')}\n\n¿Continuar de todas formas?`);
+        if (!ok) { setGuardHorneado(false); return; }
+      }
+      for (const f of rubFilas) {
+        if (!f.materia_prima_id) continue;
+        const kgUsar = (parseFloat(f.gramos || 0) / 1000) * escala;
+        const { data: inv } = await supabase.from('inventario_mp')
+          .select('id,stock_kg').eq('materia_prima_id', f.materia_prima_id).maybeSingle();
+        if (inv) {
+          await supabase.from('inventario_mp')
+            .update({ stock_kg: Math.max(0, parseFloat(inv.stock_kg || 0) - kgUsar) }).eq('id', inv.id);
+        }
+        await supabase.from('inventario_movimientos').insert({
+          materia_prima_id: f.materia_prima_id,
+          nombre_mp: f.ingrediente_nombre,
+          tipo: 'salida', kg: kgUsar,
+          motivo: `Rub Pastrame — Lote ${modalHorneado.loteId} (${kgCarne.toFixed(3)} kg carne)`,
+          fecha: hoy,
+        });
+      }
+      setPaso2Listo(true);
+      setHorneadoPaso(3);
+    } catch (e) {
+      alert('Error al descontar Rub: ' + e.message);
+    }
+    setGuardHorneado(false);
+  }
+
+  // ── Paso 2 (legacy): descontar Rub del inventario ─────────
+  async function descontarRub() {
+    if (!modalHorneado?.cfg?.formula_rub || rubFilas.length === 0) { setPaso2Listo(true); return; }
+    const kgCarne   = modalHorneado.kgCarne || 0;
+    const kgRubBase = parseFloat(modalHorneado.cfg.kg_rub_base || 1);
+    const escala    = kgRubBase > 0 ? kgCarne / kgRubBase : 1;
+    const hoy       = new Date().toISOString().split('T')[0];
+    try {
+      for (const f of rubFilas) {
+        if (!f.materia_prima_id) continue;
+        const kgUsar = (parseFloat(f.gramos || 0) / 1000) * escala;
+        const { data: inv } = await supabase.from('inventario_mp')
+          .select('id,stock_kg').eq('materia_prima_id', f.materia_prima_id).maybeSingle();
+        if (inv) {
+          await supabase.from('inventario_mp')
+            .update({ stock_kg: Math.max(0, (inv.stock_kg || 0) - kgUsar) }).eq('id', inv.id);
+        }
+        await supabase.from('inventario_movimientos').insert({
+          materia_prima_id: f.materia_prima_id,
+          nombre_mp: f.ingrediente_nombre,
+          tipo: 'salida', kg: kgUsar,
+          motivo: `Rub Pastrame — Lote ${modalHorneado.loteId} (${kgCarne.toFixed(3)} kg carne)`,
+          fecha: hoy,
+        });
+      }
+      setPaso2Listo(true);
+    } catch (e) {
+      alert('Error al descontar Rub: ' + e.message);
+    }
+  }
+
+  // ── Imprimir receta Rub ───────────────────────────────────
+  function imprimirRub() {
+    if (!modalHorneado) return;
+    const { kgCarne, cfg } = modalHorneado;
+    const kgRubBase = parseFloat(cfg.kg_rub_base || 1);
+    const escala    = kgRubBase > 0 ? kgCarne / kgRubBase : 1;
+    const html = `<!DOCTYPE html><html><head><title>${cfg.formula_rub}</title>
+    <style>body{font-family:Arial,sans-serif;padding:24px;max-width:600px;}
+    h2{color:#6c3483;} table{width:100%;border-collapse:collapse;margin-top:16px;}
+    th{background:#6c3483;color:white;padding:8px 12px;text-align:left;}
+    td{padding:8px 12px;border-bottom:1px solid #eee;}
+    .total{font-weight:bold;background:#f5eef8;}
+    .nota{color:#888;font-size:12px;margin-top:12px;}</style>
+    </head><body>
+    <h2>🌶️ ${cfg.formula_rub || 'Rub'}</h2>
+    <p><strong>Lote:</strong> ${modalHorneado.loteId} &nbsp;|&nbsp;
+       <strong>Carne:</strong> ${kgCarne.toFixed(3)} kg &nbsp;|&nbsp;
+       <strong>Fecha:</strong> ${new Date().toLocaleDateString()}</p>
+    <table>
+      <tr><th>Ingrediente</th><th>Base (${kgRubBase}kg)</th><th>Para ${kgCarne.toFixed(2)}kg</th></tr>
+      ${rubFilas.map(f => {
+        const gr = parseFloat(f.gramos || 0);
+        return `<tr><td>${f.ingrediente_nombre}</td><td>${gr.toFixed(1)} g</td><td><strong>${(gr * escala).toFixed(1)} g</strong></td></tr>`;
+      }).join('')}
+      <tr class="total"><td>TOTAL</td>
+        <td>${rubFilas.reduce((s,f)=>s+parseFloat(f.gramos||0),0).toFixed(1)} g</td>
+        <td>${(rubFilas.reduce((s,f)=>s+parseFloat(f.gramos||0),0)*escala).toFixed(1)} g</td>
+      </tr>
+    </table>
+    <p class="nota">Fórmula base para ${kgRubBase} kg de carne → multiplicada × ${escala.toFixed(2)} para ${kgCarne.toFixed(2)} kg</p>
+    </body></html>`;
+    const w = window.open('', '_blank');
+    w.document.write(html);
+    w.document.close();
+    setTimeout(() => w.print(), 400);
+  }
+
   async function confirmarHorneado() {
-    const kgMostaza = parseFloat(hrnMostazaKg) || 0;
-    const kgRub     = parseFloat(hrnRubKg)     || 0;
-    const kgHorno   = parseFloat(hrnHornoKg)   || 0;
-    const kgReposo  = parseFloat(hrnReposoKg)  || 0;
+    const cfg       = modalHorneado?.cfg || {};
+    const kgCarne   = modalHorneado?.kgCarne || 0;
+    const kgMadLote = modalHorneado?.kgMad || 0;
+    const kgRubBase = parseFloat(cfg.kg_rub_base || 1);
+    const kgMostaza = (parseFloat(cfg.gramos_mostaza || 0) / 1000) * kgCarne;
+    const kgRub     = (rubFilas.reduce((s, f) => s + parseFloat(f.gramos || 0), 0) / 1000) * (kgRubBase > 0 ? kgCarne / kgRubBase : 1);
+    const kgHorno   = parseFloat(hrnHornoKg) || 0; // peso real medido → inventario
 
-    if (kgHorno  <= 0) { setErrorHorneado('Ingresa el peso después del horno'); return; }
-    if (kgReposo <= 0) { setErrorHorneado('Ingresa el peso antes de rebanar'); return; }
-    if (kgReposo > kgHorno) { setErrorHorneado('Peso reposo no puede ser mayor que peso horno'); return; }
+    if (kgHorno <= 0) { setErrorHorneado('Ingresa el peso final listo para rebanar'); return; }
+    if (kgHorno > kgMadLote) { setErrorHorneado('El peso no puede ser mayor al que entró al horno'); return; }
 
-    const costoMostaza   = kgMostaza * parseFloat(mpMostaza?.precio_kg || 0);
-    const costoRub       = kgRub * rubCostoKg;
-    const mermaHornoKg   = modalHorneado.kgMad - kgHorno;
-    const mermaHornoPct  = modalHorneado.kgMad > 0 ? mermaHornoKg / modalHorneado.kgMad * 100 : 0;
-    const mermaReposoKg  = kgHorno - kgReposo;
-    const mermaReposoPct = kgHorno > 0 ? mermaReposoKg / kgHorno * 100 : 0;
+    const costoMostaza    = kgMostaza * parseFloat(mpMostaza?.precio_kg || 0);
+    const costoRub        = kgRub * rubCostoKg;
     const costoFinalTotal = modalHorneado.costoTotal + costoMostaza + costoRub;
-    const cFinalKg        = kgReposo > 0 ? costoFinalTotal / kgReposo : 0;
+
+    const cFinalKg        = kgHorno > 0 ? costoFinalTotal / kgHorno : 0;
+
+    // Merma real
+    const mermaHornoKg    = kgMadLote - kgHorno;
+    const mermaHornoReal  = kgMadLote > 0 ? mermaHornoKg / kgMadLote * 100 : 0;
 
     setGuardHorneado(true);
     setErrorHorneado('');
     try {
-      const hoy     = new Date().toISOString().split('T')[0];
+      const hoy      = new Date().toISOString().split('T')[0];
       const mpNombre = 'Pastrame Horneado';
 
       // 1. Guardar produccion_horneado_lotes
@@ -353,13 +564,13 @@ export default function TabMaduracion({ mobile, currentUser }) {
         costo_mostaza:    costoMostaza,
         kg_rub:           kgRub,
         costo_rub:        costoRub,
-        kg_entrada_horno: modalHorneado.kgMad,
+        kg_entrada_horno: kgMadLote,
         kg_post_horno:    kgHorno,
         merma_horno_kg:   mermaHornoKg,
-        merma_horno_pct:  mermaHornoPct,
-        kg_post_reposo:   kgReposo,
-        merma_reposo_kg:  mermaReposoKg,
-        merma_reposo_pct: mermaReposoPct,
+        merma_horno_pct:  mermaHornoReal,
+        kg_post_reposo:   kgHorno,
+        merma_reposo_kg:  0,
+        merma_reposo_pct: 0,
         c_final_kg:       cFinalKg,
       });
 
@@ -379,42 +590,41 @@ export default function TabMaduracion({ mobile, currentUser }) {
         mpPastrameId = nueva?.id || 'AHU001';
       }
 
-      // 3. Sumar a inventario_mp
+      // 3. Sumar a inventario_mp (kg real medido)
       const { data: inv } = await supabase.from('inventario_mp')
         .select('id,stock_kg').eq('materia_prima_id', mpPastrameId).maybeSingle();
       if (inv) {
-        await supabase.from('inventario_mp').update({ stock_kg: (inv.stock_kg || 0) + kgReposo }).eq('id', inv.id);
+        await supabase.from('inventario_mp').update({ stock_kg: (inv.stock_kg || 0) + kgHorno }).eq('id', inv.id);
       } else {
-        await supabase.from('inventario_mp').insert({ materia_prima_id: mpPastrameId, stock_kg: kgReposo, nombre: mpNombre });
+        await supabase.from('inventario_mp').insert({ materia_prima_id: mpPastrameId, stock_kg: kgHorno, nombre: mpNombre });
       }
 
       // 4. Movimiento ENTRADA Pastrame
       await supabase.from('inventario_movimientos').insert({
         materia_prima_id: mpPastrameId, nombre_mp: mpNombre,
-        tipo: 'entrada', kg: kgReposo,
+        tipo: 'entrada', kg: kgHorno,
         motivo: `Horneado Pastrame — Lote ${modalHorneado.loteId} · $${cFinalKg.toFixed(4)}/kg`,
         usuario_nombre: currentUser?.email || '', user_id: currentUser?.id || null, fecha: hoy,
       });
 
-      // 5. Descontar Rub Pastrame del inventario si se usó
-      if (kgRub > 0) {
-        const { data: rubFilas } = await supabase.from('formulaciones')
-          .select('materia_prima_id,gramos').eq('producto_nombre', 'Rub Pastrame');
-        const totalGrRub = (rubFilas || []).reduce((s, f) => s + parseFloat(f.gramos || 0), 0);
-        for (const f of (rubFilas || [])) {
-          if (!f.materia_prima_id) continue;
-          const propKg = totalGrRub > 0 ? (parseFloat(f.gramos || 0) / 1000) * (kgRub / (totalGrRub / 1000)) : 0;
-          const { data: invRub } = await supabase.from('inventario_mp')
-            .select('id,stock_kg').eq('materia_prima_id', f.materia_prima_id).maybeSingle();
-          if (invRub) {
-            await supabase.from('inventario_mp')
-              .update({ stock_kg: Math.max(0, (invRub.stock_kg || 0) - propKg) }).eq('id', invRub.id);
-          }
-        }
+      // 5. Notificación imprevisto al admin
+      if (imprevisto.activo && imprevisto.motivo.trim()) {
+        const kgDan = parseFloat(imprevisto.kgDaniado) || 0;
+        await crearNotificacion({
+          tipo:           'imprevisto_horneado',
+          origen:         'produccion',
+          usuario_nombre: currentUser?.email || 'Producción',
+          user_id:        currentUser?.id || null,
+          producto_nombre: mpNombre,
+          mensaje: `⚠️ IMPREVISTO — Lote ${modalHorneado.loteId} · Pastrame Horneado\n` +
+                   (kgDan > 0 ? `Kg dañados: ${kgDan.toFixed(3)} kg\n` : '') +
+                   `Motivo: ${imprevisto.motivo.trim()}`,
+        });
       }
 
       setModalHorneado(null);
-      setExito(`✅ Pastrame Horneado — ${kgReposo.toFixed(3)} kg · C_final $${cFinalKg.toFixed(4)}/kg → Stock AHUMADOS`);
+      setImprevisto({ activo: false, kgDaniado: '', motivo: '' });
+      setExito(`✅ Pastrame Horneado — ${kgHorno.toFixed(3)} kg · C_final $${cFinalKg.toFixed(4)}/kg → Stock AHUMADOS`);
       setTimeout(() => setExito(''), 10000);
     } catch (e) {
       setErrorHorneado('Error: ' + e.message);
@@ -953,131 +1163,255 @@ export default function TabMaduracion({ mobile, currentUser }) {
         </div>
       )}
 
-      {/* ══ Modal Horneado — Pastrame ══ */}
+      {/* ══ Modal Horneado — Pastrame — Wizard 3 pasos ══ */}
       {modalHorneado && (() => {
-        const kgMostaza  = parseFloat(hrnMostazaKg) || 0;
-        const kgRub      = parseFloat(hrnRubKg)     || 0;
-        const kgHorno    = parseFloat(hrnHornoKg)   || 0;
-        const kgReposo   = parseFloat(hrnReposoKg)  || 0;
-        const costoMos   = kgMostaza * parseFloat(mpMostaza?.precio_kg || 0);
-        const costoRub   = kgRub * rubCostoKg;
-        const costoFinal = modalHorneado.costoTotal + costoMos + costoRub;
-        const cFinal     = kgReposo > 0 ? costoFinal / kgReposo : 0;
-        const mHorno     = modalHorneado.kgMad > 0 ? ((modalHorneado.kgMad - kgHorno) / modalHorneado.kgMad * 100) : 0;
-        const mReposo    = kgHorno > 0 ? ((kgHorno - kgReposo) / kgHorno * 100) : 0;
-        const listo      = kgHorno > 0 && kgReposo > 0 && kgReposo <= kgHorno;
+        const { loteId, kgMad, kgCarne, costoTotal, cMadKg, cfg } = modalHorneado;
+        const kgRubBase   = parseFloat(cfg.kg_rub_base || 1);
+        const escala      = kgRubBase > 0 ? kgCarne / kgRubBase : 1;
+        const kgMostazaAuto = (parseFloat(cfg.gramos_mostaza || 0) / 1000) * kgCarne;
+        const costoMosAuto  = kgMostazaAuto * parseFloat(mpMostaza?.precio_kg || 0);
+        const totalRubGr    = rubFilas.reduce((s, f) => s + parseFloat(f.gramos || 0), 0);
+        const kgRubAuto     = (totalRubGr / 1000) * escala;
+        const costoRubAuto  = kgRubAuto * rubCostoKg;
 
-        const fila = (label, value, color = '#333', bold = false) => (
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
-            <span style={{ color: '#666' }}>{label}</span>
-            <span style={{ color, fontWeight: bold ? 'bold' : 'normal' }}>{value}</span>
-          </div>
-        );
+        // Paso 3 derived
+        const kgHorno         = parseFloat(hrnHornoKg) || 0;
+        const costoFinalTotal = costoTotal + costoMosAuto + costoRubAuto;
+        const cFinal          = kgHorno > 0 ? costoFinalTotal / kgHorno : 0;
+        const mHorno          = kgMad > 0 ? ((kgMad - kgHorno) / kgMad * 100) : 0;
+        const listo3          = kgHorno > 0 && kgHorno <= kgMad;
+
+        const pasoColor = ['', '#e67e22', '#8e44ad', '#e74c3c'][horneadoPaso];
 
         return (
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-            <div style={{ background: 'white', borderRadius: 16, padding: 24, width: '100%', maxWidth: 520, boxShadow: '0 8px 32px rgba(0,0,0,0.3)', maxHeight: '94vh', overflowY: 'auto' }}>
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+            <div style={{ background: 'white', borderRadius: 18, padding: 24, width: '100%', maxWidth: 500, boxShadow: '0 8px 36px rgba(0,0,0,0.35)', maxHeight: '94vh', overflowY: 'auto' }}>
 
+              {/* Encabezado */}
               <div style={{ fontWeight: 'bold', fontSize: 17, color: '#1a1a2e', marginBottom: 2 }}>🔥 Pastrame Horneado</div>
-              <div style={{ fontSize: 12, color: '#888', marginBottom: 18 }}>
-                Lote {modalHorneado.loteId} · <b>{modalHorneado.kgMad.toFixed(3)} kg</b> post-maduración · C_mad <b>${modalHorneado.cMadKg.toFixed(4)}/kg</b>
+              <div style={{ fontSize: 12, color: '#888', marginBottom: 14 }}>
+                Lote <b>{loteId}</b> · <b>{kgMad.toFixed(3)} kg</b> · <b>{kgCarne.toFixed(3)} kg carne</b> · C_mad <b>${cMadKg.toFixed(4)}/kg</b>
               </div>
 
-              {/* Fase 3: Mostaza */}
-              <div style={{ background: '#fffbf0', borderRadius: 10, padding: '14px', marginBottom: 12, border: '1.5px solid #f39c12' }}>
-                <div style={{ fontWeight: 700, color: '#e67e22', fontSize: 12, marginBottom: 8 }}>FASE 3 — MOSTAZA (agente de adherencia)</div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <div style={{ flex: 1 }}>
-                    <label style={{ fontSize: 11, color: '#555', fontWeight: 600 }}>Kg de mostaza aplicada</label>
-                    <input type="number" min="0" step="0.001" placeholder="ej: 0.150" value={hrnMostazaKg}
-                      onChange={e => setHrnMostazaKg(e.target.value)}
-                      style={{ width: '100%', padding: '7px 10px', borderRadius: 8, border: '1.5px solid #f39c12', fontSize: 13, fontWeight: 'bold', boxSizing: 'border-box', marginTop: 4 }} />
+              {/* Indicador de pasos */}
+              <div style={{ display: 'flex', gap: 6, marginBottom: 20 }}>
+                {[1,2,3].map(n => (
+                  <div key={n} style={{
+                    flex: 1, textAlign: 'center', padding: '6px 4px', borderRadius: 8, fontSize: 11, fontWeight: 700,
+                    background: horneadoPaso === n ? pasoColor : horneadoPaso > n ? '#d5f5e3' : '#f0f2f5',
+                    color: horneadoPaso === n ? 'white' : horneadoPaso > n ? '#1e8449' : '#aaa',
+                    border: horneadoPaso === n ? `2px solid ${pasoColor}` : '2px solid transparent',
+                  }}>
+                    {n === 1 ? '1 · Mostaza' : n === 2 ? '2 · Rub' : '3 · Horno'}
+                    {horneadoPaso > n && ' ✓'}
                   </div>
-                  <div style={{ textAlign: 'right', minWidth: 100 }}>
-                    {mpMostaza && <div style={{ fontSize: 10, color: '#888' }}>{mpMostaza.nombre} · ${parseFloat(mpMostaza.precio_kg||0).toFixed(4)}/kg</div>}
-                    {kgMostaza > 0 && <div style={{ fontSize: 13, fontWeight: 700, color: '#e67e22' }}>+${costoMos.toFixed(4)}</div>}
-                  </div>
-                </div>
+                ))}
               </div>
 
-              {/* Fase 4: Rub */}
-              <div style={{ background: '#f5f0ff', borderRadius: 10, padding: '14px', marginBottom: 12, border: '1.5px solid #8e44ad' }}>
-                <div style={{ fontWeight: 700, color: '#8e44ad', fontSize: 12, marginBottom: 8 }}>FASE 4 — RUB PASTRAME (costra de especias)</div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <div style={{ flex: 1 }}>
-                    <label style={{ fontSize: 11, color: '#555', fontWeight: 600 }}>Kg de Rub Pastrame aplicado</label>
-                    <input type="number" min="0" step="0.001" placeholder="ej: 0.105" value={hrnRubKg}
-                      onChange={e => setHrnRubKg(e.target.value)}
-                      style={{ width: '100%', padding: '7px 10px', borderRadius: 8, border: '1.5px solid #8e44ad', fontSize: 13, fontWeight: 'bold', boxSizing: 'border-box', marginTop: 4 }} />
-                  </div>
-                  <div style={{ textAlign: 'right', minWidth: 100 }}>
-                    {rubCostoKg > 0 && <div style={{ fontSize: 10, color: '#888' }}>Rub · ${rubCostoKg.toFixed(4)}/kg</div>}
-                    {kgRub > 0 && <div style={{ fontSize: 13, fontWeight: 700, color: '#8e44ad' }}>+${costoRub.toFixed(4)}</div>}
-                  </div>
-                </div>
-                <div style={{ fontSize: 10, color: '#aaa', marginTop: 6 }}>Fórmula: ~105g por pieza · descuenta ingredientes del inventario</div>
-              </div>
+              {/* ───── PASO 1: Mostaza ───── */}
+              {horneadoPaso === 1 && (
+                <div>
+                  <div style={{ background: '#fffbf0', borderRadius: 12, padding: 16, border: '2px solid #f39c12', marginBottom: 18 }}>
+                    <div style={{ fontWeight: 700, color: '#e67e22', fontSize: 12, marginBottom: 12 }}>FASE 3 — MOSTAZA (agente de adherencia)</div>
 
-              {/* Fase 5: Horneado */}
-              <div style={{ background: '#fff3f0', borderRadius: 10, padding: '14px', marginBottom: 12, border: '1.5px solid #e74c3c' }}>
-                <div style={{ fontWeight: 700, color: '#e74c3c', fontSize: 12, marginBottom: 8 }}>FASE 5 — HORNEADO (110°C → 70°C → 92°C internos)</div>
-                <label style={{ fontSize: 11, color: '#555', fontWeight: 600 }}>Kg después del horno *</label>
-                <input type="number" min="0" step="0.001" placeholder={`máx ${modalHorneado.kgMad.toFixed(3)}`} value={hrnHornoKg}
-                  onChange={e => setHrnHornoKg(e.target.value)}
-                  style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '2px solid #e74c3c', fontSize: 14, fontWeight: 'bold', boxSizing: 'border-box', marginTop: 4 }} />
-                {kgHorno > 0 && (
-                  <div style={{ fontSize: 11, color: '#e74c3c', marginTop: 4 }}>
-                    Merma horno: <b>{(modalHorneado.kgMad - kgHorno).toFixed(3)} kg ({mHorno.toFixed(1)}%)</b>
-                  </div>
-                )}
-              </div>
+                    {/* Proporción calculada */}
+                    <div style={{ background: 'white', borderRadius: 8, padding: '12px 14px', border: '1px solid #f8c471' }}>
+                      <div style={{ fontSize: 11, color: '#999', marginBottom: 6 }}>PROPORCIÓN AUTOMÁTICA</div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                        <span style={{ fontSize: 12, color: '#555' }}>Tasa</span>
+                        <span style={{ fontWeight: 700, color: '#e67e22' }}>{parseFloat(cfg.gramos_mostaza || 0).toFixed(0)} g / kg carne</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                        <span style={{ fontSize: 12, color: '#555' }}>Kg de carne</span>
+                        <span style={{ fontWeight: 700 }}>{kgCarne.toFixed(3)} kg</span>
+                      </div>
+                      <div style={{ borderTop: '1px dashed #f8c471', marginTop: 8, paddingTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: '#e67e22' }}>Mostaza a aplicar</span>
+                        <span style={{ fontSize: 22, fontWeight: 900, color: '#e67e22' }}>{(kgMostazaAuto * 1000).toFixed(0)} g</span>
+                      </div>
+                      <div style={{ fontSize: 11, color: '#aaa', textAlign: 'right', marginTop: 2 }}>= {kgMostazaAuto.toFixed(3)} kg</div>
+                    </div>
 
-              {/* Fase 6: Reposo */}
-              <div style={{ background: '#f0fff4', borderRadius: 10, padding: '14px', marginBottom: 14, border: '1.5px solid #27ae60' }}>
-                <div style={{ fontWeight: 700, color: '#27ae60', fontSize: 12, marginBottom: 8 }}>FASE 6 — REPOSO / ANTES DE REBANAR</div>
-                <label style={{ fontSize: 11, color: '#555', fontWeight: 600 }}>Kg antes de rebanar *</label>
-                <input type="number" min="0" step="0.001" placeholder="peso final" value={hrnReposoKg}
-                  onChange={e => setHrnReposoKg(e.target.value)}
-                  style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '2px solid #27ae60', fontSize: 14, fontWeight: 'bold', boxSizing: 'border-box', marginTop: 4 }} />
-                {kgReposo > 0 && kgHorno > 0 && (
-                  <div style={{ fontSize: 11, color: '#27ae60', marginTop: 4 }}>
-                    Merma reposo: <b>{(kgHorno - kgReposo).toFixed(3)} kg ({mReposo.toFixed(1)}%)</b>
+                    {mpMostaza && (
+                      <div style={{ marginTop: 10, display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
+                        <span style={{ color: '#888' }}>{mpMostaza.nombre} · ${parseFloat(mpMostaza.precio_kg||0).toFixed(4)}/kg</span>
+                        <span style={{ fontWeight: 700, color: '#e67e22' }}>Costo: ${costoMosAuto.toFixed(4)}</span>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
 
-              {/* Resultado */}
-              {kgHorno > 0 && kgReposo > 0 && (
-                <div style={{ background: '#1a1a2e', borderRadius: 10, padding: '12px 16px', marginBottom: 14 }}>
-                  <div style={{ fontSize: 11, color: '#aaa', fontWeight: 700, marginBottom: 8 }}>RESUMEN DE COSTOS</div>
-                  {fila('Carne + Salmuera (C_mad)', `$${modalHorneado.costoTotal.toFixed(4)}`, '#7ec8f7')}
-                  {kgMostaza > 0 && fila('Mostaza', `+$${costoMos.toFixed(4)}`, '#f39c12')}
-                  {kgRub     > 0 && fila('Rub Pastrame', `+$${costoRub.toFixed(4)}`, '#c39bd3')}
-                  {fila('Merma horno', `${mHorno.toFixed(1)}%`, '#e74c3c')}
-                  {fila('Merma reposo', `${mReposo.toFixed(1)}%`, '#e74c3c')}
-                  <div style={{ borderTop: '1px solid #333', marginTop: 8, paddingTop: 8 }}>
-                    {fila(`Peso final (${kgReposo.toFixed(3)} kg)`, `C_final = $${cFinal.toFixed(4)}/kg`, '#a9dfbf', true)}
+                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    <button onClick={registrarMostaza} disabled={guardHorneado} style={{
+                      background: guardHorneado ? '#aaa' : 'linear-gradient(135deg,#e67e22,#f39c12)',
+                      color: 'white', border: 'none', borderRadius: 8,
+                      padding: '11px 26px', cursor: guardHorneado ? 'default' : 'pointer',
+                      fontSize: 14, fontWeight: 'bold'
+                    }}>{guardHorneado ? 'Registrando...' : '✅ Registrar y continuar'}</button>
                   </div>
                 </div>
               )}
 
-              {errorHorneado && (
-                <div style={{ background: '#ffeaea', border: '1px solid #e74c3c', borderRadius: 8, padding: '10px 14px', color: '#e74c3c', fontSize: 13, marginBottom: 14 }}>{errorHorneado}</div>
+              {/* ───── PASO 2: Rub ───── */}
+              {horneadoPaso === 2 && (
+                <div>
+                  <div style={{ background: '#f5f0ff', borderRadius: 12, padding: 16, border: '2px solid #8e44ad', marginBottom: 18 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                      <div style={{ fontWeight: 700, color: '#8e44ad', fontSize: 12 }}>FASE 4 — {cfg.formula_rub || 'Rub Pastrame'}</div>
+                      <button onClick={imprimirRub} style={{
+                        background: '#8e44ad', color: 'white', border: 'none', borderRadius: 6,
+                        padding: '5px 12px', fontSize: 11, cursor: 'pointer', fontWeight: 700
+                      }}>🖨️ Imprimir</button>
+                    </div>
+
+                    {/* Encabezado tabla */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: '4px 12px', fontSize: 10, fontWeight: 700, color: '#9b59b6', borderBottom: '1.5px solid #d7bde2', paddingBottom: 4, marginBottom: 6 }}>
+                      <span>INGREDIENTE</span>
+                      <span style={{ textAlign: 'right' }}>BASE ({kgRubBase}kg)</span>
+                      <span style={{ textAlign: 'right' }}>PARA {kgCarne.toFixed(2)}kg</span>
+                    </div>
+
+                    {rubFilas.length === 0 && (
+                      <div style={{ fontSize: 12, color: '#aaa', padding: '10px 0' }}>Sin fórmula Rub cargada</div>
+                    )}
+
+                    {rubFilas.map((f, i) => {
+                      const grBase   = parseFloat(f.gramos || 0);
+                      const grEscala = grBase * escala;
+                      return (
+                        <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: '2px 12px', fontSize: 12, padding: '4px 0', borderBottom: '1px solid #e8daef' }}>
+                          <span style={{ color: '#333' }}>{f.ingrediente_nombre}</span>
+                          <span style={{ textAlign: 'right', color: '#888' }}>{grBase.toFixed(1)} g</span>
+                          <span style={{ textAlign: 'right', fontWeight: 700, color: '#6c3483' }}>{grEscala.toFixed(1)} g</span>
+                        </div>
+                      );
+                    })}
+
+                    {/* Total */}
+                    {rubFilas.length > 0 && (
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: '2px 12px', fontSize: 13, padding: '8px 0 0', fontWeight: 700, borderTop: '1.5px solid #d7bde2', marginTop: 4 }}>
+                        <span style={{ color: '#6c3483' }}>TOTAL</span>
+                        <span style={{ textAlign: 'right', color: '#9b59b6' }}>{totalRubGr.toFixed(1)} g</span>
+                        <span style={{ textAlign: 'right', color: '#6c3483' }}>{(totalRubGr * escala).toFixed(1)} g</span>
+                      </div>
+                    )}
+
+                    <div style={{ marginTop: 10, display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
+                      <span style={{ color: '#888' }}>Costo Rub: ${rubCostoKg.toFixed(4)}/kg</span>
+                      <span style={{ fontWeight: 700, color: '#8e44ad' }}>Total: ${costoRubAuto.toFixed(4)}</span>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                    <button onClick={() => setHorneadoPaso(1)} style={{ background: '#f0f2f5', border: 'none', borderRadius: 8, padding: '10px 16px', cursor: 'pointer', fontSize: 13 }}>← Atrás</button>
+                    <button onClick={registrarRub} disabled={guardHorneado} style={{
+                      background: guardHorneado ? '#aaa' : 'linear-gradient(135deg,#8e44ad,#6c3483)',
+                      color: 'white', border: 'none', borderRadius: 8,
+                      padding: '11px 26px', cursor: guardHorneado ? 'default' : 'pointer',
+                      fontSize: 14, fontWeight: 'bold'
+                    }}>{guardHorneado ? 'Registrando...' : '✅ Registrar y continuar'}</button>
+                  </div>
+                </div>
               )}
 
-              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-                <button onClick={() => { setModalHorneado(null); setExito(`✅ Lote ${modalHorneado.loteId} pasó a maduración (horneado pendiente)`); setTimeout(() => setExito(''), 6000); }}
-                  style={{ background: '#f0f2f5', border: 'none', borderRadius: 8, padding: '10px 20px', cursor: 'pointer', fontSize: 13 }}>
-                  Registrar después
-                </button>
-                <button onClick={confirmarHorneado} disabled={!listo || guardHorneado} style={{
-                  background: !listo || guardHorneado ? '#aaa' : 'linear-gradient(135deg,#e74c3c,#8e44ad)',
-                  color: 'white', border: 'none', borderRadius: 8, padding: '10px 24px',
-                  cursor: !listo || guardHorneado ? 'default' : 'pointer', fontSize: 13, fontWeight: 'bold'
-                }}>
-                  {guardHorneado ? 'Guardando...' : '🔥 Confirmar Horneado'}
-                </button>
-              </div>
+              {/* ───── PASO 3: Horno ───── */}
+              {horneadoPaso === 3 && (
+                <div>
+                  {/* Input peso real */}
+                  <div style={{ background: '#fff3f0', borderRadius: 12, padding: 20, border: '2px solid #e74c3c', marginBottom: 14 }}>
+                    <div style={{ fontWeight: 700, color: '#e74c3c', fontSize: 12, marginBottom: 12 }}>FASE 5 — HORNEADO (110°C → 70°C int → 92°C int)</div>
+                    <label style={{ fontSize: 12, color: '#555', fontWeight: 600 }}>Kg listo para rebanar (post-horno + reposo) *</label>
+                    <input type="number" min="0" step="0.001" placeholder={`máx ${kgMad.toFixed(3)}`} value={hrnHornoKg}
+                      onChange={e => setHrnHornoKg(e.target.value)}
+                      style={{ width: '100%', padding: '12px 14px', borderRadius: 8, border: '2px solid #e74c3c', fontSize: 18, fontWeight: 'bold', boxSizing: 'border-box', marginTop: 6 }} />
+                    {kgHorno > 0 && (
+                      <div style={{ fontSize: 12, color: kgHorno > kgMad ? '#e74c3c' : '#888', marginTop: 6 }}>
+                        Merma real: <b>{(kgMad - kgHorno).toFixed(3)} kg ({mHorno.toFixed(1)}%)</b>
+                        {kgHorno > kgMad && ' ⚠️ Excede peso de entrada'}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Resumen costos */}
+                  {kgHorno > 0 && (
+                    <div style={{ background: '#1a1a2e', borderRadius: 10, padding: '12px 16px', marginBottom: 14 }}>
+                      <div style={{ fontSize: 11, color: '#aaa', fontWeight: 700, marginBottom: 8 }}>RESUMEN DE COSTOS</div>
+                      {[
+                        ['Carne + Salmuera (C_mad)', `$${costoTotal.toFixed(4)}`, '#7ec8f7'],
+                        ['Mostaza', `+$${costoMosAuto.toFixed(4)}`, '#f39c12'],
+                        ['Rub Pastrame', `+$${costoRubAuto.toFixed(4)}`, '#c39bd3'],
+                        ['Merma total', `${mHorno.toFixed(1)}%`, '#e74c3c'],
+                      ].map(([l, v, c]) => (
+                        <div key={l} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
+                          <span style={{ color: '#888' }}>{l}</span>
+                          <span style={{ color: c, fontWeight: 600 }}>{v}</span>
+                        </div>
+                      ))}
+                      <div style={{ borderTop: '1px solid #333', marginTop: 8, paddingTop: 8, display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: '#a9dfbf' }}>Peso final ({kgHorno.toFixed(3)} kg)</span>
+                        <span style={{ fontSize: 14, fontWeight: 900, color: '#a9dfbf' }}>C_final = ${cFinal.toFixed(4)}/kg</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Imprevistos — sección desplegable */}
+                  <div style={{ marginBottom: 14 }}>
+                    <button
+                      onClick={() => setImprevisto(p => ({ ...p, activo: !p.activo }))}
+                      style={{
+                        width: '100%', textAlign: 'left', padding: '10px 14px',
+                        background: imprevisto.activo ? '#fff3e0' : '#f8f8f8',
+                        border: imprevisto.activo ? '1.5px solid #e67e22' : '1.5px solid #ddd',
+                        borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600,
+                        color: imprevisto.activo ? '#e67e22' : '#555',
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+                      }}>
+                      <span>⚠️ ¿Ocurrió algún imprevisto?</span>
+                      <span style={{ fontSize: 16 }}>{imprevisto.activo ? '▲' : '▼'}</span>
+                    </button>
+
+                    {imprevisto.activo && (
+                      <div style={{ border: '1.5px solid #e67e22', borderTop: 'none', borderRadius: '0 0 8px 8px', padding: '14px', background: '#fffbf5' }}>
+                        <p style={{ fontSize: 12, color: '#7d6608', margin: '0 0 10px' }}>
+                          Si algo salió mal (daño en producto, falla de equipo, etc.) registralo aquí. Se enviará un aviso al administrador.
+                        </p>
+                        <div style={{ display: 'flex', gap: 10, marginBottom: 10, alignItems: 'center' }}>
+                          <label style={{ fontSize: 12, color: '#555', fontWeight: 600, whiteSpace: 'nowrap' }}>Kg dañados:</label>
+                          <input
+                            type="number" min="0" step="0.001" placeholder="0.000"
+                            value={imprevisto.kgDaniado}
+                            onChange={e => setImprevisto(p => ({ ...p, kgDaniado: e.target.value }))}
+                            style={{ width: 100, padding: '7px 10px', borderRadius: 7, border: '1.5px solid #e67e22', fontSize: 13, fontWeight: 'bold' }}
+                          />
+                          <span style={{ fontSize: 11, color: '#999' }}>(dejar en 0 si no hay pérdida de kg)</span>
+                        </div>
+                        <textarea
+                          placeholder="Describe el imprevisto: qué pasó, por qué, consecuencias..."
+                          value={imprevisto.motivo}
+                          onChange={e => setImprevisto(p => ({ ...p, motivo: e.target.value }))}
+                          rows={3}
+                          style={{ width: '100%', padding: '8px 10px', borderRadius: 7, border: '1.5px solid #e67e22', fontSize: 13, boxSizing: 'border-box', resize: 'vertical', fontFamily: 'Arial' }}
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {errorHorneado && (
+                    <div style={{ background: '#ffeaea', border: '1px solid #e74c3c', borderRadius: 8, padding: '10px 14px', color: '#e74c3c', fontSize: 13, marginBottom: 14 }}>{errorHorneado}</div>
+                  )}
+
+                  <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                    <button onClick={() => setHorneadoPaso(2)} style={{ background: '#f0f2f5', border: 'none', borderRadius: 8, padding: '10px 16px', cursor: 'pointer', fontSize: 13 }}>← Atrás</button>
+                    <button onClick={confirmarHorneado} disabled={!listo3 || guardHorneado} style={{
+                      background: !listo3 || guardHorneado ? '#aaa' : 'linear-gradient(135deg,#e74c3c,#8e44ad)',
+                      color: 'white', border: 'none', borderRadius: 8, padding: '10px 24px',
+                      cursor: !listo3 || guardHorneado ? 'default' : 'pointer', fontSize: 13, fontWeight: 'bold'
+                    }}>
+                      {guardHorneado ? 'Guardando...' : '🔥 Confirmar Horneado'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
             </div>
           </div>
         );

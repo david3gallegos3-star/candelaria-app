@@ -36,7 +36,9 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
   const [cfg,          setCfg]          = useState(CFG_DEF);
 
   const [costoSalmuera, setCostoSalmuera] = useState(0);
+  const [totalSalKg,    setTotalSalKg]    = useState(0);
   const [costoRub,      setCostoRub]      = useState(0);
+  const [rubFilas,      setRubFilas]      = useState([]);
   const [pctSalmuera,   setPctSalmuera]   = useState(15);
 
   // ── Carga inicial ──────────────────────────────────────────
@@ -71,10 +73,13 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
         supabase.from('formulaciones').select('gramos,materia_prima_id').eq('producto_nombre', cfg.formula_salmuera),
         supabase.from('config_productos').select('porcentaje_salmuera').eq('producto_nombre', cfg.formula_salmuera).maybeSingle(),
       ]);
-      setCostoSalmuera((filas || []).reduce((s, f) => {
+      const totalCosto = (filas || []).reduce((s, f) => {
         const mp = mps.find(m => m.id === f.materia_prima_id);
         return s + (parseFloat(f.gramos || 0) / 1000) * parseFloat(mp?.precio_kg || 0);
-      }, 0));
+      }, 0);
+      const totalKg = (filas || []).reduce((s, f) => s + parseFloat(f.gramos || 0) / 1000, 0);
+      setCostoSalmuera(totalCosto);
+      setTotalSalKg(totalKg);
       setPctSalmuera(parseFloat(cfgSal?.porcentaje_salmuera) || 15);
     })();
   }, [cfg.formula_salmuera, mps]);
@@ -84,6 +89,7 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
     if (!cfg.formula_rub || !mps.length) return;
     (async () => {
       const { data: filas } = await supabase.from('formulaciones').select('gramos,materia_prima_id').eq('producto_nombre', cfg.formula_rub);
+      setRubFilas(filas || []);
       setCostoRub((filas || []).reduce((s, f) => {
         const mp = mps.find(m => m.id === f.materia_prima_id);
         return s + (parseFloat(f.gramos || 0) / 1000) * parseFloat(mp?.precio_kg || 0);
@@ -143,7 +149,11 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
   const mpMostaza   = mps.find(m => m.id === cfg.mp_mostaza_id);
   const precioCarne = parseFloat(mpCarne?.precio_kg  || 0);
   const precioMost  = parseFloat(mpMostaza?.precio_kg || 0);
-  const costoSalKg  = cfg.kg_sal_base > 0 ? costoSalmuera / cfg.kg_sal_base : 0;
+  // precio por kg de salmuera líquida × kg inyectados por kg de carne
+  const precioKgSal    = totalSalKg > 0 ? costoSalmuera / totalSalKg : 0;
+  const costoSalKg     = precioKgSal * (pctSalmuera / 100);
+  // kg de salmuera inyectados por cada kg de carne (según fórmula)
+  const kgSalPorKgCarne = cfg.kg_sal_base > 0 ? totalSalKg / cfg.kg_sal_base : 0;
   const costoMostKg = (parseFloat(cfg.gramos_mostaza) / 1000) * precioMost;
   const costoRubKg  = cfg.kg_rub_base > 0 ? costoRub / cfg.kg_rub_base : 0;
   const costoInput  = precioCarne + costoSalKg + costoMostKg + costoRubKg;
@@ -257,7 +267,7 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
             <Seccion titulo="COSTOS PARA 1 KG DE CARNE">
               {/* Salmuera */}
               <FilaCosto icon="💉" titulo="Salmuera de inyección" color="#2980b9" costoKg={costoSalKg}
-                nota={cfg.formula_salmuera ? `Inyección ${pctSalmuera}% · fórmula $${costoSalmuera.toFixed(4)}` : ''}>
+                nota={cfg.formula_salmuera ? `Batch $${costoSalmuera.toFixed(4)} ÷ ${totalSalKg.toFixed(3)} kg = $${precioKgSal.toFixed(4)}/kg` : ''}>
                 <CampoSelect disabled={!modoEdicion} color="#2980b9"
                   value={cfg.formula_salmuera} onChange={v => upd('formula_salmuera', v)}
                   options={formulas.filter(f => f.categoria === 'SALMUERAS' || f.nombre.toLowerCase().includes('salmuera')).map(f => ({ value: f.nombre, label: f.nombre }))}
@@ -429,21 +439,149 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
 
         {/* ═══ TAB PRODUCCIÓN ═══ */}
         {tab === 'produccion' && (
-          <div style={{ background: 'white', borderRadius: 12, padding: '20px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', textAlign: 'center', color: '#555' }}>
-            <div style={{ fontSize: 40, marginBottom: 12 }}>🏭</div>
-            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 8 }}>Flujo de producción</div>
-            <div style={{ fontSize: 13, color: '#888', lineHeight: 1.9, marginBottom: 16, textAlign: 'left', maxWidth: 400, margin: '0 auto 16px' }}>
-              1. Registrar producción → <b>Salmuera Pastrame</b> + <b>Salón de res</b><br />
-              2. Lote pasa a <b>Maduración {cfg.horas_mad}h {cfg.minutos_mad > 0 ? `${cfg.minutos_mad}m` : ''}</b><br />
-              3. Al confirmar pesaje → modal <b>🔥 Horneado</b>:<br />
-              &nbsp;&nbsp;· Mostaza → Rub → Horno → Reposo<br />
-              4. Stock creado en <b>AHUMADOS - HORNEADOS</b>
-            </div>
-            <div style={{ background: '#f0fff4', borderRadius: 10, padding: '14px 16px', fontSize: 12, color: '#27ae60', border: '1px solid #a9dfbf' }}>
-              {lotes.length > 0
-                ? `${lotes.length} producción(es) registrada(s) · Última: ${lotes[0].fecha}`
-                : 'Sin producciones aún — registra desde Producción › Registrar producción'}
-            </div>
+          <div>
+            {lotes.length === 0 ? (
+              <div style={{ background: 'white', borderRadius: 12, padding: '40px 20px', textAlign: 'center', color: '#aaa', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+                <div style={{ fontSize: 36, marginBottom: 10 }}>🏭</div>
+                <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 6, color: '#888' }}>Sin producciones registradas</div>
+                <div style={{ fontSize: 12 }}>Registra desde el módulo Producción › Registrar.</div>
+              </div>
+            ) : lotes.map((lote, idx) => {
+              const kgFinalL    = parseFloat(lote.kg_post_horno || lote.kg_post_reposo || 0);
+              const cFinalL     = parseFloat(lote.c_final_kg || 0);
+              const costoMostL  = parseFloat(lote.costo_mostaza || 0);
+              const costoRubL   = parseFloat(lote.costo_rub || 0);
+              const costoTotL   = cFinalL * kgFinalL;
+              const costoCarSal = Math.max(0, costoTotL - costoMostL - costoRubL);
+              const kgEntL      = parseFloat(lote.kg_entrada_horno || 0);
+              const mermaHPct   = parseFloat(lote.merma_horno_pct || 0);
+              const mermaHKg    = parseFloat(lote.merma_horno_kg || Math.max(0, kgEntL - kgFinalL));
+              const precVentaL  = cfg.margen < 100 ? cFinalL / (1 - cfg.margen / 100) : 0;
+              const gananciaL   = precVentaL - cFinalL;
+
+              // Estimar kg de carne a partir del costo (carne+sal total / costo por kg de carne)
+              const costoPorKgCarne = precioCarne + costoSalKg;
+              const kgCarneEst  = costoPorKgCarne > 0 ? costoCarSal / costoPorKgCarne : 0;
+              const kgSalEst    = kgCarneEst * kgSalPorKgCarne;
+              const kgInjEst    = kgCarneEst + kgSalEst;
+              const merMadKg    = Math.max(0, kgInjEst - kgEntL);
+              const merMadPct   = kgInjEst > 0 ? (merMadKg / kgInjEst * 100) : 0;
+
+              // Escalar ingredientes del rub al kg_rub real del lote
+              const totalRubFormKg = rubFilas.reduce((s, f) => s + parseFloat(f.gramos || 0) / 1000, 0);
+              const rubScale    = totalRubFormKg > 0 ? parseFloat(lote.kg_rub || 0) / totalRubFormKg : 0;
+
+              return (
+                <div key={lote.id || idx} style={{ background: 'white', borderRadius: 12, padding: mobile ? 14 : 20, marginBottom: 12, boxShadow: '0 1px 4px rgba(0,0,0,0.06)', border: idx === 0 ? '2px solid #27ae60' : '1px solid #f0f0f0' }}>
+
+                  {/* Cabecera */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14, paddingBottom: 12, borderBottom: '1px solid #f0f0f0' }}>
+                    <div>
+                      {idx === 0 && <div style={{ fontSize: 10, fontWeight: 700, color: '#27ae60', letterSpacing: 1, marginBottom: 3 }}>ÚLTIMA PRODUCCIÓN</div>}
+                      <div style={{ fontWeight: 700, fontSize: 14, color: '#1a1a2e' }}>📦 Lote {lote.lote_id || '—'}</div>
+                      <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>📅 {lote.fecha || '—'}</div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: 22, fontWeight: 900, color: '#27ae60' }}>${cFinalL.toFixed(4)}</div>
+                      <div style={{ fontSize: 11, color: '#aaa' }}>por kg · {kgFinalL.toFixed(3)} kg finales</div>
+                    </div>
+                  </div>
+
+                  {/* Fase 1: Inyección + Maduración */}
+                  <FaseProd num={1} color="#2980b9" icon="💉" titulo="INYECCIÓN + MADURACIÓN">
+                    {kgCarneEst > 0 && <>
+                      <FilaProd label={`🥩 Carne (${mpCarne ? (mpCarne.nombre_producto || mpCarne.nombre) : '—'})`} valor={`${kgCarneEst.toFixed(3)} kg · $${(kgCarneEst * precioCarne).toFixed(4)}`} color="#e74c3c" />
+                      <FilaProd label={`💧 Salmuera inyectada (${cfg.formula_salmuera || '—'})`} valor={`${kgSalEst.toFixed(3)} kg · $${(kgCarneEst * costoSalKg).toFixed(4)}`} color="#2980b9" />
+                      <div style={{ borderTop: '1px solid #eee', marginTop: 6, paddingTop: 6 }}>
+                        <FilaProd label="→ Kg inyectado" valor={`${kgInjEst.toFixed(3)} kg`} color="#2980b9" bold />
+                      </div>
+                      <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid #eee' }}>
+                        <FilaProd label={`⏱ Maduración ${cfg.horas_mad}h — merma (${merMadPct.toFixed(1)}%)`} valor={`−${merMadKg.toFixed(3)} kg`} color="#8e44ad" />
+                        <FilaProd label="→ Kg salida maduración" valor={`${kgEntL.toFixed(3)} kg`} color="#8e44ad" bold />
+                      </div>
+                    </>}
+                    {kgCarneEst <= 0 && <FilaProd label="Kg salida maduración" valor={`${kgEntL.toFixed(3)} kg`} color="#2980b9" bold />}
+                    <div style={{ marginTop: 4, fontSize: 10, color: '#bbb' }}>* Carne y salmuera estimadas a partir del costo registrado</div>
+                  </FaseProd>
+
+                  <div style={{ textAlign: 'center', color: '#ddd', fontSize: 14, margin: '2px 0 2px 28px' }}>↓</div>
+
+                  {/* Fase 2: Mostaza */}
+                  <FaseProd num={2} color="#e67e22" icon="🟡" titulo="MOSTAZA">
+                    <FilaProd
+                      label={`${mpMostaza ? (mpMostaza.nombre_producto || mpMostaza.nombre) : 'Mostaza'}`}
+                      valor={`${((lote.kg_mostaza || 0) * 1000).toFixed(0)} g · $${costoMostL.toFixed(4)}`}
+                      color="#e67e22" bold />
+                  </FaseProd>
+
+                  <div style={{ textAlign: 'center', color: '#ddd', fontSize: 14, margin: '2px 0 2px 28px' }}>↓</div>
+
+                  {/* Fase 3: Rub — desglose por ingrediente */}
+                  <FaseProd num={3} color="#6c3483" icon="🌶️" titulo={`RUB${cfg.formula_rub ? ` — ${cfg.formula_rub}` : ''}`}>
+                    {rubFilas.length > 0 && rubScale > 0
+                      ? rubFilas.map((f, i) => {
+                          const mp        = mps.find(m => m.id === f.materia_prima_id);
+                          const gActual   = (parseFloat(f.gramos || 0) * rubScale);
+                          const costoF    = (gActual / 1000) * parseFloat(mp?.precio_kg || 0);
+                          return (
+                            <FilaProd key={i}
+                              label={mp ? (mp.nombre_producto || mp.nombre) : `MP ${f.materia_prima_id}`}
+                              valor={`${gActual.toFixed(1)} g · $${costoF.toFixed(4)}`}
+                              color="#6c3483" />
+                          );
+                        })
+                      : <FilaProd label="Rub aplicado" valor={`${parseFloat(lote.kg_rub || 0).toFixed(3)} kg`} color="#6c3483" />
+                    }
+                    <div style={{ borderTop: '1px solid #eee', marginTop: 6, paddingTop: 6 }}>
+                      <FilaProd label="Total rub" valor={`${(parseFloat(lote.kg_rub || 0) * 1000).toFixed(0)} g · $${costoRubL.toFixed(4)}`} color="#6c3483" bold />
+                    </div>
+                  </FaseProd>
+
+                  <div style={{ textAlign: 'center', color: '#ddd', fontSize: 14, margin: '2px 0 2px 28px' }}>↓</div>
+
+                  {/* Fase 4: Horneado */}
+                  <FaseProd num={4} color="#e74c3c" icon="🔥" titulo="HORNEADO">
+                    <FilaProd label="Kg entrada al horno" valor={`${kgEntL.toFixed(3)} kg`} />
+                    <FilaProd label={`− Merma horneado (${mermaHPct.toFixed(1)}%)`} valor={`−${mermaHKg.toFixed(3)} kg`} color="#e74c3c" />
+                    <div style={{ borderTop: '1px solid #eee', marginTop: 6, paddingTop: 6 }}>
+                      <FilaProd label="→ Kg finales" valor={`${kgFinalL.toFixed(3)} kg`} color="#27ae60" bold />
+                    </div>
+                  </FaseProd>
+
+                  {/* Resultado */}
+                  <div style={{ background: '#1a1a2e', borderRadius: 10, padding: '14px 16px', marginTop: 10 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: '#aaa', marginBottom: 10, letterSpacing: 1 }}>RESULTADO — LOTE {lote.lote_id || ''}</div>
+                    {[
+                      ['Carne + Salmuera', costoCarSal, '#7ec8f7'],
+                      ['+ Mostaza',        costoMostL,  '#f5c842'],
+                      ['+ Rub',            costoRubL,   '#c39bd3'],
+                    ].map(([lbl, v, col]) => (
+                      <div key={lbl} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
+                        <span style={{ color: '#888' }}>{lbl}</span>
+                        <span style={{ color: col, fontWeight: 700 }}>${v.toFixed(4)}</span>
+                      </div>
+                    ))}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(126,200,247,0.12)', borderRadius: 8, padding: '10px 12px', marginTop: 8, marginBottom: 8 }}>
+                      <span style={{ color: '#7ec8f7', fontWeight: 700, fontSize: 13 }}>COSTO TOTAL BATCH</span>
+                      <span style={{ fontSize: 22, fontWeight: 900, color: '#7ec8f7' }}>${costoTotL.toFixed(4)}</span>
+                    </div>
+                    <div style={{ fontSize: 11, color: '#555', marginBottom: 10, textAlign: 'right' }}>÷ {kgFinalL.toFixed(3)} kg finales</div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(39,174,96,0.15)', borderRadius: 8, padding: '10px 12px', marginBottom: 8 }}>
+                      <span style={{ color: '#a9dfbf', fontWeight: 700, fontSize: 13 }}>C_FINAL / KG</span>
+                      <span style={{ fontSize: 22, fontWeight: 900, color: '#2ecc71' }}>${cFinalL.toFixed(4)}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(243,156,18,0.12)', borderRadius: 8, padding: '10px 12px', marginBottom: 6 }}>
+                      <span style={{ color: '#f9ca74', fontWeight: 700, fontSize: 13 }}>PRECIO VENTA ({cfg.margen}%)</span>
+                      <span style={{ fontSize: 20, fontWeight: 900, color: '#f39c12' }}>${precVentaL.toFixed(4)}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#888' }}>
+                      <span>Ganancia por kg</span>
+                      <span style={{ color: '#f39c12' }}>+${gananciaL.toFixed(4)}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
 
@@ -663,6 +801,29 @@ function DetalleItem({ label, valor, color = '#333' }) {
     <div style={{ background: '#f8f9fa', borderRadius: 8, padding: '7px 10px' }}>
       <div style={{ fontSize: 10, color: '#aaa', marginBottom: 2 }}>{label}</div>
       <div style={{ fontSize: 13, fontWeight: 700, color }}>{valor}</div>
+    </div>
+  );
+}
+
+function FaseProd({ num, color, icon, titulo, children }) {
+  return (
+    <div style={{ marginBottom: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+        <div style={{ background: color, color: 'white', borderRadius: '50%', width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 900, flexShrink: 0 }}>{num}</div>
+        <span style={{ fontWeight: 700, fontSize: 12, color }}>{icon} {titulo}</span>
+      </div>
+      <div style={{ marginLeft: 30, background: '#fafafa', borderRadius: 8, padding: '8px 12px', border: `1px solid ${color}22` }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function FilaProd({ label, valor, color = '#555', bold }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 3 }}>
+      <span style={{ color: '#888' }}>{label}</span>
+      <span style={{ color, fontWeight: bold ? 700 : 400 }}>{valor}</span>
     </div>
   );
 }
