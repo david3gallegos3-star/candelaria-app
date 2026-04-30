@@ -194,15 +194,7 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
   const costoRubKg  = cfg.kg_rub_base > 0 ? costoRub / cfg.kg_rub_base : 0;
   const costoInput  = precioCarne + costoSalKg + costoMostKg + costoRubKg;
   const kgSalInj    = 1 * (pctSalmuera / 100);
-  const kgInyectado = 1 + kgSalInj;
-  const mermaGrMad  = kgInyectado * (cfg.merma_mad_pct / 100) * 1000;
-  const kgPostMad   = kgInyectado * (1 - cfg.merma_mad_pct / 100);
-  const mermaGrHorno= kgPostMad * (cfg.merma_horno_pct / 100) * 1000;
-  const kgFinal     = kgPostMad * (1 - cfg.merma_horno_pct / 100);
-  const cFinal      = kgFinal > 0 ? costoInput / kgFinal : 0;
-  const precioVenta = cfg.margen < 100 ? cFinal / (1 - cfg.margen / 100) : 0;
-
-  // Sub-productos: todos reducen peso final; créditos (nueva_mp/mp_existente) también reducen costo
+  // Sub-productos por fase (deben calcularse ANTES del flujo de pesos)
   const spActivosAll = [];
   Object.entries(cfg.subproductos || {}).forEach(([fase, faseData]) => {
     const fd = getSPFase({ subproductos: { [fase]: faseData } }, fase);
@@ -216,12 +208,28 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
       spActivosAll.push({ fase, tipo, sp, kg, precio, valor: tipo !== 'perdida' ? kg * precio : 0, nombre });
     });
   });
-  const spActivos          = spActivosAll.filter(x => x.tipo !== 'perdida');
-  const totalSubprodKg     = spActivosAll.reduce((s, x) => s + x.kg, 0);
-  const totalRecuperado    = spActivos.reduce((s, x) => s + x.valor, 0);
-  const kgFinalAjustado    = Math.max(0, kgFinal - totalSubprodKg);
+  const spActivos       = spActivosAll.filter(x => x.tipo !== 'perdida');
+  const totalRecuperado = spActivos.reduce((s, x) => s + x.valor, 0);
+
+  // Kg agrupados por fase para el flujo de pesos correcto
+  const spKgFase = {};
+  spActivosAll.forEach(x => { spKgFase[x.fase] = (spKgFase[x.fase] || 0) + x.kg; });
+
+  // Flujo correcto: sub-productos salen EN SU FASE antes de aplicar la siguiente merma
+  const kgInyectado    = 1 + kgSalInj;
+  const kgEntradaMad   = Math.max(0, kgInyectado - (spKgFase.inyeccion || 0));
+  const mermaGrMad     = kgEntradaMad * (cfg.merma_mad_pct / 100) * 1000;
+  const kgPostMad      = kgEntradaMad * (1 - cfg.merma_mad_pct / 100);
+  const spPreHornoKg   = (spKgFase.maduracion || 0) + (spKgFase.mostaza || 0) + (spKgFase.rub || 0);
+  const kgEntradaHorno = Math.max(0, kgPostMad - spPreHornoKg);
+  const mermaGrHorno   = kgEntradaHorno * (cfg.merma_horno_pct / 100) * 1000;
+  const kgFinal        = kgEntradaHorno * (1 - cfg.merma_horno_pct / 100);
+  const kgFinalAjustado= Math.max(0, kgFinal - (spKgFase.horneado || 0));
+
   const costoNeto          = costoInput - totalRecuperado;
+  const cFinal             = kgFinal > 0 ? costoInput / kgFinal : 0;
   const cFinalAjustado     = kgFinalAjustado > 0 ? costoNeto / kgFinalAjustado : 0;
+  const precioVenta        = cfg.margen < 100 ? cFinal / (1 - cfg.margen / 100) : 0;
   const precioVentaAjustado= cfg.margen < 100 ? cFinalAjustado / (1 - cfg.margen / 100) : 0;
   const haySP              = spActivos.length > 0;
 
@@ -458,18 +466,33 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
                     <span style={{ color: '#888' }}>Kg inyectado (carne + salmuera)</span>
                     <span style={{ color: '#7ec8f7', fontWeight: 700 }}>{kgInyectado.toFixed(4)} kg</span>
                   </div>
+                  {/* Sub-productos de inyección salen ANTES de maduración */}
+                  {spActivosAll.filter(x => x.fase === 'inyeccion').map(x => (
+                    <div key={x.fase+'_'+x.tipo} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 5 }}>
+                      <span style={{ color: x.tipo === 'perdida' ? '#e74c3c' : '#27ae60' }}>− {x.nombre} inyección ({(x.kg * 1000).toFixed(0)} g)</span>
+                      <span style={{ color: x.tipo === 'perdida' ? '#e74c3c' : '#27ae60', fontWeight: 700 }}>−{(x.kg * 1000).toFixed(0)} g</span>
+                    </div>
+                  ))}
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 5 }}>
-                    <span style={{ color: '#888' }}>− Merma maduración ({cfg.merma_mad_pct}%)</span>
+                    <span style={{ color: '#888' }}>− Merma maduración ({cfg.merma_mad_pct}%) sobre {(kgEntradaMad * 1000).toFixed(0)} g</span>
                     <span style={{ color: '#c39bd3', fontWeight: 700 }}>−{mermaGrMad.toFixed(0)} g</span>
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: haySP ? 5 : 8 }}>
-                    <span style={{ color: '#888' }}>− Merma horneado ({cfg.merma_horno_pct}%)</span>
+                  {/* Sub-productos entre maduración y horneado */}
+                  {spActivosAll.filter(x => ['maduracion','mostaza','rub'].includes(x.fase)).map(x => (
+                    <div key={x.fase+'_'+x.tipo} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 5 }}>
+                      <span style={{ color: x.tipo === 'perdida' ? '#e74c3c' : '#27ae60' }}>− {x.nombre} {x.fase} ({(x.kg * 1000).toFixed(0)} g)</span>
+                      <span style={{ color: x.tipo === 'perdida' ? '#e74c3c' : '#27ae60', fontWeight: 700 }}>−{(x.kg * 1000).toFixed(0)} g</span>
+                    </div>
+                  ))}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: spKgFase.horneado ? 5 : 8 }}>
+                    <span style={{ color: '#888' }}>− Merma horneado ({cfg.merma_horno_pct}%) sobre {(kgEntradaHorno * 1000).toFixed(0)} g</span>
                     <span style={{ color: '#e74c3c', fontWeight: 700 }}>−{mermaGrHorno.toFixed(0)} g</span>
                   </div>
-                  {haySP && spActivos.map(x => (
-                    <div key={x.fase} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 5 }}>
-                      <span style={{ color: '#27ae60' }}>− Sub-producto: {x.nombre || x.fase} ({(x.kg * 1000).toFixed(0)} g)</span>
-                      <span style={{ color: '#27ae60', fontWeight: 700 }}>−{(x.kg * 1000).toFixed(0)} g</span>
+                  {/* Sub-productos del horneado salen del resultado final */}
+                  {spActivosAll.filter(x => x.fase === 'horneado').map(x => (
+                    <div key={x.fase+'_'+x.tipo} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 5 }}>
+                      <span style={{ color: x.tipo === 'perdida' ? '#e74c3c' : '#27ae60' }}>− {x.nombre} horneado ({(x.kg * 1000).toFixed(0)} g)</span>
+                      <span style={{ color: x.tipo === 'perdida' ? '#e74c3c' : '#27ae60', fontWeight: 700 }}>−{(x.kg * 1000).toFixed(0)} g</span>
                     </div>
                   ))}
                 </div>
@@ -607,11 +630,16 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
               const haySpConf = spPorFaseTipo.length > 0;
               const totalSpRealKg    = spPorFaseTipo.reduce((s, x) => s + parseFloat(spRealesL[x.key] || 0), 0);
               const totalSpRealValor = spPorFaseTipo.reduce((s, x) => s + parseFloat(spRealesL[x.key] || 0) * x.precio, 0);
-              const kgFinLAjust      = haySpConf && totalSpRealKg > 0 ? Math.max(0, kgFinalL - totalSpRealKg) : kgFinalL;
+              // Solo sub-productos de horneado reducen el kg medido post-horno
+              // Inyección y maduración ya salieron antes del pesaje (no doble descuento)
+              const kgSpPostHorno    = spPorFaseTipo
+                .filter(x => x.fase === 'horneado')
+                .reduce((s, x) => s + parseFloat(spRealesL[x.key] || 0), 0);
+              const kgFinLAjust      = kgSpPostHorno > 0 ? Math.max(0, kgFinalL - kgSpPostHorno) : kgFinalL;
               const costoNetoL       = costoTotL - totalSpRealValor;
-              const cFinalLAjust     = haySpConf && totalSpRealKg > 0 && kgFinLAjust > 0 ? costoNetoL / kgFinLAjust : cFinalL;
+              const cFinalLAjust     = costoNetoL > 0 && kgFinLAjust > 0 ? costoNetoL / kgFinLAjust : cFinalL;
               const precVentaLAjust  = cfg.margen < 100 ? cFinalLAjust / (1 - cfg.margen / 100) : 0;
-              const haySpReal        = haySpConf && totalSpRealKg > 0;
+              const haySpReal        = haySpConf && totalSpRealValor > 0;
 
               const renderSpDisplay = (fase) => {
                 const items = spPorFaseTipo.filter(x => x.fase === fase);
@@ -1012,6 +1040,7 @@ function DetalleItem({ label, valor, color = '#333' }) {
 }
 
 function SubprodFasePanel({ fase, icon, titulo, kgRef, cfg, setCfg, mps, disabled }) {
+  const [abierto, setAbierto] = React.useState(false);
   const spFase = getSPFase(cfg, fase);
 
   const updTipo = (tipo, patch) => setCfg(prev => {
@@ -1037,107 +1066,121 @@ function SubprodFasePanel({ fase, icon, titulo, kgRef, cfg, setCfg, mps, disable
     { tipo: 'mp_existente', tIcon: '📦', label: 'MP existente',  color: '#2980b9', bg: '#eff8ff', border: '#7ec8f7' },
   ];
 
+  const activos = TIPO_CFG.filter(({ tipo }) => spFase[tipo]?.activo);
+  const hayActivos = activos.length > 0;
+
   return (
-    <div style={{ borderBottom: '1px solid #f0f0f0', paddingBottom: 12, marginBottom: 12 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+    <div style={{ borderBottom: '1px solid #f0f0f0', marginBottom: 4 }}>
+      {/* Cabecera colapsable */}
+      <button onClick={() => setAbierto(a => !a)} style={{
+        width: '100%', display: 'flex', alignItems: 'center', gap: 8,
+        background: 'none', border: 'none', cursor: 'pointer',
+        padding: '8px 4px', textAlign: 'left',
+      }}>
+        <span style={{ fontSize: 12, color: '#bbb', fontWeight: 700, minWidth: 10 }}>{abierto ? '▾' : '▸'}</span>
         <span style={{ fontSize: 13, fontWeight: 700, color: '#444' }}>{icon} {titulo}</span>
-        {kgRef > 0 && <span style={{ fontSize: 11, color: '#bbb' }}>({(kgRef * 1000).toFixed(0)} g disponibles por 1 kg carne)</span>}
-      </div>
+        {kgRef > 0 && <span style={{ fontSize: 10, color: '#bbb' }}>({(kgRef * 1000).toFixed(0)} g/kg carne)</span>}
+        {hayActivos && (
+          <span style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
+            {activos.map(({ tipo, tIcon, color }) => (
+              <span key={tipo} style={{ fontSize: 10, background: color + '22', color, borderRadius: 6, padding: '1px 7px', fontWeight: 700 }}>
+                {tIcon} ON
+              </span>
+            ))}
+          </span>
+        )}
+        {!hayActivos && <span style={{ marginLeft: 'auto', fontSize: 10, color: '#ccc' }}>sin configurar</span>}
+      </button>
 
-      {TIPO_CFG.map(({ tipo, tIcon, label, color, bg, border }) => {
-        const sp = spFase[tipo];
-        const mpSel = tipo === 'mp_existente' ? mps.find(m => m.id === sp.mp_id) : null;
-        const precioSP = tipo === 'mp_existente' ? parseFloat(mpSel?.precio_kg || 0) : parseFloat(sp.precio_kg || 0);
-        const valorRec = tipo !== 'perdida' && sp.activo && parseFloat(sp.kg || 0) > 0 ? parseFloat(sp.kg) * precioSP : 0;
+      {/* Contenido desplegable */}
+      {abierto && (
+        <div style={{ padding: '4px 4px 10px' }}>
+          {TIPO_CFG.map(({ tipo, tIcon, label, color, bg, border }) => {
+            const sp = spFase[tipo];
+            const mpSel = tipo === 'mp_existente' ? mps.find(m => m.id === sp.mp_id) : null;
+            const precioSP = tipo === 'mp_existente' ? parseFloat(mpSel?.precio_kg || 0) : parseFloat(sp.precio_kg || 0);
+            const valorRec = tipo !== 'perdida' && sp.activo && parseFloat(sp.kg || 0) > 0 ? parseFloat(sp.kg) * precioSP : 0;
 
-        return (
-          <div key={tipo} style={{
-            background: sp.activo ? bg : '#fafafa',
-            borderRadius: 8, border: `1.5px solid ${sp.activo ? border : '#e8e8e8'}`,
-            padding: '8px 12px', marginBottom: 6,
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <button
-                onClick={() => !disabled && updTipo(tipo, { activo: !sp.activo })}
-                style={{
-                  background: sp.activo ? color : '#e0e0e0',
-                  color: sp.activo ? 'white' : '#888',
-                  border: 'none', borderRadius: 20, padding: '3px 12px',
-                  fontSize: 11, fontWeight: 700, cursor: disabled ? 'default' : 'pointer',
-                }}>
-                {sp.activo ? '✅ ON' : '○ OFF'}
-              </button>
-              <span style={{ fontSize: 12, fontWeight: 700, color: sp.activo ? color : '#999' }}>{tIcon} {label}</span>
-              {valorRec > 0 && (
-                <span style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 700, color }}>−${valorRec.toFixed(4)} del costo</span>
-              )}
-            </div>
-
-            {sp.activo && (
-              <div style={{ marginTop: 8, paddingLeft: 2 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                  <span style={{ fontSize: 12, color: '#888', whiteSpace: 'nowrap' }}>Kg por 1 kg carne:</span>
-                  <input type="number" min="0" step="0.001" value={sp.kg}
-                    onChange={e => !disabled && updTipo(tipo, { kg: parseFloat(e.target.value) || 0 })}
-                    disabled={disabled}
-                    style={{ ...inStyle(color), width: 90, textAlign: 'right', fontWeight: 'bold' }} />
-                  <span style={{ fontSize: 12, color: '#888' }}>kg</span>
-                  {parseFloat(sp.kg || 0) > 0 && <span style={{ fontSize: 11, color: '#bbb' }}>= {(parseFloat(sp.kg) * 1000).toFixed(0)} g</span>}
+            return (
+              <div key={tipo} style={{
+                background: sp.activo ? bg : '#fafafa',
+                borderRadius: 8, border: `1.5px solid ${sp.activo ? border : '#e8e8e8'}`,
+                padding: '7px 10px', marginBottom: 5,
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <button
+                    onClick={() => !disabled && updTipo(tipo, { activo: !sp.activo })}
+                    style={{
+                      background: sp.activo ? color : '#e0e0e0',
+                      color: sp.activo ? 'white' : '#888',
+                      border: 'none', borderRadius: 20, padding: '3px 10px',
+                      fontSize: 11, fontWeight: 700, cursor: disabled ? 'default' : 'pointer',
+                    }}>
+                    {sp.activo ? '✅ ON' : '○ OFF'}
+                  </button>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: sp.activo ? color : '#999' }}>{tIcon} {label}</span>
+                  {valorRec > 0 && (
+                    <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, color }}>−${valorRec.toFixed(4)}/kg</span>
+                  )}
                 </div>
 
-                {tipo === 'nueva_mp' && (
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
-                    <input placeholder="Nombre (ej: Jugo de Maduración)"
-                      value={sp.nombre}
-                      onChange={e => !disabled && updTipo(tipo, { nombre: e.target.value })}
-                      disabled={disabled}
-                      style={{ ...inStyle('#27ae60'), flex: 2, minWidth: 160 }} />
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, flex: 1, minWidth: 110 }}>
-                      <span style={{ fontSize: 12, color: '#888' }}>$</span>
-                      <input type="number" min="0" step="0.01" placeholder="Precio/kg"
-                        value={sp.precio_kg}
-                        onChange={e => !disabled && updTipo(tipo, { precio_kg: parseFloat(e.target.value) || 0 })}
+                {sp.activo && (
+                  <div style={{ marginTop: 7, paddingLeft: 2 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                      <span style={{ fontSize: 11, color: '#888', whiteSpace: 'nowrap' }}>Kg por 1 kg carne:</span>
+                      <input type="number" min="0" step="0.001" value={sp.kg}
+                        onChange={e => !disabled && updTipo(tipo, { kg: parseFloat(e.target.value) || 0 })}
                         disabled={disabled}
-                        style={{ ...inStyle('#27ae60'), flex: 1, fontWeight: 'bold' }} />
-                      <span style={{ fontSize: 12, color: '#888' }}>/kg</span>
+                        style={{ ...inStyle(color), width: 80, textAlign: 'right', fontWeight: 'bold' }} />
+                      <span style={{ fontSize: 11, color: '#888' }}>kg</span>
+                      {parseFloat(sp.kg || 0) > 0 && <span style={{ fontSize: 10, color: '#bbb' }}>= {(parseFloat(sp.kg) * 1000).toFixed(0)} g</span>}
+                    </div>
+
+                    {tipo === 'nueva_mp' && (
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>
+                        <input placeholder="Nombre (ej: Jugo de Maduración)"
+                          value={sp.nombre}
+                          onChange={e => !disabled && updTipo(tipo, { nombre: e.target.value })}
+                          disabled={disabled}
+                          style={{ ...inStyle('#27ae60'), flex: 2, minWidth: 140 }} />
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 3, flex: 1, minWidth: 100 }}>
+                          <span style={{ fontSize: 11, color: '#888' }}>$</span>
+                          <input type="number" min="0" step="0.01" placeholder="Precio/kg"
+                            value={sp.precio_kg}
+                            onChange={e => !disabled && updTipo(tipo, { precio_kg: parseFloat(e.target.value) || 0 })}
+                            disabled={disabled}
+                            style={{ ...inStyle('#27ae60'), flex: 1, fontWeight: 'bold' }} />
+                          <span style={{ fontSize: 11, color: '#888' }}>/kg</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {tipo === 'mp_existente' && (
+                      <select value={sp.mp_id}
+                        onChange={e => !disabled && updTipo(tipo, { mp_id: e.target.value })}
+                        disabled={disabled}
+                        style={{ ...inStyle('#2980b9'), width: '100%', marginBottom: 4, boxSizing: 'border-box' }}>
+                        <option value="">— seleccionar MP del inventario —</option>
+                        {mps.map(m => (
+                          <option key={m.id} value={m.id}>{m.nombre_producto || m.nombre} — ${parseFloat(m.precio_kg || 0).toFixed(4)}/kg</option>
+                        ))}
+                      </select>
+                    )}
+
+                    <div style={{ fontSize: 10, marginTop: 2 }}>
+                      {tipo === 'perdida' && parseFloat(sp.kg || 0) > 0 && <span style={{ color: '#e74c3c' }}>❌ {(parseFloat(sp.kg)*1000).toFixed(0)} g — sin valor recuperable</span>}
+                      {tipo === 'nueva_mp' && valorRec > 0 && <span style={{ color: '#27ae60' }}>✅ {sp.nombre}: {(parseFloat(sp.kg)*1000).toFixed(0)} g × ${precioSP.toFixed(4)}/kg = −${valorRec.toFixed(4)}</span>}
+                      {tipo === 'nueva_mp' && sp.activo && (parseFloat(sp.kg||0)<=0 || parseFloat(sp.precio_kg||0)<=0) && <span style={{ color: '#f39c12' }}>⚠️ Completa kg y precio</span>}
+                      {tipo === 'mp_existente' && valorRec > 0 && <span style={{ color: '#27ae60' }}>✅ {mpSel?.nombre_producto||mpSel?.nombre}: {(parseFloat(sp.kg)*1000).toFixed(0)} g × ${precioSP.toFixed(4)}/kg = −${valorRec.toFixed(4)}</span>}
+                      {tipo === 'mp_existente' && sp.activo && (!sp.mp_id||!mpSel) && <span style={{ color: '#f39c12' }}>⚠️ Selecciona una MP</span>}
                     </div>
                   </div>
                 )}
-
-                {tipo === 'mp_existente' && (
-                  <select value={sp.mp_id}
-                    onChange={e => !disabled && updTipo(tipo, { mp_id: e.target.value })}
-                    disabled={disabled}
-                    style={{ ...inStyle('#2980b9'), width: '100%', marginBottom: 6, boxSizing: 'border-box' }}>
-                    <option value="">— seleccionar MP del inventario —</option>
-                    {mps.map(m => (
-                      <option key={m.id} value={m.id}>{m.nombre_producto || m.nombre} — ${parseFloat(m.precio_kg || 0).toFixed(4)}/kg</option>
-                    ))}
-                  </select>
-                )}
-
-                <div style={{ fontSize: 11, marginTop: 2 }}>
-                  {tipo === 'perdida' && parseFloat(sp.kg || 0) > 0 && (
-                    <span style={{ color: '#e74c3c' }}>❌ {(parseFloat(sp.kg) * 1000).toFixed(0)} g de merma — sin valor recuperable</span>
-                  )}
-                  {tipo === 'nueva_mp' && valorRec > 0 && (
-                    <span style={{ color: '#27ae60' }}>✅ <b>{sp.nombre}</b>: {(parseFloat(sp.kg)*1000).toFixed(0)} g × ${precioSP.toFixed(4)}/kg = −${valorRec.toFixed(4)}</span>
-                  )}
-                  {tipo === 'nueva_mp' && sp.activo && (parseFloat(sp.kg || 0) <= 0 || parseFloat(sp.precio_kg || 0) <= 0) && (
-                    <span style={{ color: '#f39c12' }}>⚠️ Completa kg y precio</span>
-                  )}
-                  {tipo === 'mp_existente' && valorRec > 0 && (
-                    <span style={{ color: '#27ae60' }}>✅ <b>{mpSel?.nombre_producto || mpSel?.nombre}</b>: {(parseFloat(sp.kg)*1000).toFixed(0)} g × ${precioSP.toFixed(4)}/kg = −${valorRec.toFixed(4)}</span>
-                  )}
-                  {tipo === 'mp_existente' && sp.activo && (!sp.mp_id || !mpSel) && (
-                    <span style={{ color: '#f39c12' }}>⚠️ Selecciona una MP del inventario</span>
-                  )}
-                </div>
               </div>
-            )}
-          </div>
-        );
-      })}
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

@@ -364,12 +364,13 @@ export default function TabMaduracion({ mobile, currentUser }) {
           loteId: loteIdGuardado, kgMad: kgMad0, kgCarne: kgCarne0,
           costoTotal: costoTot0, cMadKg: kgMad0 > 0 ? costoTot0 / kgMad0 : 0,
           cfg: cfgHorn,
+          spInyeccionReal: modalPesaje.sp_inyeccion_real || {},
         };
       }
 
       // Si hay sub-productos configurados → mostrar modal SP antes del siguiente paso
       if (spActivosConf.length > 0) {
-        const mpIds = spActivosConf.filter(x => x.sp.tipo === 'mp_existente' && x.sp.mp_id).map(x => x.sp.mp_id);
+        const mpIds = spActivosConf.filter(x => x.tipo === 'mp_existente' && x.sp.mp_id).map(x => x.sp.mp_id);
         let mpMap = {};
         if (mpIds.length > 0) {
           const { data: mpData } = await supabase.from('materias_primas')
@@ -412,10 +413,13 @@ export default function TabMaduracion({ mobile, currentUser }) {
     setGuardSpPost(true);
     const hoy = new Date().toISOString().split('T')[0];
     try {
-      for (const { fase, tipo, sp } of modalSpPost.subproductos) {
+      for (const { fase, tipo, sp, noInventario } of modalSpPost.subproductos) {
         const key = `${fase}_${tipo}`;
         const kgReal = parseFloat(spPostKgs[key] || 0);
         if (kgReal <= 0) continue;
+
+        // Fase inyeccion: el inventario ya fue manejado en TabInyeccion, solo registramos los kg
+        if (noInventario) continue;
 
         let mpTargetId   = null;
         let mpNombreTarget = sp.nombre || fase;
@@ -712,7 +716,7 @@ export default function TabMaduracion({ mobile, currentUser }) {
         merma_reposo_kg:   0,
         merma_reposo_pct:  0,
         c_final_kg:        cFinalKg,
-        subproductos_real: { ...spRealesData, ...spWizardKgs },
+        subproductos_real: { ...(modalHorneado.spInyeccionReal || {}), ...spRealesData, ...spWizardKgs },
       });
       setSpRealesData({});
 
@@ -1807,16 +1811,19 @@ export default function TabMaduracion({ mobile, currentUser }) {
           <div style={{ background: 'white', borderRadius: 16, padding: 24, width: '100%', maxWidth: 480, boxShadow: '0 8px 32px rgba(0,0,0,0.25)', maxHeight: '90vh', overflowY: 'auto' }}>
 
             {/* Sub-productos — uno por tarjeta */}
-            {modalSpPost.subproductos.map(({ fase, tipo, sp }) => {
+            {modalSpPost.subproductos.map(({ fase, tipo, sp, noInventario }) => {
               const key      = `${fase}_${tipo}`;
               const mpInfo   = tipo === 'mp_existente' ? spPostMps[sp.mp_id] : null;
               const nombre   = tipo === 'nueva_mp' ? sp.nombre : (mpInfo?.nombre_producto || mpInfo?.nombre || sp.mp_id || fase);
               const precio   = tipo === 'nueva_mp' ? parseFloat(sp.precio_kg || 0) : parseFloat(mpInfo?.precio_kg || 0);
               const kgReal   = parseFloat(spPostKgs[key] || 0);
               const valorRec = kgReal * precio;
-              const tipoLabel = tipo === 'mp_existente' ? '📦 MP existente → entra a inventario'
-                              : tipo === 'nueva_mp'     ? '🆕 Nueva MP → entra a inventario'
-                              : '❌ Pérdida total';
+              const tipoLabel = tipo === 'perdida'
+                ? '❌ Pérdida total'
+                : noInventario
+                  ? '📝 Solo registro (ya en stock por inyección)'
+                  : tipo === 'mp_existente' ? '📦 MP existente → entra a inventario'
+                  : '🆕 Nueva MP → entra a inventario';
               const tipoColor = tipo === 'perdida' ? '#e74c3c' : '#2980b9';
               return (
                 <div key={key} style={{ marginBottom: 20 }}>

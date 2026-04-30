@@ -285,6 +285,20 @@ export default function TabInyeccion({ currentUser, mobile, onSalmueraChange }) 
       }).select().single();
       if (e4) throw e4;
 
+      // Persistir kg de sub-productos de inyección → se incluyen en produccion_horneado_lotes
+      if (haySpIny && lote) {
+        const spInyReal = {};
+        for (const { tipo } of spInyItems) {
+          const kg = Math.max(0, parseFloat(kgSubprodIny[tipo] || 0));
+          if (kg > 0) spInyReal[`inyeccion_${tipo}`] = kg;
+        }
+        if (Object.keys(spInyReal).length > 0) {
+          await supabase.from('lotes_maduracion')
+            .update({ sp_inyeccion_real: spInyReal })
+            .eq('id', lote.id);
+        }
+      }
+
       // ── Descontar stock del inventario ────────────────────
       const fechaHoy = new Date().toISOString().split('T')[0];
       // 1. Descontar carnes (cortes) + registrar movimiento SALIDA
