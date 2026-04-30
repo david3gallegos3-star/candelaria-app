@@ -315,10 +315,17 @@ export default function TabMaduracion({ mobile, currentUser }) {
         (hc.producto_nombre || '').toLowerCase().includes('pastrame')
       )?.config) || {};
 
-      // Solo sub-producto de MADURACION aquí — los demás van en el wizard de horneado
-      const spActivosConf = Object.entries(cfgHorn.subproductos || {})
-        .filter(([fase, sp]) => sp?.activo && fase === 'maduracion')
-        .map(([fase, sp]) => ({ fase, sp }));
+      // Solo sub-productos de MADURACION aquí — los demás van en el wizard de horneado
+      const spActivosConf = [];
+      const madRaw = (cfgHorn.subproductos || {}).maduracion;
+      if (madRaw) {
+        const isNew = 'perdida' in madRaw || 'nueva_mp' in madRaw || 'mp_existente' in madRaw;
+        const tiposData = isNew ? madRaw : { [madRaw.tipo || 'perdida']: { ...madRaw } };
+        ['perdida', 'nueva_mp', 'mp_existente'].forEach(tipo => {
+          const sp = tiposData[tipo];
+          if (sp?.activo) spActivosConf.push({ fase: 'maduracion', tipo, sp });
+        });
+      }
 
       // Preparar datos para wizard horneado si aplica
       let horneadoWizardData = null;
@@ -405,17 +412,18 @@ export default function TabMaduracion({ mobile, currentUser }) {
     setGuardSpPost(true);
     const hoy = new Date().toISOString().split('T')[0];
     try {
-      for (const { fase, sp } of modalSpPost.subproductos) {
-        const kgReal = parseFloat(spPostKgs[fase] || 0);
+      for (const { fase, tipo, sp } of modalSpPost.subproductos) {
+        const key = `${fase}_${tipo}`;
+        const kgReal = parseFloat(spPostKgs[key] || 0);
         if (kgReal <= 0) continue;
 
         let mpTargetId   = null;
         let mpNombreTarget = sp.nombre || fase;
 
-        if (sp.tipo === 'mp_existente' && sp.mp_id) {
+        if (tipo === 'mp_existente' && sp.mp_id) {
           mpTargetId     = sp.mp_id;
           mpNombreTarget = spPostMps[sp.mp_id]?.nombre_producto || spPostMps[sp.mp_id]?.nombre || sp.mp_id;
-        } else if (sp.tipo === 'nueva_mp' && sp.nombre) {
+        } else if (tipo === 'nueva_mp' && sp.nombre) {
           const { data: mpEx } = await supabase.from('materias_primas')
             .select('id').ilike('nombre', sp.nombre).maybeSingle();
           if (mpEx) {
@@ -445,13 +453,12 @@ export default function TabMaduracion({ mobile, currentUser }) {
           await supabase.from('inventario_movimientos').insert({
             materia_prima_id: mpTargetId, nombre_mp: mpNombreTarget,
             tipo: 'entrada', kg: kgReal,
-            motivo: `Sub-producto ${mpNombreTarget} (${fase}) — Lote ${modalSpPost.loteId}`,
+            motivo: `Sub-producto ${mpNombreTarget} (${fase}/${tipo}) — Lote ${modalSpPost.loteId}`,
             usuario_nombre: currentUser?.email || '', user_id: currentUser?.id || null, fecha: hoy,
           });
         }
       }
 
-      // Guardar para que confirmarHorneado lo incluya en produccion_horneado_lotes
       setSpRealesData({ ...spPostKgs });
 
       const pending = { ...modalSpPost };
@@ -656,16 +663,22 @@ export default function TabMaduracion({ mobile, currentUser }) {
     let creditoWizard = 0;
     let kgFinalAjust  = kgHorno;
     for (const fase of ['mostaza', 'rub', 'horneado']) {
-      const sp    = spCfgHz[fase] || {};
-      const kgSp  = parseFloat(spWizardKgs[fase] || 0);
-      if (!sp.activo || kgSp <= 0) continue;
-      if (sp.tipo === 'perdida') {
-        kgFinalAjust = Math.max(0, kgFinalAjust - kgSp); // merma extra reduce el peso final
-      } else {
-        // mp_existente o nueva_mp: crédito
-        const precio = sp.tipo === 'nueva_mp' ? parseFloat(sp.precio_kg || 0) : parseFloat(sp.precio_kg_ref || sp.precio_kg || 0);
-        creditoWizard += kgSp * precio;
-        kgFinalAjust   = Math.max(0, kgFinalAjust - kgSp);
+      const faseRaw = spCfgHz[fase];
+      if (!faseRaw) continue;
+      const isNew = 'perdida' in faseRaw || 'nueva_mp' in faseRaw || 'mp_existente' in faseRaw;
+      const tiposData = isNew ? faseRaw : { [faseRaw.tipo || 'perdida']: { ...faseRaw } };
+      for (const tipo of ['perdida', 'nueva_mp', 'mp_existente']) {
+        const sp   = tiposData[tipo];
+        if (!sp?.activo) continue;
+        const kgSp = parseFloat(spWizardKgs[`${fase}_${tipo}`] || 0);
+        if (kgSp <= 0) continue;
+        if (tipo === 'perdida') {
+          kgFinalAjust = Math.max(0, kgFinalAjust - kgSp);
+        } else {
+          const precio = tipo === 'nueva_mp' ? parseFloat(sp.precio_kg || 0) : parseFloat(sp.precio_kg_ref || sp.precio_kg || 0);
+          creditoWizard += kgSp * precio;
+          kgFinalAjust   = Math.max(0, kgFinalAjust - kgSp);
+        }
       }
     }
 
@@ -736,17 +749,23 @@ export default function TabMaduracion({ mobile, currentUser }) {
         usuario_nombre: currentUser?.email || '', user_id: currentUser?.id || null, fecha: hoy,
       });
 
-      // 5. Sub-productos del wizard → inventario
+      // 5. Sub-productos del wizard → inventario (solo créditos, no pérdidas)
       for (const fase of ['mostaza', 'rub', 'horneado']) {
-        const sp   = spCfgHz[fase] || {};
-        const kgSp = parseFloat(spWizardKgs[fase] || 0);
-        if (!sp.activo || kgSp <= 0 || sp.tipo === 'perdida') continue;
+        const faseRaw = spCfgHz[fase];
+        if (!faseRaw) continue;
+        const isNew2 = 'perdida' in faseRaw || 'nueva_mp' in faseRaw || 'mp_existente' in faseRaw;
+        const tiposData2 = isNew2 ? faseRaw : { [faseRaw.tipo || 'perdida']: { ...faseRaw } };
+        for (const tipo of ['nueva_mp', 'mp_existente']) {
+        const sp   = tiposData2[tipo];
+        if (!sp?.activo) continue;
+        const kgSp = parseFloat(spWizardKgs[`${fase}_${tipo}`] || 0);
+        if (kgSp <= 0) continue;
         let mpSpId = null; let mpSpNom = sp.nombre || fase;
-        if (sp.tipo === 'mp_existente' && sp.mp_id) {
+        if (tipo === 'mp_existente' && sp.mp_id) {
           mpSpId = sp.mp_id;
           const { data: mpD } = await supabase.from('materias_primas').select('nombre,nombre_producto').eq('id', sp.mp_id).maybeSingle();
           mpSpNom = mpD?.nombre_producto || mpD?.nombre || sp.mp_id;
-        } else if (sp.tipo === 'nueva_mp' && sp.nombre) {
+        } else if (tipo === 'nueva_mp' && sp.nombre) {
           const { data: mpEx } = await supabase.from('materias_primas').select('id').ilike('nombre', sp.nombre).maybeSingle();
           if (mpEx) { mpSpId = mpEx.id; } else {
             const { data: nv } = await supabase.from('materias_primas').insert({
@@ -766,11 +785,12 @@ export default function TabMaduracion({ mobile, currentUser }) {
           }
           await supabase.from('inventario_movimientos').insert({
             materia_prima_id: mpSpId, nombre_mp: mpSpNom, tipo: 'entrada', kg: kgSp,
-            motivo: `Sub-producto ${fase} — Lote ${modalHorneado.loteId}`,
+            motivo: `Sub-producto ${fase}/${tipo} — Lote ${modalHorneado.loteId}`,
             usuario_nombre: currentUser?.email || '', user_id: currentUser?.id || null, fecha: hoy,
           });
         }
-      }
+        } // end for tipo
+      } // end for fase
       setSpWizardKgs({});
 
       // 6. Notificación imprevisto al admin
@@ -1340,61 +1360,58 @@ export default function TabMaduracion({ mobile, currentUser }) {
         const kgRubAuto     = (totalRubGr / 1000) * escala;
         const costoRubAuto  = kgRubAuto * rubCostoKg;
 
-        // Sub-productos del wizard (mostaza, rub, horneado)
+        // Sub-productos del wizard (mostaza, rub, horneado) — múltiples tipos por fase
         const spCfg = cfg.subproductos || {};
-        const getMpInfo = (sp) => spCfg[sp] || {};
 
-        // Helper: calcular precio del sub-producto según tipo y mps cargados
-        const spPrecio = (fase) => {
-          const sp = getMpInfo(fase);
-          if (!sp.activo) return 0;
-          if (sp.tipo === 'perdida') return 0;
-          if (sp.tipo === 'nueva_mp') return parseFloat(sp.precio_kg || 0);
-          // mp_existente: buscar en mps del wizard (spPostMps tiene los del pesaje, no del wizard)
-          return parseFloat(sp.precio_kg_ref || 0); // se cargará en confirmarHorneado
-        };
-
-        // Render helper para input de sub-producto en wizard
         const renderSpWizard = (fase) => {
-          const sp = getMpInfo(fase);
-          if (!sp.activo) return null;
-          const kgR  = parseFloat(spWizardKgs[fase] || 0);
-          const precio = spPrecio(fase);
-          const valorRec = kgR * precio;
-          const esPerd = sp.tipo === 'perdida';
-          const nombre = sp.tipo === 'nueva_mp' ? sp.nombre : sp.tipo === 'mp_existente' ? (sp.nombre || fase) : (sp.nombre || fase);
-          const color = esPerd ? '#e74c3c' : '#27ae60';
-          return (
-            <div style={{ background: esPerd ? '#fff5f5' : '#f0fff8', border: `1.5px solid ${esPerd ? '#f5b7b1' : '#a9dfbf'}`, borderRadius: 10, padding: '12px 14px', marginTop: 12 }}>
-              <div style={{ fontWeight: 700, fontSize: 13, color, marginBottom: 4 }}>
-                {esPerd ? '❌' : '📦'} {nombre || fase}
-                <span style={{ fontSize: 11, fontWeight: 400, color: '#888', marginLeft: 8 }}>
-                  {esPerd ? 'Pérdida total' : sp.tipo === 'mp_existente' ? '→ entra a inventario' : '→ nueva MP en inventario'}
-                </span>
-              </div>
-              <div style={{ fontSize: 11, color: '#888', marginBottom: 8 }}>
-                {esPerd ? '¿Cuántos kg de merma real hubo en esta fase?' : `¿Cuántos kg de ${nombre} obtuviste?`}
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <input type="number" min="0" step="0.001"
-                  value={spWizardKgs[fase] ?? ''}
-                  onChange={e => setSpWizardKgs(prev => ({ ...prev, [fase]: e.target.value }))}
-                  placeholder="0.000"
-                  style={{ flex: 1, padding: '8px 12px', borderRadius: 7, border: `1.5px solid ${color}`, fontSize: 15, fontWeight: 'bold', textAlign: 'right', outline: 'none' }} />
-                <span style={{ fontWeight: 700, color: '#555' }}>kg</span>
-              </div>
-              {kgR > 0 && !esPerd && precio > 0 && (
-                <div style={{ fontSize: 11, color: '#27ae60', fontWeight: 700, marginTop: 6 }}>
-                  💰 ${kgR.toFixed(3)} × ${precio.toFixed(4)}/kg = ${valorRec.toFixed(4)} recuperado
+          const faseRaw = spCfg[fase];
+          if (!faseRaw) return null;
+          const isNew = 'perdida' in faseRaw || 'nueva_mp' in faseRaw || 'mp_existente' in faseRaw;
+          const tiposData = isNew ? faseRaw : { [faseRaw.tipo || 'perdida']: { ...faseRaw } };
+          const items = ['perdida', 'nueva_mp', 'mp_existente']
+            .filter(t => tiposData[t]?.activo)
+            .map(tipo => ({ tipo, sp: tiposData[tipo] }));
+          if (items.length === 0) return null;
+          return items.map(({ tipo, sp }) => {
+            const key = `${fase}_${tipo}`;
+            const kgR = parseFloat(spWizardKgs[key] || 0);
+            const precio = tipo === 'perdida' ? 0 : tipo === 'nueva_mp' ? parseFloat(sp.precio_kg || 0) : parseFloat(sp.precio_kg_ref || sp.precio_kg || 0);
+            const valorRec = kgR * precio;
+            const esPerd = tipo === 'perdida';
+            const nombre = tipo === 'nueva_mp' ? sp.nombre : tipo === 'mp_existente' ? (sp.nombre || fase) : 'Merma';
+            const color = esPerd ? '#e74c3c' : '#27ae60';
+            return (
+              <div key={key} style={{ background: esPerd ? '#fff5f5' : '#f0fff8', border: `1.5px solid ${esPerd ? '#f5b7b1' : '#a9dfbf'}`, borderRadius: 10, padding: '12px 14px', marginTop: 10 }}>
+                <div style={{ fontWeight: 700, fontSize: 13, color, marginBottom: 4 }}>
+                  {esPerd ? '❌' : '📦'} {nombre || fase}
+                  <span style={{ fontSize: 11, fontWeight: 400, color: '#888', marginLeft: 8 }}>
+                    {esPerd ? 'Pérdida total' : tipo === 'mp_existente' ? '→ entra a inventario' : '→ nueva MP en inventario'}
+                  </span>
                 </div>
-              )}
-              {kgR > 0 && esPerd && (
-                <div style={{ fontSize: 11, color: '#e74c3c', fontWeight: 700, marginTop: 6 }}>
-                  ❌ {kgR.toFixed(3)} kg de merma — sube el costo/kg
+                <div style={{ fontSize: 11, color: '#888', marginBottom: 8 }}>
+                  {esPerd ? '¿Cuántos kg de merma real hubo en esta fase?' : `¿Cuántos kg de ${nombre} obtuviste?`}
                 </div>
-              )}
-            </div>
-          );
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input type="number" min="0" step="0.001"
+                    value={spWizardKgs[key] ?? ''}
+                    onChange={e => setSpWizardKgs(prev => ({ ...prev, [key]: e.target.value }))}
+                    placeholder="0.000"
+                    style={{ flex: 1, padding: '8px 12px', borderRadius: 7, border: `1.5px solid ${color}`, fontSize: 15, fontWeight: 'bold', textAlign: 'right', outline: 'none' }} />
+                  <span style={{ fontWeight: 700, color: '#555' }}>kg</span>
+                </div>
+                {kgR > 0 && !esPerd && precio > 0 && (
+                  <div style={{ fontSize: 11, color: '#27ae60', fontWeight: 700, marginTop: 6 }}>
+                    💰 {kgR.toFixed(3)} × ${precio.toFixed(4)}/kg = ${valorRec.toFixed(4)} recuperado
+                  </div>
+                )}
+                {kgR > 0 && esPerd && (
+                  <div style={{ fontSize: 11, color: '#e74c3c', fontWeight: 700, marginTop: 6 }}>
+                    ❌ {kgR.toFixed(3)} kg de merma — sube el costo/kg
+                  </div>
+                )}
+              </div>
+            );
+          });
         };
 
         // Paso 3 derived
@@ -1790,19 +1807,19 @@ export default function TabMaduracion({ mobile, currentUser }) {
           <div style={{ background: 'white', borderRadius: 16, padding: 24, width: '100%', maxWidth: 480, boxShadow: '0 8px 32px rgba(0,0,0,0.25)', maxHeight: '90vh', overflowY: 'auto' }}>
 
             {/* Sub-productos — uno por tarjeta */}
-            {modalSpPost.subproductos.map(({ fase, sp }) => {
-              const mpInfo   = sp.tipo === 'mp_existente' ? spPostMps[sp.mp_id] : null;
-              const nombre   = sp.tipo === 'nueva_mp' ? sp.nombre : (mpInfo?.nombre_producto || mpInfo?.nombre || sp.mp_id || fase);
-              const precio   = sp.tipo === 'nueva_mp' ? parseFloat(sp.precio_kg || 0) : parseFloat(mpInfo?.precio_kg || 0);
-              const kgReal   = parseFloat(spPostKgs[fase] || 0);
+            {modalSpPost.subproductos.map(({ fase, tipo, sp }) => {
+              const key      = `${fase}_${tipo}`;
+              const mpInfo   = tipo === 'mp_existente' ? spPostMps[sp.mp_id] : null;
+              const nombre   = tipo === 'nueva_mp' ? sp.nombre : (mpInfo?.nombre_producto || mpInfo?.nombre || sp.mp_id || fase);
+              const precio   = tipo === 'nueva_mp' ? parseFloat(sp.precio_kg || 0) : parseFloat(mpInfo?.precio_kg || 0);
+              const kgReal   = parseFloat(spPostKgs[key] || 0);
               const valorRec = kgReal * precio;
-              const tipoLabel = sp.tipo === 'mp_existente' ? '📦 MP existente → entra a inventario'
-                              : sp.tipo === 'nueva_mp'     ? '🆕 Nueva MP → entra a inventario'
+              const tipoLabel = tipo === 'mp_existente' ? '📦 MP existente → entra a inventario'
+                              : tipo === 'nueva_mp'     ? '🆕 Nueva MP → entra a inventario'
                               : '❌ Pérdida total';
-              const tipoColor = sp.tipo === 'perdida' ? '#e74c3c' : '#2980b9';
+              const tipoColor = tipo === 'perdida' ? '#e74c3c' : '#2980b9';
               return (
-                <div key={fase} style={{ marginBottom: 20 }}>
-                  {/* Título: nombre del sub-producto */}
+                <div key={key} style={{ marginBottom: 20 }}>
                   <div style={{ fontWeight: 900, fontSize: 18, color: '#1a1a2e', marginBottom: 2 }}>
                     {nombre}
                   </div>
@@ -1813,27 +1830,26 @@ export default function TabMaduracion({ mobile, currentUser }) {
                     <span style={{ fontSize: 11, color: '#aaa' }}>Lote {modalSpPost.loteId} · {modalSpPost.totalKgMad.toFixed(3)} kg post-maduración</span>
                   </div>
 
-                  {/* Input kg */}
-                  <div style={{ background: sp.tipo === 'perdida' ? '#fff5f5' : '#f0fff8', border: `2px solid ${sp.tipo === 'perdida' ? '#f5b7b1' : '#a9dfbf'}`, borderRadius: 12, padding: '14px 16px' }}>
+                  <div style={{ background: tipo === 'perdida' ? '#fff5f5' : '#f0fff8', border: `2px solid ${tipo === 'perdida' ? '#f5b7b1' : '#a9dfbf'}`, borderRadius: 12, padding: '14px 16px' }}>
                     <div style={{ fontSize: 12, color: '#555', marginBottom: 8 }}>
-                      {sp.tipo === 'perdida'
+                      {tipo === 'perdida'
                         ? <>¿Cuántos kg de merma real de <b>{nombre}</b> hubo en este lote?</>
                         : <>¿Cuántos kg de <b>{nombre}</b> obtuviste en este lote?</>}
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <input type="number" min="0" step="0.001"
-                        value={spPostKgs[fase] ?? ''}
-                        onChange={e => setSpPostKgs(prev => ({ ...prev, [fase]: e.target.value }))}
+                        value={spPostKgs[key] ?? ''}
+                        onChange={e => setSpPostKgs(prev => ({ ...prev, [key]: e.target.value }))}
                         placeholder="0.000"
-                        style={{ flex: 1, padding: '12px 14px', borderRadius: 8, border: `2px solid ${sp.tipo === 'perdida' ? '#e74c3c' : '#27ae60'}`, fontSize: 18, fontWeight: 'bold', textAlign: 'right' }} />
+                        style={{ flex: 1, padding: '12px 14px', borderRadius: 8, border: `2px solid ${tipo === 'perdida' ? '#e74c3c' : '#27ae60'}`, fontSize: 18, fontWeight: 'bold', textAlign: 'right' }} />
                       <span style={{ fontSize: 15, color: '#555', fontWeight: 700 }}>kg</span>
                     </div>
-                    {sp.tipo === 'perdida' && kgReal > 0 && (
+                    {tipo === 'perdida' && kgReal > 0 && (
                       <div style={{ marginTop: 8, fontSize: 12, color: '#e74c3c', fontWeight: 700 }}>
                         ❌ {kgReal.toFixed(3)} kg de merma — sin valor recuperable, sube el costo/kg
                       </div>
                     )}
-                    {sp.tipo !== 'perdida' && valorRec > 0 && (
+                    {tipo !== 'perdida' && valorRec > 0 && (
                       <div style={{ marginTop: 8, fontSize: 12, color: '#27ae60', fontWeight: 700 }}>
                         💰 Valor recuperado: {kgReal.toFixed(3)} kg × ${precio.toFixed(4)}/kg = ${valorRec.toFixed(4)}
                       </div>
