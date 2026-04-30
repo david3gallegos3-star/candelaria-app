@@ -39,6 +39,13 @@ export default function TabMaduracion({ mobile, currentUser }) {
   const [imprevisto,     setImprevisto]     = useState({ activo: false, kgDaniado: '', motivo: '' });
   const [horneadoCfgs,   setHorneadoCfgs]   = useState([]); // configs de vista_horneado_config
 
+  // ── Modal Sub-productos post-pesaje ──
+  const [modalSpPost,    setModalSpPost]    = useState(null); // {subproductos, loteId, totalKgMad, pendingFlow, horneadoData, deshueseData}
+  const [spPostKgs,      setSpPostKgs]      = useState({});   // {fase: kg}
+  const [guardSpPost,    setGuardSpPost]    = useState(false);
+  const [spPostMps,      setSpPostMps]      = useState({});   // mp_id → {nombre, precio_kg}
+  const [spRealesData,   setSpRealesData]   = useState({});   // para pasar a confirmarHorneado
+
   // ── Modal Deshuese (dinámico desde deshuese_config) ──
   const [modalDeshuese,  setModalDeshuese]  = useState(null);
   const [dshData,        setDshData]        = useState({});
@@ -299,29 +306,32 @@ export default function TabMaduracion({ mobile, currentUser }) {
       setModalPesaje(null);
       await cargar();
 
-      // Detectar Pastrame (por nombre de salmuera) → wizard horneado
-      const formulaSal = (modalPesaje.produccion_inyeccion?.formula_salmuera || '').toLowerCase();
-      const esPastrame = formulaSal.includes('pastrame');
+      // Detectar config del producto horneado
+      const formulaSal   = (modalPesaje.produccion_inyeccion?.formula_salmuera || '').toLowerCase();
+      const esPastrame   = formulaSal.includes('pastrame');
+      const cfgHorn      = (horneadoCfgs.find(hc =>
+        (hc.config?.formula_salmuera || '').toLowerCase().includes('pastrame') ||
+        (hc.producto_nombre || '').toLowerCase().includes('pastrame')
+      )?.config) || {};
+
+      // Sub-productos activos en la config del producto (incluye perdida para registrar merma real)
+      const spActivosConf = Object.entries(cfgHorn.subproductos || {})
+        .filter(([, sp]) => sp?.activo)
+        .map(([fase, sp]) => ({ fase, sp }));
+
+      // Preparar datos para wizard horneado si aplica
+      let horneadoWizardData = null;
       if (esPastrame) {
         const p0        = picortes[0];
         const kgMad0    = parseFloat(pesajes[p0?.corte_nombre]);
         const kgCarne0  = parseFloat(p0?.kg_carne_cruda || 0);
         const costoTot0 = parseFloat(p0?.costo_carne || 0) + parseFloat(p0?.costo_salmuera_asignado || 0);
 
-        // Buscar config del producto horneado que usa esta salmuera
-        const cfgHorn = (horneadoCfgs.find(hc =>
-          (hc.config?.formula_salmuera || '').toLowerCase().includes('pastrame') ||
-          (hc.producto_nombre || '').toLowerCase().includes('pastrame')
-        )?.config) || {};
-
-        // Cargar mostaza desde el MP configurado en la fórmula
         if (cfgHorn.mp_mostaza_id) {
           const { data: mpMos } = await supabase.from('materias_primas')
             .select('id,nombre,precio_kg').eq('id', cfgHorn.mp_mostaza_id).maybeSingle();
           setMpMostaza(mpMos || null);
         }
-
-        // Cargar ingredientes del Rub con sus precios
         let rubF = [];
         if (cfgHorn.formula_rub) {
           const { data: rubRows } = await supabase.from('formulaciones')
@@ -337,18 +347,39 @@ export default function TabMaduracion({ mobile, currentUser }) {
           });
         }
         setRubFilas(rubF);
-        setHrnHornoKg('');
-        setErrorHorneado('');
-        setPaso1Listo(false);
-        setPaso2Listo(false);
+        setHrnHornoKg(''); setErrorHorneado('');
+        setPaso1Listo(false); setPaso2Listo(false);
         setImprevisto({ activo: false, kgDaniado: '', motivo: '' });
         setHorneadoPaso(1);
-        setModalHorneado({
+        horneadoWizardData = {
           loteId: loteIdGuardado, kgMad: kgMad0, kgCarne: kgCarne0,
           costoTotal: costoTot0, cMadKg: kgMad0 > 0 ? costoTot0 / kgMad0 : 0,
           cfg: cfgHorn,
+        };
+      }
+
+      // Si hay sub-productos configurados → mostrar modal SP antes del siguiente paso
+      if (spActivosConf.length > 0) {
+        const mpIds = spActivosConf.filter(x => x.sp.tipo === 'mp_existente' && x.sp.mp_id).map(x => x.sp.mp_id);
+        let mpMap = {};
+        if (mpIds.length > 0) {
+          const { data: mpData } = await supabase.from('materias_primas')
+            .select('id,nombre,nombre_producto,precio_kg').in('id', mpIds);
+          (mpData || []).forEach(m => { mpMap[m.id] = m; });
+        }
+        setSpPostMps(mpMap);
+        const totalKgMad = picortes.reduce((s, p) => s + parseFloat(pesajes[p.corte_nombre] || 0), 0);
+        setSpPostKgs({});
+        setModalSpPost({
+          subproductos: spActivosConf,
+          loteId: loteIdGuardado,
+          totalKgMad,
+          pendingFlow: esPastrame ? 'horneado' : deshueseEntries.length > 0 ? 'deshuese' : 'exito',
+          horneadoData: horneadoWizardData,
+          deshueseData: deshueseEntries.length > 0 ? deshueseEntries : null,
         });
-      // Si hay cortes con deshuese, abrir modal
+      } else if (esPastrame && horneadoWizardData) {
+        setModalHorneado(horneadoWizardData);
       } else if (deshueseEntries.length > 0) {
         const initData = {};
         deshueseEntries.forEach(e => {
@@ -365,6 +396,82 @@ export default function TabMaduracion({ mobile, currentUser }) {
       setError('Error: ' + e.message);
     }
     setGuardando(false);
+  }
+
+  // ── Confirmar sub-productos post-pesaje ───────────────────
+  async function confirmarSpPost() {
+    setGuardSpPost(true);
+    const hoy = new Date().toISOString().split('T')[0];
+    try {
+      for (const { fase, sp } of modalSpPost.subproductos) {
+        const kgReal = parseFloat(spPostKgs[fase] || 0);
+        if (kgReal <= 0) continue;
+
+        let mpTargetId   = null;
+        let mpNombreTarget = sp.nombre || fase;
+
+        if (sp.tipo === 'mp_existente' && sp.mp_id) {
+          mpTargetId     = sp.mp_id;
+          mpNombreTarget = spPostMps[sp.mp_id]?.nombre_producto || spPostMps[sp.mp_id]?.nombre || sp.mp_id;
+        } else if (sp.tipo === 'nueva_mp' && sp.nombre) {
+          const { data: mpEx } = await supabase.from('materias_primas')
+            .select('id').ilike('nombre', sp.nombre).maybeSingle();
+          if (mpEx) {
+            mpTargetId = mpEx.id;
+          } else {
+            const { data: nueva } = await supabase.from('materias_primas').insert({
+              nombre: sp.nombre, nombre_producto: sp.nombre,
+              categoria: 'SUB-PRODUCTOS',
+              precio_kg: parseFloat(sp.precio_kg || 0),
+              tipo: 'MATERIAS PRIMAS', estado: 'ACTIVO', eliminado: false,
+            }).select('id').single();
+            mpTargetId = nueva?.id;
+          }
+          mpNombreTarget = sp.nombre;
+        }
+
+        if (mpTargetId) {
+          const { data: inv } = await supabase.from('inventario_mp')
+            .select('id,stock_kg').eq('materia_prima_id', mpTargetId).maybeSingle();
+          if (inv) {
+            await supabase.from('inventario_mp')
+              .update({ stock_kg: (inv.stock_kg || 0) + kgReal }).eq('id', inv.id);
+          } else {
+            await supabase.from('inventario_mp')
+              .insert({ materia_prima_id: mpTargetId, stock_kg: kgReal, nombre: mpNombreTarget });
+          }
+          await supabase.from('inventario_movimientos').insert({
+            materia_prima_id: mpTargetId, nombre_mp: mpNombreTarget,
+            tipo: 'entrada', kg: kgReal,
+            motivo: `Sub-producto ${mpNombreTarget} (${fase}) — Lote ${modalSpPost.loteId}`,
+            usuario_nombre: currentUser?.email || '', user_id: currentUser?.id || null, fecha: hoy,
+          });
+        }
+      }
+
+      // Guardar para que confirmarHorneado lo incluya en produccion_horneado_lotes
+      setSpRealesData({ ...spPostKgs });
+
+      const pending = { ...modalSpPost };
+      setModalSpPost(null);
+
+      if (pending.pendingFlow === 'horneado' && pending.horneadoData) {
+        setModalHorneado(pending.horneadoData);
+      } else if (pending.pendingFlow === 'deshuese' && pending.deshueseData) {
+        const initData = {};
+        pending.deshueseData.forEach(e => {
+          initData[e.corteNombre] = { kgEntrada: '', kgResS: '', kgPuntas: '', kgDesecho: '' };
+        });
+        setDshData(initData); setErrorDeshuese('');
+        setModalDeshuese(pending.deshueseData);
+      } else {
+        setExito(`✅ Lote ${pending.loteId} pasó a Stock de Congelación`);
+        setTimeout(() => setExito(''), 6000);
+      }
+    } catch (e) {
+      alert('Error al registrar sub-productos: ' + e.message);
+    }
+    setGuardSpPost(false);
   }
 
   // ── Paso 1: descontar Mostaza y avanzar ───────────────────
@@ -557,22 +664,24 @@ export default function TabMaduracion({ mobile, currentUser }) {
 
       // 1. Guardar produccion_horneado_lotes
       await supabase.from('produccion_horneado_lotes').insert({
-        lote_id:          modalHorneado.loteId,
-        fecha:            hoy,
-        producto_nombre:  mpNombre,
-        kg_mostaza:       kgMostaza,
-        costo_mostaza:    costoMostaza,
-        kg_rub:           kgRub,
-        costo_rub:        costoRub,
-        kg_entrada_horno: kgMadLote,
-        kg_post_horno:    kgHorno,
-        merma_horno_kg:   mermaHornoKg,
-        merma_horno_pct:  mermaHornoReal,
-        kg_post_reposo:   kgHorno,
-        merma_reposo_kg:  0,
-        merma_reposo_pct: 0,
-        c_final_kg:       cFinalKg,
+        lote_id:           modalHorneado.loteId,
+        fecha:             hoy,
+        producto_nombre:   mpNombre,
+        kg_mostaza:        kgMostaza,
+        costo_mostaza:     costoMostaza,
+        kg_rub:            kgRub,
+        costo_rub:         costoRub,
+        kg_entrada_horno:  kgMadLote,
+        kg_post_horno:     kgHorno,
+        merma_horno_kg:    mermaHornoKg,
+        merma_horno_pct:   mermaHornoReal,
+        kg_post_reposo:    kgHorno,
+        merma_reposo_kg:   0,
+        merma_reposo_pct:  0,
+        c_final_kg:        cFinalKg,
+        subproductos_real: Object.keys(spRealesData).length > 0 ? spRealesData : null,
       });
+      setSpRealesData({});
 
       // 2. Buscar o crear MP Pastrame Horneado en AHUMADOS-HORNEADOS
       const { data: mpExist } = await supabase.from('materias_primas')
@@ -1556,6 +1665,76 @@ export default function TabMaduracion({ mobile, currentUser }) {
           </div>
         );
       })()}
+
+      {/* ══ Modal Sub-productos post-pesaje ══ */}
+      {modalSpPost && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div style={{ background: 'white', borderRadius: 16, padding: 24, width: '100%', maxWidth: 480, boxShadow: '0 8px 32px rgba(0,0,0,0.25)', maxHeight: '90vh', overflowY: 'auto' }}>
+
+            {/* Sub-productos — uno por tarjeta */}
+            {modalSpPost.subproductos.map(({ fase, sp }) => {
+              const mpInfo   = sp.tipo === 'mp_existente' ? spPostMps[sp.mp_id] : null;
+              const nombre   = sp.tipo === 'nueva_mp' ? sp.nombre : (mpInfo?.nombre_producto || mpInfo?.nombre || sp.mp_id || fase);
+              const precio   = sp.tipo === 'nueva_mp' ? parseFloat(sp.precio_kg || 0) : parseFloat(mpInfo?.precio_kg || 0);
+              const kgReal   = parseFloat(spPostKgs[fase] || 0);
+              const valorRec = kgReal * precio;
+              const tipoLabel = sp.tipo === 'mp_existente' ? '📦 MP existente → entra a inventario'
+                              : sp.tipo === 'nueva_mp'     ? '🆕 Nueva MP → entra a inventario'
+                              : '❌ Pérdida total';
+              const tipoColor = sp.tipo === 'perdida' ? '#e74c3c' : '#2980b9';
+              return (
+                <div key={fase} style={{ marginBottom: 20 }}>
+                  {/* Título: nombre del sub-producto */}
+                  <div style={{ fontWeight: 900, fontSize: 18, color: '#1a1a2e', marginBottom: 2 }}>
+                    {nombre}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 12, color: tipoColor, fontWeight: 700, background: tipoColor + '18', borderRadius: 6, padding: '2px 10px' }}>
+                      {tipoLabel}
+                    </span>
+                    <span style={{ fontSize: 11, color: '#aaa' }}>Lote {modalSpPost.loteId} · {modalSpPost.totalKgMad.toFixed(3)} kg post-maduración</span>
+                  </div>
+
+                  {/* Input kg */}
+                  <div style={{ background: sp.tipo === 'perdida' ? '#fff5f5' : '#f0fff8', border: `2px solid ${sp.tipo === 'perdida' ? '#f5b7b1' : '#a9dfbf'}`, borderRadius: 12, padding: '14px 16px' }}>
+                    <div style={{ fontSize: 12, color: '#555', marginBottom: 8 }}>
+                      {sp.tipo === 'perdida'
+                        ? <>¿Cuántos kg de merma real de <b>{nombre}</b> hubo en este lote?</>
+                        : <>¿Cuántos kg de <b>{nombre}</b> obtuviste en este lote?</>}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <input type="number" min="0" step="0.001"
+                        value={spPostKgs[fase] ?? ''}
+                        onChange={e => setSpPostKgs(prev => ({ ...prev, [fase]: e.target.value }))}
+                        placeholder="0.000"
+                        style={{ flex: 1, padding: '12px 14px', borderRadius: 8, border: `2px solid ${sp.tipo === 'perdida' ? '#e74c3c' : '#27ae60'}`, fontSize: 18, fontWeight: 'bold', textAlign: 'right' }} />
+                      <span style={{ fontSize: 15, color: '#555', fontWeight: 700 }}>kg</span>
+                    </div>
+                    {sp.tipo === 'perdida' && kgReal > 0 && (
+                      <div style={{ marginTop: 8, fontSize: 12, color: '#e74c3c', fontWeight: 700 }}>
+                        ❌ {kgReal.toFixed(3)} kg de merma — sin valor recuperable, sube el costo/kg
+                      </div>
+                    )}
+                    {sp.tipo !== 'perdida' && valorRec > 0 && (
+                      <div style={{ marginTop: 8, fontSize: 12, color: '#27ae60', fontWeight: 700 }}>
+                        💰 Valor recuperado: {kgReal.toFixed(3)} kg × ${precio.toFixed(4)}/kg = ${valorRec.toFixed(4)}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Botón confirmar */}
+            <div style={{ marginTop: 8 }}>
+              <button onClick={confirmarSpPost} disabled={guardSpPost}
+                style={{ width: '100%', padding: '12px', background: guardSpPost ? '#aaa' : '#27ae60', color: 'white', border: 'none', borderRadius: 8, cursor: guardSpPost ? 'not-allowed' : 'pointer', fontSize: 14, fontWeight: 700 }}>
+                {guardSpPost ? 'Guardando...' : '💾 Confirmar sub-productos → Siguiente'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ══ Modal Pesaje ══ */}
       {modalPesaje && (
