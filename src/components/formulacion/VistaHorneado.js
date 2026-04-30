@@ -669,47 +669,98 @@ function DetalleItem({ label, valor, color = '#333' }) {
 function Pruebas({ cfg, cFinal, precioVenta, costoInput, kgFinal, kgInyectado, kgPostMad, mermaGrMad, mermaGrHorno, costoSalKg, costoMostKg, costoRubKg, precioCarne }) {
   const [kgSim, setKgSim] = useState('1');
   const kg = parseFloat(kgSim) || 1;
+
+  // Totales escalados para el lote completo
+  const costoTotalLote   = costoInput * kg;           // dinero total invertido
+  const kgProductoFinal  = kgFinal * kg;              // kg de producto que salen
+  const ingresoTotalLote = precioVenta * kgProductoFinal; // dinero que entra al vender todo
+  const gananciaLote     = ingresoTotalLote - costoTotalLote;
+
+  const FilaSim = ({ label, valor, color, bold, grande }) => (
+    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderBottom: '1px solid #f0f0f0', alignItems: 'center' }}>
+      <span style={{ fontSize: 12, color: bold ? '#333' : '#666', fontWeight: bold ? 700 : 400 }}>{label}</span>
+      <span style={{ fontSize: grande ? 16 : 13, color, fontWeight: 700 }}>{valor}</span>
+    </div>
+  );
+
   return (
-    <div style={{ background: 'white', borderRadius: 12, padding: '16px 18px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
-      <div style={{ fontWeight: 700, fontSize: 13, color: '#555', marginBottom: 12 }}>SIMULADOR — escala a X kg de carne</div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-        <label style={{ fontSize: 12, color: '#555', fontWeight: 700 }}>Kg de carne:</label>
-        <input type="number" min="0.1" step="0.1" value={kgSim}
-          onChange={e => setKgSim(e.target.value)}
-          style={{ width: 90, padding: '8px 10px', borderRadius: 8, border: '2px solid #2980b9', fontSize: 15, fontWeight: 'bold', textAlign: 'right' }} />
-        <span style={{ fontSize: 13, color: '#555' }}>kg</span>
+    <div>
+      {/* Input kg */}
+      <div style={{ background: 'white', borderRadius: 12, padding: '16px 18px', marginBottom: 12, boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+        <div style={{ fontWeight: 700, fontSize: 13, color: '#555', marginBottom: 12 }}>¿Cuántos kg de carne vas a procesar?</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <input type="number" min="0.1" step="0.1" value={kgSim}
+            onChange={e => setKgSim(e.target.value)}
+            style={{ width: 110, padding: '10px 12px', borderRadius: 8, border: '2px solid #2980b9', fontSize: 18, fontWeight: 'bold', textAlign: 'right' }} />
+          <span style={{ fontSize: 15, color: '#555', fontWeight: 700 }}>kg de carne cruda</span>
+        </div>
+        <div style={{ fontSize: 11, color: '#aaa', marginTop: 6 }}>
+          Todo escala proporcionalmente — costos, mermas y rendimiento
+        </div>
       </div>
-      {[
-        { label: 'Carne',    costo: precioCarne * kg, color: '#e74c3c' },
-        { label: 'Salmuera', costo: costoSalKg  * kg, color: '#2980b9' },
-        { label: 'Mostaza',  costo: costoMostKg * kg, color: '#f39c12' },
-        { label: 'Rub',      costo: costoRubKg  * kg, color: '#6c3483' },
-      ].map(r => (
-        <div key={r.label} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid #f5f5f5', fontSize: 13 }}>
-          <span style={{ color: '#555' }}>{r.label}</span>
-          <span style={{ color: r.color, fontWeight: 700 }}>${r.costo.toFixed(4)}</span>
-        </div>
-      ))}
-      <div style={{ marginTop: 12, padding: '12px 14px', background: '#f8f9fa', borderRadius: 10 }}>
+
+      {/* Costos del lote */}
+      <div style={{ background: 'white', borderRadius: 12, padding: '16px 18px', marginBottom: 12, boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+        <div style={{ fontWeight: 700, fontSize: 12, color: '#888', marginBottom: 10, letterSpacing: 1 }}>COSTO DE INGREDIENTES PARA {kg} KG</div>
         {[
-          ['Costo total input', `$${(costoInput * kg).toFixed(4)}`, '#333'],
-          ['Kg inyectado', `${(kgInyectado * kg).toFixed(3)} kg`, '#2980b9'],
-          [`Merma maduración (${cfg.merma_mad_pct}%)`, `−${(mermaGrMad * kg / 1000).toFixed(3)} kg`, '#8e44ad'],
-          [`Merma horneado (${cfg.merma_horno_pct}%)`, `−${(mermaGrHorno * kg / 1000).toFixed(3)} kg`, '#e74c3c'],
-          ['Kg final', `${(kgFinal * kg).toFixed(3)} kg`, '#27ae60'],
-        ].map(([l, v, c]) => (
-          <div key={l} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 5 }}>
-            <span style={{ color: '#888' }}>{l}</span>
-            <span style={{ color: c, fontWeight: 700 }}>{v}</span>
-          </div>
+          { label: `🥩 Carne (${kg} kg × $${precioCarne.toFixed(4)}/kg)`,       val: precioCarne * kg, color: '#e74c3c' },
+          { label: `💉 Salmuera (${kg} kg × $${costoSalKg.toFixed(4)}/kg)`,    val: costoSalKg  * kg, color: '#2980b9' },
+          { label: `🟡 Mostaza (${kg} kg × $${costoMostKg.toFixed(4)}/kg)`,    val: costoMostKg * kg, color: '#f39c12' },
+          { label: `🌶️ Rub (${kg} kg × $${costoRubKg.toFixed(4)}/kg)`,         val: costoRubKg  * kg, color: '#6c3483' },
+        ].map(r => (
+          <FilaSim key={r.label} label={r.label} valor={`$${r.val.toFixed(4)}`} color={r.color} />
         ))}
-        <div style={{ borderTop: '2px solid #ddd', paddingTop: 10, marginTop: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ fontWeight: 700, color: '#555' }}>C_final</span>
-          <span style={{ fontSize: 20, fontWeight: 'bold', color: '#27ae60' }}>${cFinal.toFixed(4)}/kg</span>
+        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0 0', alignItems: 'center', borderTop: '2px solid #eee', marginTop: 4 }}>
+          <span style={{ fontWeight: 700, fontSize: 13 }}>TOTAL INVERTIDO</span>
+          <span style={{ fontWeight: 'bold', fontSize: 18, color: '#e74c3c' }}>${costoTotalLote.toFixed(4)}</span>
         </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6 }}>
-          <span style={{ color: '#888', fontSize: 12 }}>Precio venta ({cfg.margen}% margen)</span>
-          <span style={{ fontSize: 16, fontWeight: 'bold', color: '#f39c12' }}>${precioVenta.toFixed(4)}/kg</span>
+      </div>
+
+      {/* Rendimiento */}
+      <div style={{ background: 'white', borderRadius: 12, padding: '16px 18px', marginBottom: 12, boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+        <div style={{ fontWeight: 700, fontSize: 12, color: '#888', marginBottom: 10, letterSpacing: 1 }}>RENDIMIENTO DEL LOTE</div>
+        <FilaSim label={`Kg inyectado (carne + salmuera)`} valor={`${(kgInyectado * kg).toFixed(3)} kg`} color="#2980b9" />
+        <FilaSim label={`Merma maduración ${cfg.merma_mad_pct}%`} valor={`−${(mermaGrMad * kg / 1000).toFixed(3)} kg`} color="#8e44ad" />
+        <FilaSim label={`Merma horneado ${cfg.merma_horno_pct}%`} valor={`−${(mermaGrHorno * kg / 1000).toFixed(3)} kg`} color="#e74c3c" />
+        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0 0', alignItems: 'center', borderTop: '2px solid #eee', marginTop: 4 }}>
+          <span style={{ fontWeight: 700, fontSize: 13 }}>KG PRODUCTO FINAL</span>
+          <span style={{ fontWeight: 'bold', fontSize: 18, color: '#27ae60' }}>{kgProductoFinal.toFixed(3)} kg</span>
+        </div>
+        <div style={{ fontSize: 10, color: '#aaa', marginTop: 4 }}>
+          De {kg} kg de carne → {kgProductoFinal.toFixed(3)} kg de Pastrame terminado ({(kgProductoFinal/kg*100).toFixed(1)}% rendimiento)
+        </div>
+      </div>
+
+      {/* Resultado económico */}
+      <div style={{ background: '#1a1a2e', borderRadius: 12, padding: '18px 20px', boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }}>
+        <div style={{ fontWeight: 700, fontSize: 12, color: '#aaa', marginBottom: 14, letterSpacing: 1 }}>RESULTADO ECONÓMICO DEL LOTE</div>
+
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, fontSize: 12 }}>
+          <span style={{ color: '#888' }}>C_final por kg de producto <span style={{ fontSize: 10 }}>(constante)</span></span>
+          <span style={{ color: '#27ae60', fontWeight: 700 }}>${cFinal.toFixed(4)}/kg</span>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, fontSize: 12 }}>
+          <span style={{ color: '#888' }}>Precio venta por kg <span style={{ fontSize: 10 }}>({cfg.margen}% margen)</span></span>
+          <span style={{ color: '#f39c12', fontWeight: 700 }}>${precioVenta.toFixed(4)}/kg</span>
+        </div>
+
+        <div style={{ borderTop: '1px solid #333', marginTop: 10, paddingTop: 12 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+            <span style={{ fontSize: 13, color: '#aaa' }}>Costo total del lote</span>
+            <span style={{ fontSize: 16, fontWeight: 'bold', color: '#e74c3c' }}>${costoTotalLote.toFixed(4)}</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+            <span style={{ fontSize: 13, color: '#aaa' }}>Ingreso total ({kgProductoFinal.toFixed(3)} kg × ${precioVenta.toFixed(4)})</span>
+            <span style={{ fontSize: 16, fontWeight: 'bold', color: '#f39c12' }}>${ingresoTotalLote.toFixed(4)}</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: gananciaLote >= 0 ? 'rgba(39,174,96,0.15)' : 'rgba(231,76,60,0.15)', borderRadius: 8, padding: '10px 14px', marginTop: 4 }}>
+            <span style={{ fontSize: 14, fontWeight: 700, color: gananciaLote >= 0 ? '#a9dfbf' : '#f1948a' }}>
+              GANANCIA DEL LOTE ({cfg.margen}%)
+            </span>
+            <span style={{ fontSize: 20, fontWeight: 'bold', color: gananciaLote >= 0 ? '#27ae60' : '#e74c3c' }}>
+              ${gananciaLote.toFixed(4)}
+            </span>
+          </div>
         </div>
       </div>
     </div>
