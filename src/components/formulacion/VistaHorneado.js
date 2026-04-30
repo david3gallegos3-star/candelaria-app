@@ -192,9 +192,7 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
   const kgSalPorKgCarne = cfg.kg_sal_base > 0 ? totalSalKg / cfg.kg_sal_base : 0;
   const costoMostKg = (parseFloat(cfg.gramos_mostaza) / 1000) * precioMost;
   const costoRubKg  = cfg.kg_rub_base > 0 ? costoRub / cfg.kg_rub_base : 0;
-  const costoInput  = precioCarne + costoSalKg + costoMostKg + costoRubKg;
-  const kgSalInj    = 1 * (pctSalmuera / 100);
-  // Sub-productos por fase (deben calcularse ANTES del flujo de pesos)
+  // Sub-productos por fase (ANTES del flujo de pesos)
   const spActivosAll = [];
   Object.entries(cfg.subproductos || {}).forEach(([fase, faseData]) => {
     const fd = getSPFase({ subproductos: { [fase]: faseData } }, fase);
@@ -210,16 +208,27 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
   });
   const spActivos       = spActivosAll.filter(x => x.tipo !== 'perdida');
   const totalRecuperado = spActivos.reduce((s, x) => s + x.valor, 0);
-
-  // Kg agrupados por fase para el flujo de pesos correcto
   const spKgFase = {};
   spActivosAll.forEach(x => { spKgFase[x.fase] = (spKgFase[x.fase] || 0) + x.kg; });
 
-  // Flujo correcto: sub-productos salen EN SU FASE antes de aplicar la siguiente merma
-  const kgInyectado    = 1 + kgSalInj;
-  const kgEntradaMad   = Math.max(0, kgInyectado - (spKgFase.inyeccion || 0));
-  const mermaGrMad     = kgEntradaMad * (cfg.merma_mad_pct / 100) * 1000;
-  const kgPostMad      = kgEntradaMad * (1 - cfg.merma_mad_pct / 100);
+  // ── Flujo de pesos CORRECTO ────────────────────────────────
+  // 1. Sub-productos de inyección salen del 1 kg ANTES de inyectar
+  const spInyeccionKg  = spKgFase.inyeccion || 0;
+  const kgCarneNeta    = Math.max(0, 1 - spInyeccionKg);
+
+  // 2. Salmuera, mostaza y rub se aplican sobre la CARNE NETA
+  const kgSalInj       = kgCarneNeta * (pctSalmuera / 100);
+  const costoSalNeto   = costoSalKg  * kgCarneNeta;
+  const costoMostNeto  = costoMostKg * kgCarneNeta;
+  const costoRubNeto   = costoRubKg  * kgCarneNeta;
+  const costoInput     = precioCarne + costoSalNeto + costoMostNeto + costoRubNeto;
+
+  // 3. Total inyectado (carne neta + salmuera) entra a maduración
+  const kgInyectado    = kgCarneNeta + kgSalInj;
+  const mermaGrMad     = kgInyectado * (cfg.merma_mad_pct / 100) * 1000;
+  const kgPostMad      = kgInyectado * (1 - cfg.merma_mad_pct / 100);
+
+  // 4. Sub-productos entre maduración y horneado
   const spPreHornoKg   = (spKgFase.maduracion || 0) + (spKgFase.mostaza || 0) + (spKgFase.rub || 0);
   const kgEntradaHorno = Math.max(0, kgPostMad - spPreHornoKg);
   const mermaGrHorno   = kgEntradaHorno * (cfg.merma_horno_pct / 100) * 1000;
@@ -439,10 +448,10 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
                   <span style={{ fontWeight: 700, fontSize: 12, color: '#ddd', letterSpacing: 1 }}>ENTRADA DE INSUMOS (por 1 kg de carne)</span>
                 </div>
                 {[
-                  { label: 'Carne',    val: precioCarne, color: '#e74c3c' },
-                  { label: 'Salmuera', val: costoSalKg,  color: '#2980b9' },
-                  { label: 'Mostaza',  val: costoMostKg, color: '#f39c12' },
-                  { label: 'Rub',      val: costoRubKg,  color: '#c39bd3' },
+                  { label: 'Carne',    val: precioCarne,  color: '#e74c3c' },
+                  { label: 'Salmuera', val: costoSalNeto,  color: '#2980b9' },
+                  { label: 'Mostaza',  val: costoMostNeto, color: '#f39c12' },
+                  { label: 'Rub',      val: costoRubNeto,  color: '#c39bd3' },
                 ].map(r => (
                   <div key={r.label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 5, paddingLeft: 8 }}>
                     <span style={{ color: '#888' }}>+ {r.label}</span>
