@@ -1438,9 +1438,9 @@ export default function TabMaduracion({ mobile, currentUser }) {
           });
         };
 
-        // Paso 3 derived
+        // Paso 3 derived — misma fórmula que confirmarHorneado (resta creditoIny una vez)
         const kgHorno         = parseFloat(hrnHornoKg) || 0;
-        const costoFinalTotal = costoTotal + costoMosAuto + costoRubAuto;
+        const costoFinalTotal = costoTotal + costoMosAuto + costoRubAuto - (modalHorneado?.creditoIny || 0);
         const cFinal          = kgHorno > 0 ? costoFinalTotal / kgHorno : 0;
         const mHorno          = kgMad > 0 ? ((kgMad - kgHorno) / kgMad * 100) : 0;
         const listo3          = kgHorno > 0 && kgHorno <= kgMad;
