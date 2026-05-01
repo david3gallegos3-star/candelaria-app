@@ -202,23 +202,13 @@ export default function TabInyeccion({ currentUser, mobile, onSalmueraChange }) 
       // Ratio para ajustar cada corte al peso neto (descontando sub-producto de inyección)
       const ratioNeto = kgCarneTotal > 0 ? kgCarneNeta / kgCarneTotal : 1;
 
-      // Valor recuperado del sub-producto de inyección (solo tipos crédito, no pérdida)
-      const valorSpIny = haySpIny
-        ? spInyItems.reduce((s, x) => {
-            if (x.tipo === 'perdida') return s;
-            const kg = Math.max(0, parseFloat(kgSubprodIny[x.tipo] || 0));
-            if (kg <= 0) return s;
-            const precio = x.tipo === 'mp_existente' ? parseFloat(spInyMp?.precio_kg || 0) : parseFloat(x.sp.precio_kg || 0);
-            return s + kg * precio;
-          }, 0)
-        : 0;
-      const costoCarneNeto = Math.max(0, costoCarneTotal - valorSpIny); // costo real tras crédito
-
+      // Guardar costo BRUTO de carne; los créditos de sub-productos de inyección
+      // se aplican una sola vez en confirmarHorneado (via creditoIny)
       const { data: prod, error: e1 } = await supabase.from('produccion_inyeccion').insert({
         fecha, formula_salmuera: formulaSelec.nombre, porcentaje_inyeccion: 100,
         kg_carne_total: kgCarneNeta, kg_salmuera_requerida: kgSalmueraReq,
-        costo_carne_total: costoCarneNeto, costo_salmuera_total: costoSalmueraTotal,
-        costo_total: costoCarneNeto + costoSalmueraTotal, estado: 'abierto',
+        costo_carne_total: costoCarneTotal, costo_salmuera_total: costoSalmueraTotal,
+        costo_total: costoCarneTotal + costoSalmueraTotal, estado: 'abierto',
         usuario_nombre: currentUser?.email || '', user_id: currentUser?.id || null,
         notas: notas || null,
       }).select().single();
@@ -229,11 +219,8 @@ export default function TabInyeccion({ currentUser, mobile, onSalmueraChange }) 
         const kgCarne    = parseFloat(f.kg) * ratioNeto; // kg neto que realmente se inyecta
         const kgSal      = kgCarneNeta > 0 ? kgSalmueraReq * (kgCarne / kgCarneNeta) : 0;
         const costoSal   = f.costoSal || 0;
-        // Crédito proporcional al sub-producto (si tiene valor)
-        const creditoProp = kgCarneTotal > 0 ? valorSpIny * (parseFloat(f.kg) / kgCarneTotal) : 0;
-        const costoCarne  = Math.max(0, (f.costoCarne || 0) - creditoProp);
+        const costoCarne = f.costoCarne || 0; // BRUTO — créditos se aplican en confirmarHorneado
         const kgTotal    = kgCarne + kgSal;
-        // C_iny = (costo_carne_neto + costo_salmuera) / (kg_carne_neta + kg_salmuera)
         const costo_final_kg = kgTotal > 0 ? (costoCarne + costoSal) / kgTotal : 0;
         return {
           produccion_id: prodId, corte_nombre: f.mp.nombre_producto || f.mp.nombre,
