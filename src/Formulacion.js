@@ -22,7 +22,8 @@ function Formulacion({ producto, onVolver, onVolverMenu, onAbrirMaterias, userRo
   const f = useFormulacion({ producto, userRol, currentUser });
   const esFormulador = userRol?.rol === 'formulador';
   const esCorte      = producto?.categoria === 'Cortes' || producto?.categoria === 'CORTES';
-  const esHorneado   = producto?.categoria === 'AHUMADOS - HORNEADOS' || producto?.categoria === 'AHUMADOS-HORNEADOS';
+  const esHorneado   = producto?.categoria === 'AHUMADOS - HORNEADOS' || producto?.categoria === 'AHUMADOS-HORNEADOS'
+                    || producto?.categoria === 'INMERSIÓN' || producto?.categoria === 'INMERSION';
   const [versionesAbierto, setVersionesAbierto] = useState(false);
   const [tabVersiones,     setTabVersiones]     = useState('versiones');
 

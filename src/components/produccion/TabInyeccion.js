@@ -19,7 +19,8 @@ export default function TabInyeccion({ currentUser, mobile, onSalmueraChange }) 
   const [buscadorCorte,       setBuscadorCorte]       = useState('');
   const [porcentajeSalmuera,  setPorcentajeSalmuera]  = useState(20);
   const [diasMaduracion,      setDiasMaduracion]      = useState(5);
-  const [horneadoCfgInj,      setHorneadoCfgInj]      = useState(null); // config del producto que usa esta salmuera
+  const [horneadoCfgInj,      setHorneadoCfgInj]      = useState(null);
+  const [esInmersionInj,      setEsInmersionInj]      = useState(false);
   const [kgSubprodIny,        setKgSubprodIny]        = useState({});   // { tipo: kg } para sub-productos inyección
   const [spInyMp,             setSpInyMp]             = useState(null); // info MP para mp_existente
 
@@ -60,6 +61,8 @@ export default function TabInyeccion({ currentUser, mobile, onSalmueraChange }) 
       );
       const cfgH = match?.config || null;
       setHorneadoCfgInj(cfgH);
+      const catH = (cfgH?._categoria || '').replace(/[ÓÒ]/g,'O').toUpperCase();
+      setEsInmersionInj(catH.includes('INMERSION'));
       setKgSubprodIny('');
 
       // Cargar info de la MP si hay mp_existente activo en inyeccion
@@ -220,7 +223,8 @@ export default function TabInyeccion({ currentUser, mobile, onSalmueraChange }) 
         const kgSal      = kgCarneNeta > 0 ? kgSalmueraReq * (kgCarne / kgCarneNeta) : 0;
         const costoSal   = f.costoSal || 0;
         const costoCarne = f.costoCarne || 0; // BRUTO — créditos se aplican en confirmarHorneado
-        const kgTotal    = kgCarne + kgSal;
+        // INMERSIÓN: salmuera no suma peso, solo costo
+        const kgTotal    = esInmersionInj ? kgCarne : kgCarne + kgSal;
         const costo_final_kg = kgTotal > 0 ? (costoCarne + costoSal) / kgTotal : 0;
         return {
           produccion_id: prodId, corte_nombre: f.mp.nombre_producto || f.mp.nombre,

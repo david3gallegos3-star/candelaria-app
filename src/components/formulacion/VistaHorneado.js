@@ -147,7 +147,13 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
     const { error } = await supabase
       .from('vista_horneado_config')
       .upsert(
-        { producto_nombre: producto.nombre, config: cfgToSave, versiones: versionesToSave, updated_at: new Date().toISOString() },
+        {
+          producto_nombre: producto.nombre,
+          // _categoria guardado en config para que TabInyeccion detecte inmersión
+          config: { ...cfgToSave, _categoria: producto.categoria || '' },
+          versiones: versionesToSave,
+          updated_at: new Date().toISOString()
+        },
         { onConflict: 'producto_nombre' }
       );
     if (error) throw error;
@@ -186,6 +192,9 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
     setModalVer(false);
     setModoEdicion(true);
   }
+
+  // Detección de modo inmersión (salmuera como baño, no inyectada — no suma peso)
+  const esInmersion = (producto?.categoria || '').replace(/[ÓÒÔ]/g,'O').toUpperCase().includes('INMERSION');
 
   // ── Guardar versión de Pruebas (simulador) ────────────────
   async function guardarVersionPrueba(snap) {
@@ -278,8 +287,10 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
   const costoRubNeto   = costoRubKg  * kgCarneNeta;
   const costoInput     = precioCarne + costoSalNeto + costoMostNeto + costoRubNeto;
 
-  // 3. Total inyectado (carne neta + salmuera) entra a maduración
-  const kgInyectado    = kgCarneNeta + kgSalInj;
+  // 3. Total que entra a maduración:
+  //    AHUMADOS (inyección): carne neta + salmuera inyectada
+  //    INMERSIÓN (baño):     solo carne neta — salmuera no agrega peso
+  const kgInyectado    = esInmersion ? kgCarneNeta : kgCarneNeta + kgSalInj;
   const mermaGrMad     = kgInyectado * (cfg.merma_mad_pct / 100) * 1000;
   const kgPostMad      = kgInyectado * (1 - cfg.merma_mad_pct / 100);
 
@@ -452,7 +463,7 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
             {/* Costos ingredientes */}
             <Seccion titulo="COSTOS PARA 1 KG DE CARNE">
               {/* Salmuera */}
-              <FilaCosto icon="💉" titulo="Salmuera de inyección" color="#2980b9" costoKg={costoSalKg}
+              <FilaCosto icon={esInmersion ? '🛁' : '💉'} titulo={esInmersion ? 'Salmuera de inmersión (baño)' : 'Salmuera de inyección'} color="#2980b9" costoKg={costoSalKg}
                 nota={cfg.formula_salmuera ? `Batch $${costoSalmuera.toFixed(4)} ÷ ${totalSalKg.toFixed(3)} kg = $${precioKgSal.toFixed(4)}/kg` : ''}>
                 <CampoSelect disabled={!modoEdicion} color="#2980b9"
                   value={cfg.formula_salmuera} onChange={v => upd('formula_salmuera', v)}
@@ -582,9 +593,17 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
                 </div>
                 <div style={{ paddingLeft: 8 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 5 }}>
-                    <span style={{ color: '#888' }}>Kg inyectado (carne + salmuera)</span>
+                    <span style={{ color: '#888' }}>
+                      {esInmersion ? 'Kg entrada maduración (inmersión — sin aumento de peso)' : 'Kg inyectado (carne + salmuera)'}
+                    </span>
                     <span style={{ color: '#7ec8f7', fontWeight: 700 }}>{kgInyectado.toFixed(4)} kg</span>
                   </div>
+                  {esInmersion && kgSalInj > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 5 }}>
+                      <span style={{ color: '#5dade2', fontStyle: 'italic' }}>🛁 Salmuera baño ({(pctSalmuera).toFixed(0)}%) — solo costo, no agrega peso</span>
+                      <span style={{ color: '#5dade2' }}>${costoSalNeto.toFixed(4)}</span>
+                    </div>
+                  )}
                   {/* Sub-productos de inyección salen ANTES de maduración */}
                   {spActivosAll.filter(x => x.fase === 'inyeccion').map(x => (
                     <div key={x.fase+'_'+x.tipo} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 5 }}>
@@ -756,7 +775,7 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
               const kgCarneEst  = costoPorKgCarne > 0 ? costoCarSalBruto / costoPorKgCarne : 0;
               const kgCarneNetaEst = kgCarneEst * (1 - spInyeccionKg);
               const kgSalEst    = kgCarneNetaEst * (pctSalmuera / 100);
-              const kgInjEst    = kgCarneNetaEst + kgSalEst;
+              const kgInjEst    = esInmersion ? kgCarneNetaEst : kgCarneNetaEst + kgSalEst;
               const merMadKg    = Math.max(0, kgInjEst - kgEntL);
               const merMadPct   = kgInjEst > 0 ? (merMadKg / kgInjEst * 100) : 0;
 
@@ -815,7 +834,7 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
                       <FilaProd label={`🥩 Carne (${mpCarne ? (mpCarne.nombre_producto || mpCarne.nombre) : '—'})`} valor={`${kgCarneEst.toFixed(3)} kg · $${(kgCarneEst * precioCarne).toFixed(4)}`} color="#e74c3c" />
                       <FilaProd label={`💧 Salmuera inyectada (${cfg.formula_salmuera || '—'})`} valor={`${kgSalEst.toFixed(3)} kg · $${(kgCarneNetaEst * costoSalKg).toFixed(4)}`} color="#2980b9" />
                       <div style={{ borderTop: '1px solid #eee', marginTop: 6, paddingTop: 6 }}>
-                        <FilaProd label="→ Kg inyectado" valor={`${kgInjEst.toFixed(3)} kg`} color="#2980b9" bold />
+                        <FilaProd label={esInmersion ? '→ Kg entrada maduración' : '→ Kg inyectado'} valor={`${kgInjEst.toFixed(3)} kg`} color="#2980b9" bold />
                       </div>
                       <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid #eee' }}>
                         <FilaProd label={`⏱ Maduración ${cfg.horas_mad}h — merma (${merMadPct.toFixed(1)}%)`} valor={`−${merMadKg.toFixed(3)} kg`} color="#8e44ad" />
@@ -979,7 +998,7 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
               const kgCarneEstH       = costoPorKgCarneH > 0 ? costoCarSalBrutoH / costoPorKgCarneH : 0;
               const kgCarneNetaEstH   = kgCarneEstH * (1 - spInyeccionKg);
               const kgSalEstH         = kgCarneNetaEstH * (pctSalmuera / 100);
-              const kgInjEstH         = kgCarneNetaEstH + kgSalEstH;
+              const kgInjEstH         = esInmersion ? kgCarneNetaEstH : kgCarneNetaEstH + kgSalEstH;
               const merMadKgH         = Math.max(0, kgInjEstH - kgEntL);
               const merMadPctH        = kgInjEstH > 0 ? (merMadKgH / kgInjEstH * 100) : 0;
               const totalRubFormKgH   = rubFilas.reduce((s, f) => s + parseFloat(f.gramos || 0) / 1000, 0);
@@ -1039,7 +1058,7 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
                         <FilaProd label={`🥩 Carne (${mpCarne ? (mpCarne.nombre_producto || mpCarne.nombre) : '—'})`} valor={`${kgCarneEstH.toFixed(3)} kg · $${(kgCarneEstH * precioCarne).toFixed(4)}`} color="#e74c3c" />
                         <FilaProd label={`💧 Salmuera inyectada (${cfg.formula_salmuera || '—'})`} valor={`${kgSalEstH.toFixed(3)} kg · $${(kgCarneNetaEstH * costoSalKg).toFixed(4)}`} color="#2980b9" />
                         <div style={{ borderTop: '1px solid #eee', marginTop: 6, paddingTop: 6 }}>
-                          <FilaProd label="→ Kg inyectado" valor={`${kgInjEstH.toFixed(3)} kg`} color="#2980b9" bold />
+                          <FilaProd label={esInmersion ? '→ Kg entrada maduración' : '→ Kg inyectado'} valor={`${kgInjEstH.toFixed(3)} kg`} color="#2980b9" bold />
                         </div>
                         <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid #eee' }}>
                           <FilaProd label={`⏱ Maduración ${cfg.horas_mad}h — merma (${merMadPctH.toFixed(1)}%)`} valor={`−${merMadKgH.toFixed(3)} kg`} color="#8e44ad" />
