@@ -309,6 +309,52 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
         {/* ═══ TAB COSTOS 1KG ═══ */}
         {tab === 'costos' && (
           <div>
+            {/* ── Materia prima vinculada (producto final) ── */}
+            {(() => {
+              const nomProd = (producto.nombre || '').toLowerCase().trim();
+              const mpOut   = mps.find(m => {
+                const n = (m.nombre_producto || m.nombre || '').toLowerCase().trim();
+                return n === nomProd || n.includes(nomProd) || nomProd.includes(n);
+              });
+              const color = mpOut ? '#27ae60' : '#e67e22';
+              const bg    = mpOut ? '#eafaf1' : '#fef9e7';
+              return (
+                <div style={{
+                  background: bg, border: `2px solid ${color}`,
+                  borderRadius: 12, padding: '14px 18px', marginBottom: 16,
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  flexWrap: 'wrap', gap: 10
+                }}>
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 700, color, letterSpacing: 1, marginBottom: 4 }}>
+                      🔗 MATERIA PRIMA VINCULADA — PRODUCTO QUE PRODUCE ESTA FÓRMULA
+                    </div>
+                    {mpOut ? (<>
+                      <div style={{ fontWeight: 800, fontSize: 16, color: '#1a1a2e' }}>
+                        {mpOut.nombre_producto || mpOut.nombre}
+                      </div>
+                      <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>
+                        Categoría: {mpOut.categoria} &nbsp;·&nbsp; ID: {mpOut.id}
+                      </div>
+                    </>) : (
+                      <div style={{ fontSize: 12, color: '#888', fontStyle: 'italic' }}>
+                        No encontrada en inventario — se creará al registrar la primera producción
+                      </div>
+                    )}
+                  </div>
+                  {mpOut && (
+                    <div style={{ textAlign: 'right', minWidth: 110 }}>
+                      <div style={{ fontSize: 10, color: '#888', marginBottom: 2 }}>Precio actual en inventario</div>
+                      <div style={{ fontWeight: 900, fontSize: 22, color }}>
+                        ${parseFloat(mpOut.precio_kg || 0).toFixed(4)}
+                      </div>
+                      <div style={{ fontSize: 10, color: '#888' }}>por kg</div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
             {/* Configuración */}
             <Seccion titulo="CONFIGURACIÓN DEL PROCESO">
               <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1fr 1fr', gap: 16 }}>
