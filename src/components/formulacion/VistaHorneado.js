@@ -610,11 +610,15 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
               const precVentaL  = cfg.margen < 100 ? cFinalL / (1 - cfg.margen / 100) : 0;
               const gananciaL   = precVentaL - cFinalL;
 
-              // Estimar kg de carne a partir del costo (carne+sal total / costo por kg de carne)
-              const costoPorKgCarne = precioCarne + costoSalKg;
-              const kgCarneEst  = costoPorKgCarne > 0 ? costoCarSal / costoPorKgCarne : 0;
-              const kgSalEst    = kgCarneEst * kgSalPorKgCarne;
-              const kgInjEst    = kgCarneEst + kgSalEst;
+              // Estimar kg de carne: restaurar créditos de sp para volver al costo bruto,
+              // y usar costoSalNeto (salmuera escalada a carne neta) como costo por kg bruto
+              const costoCarSalBruto = costoCarSal + totalSpRealValor;
+              const costoSalNetoPorKgBruto = costoSalKg * (1 - spInyeccionKg);
+              const costoPorKgCarne = precioCarne + costoSalNetoPorKgBruto;
+              const kgCarneEst  = costoPorKgCarne > 0 ? costoCarSalBruto / costoPorKgCarne : 0;
+              const kgCarneNetaEst = kgCarneEst * (1 - spInyeccionKg);
+              const kgSalEst    = kgCarneNetaEst * (pctSalmuera / 100);
+              const kgInjEst    = kgCarneNetaEst + kgSalEst;
               const merMadKg    = Math.max(0, kgInjEst - kgEntL);
               const merMadPct   = kgInjEst > 0 ? (merMadKg / kgInjEst * 100) : 0;
 
@@ -691,7 +695,7 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
                   <FaseProd num={1} color="#2980b9" icon="💉" titulo="INYECCIÓN + MADURACIÓN">
                     {kgCarneEst > 0 && <>
                       <FilaProd label={`🥩 Carne (${mpCarne ? (mpCarne.nombre_producto || mpCarne.nombre) : '—'})`} valor={`${kgCarneEst.toFixed(3)} kg · $${(kgCarneEst * precioCarne).toFixed(4)}`} color="#e74c3c" />
-                      <FilaProd label={`💧 Salmuera inyectada (${cfg.formula_salmuera || '—'})`} valor={`${kgSalEst.toFixed(3)} kg · $${(kgCarneEst * costoSalKg).toFixed(4)}`} color="#2980b9" />
+                      <FilaProd label={`💧 Salmuera inyectada (${cfg.formula_salmuera || '—'})`} valor={`${kgSalEst.toFixed(3)} kg · $${(kgCarneNetaEst * costoSalKg).toFixed(4)}`} color="#2980b9" />
                       <div style={{ borderTop: '1px solid #eee', marginTop: 6, paddingTop: 6 }}>
                         <FilaProd label="→ Kg inyectado" valor={`${kgInjEst.toFixed(3)} kg`} color="#2980b9" bold />
                       </div>
