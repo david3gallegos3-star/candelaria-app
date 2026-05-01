@@ -68,7 +68,13 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
   const [rubFilas,      setRubFilas]      = useState([]);
   const [pctSalmuera,   setPctSalmuera]   = useState(15);
   const [spRealesLote,  setSpRealesLote]  = useState({});
-  const [rubFormulas,   setRubFormulas]   = useState([]); // fórmulas con "rub" en el nombre
+  const [rubFormulas,   setRubFormulas]   = useState([]);
+  // ── Estado del simulador (Pruebas) — subido al padre para guardar versiones ──
+  const [pruebaGramos, setPruebaGramos]  = useState('200');
+  const [pruebaEmpSel, setPruebaEmpSel]  = useState('');
+  const [pruebaEtiSel, setPruebaEtiSel]  = useState('');
+  const [modalVerPruebas, setModalVerPruebas] = useState(false);
+  const [guardandoPrueba, setGuardandoPrueba] = useState(false);
 
   // ── Carga inicial ──────────────────────────────────────────
   const cargar = useCallback(async () => {
@@ -173,13 +179,31 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
     setAutoGuardando(false);
   }
 
-  // ── Restaurar versión ──────────────────────────────────────
+  // ── Restaurar versión fórmula ─────────────────────────────
   function restaurarVersion(v) {
-    const { fecha: _f, versiones: _vv, ...rest } = v;
+    const { fecha: _f, versiones: _vv, tipo: _t, ...rest } = v;
     setCfg(prev => ({ ...prev, ...rest }));
     setModalVer(false);
     setModoEdicion(true);
   }
+
+  // ── Guardar versión de Pruebas (simulador) ────────────────
+  async function guardarVersionPrueba(snap) {
+    setGuardandoPrueba(true);
+    try {
+      const verSnap    = { tipo: 'prueba', fecha: new Date().toISOString().split('T')[0], ...snap };
+      const nuevasVer  = [verSnap, ...versiones].slice(0, 40);
+      await saveConfigHorneado(cfg, nuevasVer);
+      setVersiones(nuevasVer);
+    } catch (e) {
+      alert('Error al guardar versión: ' + e.message);
+    }
+    setGuardandoPrueba(false);
+  }
+
+  // Separar versiones de fórmula vs pruebas
+  const versionesFormula = versiones.filter(v => v.tipo !== 'prueba');
+  const versionesPruebas = versiones.filter(v => v.tipo === 'prueba');
 
   const upd = (field, val) => setCfg(prev => ({ ...prev, [field]: val }));
 
@@ -279,7 +303,7 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
           {/* Derecha: botones */}
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             <button onClick={() => setModalVer(true)} style={btnStyle('#8e44ad')}>
-              🔄 Versiones {versiones.length > 0 && `(${versiones.length})`}
+              🔄 Versiones {versionesFormula.length > 0 && `(${versionesFormula.length})`}
             </button>
             {!modoEdicion ? (
               <button onClick={() => setModoEdicion(true)} style={btnStyle('#f39c12')}>
@@ -630,7 +654,19 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
         {tab === 'pruebas' && (
           <Pruebas cfg={cfg} mps={mps} cFinal={cFinal}
             costoSalKg={costoSalKg} costoMostKg={costoMostKg} costoRubKg={costoRubKg}
-            precioCarne={precioCarne} />
+            precioCarne={precioCarne}
+            gramos={pruebaGramos} setGramos={setPruebaGramos}
+            empSel={pruebaEmpSel} setEmpSel={setPruebaEmpSel}
+            etiSel={pruebaEtiSel} setEtiSel={setPruebaEtiSel}
+            versionesPruebas={versionesPruebas}
+            onGuardarVersion={guardarVersionPrueba}
+            guardandoPrueba={guardandoPrueba}
+            onCargarVersion={snap => {
+              if (snap.gramos) setPruebaGramos(String(snap.gramos));
+              if (snap.empSel !== undefined) setPruebaEmpSel(snap.empSel);
+              if (snap.etiSel !== undefined) setPruebaEtiSel(snap.etiSel);
+            }}
+          />
         )}
 
         {/* ═══ TAB PRODUCCIÓN ═══ */}
@@ -1072,10 +1108,10 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
               <div style={{ fontWeight: 'bold', fontSize: 16, color: '#1a1a2e' }}>🔄 Versiones guardadas</div>
               <button onClick={() => { setModalVer(false); setVerDetalle(null); }} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#888' }}>✕</button>
             </div>
-            {versiones.length === 0 ? (
+            {versionesFormula.length === 0 ? (
               <div style={{ textAlign: 'center', color: '#aaa', padding: 20 }}>Sin versiones — usa "Guardar Historial" para guardar una versión</div>
             ) : (
-              versiones.map((v, i) => {
+              versionesFormula.map((v, i) => {
                 const expandido = verDetalle === i;
                 const mpCarneV   = mps.find(m => m.id === v.mp_carne_id);
                 const mpMostazaV = mps.find(m => m.id === v.mp_mostaza_id);
@@ -1097,7 +1133,7 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
                     {/* Cabecera de versión */}
                     <div style={{ padding: '12px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div>
-                        <div style={{ fontWeight: 700, fontSize: 13 }}>Versión {versiones.length - i} — {v.fecha}</div>
+                        <div style={{ fontWeight: 700, fontSize: 13 }}>Versión {versionesFormula.length - i} — {v.fecha}</div>
                         <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>
                           Merma mad {v.merma_mad_pct}% · Horno {v.merma_horno_pct}% · Margen {v.margen}%
                           {cFinalV > 0 && <span style={{ color: '#27ae60', fontWeight: 700, marginLeft: 8 }}>· C_final ${cFinalV.toFixed(4)}/kg</span>}
@@ -1415,12 +1451,15 @@ function FilaProd({ label, valor, color = '#555', bold }) {
   );
 }
 
-function Pruebas({ cfg, mps, cFinal, costoSalKg, costoMostKg, costoRubKg }) {
-  const [gramos,  setGramos]  = useState('200');
-  const [empSel,  setEmpSel]  = useState('');
-  const [etiSel,  setEtiSel]  = useState('');
+function Pruebas({
+  cfg, mps, cFinal,
+  gramos, setGramos, empSel, setEmpSel, etiSel, setEtiSel,
+  versionesPruebas, onGuardarVersion, guardandoPrueba, onCargarVersion,
+}) {
+  const [verAbierto, setVerAbierto] = useState(false);
+  const [expandida,  setExpandida]  = useState(null);
 
-  const kgPorcion   = parseFloat(gramos || 0) / 1000;
+  const kgPorcion    = parseFloat(gramos || 0) / 1000;
   const costoPorcion = cFinal * kgPorcion;
 
   const mpsEmp = mps.filter(m => {
@@ -1431,11 +1470,21 @@ function Pruebas({ cfg, mps, cFinal, costoSalKg, costoMostKg, costoRubKg }) {
 
   const mpEmp = mpsEmp.find(m => String(m.id) === empSel);
   const mpEti = mpsEti.find(m => String(m.id) === etiSel);
-  const costoEmp = parseFloat(mpEmp?.precio_kg || 0);
-  const costoEti = parseFloat(mpEti?.precio_kg || 0);
+  const costoEmp    = parseFloat(mpEmp?.precio_kg || 0);
+  const costoEti    = parseFloat(mpEti?.precio_kg || 0);
   const costoTotal  = costoPorcion + costoEmp + costoEti;
   const precioFunda = cfg.margen < 100 ? costoTotal / (1 - cfg.margen / 100) : 0;
   const ganancia    = precioFunda - costoTotal;
+
+  function handleGuardar() {
+    onGuardarVersion({
+      gramos: parseFloat(gramos),
+      empSel, etiSel,
+      empNombre: mpEmp?.nombre_producto || mpEmp?.nombre || '',
+      etiNombre: mpEti?.nombre_producto || mpEti?.nombre || '',
+      cFinal, costoPorcion, costoEmp, costoEti, costoTotal, precioFunda, ganancia,
+    });
+  }
 
   const sel = (val, set, opts, placeholder, color) => (
     <select value={val} onChange={e => set(e.target.value)}
@@ -1447,11 +1496,71 @@ function Pruebas({ cfg, mps, cFinal, costoSalKg, costoMostKg, costoRubKg }) {
 
   return (
     <div>
-      {/* Info C_final de referencia */}
-      <div style={{ background: '#eafaf1', borderRadius: 10, padding: '10px 14px', marginBottom: 14, border: '1px solid #a9dfbf', fontSize: 12, color: '#555', display: 'flex', justifyContent: 'space-between' }}>
+      {/* Barra superior — C_final + botón versiones */}
+      <div style={{ background: '#eafaf1', borderRadius: 10, padding: '10px 14px', marginBottom: 14, border: '1px solid #a9dfbf', fontSize: 12, color: '#555', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <span>Costo Real por kg de producto (de Costos 1kg)</span>
-        <span style={{ fontWeight: 700, color: '#27ae60', fontSize: 14 }}>${cFinal.toFixed(4)}/kg</span>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <span style={{ fontWeight: 700, color: '#27ae60', fontSize: 14 }}>${cFinal.toFixed(4)}/kg</span>
+          <button onClick={() => setVerAbierto(v => !v)}
+            style={{ background: verAbierto ? '#8e44ad' : '#f3e5f5', color: verAbierto ? 'white' : '#6c3483', border: '1px solid #8e44ad', borderRadius: 7, padding: '5px 12px', cursor: 'pointer', fontSize: 11, fontWeight: 700 }}>
+            🔄 Versiones {versionesPruebas.length > 0 && `(${versionesPruebas.length})`}
+          </button>
+        </div>
       </div>
+
+      {/* Panel de versiones guardadas */}
+      {verAbierto && (
+        <div style={{ background: 'white', borderRadius: 12, padding: 16, marginBottom: 14, boxShadow: '0 1px 4px rgba(0,0,0,0.08)', border: '1.5px solid #8e44ad' }}>
+          <div style={{ fontWeight: 700, fontSize: 12, color: '#6c3483', marginBottom: 10, letterSpacing: 0.5 }}>VERSIONES GUARDADAS DEL SIMULADOR</div>
+          {versionesPruebas.length === 0 ? (
+            <div style={{ color: '#aaa', fontSize: 12, fontStyle: 'italic' }}>Sin versiones — guarda la configuración actual con el botón de abajo</div>
+          ) : versionesPruebas.map((v, i) => (
+            <div key={i} style={{ marginBottom: 6, borderRadius: 9, overflow: 'hidden', border: '1px solid #e0d0f0' }}>
+              <div style={{ background: '#faf5ff', padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
+                onClick={() => setExpandida(expandida === i ? null : i)}>
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: '#6c3483' }}>📦 Funda {v.gramos}g</span>
+                  <span style={{ fontSize: 11, color: '#888' }}>📅 {v.fecha}</span>
+                  {v.empNombre && <span style={{ fontSize: 10, background: '#eaf4fb', color: '#1a5276', padding: '2px 7px', borderRadius: 5 }}>{v.empNombre}</span>}
+                </div>
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                  <span style={{ fontWeight: 900, color: '#f39c12', fontSize: 14 }}>${parseFloat(v.precioFunda || 0).toFixed(4)}</span>
+                  <button onClick={e => { e.stopPropagation(); onCargarVersion(v); setVerAbierto(false); }}
+                    style={{ background: '#27ae60', color: 'white', border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontSize: 11, fontWeight: 700 }}>
+                    Cargar
+                  </button>
+                </div>
+              </div>
+              {expandida === i && (
+                <div style={{ background: '#1a1a2e', padding: '12px 14px' }}>
+                  {[
+                    [`🥩 Producto (${v.gramos}g)`, v.costoPorcion, '#7ec8f7'],
+                    ['📦 ' + (v.empNombre || 'Funda/Empaque'), v.costoEmp, '#2980b9'],
+                    ['🏷️ ' + (v.etiNombre || 'Etiqueta'),      v.costoEti, '#8e44ad'],
+                  ].map(([lbl, val, col]) => (
+                    <div key={lbl} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 4 }}>
+                      <span style={{ color: '#888' }}>{lbl}</span>
+                      <span style={{ color: col, fontWeight: 600 }}>${parseFloat(val || 0).toFixed(4)}</span>
+                    </div>
+                  ))}
+                  <div style={{ borderTop: '1px solid #333', marginTop: 6, paddingTop: 6, display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: '#aaa', fontSize: 11, fontWeight: 700 }}>Costo total funda</span>
+                    <span style={{ color: '#e74c3c', fontWeight: 700 }}>${parseFloat(v.costoTotal || 0).toFixed(4)}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 3 }}>
+                    <span style={{ color: '#a9dfbf', fontSize: 12, fontWeight: 700 }}>Precio venta ({cfg.margen}%)</span>
+                    <span style={{ color: '#f39c12', fontWeight: 900, fontSize: 15 }}>${parseFloat(v.precioFunda || 0).toFixed(4)}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 3 }}>
+                    <span style={{ color: '#888', fontSize: 11 }}>Ganancia/funda</span>
+                    <span style={{ color: '#27ae60', fontWeight: 700 }}>${parseFloat(v.ganancia || 0).toFixed(4)}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Porción */}
       <div style={{ background: 'white', borderRadius: 12, padding: '18px', marginBottom: 12, boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
@@ -1475,13 +1584,11 @@ function Pruebas({ cfg, mps, cFinal, costoSalKg, costoMostKg, costoRubKg }) {
       {/* Funda y etiqueta */}
       <div style={{ background: 'white', borderRadius: 12, padding: '18px', marginBottom: 12, boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
         <div style={{ fontWeight: 700, fontSize: 13, color: '#1a1a2e', marginBottom: 14 }}>Insumos de empaque</div>
-
         <div style={{ marginBottom: 12 }}>
           <label style={{ fontSize: 11, fontWeight: 700, color: '#2980b9', display: 'block', marginBottom: 5 }}>📦 Funda / Empaque</label>
           {sel(empSel, setEmpSel, mpsEmp, '— sin empaque —', '#2980b9')}
           {mpEmp && <div style={{ fontSize: 10, color: '#888', marginTop: 3 }}>Costo: ${costoEmp.toFixed(4)} por unidad</div>}
         </div>
-
         <div>
           <label style={{ fontSize: 11, fontWeight: 700, color: '#8e44ad', display: 'block', marginBottom: 5 }}>🏷️ Etiqueta</label>
           {sel(etiSel, setEtiSel, mpsEti, '— sin etiqueta —', '#8e44ad')}
@@ -1510,7 +1617,6 @@ function Pruebas({ cfg, mps, cFinal, costoSalKg, costoMostKg, costoRubKg }) {
               <span style={{ fontSize: 14, color: 'white', fontWeight: 700 }}>COSTO TOTAL POR FUNDA</span>
               <span style={{ fontSize: 24, fontWeight: 'bold', color: '#e74c3c' }}>${costoTotal.toFixed(4)}</span>
             </div>
-
             <div style={{ background: 'rgba(243,156,18,0.12)', borderRadius: 10, padding: '12px 14px', marginBottom: 10 }}>
               <div style={{ fontSize: 11, color: '#f9ca74', marginBottom: 4 }}>
                 Precio = ${costoTotal.toFixed(4)} ÷ (1 − {cfg.margen}%) = ${costoTotal.toFixed(4)} ÷ {((100 - cfg.margen) / 100).toFixed(2)}
@@ -1520,11 +1626,15 @@ function Pruebas({ cfg, mps, cFinal, costoSalKg, costoMostKg, costoRubKg }) {
                 <span style={{ fontSize: 24, fontWeight: 'bold', color: '#f39c12' }}>${precioFunda.toFixed(4)}</span>
               </div>
             </div>
-
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(39,174,96,0.12)', borderRadius: 8, padding: '10px 14px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(39,174,96,0.12)', borderRadius: 8, padding: '10px 14px', marginBottom: 14 }}>
               <span style={{ fontSize: 13, color: '#a9dfbf', fontWeight: 700 }}>GANANCIA POR FUNDA</span>
               <span style={{ fontSize: 18, fontWeight: 'bold', color: '#27ae60' }}>${ganancia.toFixed(4)}</span>
             </div>
+            {/* Botón guardar versión */}
+            <button onClick={handleGuardar} disabled={guardandoPrueba}
+              style={{ width: '100%', padding: '12px', background: guardandoPrueba ? '#555' : 'linear-gradient(135deg,#8e44ad,#6c3483)', color: 'white', border: 'none', borderRadius: 9, cursor: guardandoPrueba ? 'default' : 'pointer', fontSize: 13, fontWeight: 700 }}>
+              {guardandoPrueba ? 'Guardando...' : '💾 Guardar esta versión del simulador'}
+            </button>
           </div>
         </div>
       )}
