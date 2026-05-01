@@ -68,19 +68,27 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
   const [rubFilas,      setRubFilas]      = useState([]);
   const [pctSalmuera,   setPctSalmuera]   = useState(15);
   const [spRealesLote,  setSpRealesLote]  = useState({});
+  const [rubFormulas,   setRubFormulas]   = useState([]); // fórmulas con "rub" en el nombre
 
   // ── Carga inicial ──────────────────────────────────────────
   const cargar = useCallback(async () => {
     setCargando(true);
-    const [{ data: mpData }, { data: frmData }, { data: horneados }, { data: cfgDB }, { data: mpVinc }] = await Promise.all([
+    const [{ data: mpData }, { data: frmData }, { data: horneados }, { data: cfgDB }, { data: mpVinc }, { data: rubRows }] = await Promise.all([
       supabase.from('materias_primas').select('id,nombre,nombre_producto,precio_kg,categoria').eq('eliminado', false).order('nombre'),
       supabase.from('productos').select('id,nombre,categoria').eq('estado', 'ACTIVO').order('nombre'),
       supabase.from('produccion_horneado_lotes').select('*').ilike('producto_nombre', `%${producto.nombre}%`).order('created_at', { ascending: false }).limit(15),
       supabase.from('vista_horneado_config').select('config,versiones').eq('producto_nombre', producto.nombre).maybeSingle(),
       supabase.from('config_productos').select('mp_vinculado_id').eq('producto_nombre', producto.nombre).maybeSingle(),
+      // Todas las fórmulas cuyo nombre contenga "rub" (de formulaciones o productos)
+      supabase.from('formulaciones').select('producto_nombre').ilike('producto_nombre', '%rub%'),
     ]);
     setMps(mpData || []);
     setFormulas(frmData || []);
+    // Combinar fórmulas rub de formulaciones + productos, deduplicar
+    const rubDeFormulaciones = [...new Set((rubRows || []).map(r => r.producto_nombre).filter(Boolean))];
+    const rubDeProductos     = (frmData || []).filter(f => f.nombre.toLowerCase().includes('rub')).map(f => f.nombre);
+    const todosRub           = [...new Set([...rubDeFormulaciones, ...rubDeProductos])].sort();
+    setRubFormulas(todosRub);
     setLotes(horneados || []);
     const spInit = {};
     (horneados || []).forEach(l => { if (l.subproductos_real) spInit[l.id] = l.subproductos_real; });
@@ -412,8 +420,8 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
                 nota={cfg.formula_rub ? `Fórmula $${costoRub.toFixed(4)} total` : ''}>
                 <CampoSelect disabled={!modoEdicion} color="#6c3483"
                   value={cfg.formula_rub} onChange={v => upd('formula_rub', v)}
-                  options={formulas.filter(f => f.nombre.toLowerCase().includes('rub') || f.nombre.toLowerCase().includes('especia') || f.nombre.toLowerCase().includes('costra')).map(f => ({ value: f.nombre, label: f.nombre }))}
-                  placeholder="— seleccionar rub/especias —" />
+                  options={rubFormulas.map(nombre => ({ value: nombre, label: nombre }))}
+                  placeholder="— seleccionar fórmula Rub —" />
                 <CampoBaseKg label="Fórmula para" disabled={!modoEdicion}
                   value={cfg.kg_rub_base} onChange={v => upd('kg_rub_base', Math.max(0.1, v))} />
               </FilaCosto>
