@@ -597,7 +597,7 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
                 <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 6, color: '#888' }}>Sin producciones registradas</div>
                 <div style={{ fontSize: 12 }}>Registra desde el módulo Producción › Registrar.</div>
               </div>
-            ) : lotes.map((lote, idx) => {
+            ) : lotes.slice(0, 1).map((lote, idx) => {
               const kgFinalL    = parseFloat(lote.kg_post_horno || lote.kg_post_reposo || 0);
               const cFinalL     = parseFloat(lote.c_final_kg || 0);
               const costoMostL  = parseFloat(lote.costo_mostaza || 0);
@@ -822,38 +822,95 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
 
         {/* ═══ TAB HISTORIAL ═══ */}
         {tab === 'historial' && (
-          <div style={{ background: 'white', borderRadius: 12, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+          <div>
             {lotes.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: 40, color: '#aaa' }}>Sin producciones registradas</div>
-            ) : (
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
-                  <thead>
-                    <tr style={{ background: '#1a1a2e' }}>
-                      {['Fecha', 'Lote', 'Kg Entrada', 'Kg Final', 'M.Mad%', 'M.Horno%', 'M.Rep%', 'C_final'].map(h => (
-                        <th key={h} style={{ padding: '8px 10px', color: '#aaa', fontWeight: 700, textAlign: 'right', whiteSpace: 'nowrap' }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {lotes.map((l, i) => (
-                      <tr key={l.id} style={{ background: i % 2 === 0 ? 'white' : '#fafafa', borderBottom: '1px solid #f0f0f0' }}>
-                        {[l.fecha, l.lote_id || '—',
-                          `${parseFloat(l.kg_entrada_horno || 0).toFixed(2)} kg`,
-                          `${parseFloat(l.kg_post_reposo || 0).toFixed(2)} kg`,
-                          `${parseFloat(l.merma_horno_pct || 0).toFixed(1)}%`,
-                          `${parseFloat(l.merma_horno_pct || 0).toFixed(1)}%`,
-                          `${parseFloat(l.merma_reposo_pct || 0).toFixed(1)}%`,
-                          `$${parseFloat(l.c_final_kg || 0).toFixed(4)}`,
-                        ].map((v, j) => (
-                          <td key={j} style={{ padding: '8px 10px', textAlign: 'right', fontWeight: j === 7 ? 'bold' : 'normal', color: j === 7 ? '#27ae60' : '#333' }}>{v}</td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div style={{ background: 'white', borderRadius: 12, padding: '40px 20px', textAlign: 'center', color: '#aaa', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+                <div style={{ fontSize: 36, marginBottom: 10 }}>📋</div>
+                <div>Sin producciones registradas</div>
               </div>
-            )}
+            ) : lotes.map((l, i) => {
+              const kgFin   = parseFloat(l.kg_post_horno || l.kg_post_reposo || 0);
+              const cFin    = parseFloat(l.c_final_kg || 0);
+              const costoMo = parseFloat(l.costo_mostaza || 0);
+              const costoRu = parseFloat(l.costo_rub || 0);
+              const costoTo = cFin * kgFin;
+              const costoCS = Math.max(0, costoTo - costoMo - costoRu);
+              const kgEnt   = parseFloat(l.kg_entrada_horno || 0);
+              const mHPct   = parseFloat(l.merma_horno_pct || 0);
+              const mHKg    = parseFloat(l.merma_horno_kg || Math.max(0, kgEnt - kgFin));
+              const precV   = cfg.margen < 100 ? cFin / (1 - cfg.margen / 100) : 0;
+
+              return (
+                <details key={l.id}
+                  open={i === 0}
+                  style={{ marginBottom: 8, borderRadius: 12, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', border: i === 0 ? '2px solid #27ae60' : '1px solid #e0e0e0' }}>
+
+                  {/* ── Cabecera colapsable ── */}
+                  <summary style={{
+                    background: i === 0 ? '#f0faf4' : 'white',
+                    padding: '13px 16px', cursor: 'pointer',
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    listStyle: 'none', userSelect: 'none'
+                  }}>
+                    <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                      {i === 0 && <span style={{ fontSize: 9, fontWeight: 700, color: '#27ae60', letterSpacing: 1, background: '#d5f5e3', padding: '2px 7px', borderRadius: 6 }}>ÚLTIMO</span>}
+                      <span style={{ fontWeight: 700, color: '#1a1a2e', fontSize: 13 }}>📦 Lote {l.lote_id || '—'}</span>
+                      <span style={{ fontSize: 12, color: '#aaa' }}>📅 {l.fecha || '—'}</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+                      <span style={{ fontSize: 12, color: '#555' }}>{kgFin.toFixed(3)} kg</span>
+                      <span style={{ fontWeight: 900, color: '#27ae60', fontSize: 15 }}>${cFin.toFixed(4)}/kg</span>
+                    </div>
+                  </summary>
+
+                  {/* ── Detalle expandido ── */}
+                  <div style={{ background: 'white', padding: '14px 16px', borderTop: '1px solid #f0f0f0' }}>
+
+                    {/* Fases resumen */}
+                    {[
+                      { label: '🔥 Kg entrada al horno',      valor: `${kgEnt.toFixed(3)} kg`,                   color: '#555'    },
+                      { label: `📉 Merma horneado (${mHPct.toFixed(1)}%)`, valor: `−${mHKg.toFixed(3)} kg`,      color: '#e74c3c' },
+                      { label: '⚖️ Kg finales',               valor: `${kgFin.toFixed(3)} kg`,                   color: '#27ae60', bold: true },
+                    ].map(r => (
+                      <div key={r.label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 5 }}>
+                        <span style={{ color: '#888' }}>{r.label}</span>
+                        <span style={{ fontWeight: r.bold ? 700 : 400, color: r.color }}>{r.valor}</span>
+                      </div>
+                    ))}
+
+                    <div style={{ borderTop: '1px solid #f0f0f0', marginTop: 8, paddingTop: 8 }}>
+                      {[
+                        { label: '🥩 Carne + Salmuera', valor: `$${costoCS.toFixed(4)}`, color: '#7ec8f7' },
+                        { label: '🟡 Mostaza',           valor: `$${costoMo.toFixed(4)}`, color: '#e67e22' },
+                        { label: '🌶️ Rub',               valor: `$${costoRu.toFixed(4)}`, color: '#6c3483' },
+                      ].map(r => (
+                        <div key={r.label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 5 }}>
+                          <span style={{ color: '#888' }}>{r.label}</span>
+                          <span style={{ color: r.color, fontWeight: 600 }}>{r.valor}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div style={{ borderTop: '1px solid #f0f0f0', marginTop: 8, paddingTop: 8 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, fontWeight: 700, marginBottom: 5 }}>
+                        <span style={{ color: '#555' }}>Costo total batch</span>
+                        <span style={{ color: '#7ec8f7' }}>${costoTo.toFixed(4)}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 16, fontWeight: 900, marginBottom: 5 }}>
+                        <span style={{ color: '#a9dfbf' }}>C_FINAL / KG</span>
+                        <span style={{ color: '#27ae60' }}>${cFin.toFixed(4)}</span>
+                      </div>
+                      {precV > 0 && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, fontWeight: 700 }}>
+                          <span style={{ color: '#f9ca74' }}>Precio venta ({cfg.margen}%)</span>
+                          <span style={{ color: '#f39c12' }}>${precV.toFixed(4)}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </details>
+              );
+            })}
           </div>
         )}
       </div>
