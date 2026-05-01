@@ -26,6 +26,8 @@ export default function TabHistorial({
   const [editandoHorneado,  setEditandoHorneado]  = useState(null);
   const [kgEntradaEdit,     setKgEntradaEdit]     = useState('');
   const [kgHornoEdit,       setKgHornoEdit]       = useState('');
+  const [gMostazaEdit,      setGMostazaEdit]      = useState('');  // gramos mostaza
+  const [gRubEdit,          setGRubEdit]          = useState('');  // gramos rub total
   const [guardandoH,        setGuardandoH]        = useState(false);
   const [errorH,            setErrorH]            = useState('');
 
@@ -101,60 +103,115 @@ export default function TabHistorial({
     setGuardandoH(false);
   }
 
-  // ── Editar lote horneado (kg_entrada + kg_post → recalcula todo) ──
+  // ── Editar lote horneado — todos los campos ──────────────
   async function guardarEdicionHorneado() {
-    const nuevoKgEntrada = parseFloat(kgEntradaEdit);
-    const nuevoKgPost    = parseFloat(kgHornoEdit);
-    if (!nuevoKgPost || nuevoKgPost <= 0) { setErrorH('Ingresa un kg final válido'); return; }
+    const nuevoKgEntrada  = parseFloat(kgEntradaEdit);
+    const nuevoKgPost     = parseFloat(kgHornoEdit);
+    const nuevoKgMostaza  = parseFloat(gMostazaEdit) / 1000;
+    const nuevoKgRub      = parseFloat(gRubEdit) / 1000;
+
     if (!nuevoKgEntrada || nuevoKgEntrada <= 0) { setErrorH('Ingresa un kg de entrada válido'); return; }
+    if (!nuevoKgPost    || nuevoKgPost    <= 0) { setErrorH('Ingresa un kg final válido'); return; }
     if (nuevoKgPost > nuevoKgEntrada) { setErrorH('El kg final no puede ser mayor al kg de entrada'); return; }
     if (!editandoHorneado) return;
     setGuardandoH(true);
     setErrorH('');
     try {
-      const lote       = editandoHorneado;
-      const kgViejoPost = parseFloat(lote.kg_post_horno);
-      const diffPost   = nuevoKgPost - kgViejoPost;
+      const lote = editandoHorneado;
 
-      // Preservar costo total — solo cambian los kg
-      const costoTotal    = parseFloat(lote.c_final_kg) * kgViejoPost;
-      const nuevoCFinalKg = costoTotal / nuevoKgPost;
+      // ── Precios unitarios derivados de los valores almacenados ──
+      const oldKgMostaza = parseFloat(lote.kg_mostaza || 0);
+      const oldKgRub     = parseFloat(lote.kg_rub || 0);
+      const oldKgPost    = parseFloat(lote.kg_post_horno || 0);
+      const precMostaza  = oldKgMostaza > 0 ? parseFloat(lote.costo_mostaza || 0) / oldKgMostaza : 0;
+      const precRub      = oldKgRub     > 0 ? parseFloat(lote.costo_rub     || 0) / oldKgRub     : 0;
 
-      // Recalcular mermas
+      // ── Costos nuevos ──
+      const nuevoCostoMos = nuevoKgMostaza * precMostaza;
+      const nuevoCostoRub = nuevoKgRub     * precRub;
+
+      // costo carne+salmuera se preserva (viene de la inyección, no de aquí)
+      const oldCostoTotal = parseFloat(lote.c_final_kg) * oldKgPost;
+      const oldCostoMos   = parseFloat(lote.costo_mostaza || 0);
+      const oldCostoRub   = parseFloat(lote.costo_rub     || 0);
+      const costoCarSal   = Math.max(0, oldCostoTotal - oldCostoMos - oldCostoRub);
+      const nuevoCostoTotal = costoCarSal + nuevoCostoMos + nuevoCostoRub;
+      const nuevoCFinalKg   = nuevoKgPost > 0 ? nuevoCostoTotal / nuevoKgPost : 0;
+
+      // ── Mermas nuevas ──
       const nuevaMermaKg  = nuevoKgEntrada - nuevoKgPost;
       const nuevaMermaPct = nuevoKgEntrada > 0 ? (nuevaMermaKg / nuevoKgEntrada) * 100 : 0;
 
-      // Ajustar inventario Pastrame por la diferencia de kg_post
+      // ── Ajuste inventario Pastrame (diferencia kg_post) ──
+      const diffPost = nuevoKgPost - oldKgPost;
       const { data: movPast } = await supabase.from('inventario_movimientos')
         .select('materia_prima_id')
         .ilike('motivo', `%Horneado Pastrame%Lote ${lote.lote_id}%`)
         .maybeSingle();
-      if (movPast?.materia_prima_id) {
+      if (movPast?.materia_prima_id && diffPost !== 0) {
         const { data: inv } = await supabase.from('inventario_mp')
           .select('id, stock_kg').eq('materia_prima_id', movPast.materia_prima_id).maybeSingle();
-        if (inv) {
-          await supabase.from('inventario_mp').update({
-            stock_kg: Math.max(0, parseFloat(inv.stock_kg) + diffPost)
+        if (inv) await supabase.from('inventario_mp').update({
+          stock_kg: Math.max(0, parseFloat(inv.stock_kg) + diffPost)
+        }).eq('id', inv.id);
+      }
+
+      // ── Ajuste inventario Mostaza (diferencia kg_mostaza) ──
+      const diffMos = nuevoKgMostaza - oldKgMostaza;
+      if (Math.abs(diffMos) > 0.0001) {
+        const { data: movMos } = await supabase.from('inventario_movimientos')
+          .select('materia_prima_id')
+          .ilike('motivo', `%Mostaza Pastrame%Lote ${lote.lote_id}%`)
+          .maybeSingle();
+        if (movMos?.materia_prima_id) {
+          const { data: inv } = await supabase.from('inventario_mp')
+            .select('id, stock_kg').eq('materia_prima_id', movMos.materia_prima_id).maybeSingle();
+          if (inv) await supabase.from('inventario_mp').update({
+            // si se usó MÁS mostaza → restar más del stock; si menos → devolver
+            stock_kg: Math.max(0, parseFloat(inv.stock_kg) - diffMos)
           }).eq('id', inv.id);
         }
       }
 
-      // Actualizar registro
+      // ── Ajuste inventario Rub (proporcional a la diferencia total) ──
+      const diffRubFactor = oldKgRub > 0 ? nuevoKgRub / oldKgRub : 1;
+      if (Math.abs(nuevoKgRub - oldKgRub) > 0.0001 && oldKgRub > 0) {
+        const { data: movRubs } = await supabase.from('inventario_movimientos')
+          .select('materia_prima_id, kg')
+          .ilike('motivo', `%Rub Pastrame%Lote ${lote.lote_id}%`);
+        for (const mov of (movRubs || [])) {
+          if (!mov.materia_prima_id) continue;
+          const kgOldMov  = parseFloat(mov.kg);
+          const kgNewMov  = kgOldMov * diffRubFactor;
+          const diff      = kgOldMov - kgNewMov; // positivo → devolver, negativo → descontar más
+          const { data: inv } = await supabase.from('inventario_mp')
+            .select('id, stock_kg').eq('materia_prima_id', mov.materia_prima_id).maybeSingle();
+          if (inv) await supabase.from('inventario_mp').update({
+            stock_kg: Math.max(0, parseFloat(inv.stock_kg) + diff)
+          }).eq('id', inv.id);
+        }
+      }
+
+      // ── Actualizar registro ──
       await supabase.from('produccion_horneado_lotes').update({
         kg_entrada_horno: nuevoKgEntrada,
         kg_post_horno:    nuevoKgPost,
         kg_post_reposo:   nuevoKgPost,
         merma_horno_kg:   nuevaMermaKg,
         merma_horno_pct:  nuevaMermaPct,
+        kg_mostaza:       nuevoKgMostaza,
+        costo_mostaza:    nuevoCostoMos,
+        kg_rub:           nuevoKgRub,
+        costo_rub:        nuevoCostoRub,
         c_final_kg:       nuevoCFinalKg,
       }).eq('id', lote.id);
 
-      // Actualizar precio_kg en materias_primas
+      // ── Actualizar precio_kg Pastrame Horneado ──
       await supabase.from('materias_primas')
         .update({ precio_kg: nuevoCFinalKg })
         .ilike('nombre', '%Pastrame Horneado%');
 
-      // Refrescar lista local
+      // ── Refrescar lista local ──
       const { data } = await supabase.from('produccion_horneado_lotes')
         .select('*').order('fecha', { ascending: false }).limit(60);
       setLotesHorneado(data || []);
@@ -492,6 +549,8 @@ export default function TabHistorial({
                           setEditandoHorneado(lote);
                           setKgEntradaEdit(String(parseFloat(lote.kg_entrada_horno || 0)));
                           setKgHornoEdit(String(parseFloat(lote.kg_post_horno || 0)));
+                          setGMostazaEdit(String((parseFloat(lote.kg_mostaza || 0) * 1000).toFixed(1)));
+                          setGRubEdit(String((parseFloat(lote.kg_rub || 0) * 1000).toFixed(1)));
                           setErrorH('');
                         }}
                         style={{ ...btnSm, background:'#fff3cd', color:'#856404', border:'1px solid #f0c040' }}>
@@ -641,71 +700,118 @@ export default function TabHistorial({
 
       {/* ══ Modal editar lote horneado ══ */}
       {editandoHorneado && (() => {
-        const lote        = editandoHorneado;
-        const costoTotal  = parseFloat(lote.c_final_kg) * parseFloat(lote.kg_post_horno);
+        const lote = editandoHorneado;
+        // precios unitarios derivados del registro almacenado
+        const oldKgMos    = parseFloat(lote.kg_mostaza || 0);
+        const oldKgRub    = parseFloat(lote.kg_rub || 0);
+        const oldKgPost   = parseFloat(lote.kg_post_horno || 0);
+        const precMos     = oldKgMos  > 0 ? parseFloat(lote.costo_mostaza || 0) / oldKgMos  : 0;
+        const precRub     = oldKgRub  > 0 ? parseFloat(lote.costo_rub     || 0) / oldKgRub  : 0;
+        const oldCostoTot = parseFloat(lote.c_final_kg) * oldKgPost;
+        const costoCarSal = Math.max(0, oldCostoTot - parseFloat(lote.costo_mostaza || 0) - parseFloat(lote.costo_rub || 0));
+        // valores editados
         const kgEnt       = parseFloat(kgEntradaEdit) || 0;
         const kgPost      = parseFloat(kgHornoEdit)   || 0;
+        const kgMos       = (parseFloat(gMostazaEdit) || 0) / 1000;
+        const kgRub       = (parseFloat(gRubEdit)     || 0) / 1000;
+        const nuevoCosMos = kgMos * precMos;
+        const nuevoCosRub = kgRub * precRub;
+        const nuevoCosTotal = costoCarSal + nuevoCosMos + nuevoCosRub;
         const mermaKg     = Math.max(0, kgEnt - kgPost);
         const mermaPct    = kgEnt > 0 ? (mermaKg / kgEnt) * 100 : 0;
-        const nuevoCFinal = kgPost > 0 ? costoTotal / kgPost : 0;
+        const nuevoCFinal = kgPost > 0 ? nuevoCosTotal / kgPost : 0;
         const valido      = kgPost > 0 && kgEnt > 0 && kgPost <= kgEnt;
 
         return (
           <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.55)', zIndex:1000, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
-            <div style={{ background:'white', borderRadius:16, padding:24, width:'100%', maxWidth:440, boxShadow:'0 8px 32px rgba(0,0,0,0.25)' }}>
+            <div style={{ background:'white', borderRadius:16, padding:24, width:'100%', maxWidth:480, maxHeight:'90vh', overflowY:'auto', boxShadow:'0 8px 32px rgba(0,0,0,0.25)' }}>
               <div style={{ fontWeight:'bold', fontSize:16, color:'#1a1a2e', marginBottom:2 }}>
                 ✏️ Editar lote — {lote.lote_id}
               </div>
               <div style={{ fontSize:11, color:'#aaa', marginBottom:16 }}>
-                Costo total del batch: <strong>${costoTotal.toFixed(4)}</strong> (se preserva)
+                📅 {lote.fecha} · Precio unitario preservado de cada ingrediente
               </div>
 
-              {/* Kg entrada */}
-              <div style={{ marginBottom:12 }}>
-                <label style={{ fontSize:12, fontWeight:600, color:'#2980b9', display:'block', marginBottom:4 }}>
-                  🔥 Kg de entrada al horno
-                </label>
-                <input
-                  type="number" min="0.001" step="0.001"
-                  value={kgEntradaEdit}
-                  onChange={e => setKgEntradaEdit(e.target.value)}
-                  placeholder="0.000"
-                  style={{ width:'100%', padding:'10px 12px', borderRadius:8, border:'1.5px solid #2980b9', fontSize:15, textAlign:'right', outline:'none', boxSizing:'border-box' }}
-                />
-              </div>
-
-              {/* Kg post-horno */}
-              <div style={{ marginBottom:14 }}>
-                <label style={{ fontSize:12, fontWeight:600, color:'#27ae60', display:'block', marginBottom:4 }}>
-                  ⚖️ Kg finales (post-horno)
-                </label>
-                <input
-                  type="number" min="0.001" step="0.001"
-                  value={kgHornoEdit}
-                  onChange={e => setKgHornoEdit(e.target.value)}
-                  placeholder="0.000"
-                  style={{ width:'100%', padding:'10px 12px', borderRadius:8, border:'1.5px solid #27ae60', fontSize:15, textAlign:'right', outline:'none', boxSizing:'border-box' }}
-                />
-              </div>
-
-              {/* Preview recalculate */}
-              {kgEnt > 0 && kgPost > 0 && (
-                <div style={{ background: kgPost > kgEnt ? '#fdecea' : '#eafaf1', borderRadius:10, padding:'12px 14px', marginBottom:12, fontSize:12, border:`1.5px solid ${kgPost > kgEnt ? '#f5b7b1' : '#a9dfbf'}` }}>
-                  <div style={{ display:'flex', justifyContent:'space-between', marginBottom:5 }}>
-                    <span style={{ color:'#555' }}>Merma horneado</span>
-                    <span style={{ fontWeight:700, color:'#e74c3c' }}>
-                      {mermaKg.toFixed(3)} kg ({mermaPct.toFixed(1)}%)
-                    </span>
+              {/* ── Sección: Maduración → Horno ── */}
+              <div style={{ background:'#eaf4fb', borderRadius:10, padding:'12px 14px', marginBottom:12 }}>
+                <div style={{ fontSize:11, fontWeight:700, color:'#1a5276', marginBottom:10, letterSpacing:0.5 }}>🔥 HORNEADO</div>
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+                  <div>
+                    <label style={{ fontSize:11, fontWeight:600, color:'#2980b9', display:'block', marginBottom:3 }}>Kg entrada al horno</label>
+                    <input type="number" min="0.001" step="0.001" value={kgEntradaEdit}
+                      onChange={e => setKgEntradaEdit(e.target.value)}
+                      style={{ width:'100%', padding:'8px 10px', borderRadius:8, border:'1.5px solid #2980b9', fontSize:14, textAlign:'right', outline:'none', boxSizing:'border-box' }} />
                   </div>
-                  <div style={{ display:'flex', justifyContent:'space-between', marginBottom:5 }}>
-                    <span style={{ color:'#555' }}>Costo total batch</span>
-                    <strong>${costoTotal.toFixed(4)}</strong>
+                  <div>
+                    <label style={{ fontSize:11, fontWeight:600, color:'#27ae60', display:'block', marginBottom:3 }}>Kg finales (post-horno)</label>
+                    <input type="number" min="0.001" step="0.001" value={kgHornoEdit}
+                      onChange={e => setKgHornoEdit(e.target.value)}
+                      style={{ width:'100%', padding:'8px 10px', borderRadius:8, border:'1.5px solid #27ae60', fontSize:14, textAlign:'right', outline:'none', boxSizing:'border-box' }} />
                   </div>
-                  <div style={{ display:'flex', justifyContent:'space-between', fontWeight:'bold', borderTop:'1px solid #ddd', paddingTop:6, marginTop:2 }}>
-                    <span style={{ color: nuevoCFinal > 0 ? '#27ae60' : '#e74c3c' }}>Nuevo C_final/kg</span>
-                    <span style={{ color: nuevoCFinal > 0 ? '#27ae60' : '#e74c3c', fontSize:16 }}>
-                      ${nuevoCFinal.toFixed(4)}
-                    </span>
+                </div>
+                {kgEnt > 0 && kgPost > 0 && (
+                  <div style={{ marginTop:8, fontSize:12, display:'flex', justifyContent:'space-between' }}>
+                    <span style={{ color:'#888' }}>Merma calculada</span>
+                    <span style={{ color:'#e74c3c', fontWeight:700 }}>{mermaKg.toFixed(3)} kg ({mermaPct.toFixed(1)}%)</span>
+                  </div>
+                )}
+              </div>
+
+              {/* ── Sección: Mostaza ── */}
+              <div style={{ background:'#fef9e7', borderRadius:10, padding:'12px 14px', marginBottom:12 }}>
+                <div style={{ fontSize:11, fontWeight:700, color:'#7d6608', marginBottom:10, letterSpacing:0.5 }}>🟡 MOSTAZA</div>
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, alignItems:'end' }}>
+                  <div>
+                    <label style={{ fontSize:11, fontWeight:600, color:'#e67e22', display:'block', marginBottom:3 }}>Gramos de mostaza</label>
+                    <input type="number" min="0" step="0.1" value={gMostazaEdit}
+                      onChange={e => setGMostazaEdit(e.target.value)}
+                      style={{ width:'100%', padding:'8px 10px', borderRadius:8, border:'1.5px solid #e67e22', fontSize:14, textAlign:'right', outline:'none', boxSizing:'border-box' }} />
+                  </div>
+                  <div style={{ fontSize:12, color:'#888', paddingBottom:2 }}>
+                    <div>Precio: ${precMos.toFixed(4)}/kg</div>
+                    <div style={{ color:'#e67e22', fontWeight:700 }}>Costo: ${nuevoCosMos.toFixed(4)}</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* ── Sección: Rub ── */}
+              <div style={{ background:'#f5eef8', borderRadius:10, padding:'12px 14px', marginBottom:12 }}>
+                <div style={{ fontSize:11, fontWeight:700, color:'#6c3483', marginBottom:10, letterSpacing:0.5 }}>🌶️ RUB (total)</div>
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, alignItems:'end' }}>
+                  <div>
+                    <label style={{ fontSize:11, fontWeight:600, color:'#8e44ad', display:'block', marginBottom:3 }}>Gramos de rub (total)</label>
+                    <input type="number" min="0" step="0.1" value={gRubEdit}
+                      onChange={e => setGRubEdit(e.target.value)}
+                      style={{ width:'100%', padding:'8px 10px', borderRadius:8, border:'1.5px solid #8e44ad', fontSize:14, textAlign:'right', outline:'none', boxSizing:'border-box' }} />
+                  </div>
+                  <div style={{ fontSize:12, color:'#888', paddingBottom:2 }}>
+                    <div>Precio prom: ${precRub.toFixed(4)}/kg</div>
+                    <div style={{ color:'#8e44ad', fontWeight:700 }}>Costo: ${nuevoCosRub.toFixed(4)}</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* ── Preview resultado ── */}
+              {kgEnt > 0 && kgPost > 0 && kgPost <= kgEnt && (
+                <div style={{ background:'#1a1a2e', borderRadius:10, padding:'12px 14px', marginBottom:12, fontSize:12 }}>
+                  <div style={{ color:'#aaa', fontWeight:700, marginBottom:8, fontSize:10, letterSpacing:1 }}>RESULTADO NUEVO</div>
+                  {[
+                    ['🥩 Carne + Salmuera', costoCarSal,   '#7ec8f7'],
+                    ['🟡 Mostaza',          nuevoCosMos,   '#f5c842'],
+                    ['🌶️ Rub',              nuevoCosRub,   '#c39bd3'],
+                  ].map(([l, v, c]) => (
+                    <div key={l} style={{ display:'flex', justifyContent:'space-between', marginBottom:4 }}>
+                      <span style={{ color:'#888' }}>{l}</span>
+                      <span style={{ color:c, fontWeight:600 }}>${v.toFixed(4)}</span>
+                    </div>
+                  ))}
+                  <div style={{ borderTop:'1px solid #333', marginTop:6, paddingTop:6, display:'flex', justifyContent:'space-between', fontWeight:700 }}>
+                    <span style={{ color:'#7ec8f7' }}>Costo total batch</span>
+                    <span style={{ color:'#7ec8f7' }}>${nuevoCosTotal.toFixed(4)}</span>
+                  </div>
+                  <div style={{ display:'flex', justifyContent:'space-between', fontWeight:900, fontSize:16, marginTop:4 }}>
+                    <span style={{ color:'#a9dfbf' }}>C_FINAL / KG</span>
+                    <span style={{ color:'#2ecc71' }}>${nuevoCFinal.toFixed(4)}</span>
                   </div>
                 </div>
               )}
