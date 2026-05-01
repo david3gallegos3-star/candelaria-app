@@ -22,8 +22,9 @@ export default function TabHistorial({
   const [formCierre,       setFormCierre]       = useState({ hueso:'', aserrin:'', carnudo:'' });
   const [guardandoCierre,  setGuardandoCierre]  = useState(false);
 
-  // Editar kg lote horneado
+  // Editar lote horneado
   const [editandoHorneado,  setEditandoHorneado]  = useState(null);
+  const [kgEntradaEdit,     setKgEntradaEdit]     = useState('');
   const [kgHornoEdit,       setKgHornoEdit]       = useState('');
   const [guardandoH,        setGuardandoH]        = useState(false);
   const [errorH,            setErrorH]            = useState('');
@@ -56,49 +57,41 @@ export default function TabHistorial({
     });
   }, []);
 
-  // ── Revertir lote horneado ────────────────────────────────
+  // ── Revertir lote horneado — revierte TODO lo del ciclo ──
   async function revertirHorneado(lote) {
     if (!window.confirm(
-      `¿Revertir lote ${lote.lote_id}?\nSe descontará del inventario y volverá al estado de maduración.`
+      `¿Revertir lote ${lote.lote_id}?\n\n` +
+      `Se devolverá al inventario:\n` +
+      `• Mostaza descontada\n• Rub descontado\n• Sub-productos devueltos\n• Pastrame sacado del stock\n\n` +
+      `El lote volverá a la cola de maduración.`
     )) return;
     setGuardandoH(true);
     try {
-      // 1. Revertir ENTRADA Pastrame del inventario
-      const { data: movPast } = await supabase.from('inventario_movimientos')
-        .select('materia_prima_id, kg')
-        .ilike('motivo', `Horneado Pastrame — Lote ${lote.lote_id}%`)
-        .maybeSingle();
-      if (movPast?.materia_prima_id && parseFloat(movPast.kg) > 0) {
-        const { data: inv } = await supabase.from('inventario_mp')
-          .select('id, stock_kg').eq('materia_prima_id', movPast.materia_prima_id).maybeSingle();
-        if (inv) {
-          await supabase.from('inventario_mp').update({
-            stock_kg: Math.max(0, parseFloat(inv.stock_kg) - parseFloat(movPast.kg))
-          }).eq('id', inv.id);
-        }
-      }
+      // Buscar TODOS los movimientos relacionados con este lote_id
+      const { data: movs } = await supabase.from('inventario_movimientos')
+        .select('materia_prima_id, kg, tipo')
+        .ilike('motivo', `%Lote ${lote.lote_id}%`);
 
-      // 2. Revertir sub-productos del wizard (entradas de créditos)
-      const { data: movSps } = await supabase.from('inventario_movimientos')
-        .select('materia_prima_id, kg')
-        .like('motivo', `Sub-producto %/% — Lote ${lote.lote_id}`);
-      for (const mov of (movSps || [])) {
+      // Revertir cada movimiento: SALIDA→devolver, ENTRADA→descontar
+      for (const mov of (movs || [])) {
         if (!mov.materia_prima_id || parseFloat(mov.kg) <= 0) continue;
         const { data: inv } = await supabase.from('inventario_mp')
           .select('id, stock_kg').eq('materia_prima_id', mov.materia_prima_id).maybeSingle();
-        if (inv) {
-          await supabase.from('inventario_mp').update({
-            stock_kg: Math.max(0, parseFloat(inv.stock_kg) - parseFloat(mov.kg))
-          }).eq('id', inv.id);
-        }
+        if (!inv) continue;
+        const delta = mov.tipo === 'salida'
+          ? parseFloat(mov.kg)      // salida → devolver
+          : -parseFloat(mov.kg);    // entrada → quitar
+        await supabase.from('inventario_mp').update({
+          stock_kg: Math.max(0, parseFloat(inv.stock_kg) + delta)
+        }).eq('id', inv.id);
       }
 
-      // 3. Regresar lotes_maduracion a 'madurando'
+      // Regresar lotes_maduracion a 'madurando'
       await supabase.from('lotes_maduracion')
         .update({ estado: 'madurando' })
         .eq('id', lote.lote_id);
 
-      // 4. Eliminar registro horneado
+      // Eliminar registro horneado
       await supabase.from('produccion_horneado_lotes').delete().eq('id', lote.id);
 
       setLotesHorneado(prev => prev.filter(l => l.id !== lote.id));
@@ -108,42 +101,52 @@ export default function TabHistorial({
     setGuardandoH(false);
   }
 
-  // ── Editar kg_post_horno lote horneado ────────────────────
+  // ── Editar lote horneado (kg_entrada + kg_post → recalcula todo) ──
   async function guardarEdicionHorneado() {
-    const nuevoKg = parseFloat(kgHornoEdit);
-    if (!nuevoKg || nuevoKg <= 0) { setErrorH('Ingresa un kg válido'); return; }
+    const nuevoKgEntrada = parseFloat(kgEntradaEdit);
+    const nuevoKgPost    = parseFloat(kgHornoEdit);
+    if (!nuevoKgPost || nuevoKgPost <= 0) { setErrorH('Ingresa un kg final válido'); return; }
+    if (!nuevoKgEntrada || nuevoKgEntrada <= 0) { setErrorH('Ingresa un kg de entrada válido'); return; }
+    if (nuevoKgPost > nuevoKgEntrada) { setErrorH('El kg final no puede ser mayor al kg de entrada'); return; }
     if (!editandoHorneado) return;
     setGuardandoH(true);
     setErrorH('');
     try {
-      const lote    = editandoHorneado;
-      const kgViejo = parseFloat(lote.kg_post_horno);
-      const diff    = nuevoKg - kgViejo;
+      const lote       = editandoHorneado;
+      const kgViejoPost = parseFloat(lote.kg_post_horno);
+      const diffPost   = nuevoKgPost - kgViejoPost;
 
-      // Recalcular c_final_kg (costo total = c_final * kg_viejo)
-      const costoTotal    = parseFloat(lote.c_final_kg) * kgViejo;
-      const nuevoCFinalKg = costoTotal / nuevoKg;
+      // Preservar costo total — solo cambian los kg
+      const costoTotal    = parseFloat(lote.c_final_kg) * kgViejoPost;
+      const nuevoCFinalKg = costoTotal / nuevoKgPost;
 
-      // Ajustar inventario_mp Pastrame por la diferencia
+      // Recalcular mermas
+      const nuevaMermaKg  = nuevoKgEntrada - nuevoKgPost;
+      const nuevaMermaPct = nuevoKgEntrada > 0 ? (nuevaMermaKg / nuevoKgEntrada) * 100 : 0;
+
+      // Ajustar inventario Pastrame por la diferencia de kg_post
       const { data: movPast } = await supabase.from('inventario_movimientos')
         .select('materia_prima_id')
-        .ilike('motivo', `Horneado Pastrame — Lote ${lote.lote_id}%`)
+        .ilike('motivo', `%Horneado Pastrame%Lote ${lote.lote_id}%`)
         .maybeSingle();
       if (movPast?.materia_prima_id) {
         const { data: inv } = await supabase.from('inventario_mp')
           .select('id, stock_kg').eq('materia_prima_id', movPast.materia_prima_id).maybeSingle();
         if (inv) {
           await supabase.from('inventario_mp').update({
-            stock_kg: Math.max(0, parseFloat(inv.stock_kg) + diff)
+            stock_kg: Math.max(0, parseFloat(inv.stock_kg) + diffPost)
           }).eq('id', inv.id);
         }
       }
 
       // Actualizar registro
       await supabase.from('produccion_horneado_lotes').update({
-        kg_post_horno:  nuevoKg,
-        kg_post_reposo: nuevoKg,
-        c_final_kg:     nuevoCFinalKg,
+        kg_entrada_horno: nuevoKgEntrada,
+        kg_post_horno:    nuevoKgPost,
+        kg_post_reposo:   nuevoKgPost,
+        merma_horno_kg:   nuevaMermaKg,
+        merma_horno_pct:  nuevaMermaPct,
+        c_final_kg:       nuevoCFinalKg,
       }).eq('id', lote.id);
 
       // Actualizar precio_kg en materias_primas
@@ -487,11 +490,12 @@ export default function TabHistorial({
                       <button
                         onClick={() => {
                           setEditandoHorneado(lote);
+                          setKgEntradaEdit(String(parseFloat(lote.kg_entrada_horno || 0)));
                           setKgHornoEdit(String(parseFloat(lote.kg_post_horno || 0)));
                           setErrorH('');
                         }}
                         style={{ ...btnSm, background:'#fff3cd', color:'#856404', border:'1px solid #f0c040' }}>
-                        ✏️ Editar kg
+                        ✏️ Editar
                       </button>
                       <button
                         onClick={() => revertirHorneado(lote)}
@@ -635,65 +639,98 @@ export default function TabHistorial({
         );
       })}
 
-      {/* ══ Modal editar kg lote horneado ══ */}
-      {editandoHorneado && (
-        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.55)', zIndex:1000, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
-          <div style={{ background:'white', borderRadius:16, padding:24, width:'100%', maxWidth:400, boxShadow:'0 8px 32px rgba(0,0,0,0.25)' }}>
-            <div style={{ fontWeight:'bold', fontSize:16, color:'#1a1a2e', marginBottom:4 }}>
-              ✏️ Editar lote — {editandoHorneado.lote_id}
-            </div>
-            <div style={{ fontSize:12, color:'#888', marginBottom:16 }}>
-              Valor actual: <strong>{parseFloat(editandoHorneado.kg_post_horno).toFixed(3)} kg</strong>
-              {' · '}C_final: <strong>${parseFloat(editandoHorneado.c_final_kg).toFixed(4)}/kg</strong>
-            </div>
+      {/* ══ Modal editar lote horneado ══ */}
+      {editandoHorneado && (() => {
+        const lote        = editandoHorneado;
+        const costoTotal  = parseFloat(lote.c_final_kg) * parseFloat(lote.kg_post_horno);
+        const kgEnt       = parseFloat(kgEntradaEdit) || 0;
+        const kgPost      = parseFloat(kgHornoEdit)   || 0;
+        const mermaKg     = Math.max(0, kgEnt - kgPost);
+        const mermaPct    = kgEnt > 0 ? (mermaKg / kgEnt) * 100 : 0;
+        const nuevoCFinal = kgPost > 0 ? costoTotal / kgPost : 0;
+        const valido      = kgPost > 0 && kgEnt > 0 && kgPost <= kgEnt;
 
-            <label style={{ fontSize:12, fontWeight:600, color:'#555', display:'block', marginBottom:4 }}>
-              Kg finales (post-horno)
-            </label>
-            <input
-              type="number" min="0.001" step="0.001"
-              value={kgHornoEdit}
-              onChange={e => setKgHornoEdit(e.target.value)}
-              placeholder="0.000"
-              style={{ width:'100%', padding:'10px 12px', borderRadius:8, border:'1.5px solid #ddd', fontSize:15, textAlign:'right', outline:'none', boxSizing:'border-box', marginBottom:8 }}
-            />
-
-            {/* Preview nuevo c_final_kg */}
-            {parseFloat(kgHornoEdit) > 0 && (
-              <div style={{ background:'#eafaf1', borderRadius:10, padding:'10px 14px', marginBottom:12, fontSize:12 }}>
-                <div style={{ display:'flex', justifyContent:'space-between', marginBottom:3 }}>
-                  <span style={{ color:'#555' }}>Costo total batch</span>
-                  <strong>${(parseFloat(editandoHorneado.c_final_kg) * parseFloat(editandoHorneado.kg_post_horno)).toFixed(4)}</strong>
-                </div>
-                <div style={{ display:'flex', justifyContent:'space-between', fontWeight:'bold' }}>
-                  <span style={{ color:'#27ae60' }}>Nuevo C_final/kg</span>
-                  <span style={{ color:'#27ae60', fontSize:15 }}>
-                    ${(parseFloat(editandoHorneado.c_final_kg) * parseFloat(editandoHorneado.kg_post_horno) / parseFloat(kgHornoEdit)).toFixed(4)}
-                  </span>
-                </div>
+        return (
+          <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.55)', zIndex:1000, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
+            <div style={{ background:'white', borderRadius:16, padding:24, width:'100%', maxWidth:440, boxShadow:'0 8px 32px rgba(0,0,0,0.25)' }}>
+              <div style={{ fontWeight:'bold', fontSize:16, color:'#1a1a2e', marginBottom:2 }}>
+                ✏️ Editar lote — {lote.lote_id}
               </div>
-            )}
-
-            {errorH && (
-              <div style={{ background:'#fdecea', color:'#c0392b', borderRadius:8, padding:'8px 12px', fontSize:12, marginBottom:10 }}>
-                {errorH}
+              <div style={{ fontSize:11, color:'#aaa', marginBottom:16 }}>
+                Costo total del batch: <strong>${costoTotal.toFixed(4)}</strong> (se preserva)
               </div>
-            )}
 
-            <div style={{ display:'flex', gap:10, justifyContent:'flex-end' }}>
-              <button onClick={() => setEditandoHorneado(null)} style={{ background:'#f0f2f5', border:'none', borderRadius:8, padding:'10px 20px', cursor:'pointer', fontSize:13 }}>
-                Cancelar
-              </button>
-              <button
-                onClick={guardarEdicionHorneado}
-                disabled={guardandoH}
-                style={{ background: guardandoH ? '#aaa' : 'linear-gradient(135deg,#27ae60,#1e8449)', color:'white', border:'none', borderRadius:8, padding:'10px 24px', cursor: guardandoH ? 'default' : 'pointer', fontSize:13, fontWeight:'bold' }}>
-                {guardandoH ? 'Guardando...' : '✅ Guardar'}
-              </button>
+              {/* Kg entrada */}
+              <div style={{ marginBottom:12 }}>
+                <label style={{ fontSize:12, fontWeight:600, color:'#2980b9', display:'block', marginBottom:4 }}>
+                  🔥 Kg de entrada al horno
+                </label>
+                <input
+                  type="number" min="0.001" step="0.001"
+                  value={kgEntradaEdit}
+                  onChange={e => setKgEntradaEdit(e.target.value)}
+                  placeholder="0.000"
+                  style={{ width:'100%', padding:'10px 12px', borderRadius:8, border:'1.5px solid #2980b9', fontSize:15, textAlign:'right', outline:'none', boxSizing:'border-box' }}
+                />
+              </div>
+
+              {/* Kg post-horno */}
+              <div style={{ marginBottom:14 }}>
+                <label style={{ fontSize:12, fontWeight:600, color:'#27ae60', display:'block', marginBottom:4 }}>
+                  ⚖️ Kg finales (post-horno)
+                </label>
+                <input
+                  type="number" min="0.001" step="0.001"
+                  value={kgHornoEdit}
+                  onChange={e => setKgHornoEdit(e.target.value)}
+                  placeholder="0.000"
+                  style={{ width:'100%', padding:'10px 12px', borderRadius:8, border:'1.5px solid #27ae60', fontSize:15, textAlign:'right', outline:'none', boxSizing:'border-box' }}
+                />
+              </div>
+
+              {/* Preview recalculate */}
+              {kgEnt > 0 && kgPost > 0 && (
+                <div style={{ background: kgPost > kgEnt ? '#fdecea' : '#eafaf1', borderRadius:10, padding:'12px 14px', marginBottom:12, fontSize:12, border:`1.5px solid ${kgPost > kgEnt ? '#f5b7b1' : '#a9dfbf'}` }}>
+                  <div style={{ display:'flex', justifyContent:'space-between', marginBottom:5 }}>
+                    <span style={{ color:'#555' }}>Merma horneado</span>
+                    <span style={{ fontWeight:700, color:'#e74c3c' }}>
+                      {mermaKg.toFixed(3)} kg ({mermaPct.toFixed(1)}%)
+                    </span>
+                  </div>
+                  <div style={{ display:'flex', justifyContent:'space-between', marginBottom:5 }}>
+                    <span style={{ color:'#555' }}>Costo total batch</span>
+                    <strong>${costoTotal.toFixed(4)}</strong>
+                  </div>
+                  <div style={{ display:'flex', justifyContent:'space-between', fontWeight:'bold', borderTop:'1px solid #ddd', paddingTop:6, marginTop:2 }}>
+                    <span style={{ color: nuevoCFinal > 0 ? '#27ae60' : '#e74c3c' }}>Nuevo C_final/kg</span>
+                    <span style={{ color: nuevoCFinal > 0 ? '#27ae60' : '#e74c3c', fontSize:16 }}>
+                      ${nuevoCFinal.toFixed(4)}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {errorH && (
+                <div style={{ background:'#fdecea', color:'#c0392b', borderRadius:8, padding:'8px 12px', fontSize:12, marginBottom:10 }}>
+                  {errorH}
+                </div>
+              )}
+
+              <div style={{ display:'flex', gap:10, justifyContent:'flex-end' }}>
+                <button onClick={() => setEditandoHorneado(null)} style={{ background:'#f0f2f5', border:'none', borderRadius:8, padding:'10px 20px', cursor:'pointer', fontSize:13 }}>
+                  Cancelar
+                </button>
+                <button
+                  onClick={guardarEdicionHorneado}
+                  disabled={guardandoH || !valido}
+                  style={{ background: (guardandoH || !valido) ? '#aaa' : 'linear-gradient(135deg,#27ae60,#1e8449)', color:'white', border:'none', borderRadius:8, padding:'10px 24px', cursor: (guardandoH || !valido) ? 'default' : 'pointer', fontSize:13, fontWeight:'bold' }}>
+                  {guardandoH ? 'Guardando...' : '✅ Guardar'}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ══ Modal editar nota registro ══ */}
       {editandoRegistro && (
