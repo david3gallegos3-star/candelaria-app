@@ -445,5 +445,6 @@ export function useProduccion({ userRol, currentUser }) {
     guardarProduccion,
     revertirProduccion,
     enviarNota,
+    cargarTodo,
   };
 }

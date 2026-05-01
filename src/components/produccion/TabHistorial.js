@@ -10,30 +10,171 @@ export default function TabHistorial({
   produccionDiaria,
   esAdmin,
   setModalRevertir,
+  recargarHistorial,
 }) {
   const [lotesInyeccion,   setLotesInyeccion]   = useState([]);
   const [cierresDespacho,  setCierresDespacho]  = useState([]);
   const [cortesDespacho,   setCortesDespacho]   = useState([]);
-  const [editandoCierre,   setEditandoCierre]   = useState(null); // {cierre, fecha}
+  const [lotesHorneado,    setLotesHorneado]    = useState([]);
+  const [cargando,         setCargando]         = useState(true);
+
+  const [editandoCierre,   setEditandoCierre]   = useState(null);
   const [formCierre,       setFormCierre]       = useState({ hueso:'', aserrin:'', carnudo:'' });
   const [guardandoCierre,  setGuardandoCierre]  = useState(false);
 
+  // Editar kg lote horneado
+  const [editandoHorneado,  setEditandoHorneado]  = useState(null);
+  const [kgHornoEdit,       setKgHornoEdit]       = useState('');
+  const [guardandoH,        setGuardandoH]        = useState(false);
+  const [errorH,            setErrorH]            = useState('');
+
+  // Editar nota produccion_diaria
+  const [editandoRegistro,  setEditandoRegistro]  = useState(null);
+  const [notaEdit,          setNotaEdit]          = useState('');
+  const [guardandoReg,      setGuardandoReg]      = useState(false);
+
   useEffect(() => {
-    supabase.from('produccion_inyeccion')
-      .select('*, produccion_inyeccion_cortes(*)')
-      .eq('estado', 'cerrado')
-      .order('fecha', { ascending: false })
-      .limit(60)
-      .then(({ data }) => setLotesInyeccion(data || []));
-
-    supabase.from('despacho_cierre_dia')
-      .select('*').order('fecha', { ascending: false }).limit(60)
-      .then(({ data }) => setCierresDespacho(data || []));
-
-    supabase.from('despacho_cortes')
-      .select('*').order('fecha', { ascending: false }).limit(300)
-      .then(({ data }) => setCortesDespacho(data || []));
+    setCargando(true);
+    Promise.all([
+      supabase.from('produccion_inyeccion')
+        .select('*, produccion_inyeccion_cortes(*)')
+        .eq('estado', 'cerrado')
+        .order('fecha', { ascending: false })
+        .limit(60),
+      supabase.from('despacho_cierre_dia')
+        .select('*').order('fecha', { ascending: false }).limit(60),
+      supabase.from('despacho_cortes')
+        .select('*').order('fecha', { ascending: false }).limit(300),
+      supabase.from('produccion_horneado_lotes')
+        .select('*').order('fecha', { ascending: false }).limit(60),
+    ]).then(([r1, r2, r3, r4]) => {
+      setLotesInyeccion(r1.data || []);
+      setCierresDespacho(r2.data || []);
+      setCortesDespacho(r3.data || []);
+      setLotesHorneado(r4.data || []);
+      setCargando(false);
+    });
   }, []);
+
+  // ── Revertir lote horneado ────────────────────────────────
+  async function revertirHorneado(lote) {
+    if (!window.confirm(
+      `¿Revertir lote ${lote.lote_id}?\nSe descontará del inventario y volverá al estado de maduración.`
+    )) return;
+    setGuardandoH(true);
+    try {
+      // 1. Revertir ENTRADA Pastrame del inventario
+      const { data: movPast } = await supabase.from('inventario_movimientos')
+        .select('materia_prima_id, kg')
+        .ilike('motivo', `Horneado Pastrame — Lote ${lote.lote_id}%`)
+        .maybeSingle();
+      if (movPast?.materia_prima_id && parseFloat(movPast.kg) > 0) {
+        const { data: inv } = await supabase.from('inventario_mp')
+          .select('id, stock_kg').eq('materia_prima_id', movPast.materia_prima_id).maybeSingle();
+        if (inv) {
+          await supabase.from('inventario_mp').update({
+            stock_kg: Math.max(0, parseFloat(inv.stock_kg) - parseFloat(movPast.kg))
+          }).eq('id', inv.id);
+        }
+      }
+
+      // 2. Revertir sub-productos del wizard (entradas de créditos)
+      const { data: movSps } = await supabase.from('inventario_movimientos')
+        .select('materia_prima_id, kg')
+        .like('motivo', `Sub-producto %/% — Lote ${lote.lote_id}`);
+      for (const mov of (movSps || [])) {
+        if (!mov.materia_prima_id || parseFloat(mov.kg) <= 0) continue;
+        const { data: inv } = await supabase.from('inventario_mp')
+          .select('id, stock_kg').eq('materia_prima_id', mov.materia_prima_id).maybeSingle();
+        if (inv) {
+          await supabase.from('inventario_mp').update({
+            stock_kg: Math.max(0, parseFloat(inv.stock_kg) - parseFloat(mov.kg))
+          }).eq('id', inv.id);
+        }
+      }
+
+      // 3. Regresar lotes_maduracion a 'madurando'
+      await supabase.from('lotes_maduracion')
+        .update({ estado: 'madurando' })
+        .eq('id', lote.lote_id);
+
+      // 4. Eliminar registro horneado
+      await supabase.from('produccion_horneado_lotes').delete().eq('id', lote.id);
+
+      setLotesHorneado(prev => prev.filter(l => l.id !== lote.id));
+    } catch (e) {
+      alert('Error al revertir: ' + e.message);
+    }
+    setGuardandoH(false);
+  }
+
+  // ── Editar kg_post_horno lote horneado ────────────────────
+  async function guardarEdicionHorneado() {
+    const nuevoKg = parseFloat(kgHornoEdit);
+    if (!nuevoKg || nuevoKg <= 0) { setErrorH('Ingresa un kg válido'); return; }
+    if (!editandoHorneado) return;
+    setGuardandoH(true);
+    setErrorH('');
+    try {
+      const lote    = editandoHorneado;
+      const kgViejo = parseFloat(lote.kg_post_horno);
+      const diff    = nuevoKg - kgViejo;
+
+      // Recalcular c_final_kg (costo total = c_final * kg_viejo)
+      const costoTotal    = parseFloat(lote.c_final_kg) * kgViejo;
+      const nuevoCFinalKg = costoTotal / nuevoKg;
+
+      // Ajustar inventario_mp Pastrame por la diferencia
+      const { data: movPast } = await supabase.from('inventario_movimientos')
+        .select('materia_prima_id')
+        .ilike('motivo', `Horneado Pastrame — Lote ${lote.lote_id}%`)
+        .maybeSingle();
+      if (movPast?.materia_prima_id) {
+        const { data: inv } = await supabase.from('inventario_mp')
+          .select('id, stock_kg').eq('materia_prima_id', movPast.materia_prima_id).maybeSingle();
+        if (inv) {
+          await supabase.from('inventario_mp').update({
+            stock_kg: Math.max(0, parseFloat(inv.stock_kg) + diff)
+          }).eq('id', inv.id);
+        }
+      }
+
+      // Actualizar registro
+      await supabase.from('produccion_horneado_lotes').update({
+        kg_post_horno:  nuevoKg,
+        kg_post_reposo: nuevoKg,
+        c_final_kg:     nuevoCFinalKg,
+      }).eq('id', lote.id);
+
+      // Actualizar precio_kg en materias_primas
+      await supabase.from('materias_primas')
+        .update({ precio_kg: nuevoCFinalKg })
+        .ilike('nombre', '%Pastrame Horneado%');
+
+      // Refrescar lista local
+      const { data } = await supabase.from('produccion_horneado_lotes')
+        .select('*').order('fecha', { ascending: false }).limit(60);
+      setLotesHorneado(data || []);
+      setEditandoHorneado(null);
+    } catch (e) {
+      setErrorH('Error: ' + e.message);
+    }
+    setGuardandoH(false);
+  }
+
+  // ── Editar nota produccion_diaria ─────────────────────────
+  async function guardarNota() {
+    if (!editandoRegistro) return;
+    setGuardandoReg(true);
+    await supabase.from('produccion_diaria').update({
+      nota:       notaEdit,
+      editado:    true,
+      editado_at: new Date().toISOString(),
+    }).eq('id', editandoRegistro.id);
+    if (recargarHistorial) await recargarHistorial();
+    setEditandoRegistro(null);
+    setGuardandoReg(false);
+  }
 
   async function recalcularFase4(fechaDia, cierrePayload) {
     const { data: retazos } = await supabase.from('materias_primas')
@@ -46,7 +187,6 @@ export default function TabHistorial({
       .select('*').eq('fecha', fechaDia);
     if (!cortes || cortes.length === 0) return;
 
-    // Leer costo_mad_kg FRESCO desde stock_lotes_inyectados
     const corteNombres = [...new Set(cortes.map(r => r.corte_nombre).filter(Boolean))];
     const { data: lotesStock } = await supabase.from('stock_lotes_inyectados')
       .select('lote_id, corte_nombre, costo_mad_kg')
@@ -109,7 +249,6 @@ export default function TabHistorial({
     } else {
       await supabase.from('despacho_cierre_dia').insert({ ...payload, fecha: editandoCierre.fecha, usuario_nombre: '' });
     }
-    // Recalcular C_final para todos los cortes de ese día con los nuevos valores
     await recalcularFase4(editandoCierre.fecha, payload);
 
     const { data } = await supabase.from('despacho_cierre_dia').select('*').order('fecha', { ascending: false }).limit(60);
@@ -120,330 +259,480 @@ export default function TabHistorial({
     setGuardandoCierre(false);
   }
 
-  // Agrupar inyección por fecha
+  // ── Agrupaciones ──────────────────────────────────────────
   const inyeccionPorFecha = {};
   lotesInyeccion.forEach(l => {
     if (!inyeccionPorFecha[l.fecha]) inyeccionPorFecha[l.fecha] = [];
     inyeccionPorFecha[l.fecha].push(l);
   });
 
-  // Agrupar cierres despacho por fecha
   const cierrePorFecha = {};
   cierresDespacho.forEach(c => { cierrePorFecha[c.fecha] = c; });
 
-  // Agrupar cortes despacho por fecha para calcular merma
   const cortesPorFecha = {};
   cortesDespacho.forEach(r => {
     if (!cortesPorFecha[r.fecha]) cortesPorFecha[r.fecha] = [];
     cortesPorFecha[r.fecha].push(r);
   });
 
-  // Todas las fechas (producción + inyección + despacho cierre)
+  const horneadoPorFecha = {};
+  lotesHorneado.forEach(l => {
+    if (!horneadoPorFecha[l.fecha]) horneadoPorFecha[l.fecha] = [];
+    horneadoPorFecha[l.fecha].push(l);
+  });
+
   const todasFechas = Array.from(new Set([
     ...Object.keys(historialAgrupado),
     ...Object.keys(inyeccionPorFecha),
     ...Object.keys(cierrePorFecha),
+    ...Object.keys(horneadoPorFecha),
   ])).sort((a, b) => b.localeCompare(a));
+
+  function recargarLocal() {
+    setCargando(true);
+    Promise.all([
+      supabase.from('produccion_inyeccion').select('*, produccion_inyeccion_cortes(*)').eq('estado', 'cerrado').order('fecha', { ascending: false }).limit(60),
+      supabase.from('despacho_cierre_dia').select('*').order('fecha', { ascending: false }).limit(60),
+      supabase.from('despacho_cortes').select('*').order('fecha', { ascending: false }).limit(300),
+      supabase.from('produccion_horneado_lotes').select('*').order('fecha', { ascending: false }).limit(60),
+    ]).then(([r1, r2, r3, r4]) => {
+      setLotesInyeccion(r1.data || []);
+      setCierresDespacho(r2.data || []);
+      setCortesDespacho(r3.data || []);
+      setLotesHorneado(r4.data || []);
+      setCargando(false);
+    });
+    if (recargarHistorial) recargarHistorial();
+  }
+
+  if (cargando) {
+    return (
+      <div style={{ textAlign:'center', padding:'60px', color:'#aaa' }}>
+        <div style={{ fontSize:'32px', marginBottom:'12px' }}>⏳</div>
+        <div>Cargando historial...</div>
+      </div>
+    );
+  }
 
   if (todasFechas.length === 0) {
     return (
       <div style={{ textAlign:'center', padding:'60px', color:'#aaa' }}>
         <div style={{ fontSize:'48px', marginBottom:'12px' }}>📋</div>
-        <div>Sin registros de producción</div>
+        <div style={{ marginBottom:16 }}>Sin registros de producción</div>
+        <button onClick={recargarLocal} style={{
+          background:'#f0f2f5', border:'1px solid #ddd', borderRadius:8,
+          padding:'8px 20px', cursor:'pointer', fontSize:13, color:'#555'
+        }}>🔄 Recargar</button>
       </div>
     );
   }
 
+  // Botones disponibles para admin siempre, o para cualquier usuario dentro de 24 h
+  function puedeEditar(registro) {
+    if (esAdmin) return true;
+    const ts = registro.created_at || registro.fecha + 'T23:59:59';
+    return (Date.now() - new Date(ts).getTime()) < 24 * 60 * 60 * 1000;
+  }
+
+  const btnSm = {
+    border:'none', borderRadius:'7px', padding:'6px 11px',
+    cursor:'pointer', fontSize:'11px', fontWeight:'bold',
+    whiteSpace:'nowrap', marginLeft:'6px'
+  };
+
   return (
     <div>
       {todasFechas.map(fecha => {
-          const registros  = historialAgrupado[fecha] || [];
-          const inyecs     = inyeccionPorFecha[fecha]  || [];
-          const kgDia      = registros.reduce((s, r) => s + parseFloat(r.kg_producidos || 0), 0);
-          const costoDia   = registros.reduce((s, r) => s + parseFloat(r.costo_total    || 0), 0);
+        const registros  = historialAgrupado[fecha] || [];
+        const inyecs     = inyeccionPorFecha[fecha]  || [];
+        const horneados  = horneadoPorFecha[fecha]   || [];
+        const kgDia      = registros.reduce((s, r) => s + parseFloat(r.kg_producidos || 0), 0)
+                         + horneados.reduce((s, l) => s + parseFloat(l.kg_post_horno || 0), 0);
+        const costoDia   = registros.reduce((s, r) => s + parseFloat(r.costo_total    || 0), 0)
+                         + horneados.reduce((s, l) => s + parseFloat(l.c_final_kg || 0) * parseFloat(l.kg_post_horno || 0), 0);
 
-          return (
-            <div key={fecha} style={{ marginBottom:'16px' }}>
+        return (
+          <div key={fecha} style={{ marginBottom:'16px' }}>
 
-              {/* ── Encabezado fecha ── */}
-              <div style={{
-                display:'flex', justifyContent:'space-between',
-                alignItems:'center', marginBottom:'8px'
-              }}>
-                <div style={{ fontWeight:'bold', color:'#1a1a2e', fontSize:'14px' }}>
-                  📅 {new Date(fecha + 'T12:00:00').toLocaleDateString('es-EC', {
-                    weekday:'long', year:'numeric', month:'long', day:'numeric'
-                  })}
-                </div>
-                <div style={{ fontSize:'12px', color:'#888' }}>
-                  Total:{' '}
-                  <strong style={{ color:'#27ae60' }}>{kgDia.toFixed(1)} kg</strong>
-                  {' · '}
-                  <strong style={{ color:'#f39c12' }}>${costoDia.toFixed(2)}</strong>
-                </div>
+            {/* ── Encabezado fecha ── */}
+            <div style={{
+              display:'flex', justifyContent:'space-between',
+              alignItems:'center', marginBottom:'8px'
+            }}>
+              <div style={{ fontWeight:'bold', color:'#1a1a2e', fontSize:'14px' }}>
+                📅 {new Date(fecha + 'T12:00:00').toLocaleDateString('es-EC', {
+                  weekday:'long', year:'numeric', month:'long', day:'numeric'
+                })}
               </div>
+              <div style={{ fontSize:'12px', color:'#888' }}>
+                Total:{' '}
+                <strong style={{ color:'#27ae60' }}>{kgDia.toFixed(1)} kg</strong>
+                {' · '}
+                <strong style={{ color:'#f39c12' }}>${costoDia.toFixed(2)}</strong>
+              </div>
+            </div>
 
-              {/* ── Lotes inyección ── */}
-              {inyecs.map(lote => (
-                <div key={'inj-'+lote.id} style={{
-                  background:'white', borderRadius:'10px',
-                  padding:'14px', marginBottom:'8px',
-                  boxShadow:'0 1px 4px rgba(0,0,0,0.06)',
-                  border:'1.5px solid #2980b9'
-                }}>
-                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
-                    <div style={{ flex:1 }}>
-                      <div style={{ display:'flex', gap:8, alignItems:'center', marginBottom:6, flexWrap:'wrap' }}>
-                        <span style={{ fontWeight:'bold', color:'#1a3a5c', fontSize:'14px' }}>
-                          💉 {lote.formula_salmuera}
-                        </span>
-                        <span style={{ background:'#eaf4fb', color:'#1a3a5c', padding:'2px 8px', borderRadius:'6px', fontSize:'10px', fontWeight:700 }}>
-                          inyección
-                        </span>
-                      </div>
+            {/* ── Lotes inyección ── */}
+            {inyecs.map(lote => (
+              <div key={'inj-'+lote.id} style={{
+                background:'white', borderRadius:'10px',
+                padding:'14px', marginBottom:'8px',
+                boxShadow:'0 1px 4px rgba(0,0,0,0.06)',
+                border:'1.5px solid #2980b9'
+              }}>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
+                  <div style={{ flex:1 }}>
+                    <div style={{ display:'flex', gap:8, alignItems:'center', marginBottom:6, flexWrap:'wrap' }}>
+                      <span style={{ fontWeight:'bold', color:'#1a3a5c', fontSize:'14px' }}>
+                        💉 {lote.formula_salmuera}
+                      </span>
+                      <span style={{ background:'#eaf4fb', color:'#1a3a5c', padding:'2px 8px', borderRadius:'6px', fontSize:'10px', fontWeight:700 }}>
+                        inyección
+                      </span>
                     </div>
-                    {esAdmin && (
+                  </div>
+                  {puedeEditar(lote) && (
+                    <button
+                      onClick={async () => {
+                        if (!window.confirm('¿Revertir este lote? Se restaurará el inventario.')) return;
+                        try {
+                          const { data: invActual } = await supabase.from('inventario_mp').select('materia_prima_id,stock_kg');
+                          for (const ing of (lote.produccion_inyeccion_ingredientes || [])) {
+                            if (!ing.materia_prima_id || parseFloat(ing.kg_usados) <= 0) continue;
+                            const inv = (invActual || []).find(i => i.materia_prima_id === ing.materia_prima_id);
+                            if (inv) await supabase.from('inventario_mp').update({ stock_kg: parseFloat(inv.stock_kg) + parseFloat(ing.kg_usados) }).eq('materia_prima_id', ing.materia_prima_id);
+                          }
+                          for (const c of (lote.produccion_inyeccion_cortes || [])) {
+                            if (!c.materia_prima_id || parseFloat(c.kg_carne_cruda) <= 0) continue;
+                            const inv = (invActual || []).find(i => i.materia_prima_id === c.materia_prima_id);
+                            if (inv) await supabase.from('inventario_mp').update({ stock_kg: parseFloat(inv.stock_kg) + parseFloat(c.kg_carne_cruda) }).eq('materia_prima_id', c.materia_prima_id);
+                          }
+                          await supabase.from('produccion_inyeccion').update({ estado: 'revertido' }).eq('id', lote.id);
+                          setLotesInyeccion(prev => prev.filter(l => l.id !== lote.id));
+                        } catch(e) { alert('Error al revertir: ' + e.message); }
+                      }}
+                      style={{ ...btnSm, background:'#f8d7da', color:'#721c24', border:'1px solid #f5c6c6' }}>
+                      ↩️ Revertir
+                    </button>
+                  )}
+                </div>
+                <div style={{ display:'flex', gap:'16px', fontSize:'12px', color:'#555', flexWrap:'wrap', marginTop:6 }}>
+                  <span>🥩 <strong>{parseFloat(lote.kg_carne_total).toFixed(2)} kg</strong> carne</span>
+                  <span>🧂 <strong>{parseFloat(lote.kg_salmuera_requerida).toFixed(3)} kg</strong> salmuera preparada</span>
+                  <span>👤 {lote.usuario_nombre}</span>
+                </div>
+                {(lote.produccion_inyeccion_cortes || []).length > 0 && (
+                  <details style={{ marginTop:8 }}>
+                    <summary style={{ fontSize:'11px', color:'#2980b9', cursor:'pointer' }}>
+                      Ver cortes ({lote.produccion_inyeccion_cortes.length})
+                    </summary>
+                    <div style={{ marginTop:6, display:'flex', flexWrap:'wrap', gap:4 }}>
+                      {(() => {
+                        const mermas = lote.produccion_inyeccion_cortes.map(c => {
+                          const inj  = parseFloat(c.kg_carne_limpia || 0) + parseFloat(c.kg_retazos || 0);
+                          const post = parseFloat(c.kg_carne_limpia || 0);
+                          return inj > 0 ? ((inj - post) / inj) * 100 : 0;
+                        });
+                        const maxMerma = Math.max(...mermas);
+                        return lote.produccion_inyeccion_cortes.map((c, i) => {
+                          const pct = mermas[i];
+                          const esMayor = pct > 0 && pct === maxMerma;
+                          return (
+                            <span key={i} style={{
+                              background: esMayor ? '#fdecea' : '#f0f2f5',
+                              padding:'3px 10px', borderRadius:6, fontSize:10,
+                              color: esMayor ? '#c0392b' : '#555',
+                              fontWeight: esMayor ? 'bold' : 'normal',
+                              border: esMayor ? '1px solid #e74c3c' : '1px solid transparent'
+                            }}>
+                              {c.corte_nombre}: {esMayor && '↑'}{pct > 0 ? ` ${pct.toFixed(1)}% merma` : ' sin datos'}
+                            </span>
+                          );
+                        });
+                      })()}
+                    </div>
+                  </details>
+                )}
+                {lote.notas && <div style={{ marginTop:6, fontSize:12, color:'#888', fontStyle:'italic' }}>📝 {lote.notas}</div>}
+              </div>
+            ))}
+
+            {/* ── Lotes horneado ── */}
+            {horneados.map(lote => (
+              <div key={'hrn-'+lote.id} style={{
+                background:'white', borderRadius:'10px',
+                padding:'14px', marginBottom:'8px',
+                boxShadow:'0 1px 4px rgba(0,0,0,0.06)',
+                border:'1.5px solid #e74c3c'
+              }}>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', flexWrap:'wrap', gap:6 }}>
+                  <div style={{ flex:1 }}>
+                    <div style={{ display:'flex', gap:8, alignItems:'center', marginBottom:6, flexWrap:'wrap' }}>
+                      <span style={{ fontWeight:'bold', color:'#7b241c', fontSize:'14px' }}>
+                        🔥 {lote.producto_nombre || 'Horneado'}
+                      </span>
+                      <span style={{ background:'#fdecea', color:'#7b241c', padding:'2px 8px', borderRadius:'6px', fontSize:'10px', fontWeight:700 }}>
+                        horneado
+                      </span>
+                      <span style={{ fontSize:'11px', color:'#aaa' }}>Lote {lote.lote_id}</span>
+                    </div>
+                    <div style={{ display:'flex', gap:'16px', fontSize:'12px', color:'#555', flexWrap:'wrap' }}>
+                      <span>⚖️ <strong style={{ color:'#27ae60' }}>{parseFloat(lote.kg_post_horno || 0).toFixed(3)} kg</strong> finales</span>
+                      <span>💰 <strong style={{ color:'#e74c3c' }}>${parseFloat(lote.c_final_kg || 0).toFixed(4)}/kg</strong></span>
+                      <span>🔥 merma {parseFloat(lote.merma_horno_pct || 0).toFixed(1)}%</span>
+                    </div>
+                  </div>
+                  {puedeEditar(lote) && (
+                    <div style={{ display:'flex', gap:4, flexShrink:0 }}>
                       <button
-                        onClick={async () => {
-                          if (!window.confirm('¿Revertir este lote? Se restaurará el inventario.')) return;
-                          try {
-                            const { data: invActual } = await supabase.from('inventario_mp').select('materia_prima_id,stock_kg');
-                            for (const ing of (lote.produccion_inyeccion_ingredientes || [])) {
-                              if (!ing.materia_prima_id || parseFloat(ing.kg_usados) <= 0) continue;
-                              const inv = (invActual || []).find(i => i.materia_prima_id === ing.materia_prima_id);
-                              if (inv) await supabase.from('inventario_mp').update({ stock_kg: parseFloat(inv.stock_kg) + parseFloat(ing.kg_usados) }).eq('materia_prima_id', ing.materia_prima_id);
-                            }
-                            for (const c of (lote.produccion_inyeccion_cortes || [])) {
-                              if (!c.materia_prima_id || parseFloat(c.kg_carne_cruda) <= 0) continue;
-                              const inv = (invActual || []).find(i => i.materia_prima_id === c.materia_prima_id);
-                              if (inv) await supabase.from('inventario_mp').update({ stock_kg: parseFloat(inv.stock_kg) + parseFloat(c.kg_carne_cruda) }).eq('materia_prima_id', c.materia_prima_id);
-                            }
-                            await supabase.from('produccion_inyeccion').update({ estado: 'revertido' }).eq('id', lote.id);
-                            setLotesInyeccion(prev => prev.filter(l => l.id !== lote.id));
-                          } catch(e) { alert('Error al revertir: ' + e.message); }
+                        onClick={() => {
+                          setEditandoHorneado(lote);
+                          setKgHornoEdit(String(parseFloat(lote.kg_post_horno || 0)));
+                          setErrorH('');
                         }}
-                        style={{ background:'#f8d7da', color:'#721c24', border:'1px solid #f5c6c6', borderRadius:'7px', padding:'6px 12px', cursor:'pointer', fontSize:'11px', fontWeight:'bold', whiteSpace:'nowrap', marginLeft:'10px' }}>
+                        style={{ ...btnSm, background:'#fff3cd', color:'#856404', border:'1px solid #f0c040' }}>
+                        ✏️ Editar kg
+                      </button>
+                      <button
+                        onClick={() => revertirHorneado(lote)}
+                        disabled={guardandoH}
+                        style={{ ...btnSm, background:'#f8d7da', color:'#721c24', border:'1px solid #f5c6c6' }}>
                         ↩️ Revertir
                       </button>
-                    )}
-                  </div>
-                  <div style={{ display:'flex', gap:'16px', fontSize:'12px', color:'#555', flexWrap:'wrap', marginTop:6 }}>
-                    <span>🥩 <strong>{parseFloat(lote.kg_carne_total).toFixed(2)} kg</strong> carne</span>
-                    <span>🧂 <strong>{parseFloat(lote.kg_salmuera_requerida).toFixed(3)} kg</strong> salmuera preparada</span>
-                    <span>👤 {lote.usuario_nombre}</span>
-                  </div>
-                  {(lote.produccion_inyeccion_cortes || []).length > 0 && (
-                    <details style={{ marginTop:8 }}>
-                      <summary style={{ fontSize:'11px', color:'#2980b9', cursor:'pointer' }}>
-                        Ver cortes ({lote.produccion_inyeccion_cortes.length})
-                      </summary>
-                      <div style={{ marginTop:6, display:'flex', flexWrap:'wrap', gap:4 }}>
-                        {(() => {
-                          const mermas = lote.produccion_inyeccion_cortes.map(c => {
-                            const inj  = parseFloat(c.kg_carne_limpia || 0) + parseFloat(c.kg_retazos || 0);
-                            const post = parseFloat(c.kg_carne_limpia || 0);
-                            return inj > 0 ? ((inj - post) / inj) * 100 : 0;
-                          });
-                          const maxMerma = Math.max(...mermas);
-                          return lote.produccion_inyeccion_cortes.map((c, i) => {
-                            const pct = mermas[i];
-                            const esMayor = pct > 0 && pct === maxMerma;
-                            return (
-                              <span key={i} style={{
-                                background: esMayor ? '#fdecea' : '#f0f2f5',
-                                padding:'3px 10px', borderRadius:6, fontSize:10,
-                                color: esMayor ? '#c0392b' : '#555',
-                                fontWeight: esMayor ? 'bold' : 'normal',
-                                border: esMayor ? '1px solid #e74c3c' : '1px solid transparent'
-                              }}>
-                                {c.corte_nombre}: {esMayor && '↑'}{pct > 0 ? ` ${pct.toFixed(1)}% merma` : ' sin datos'}
-                              </span>
-                            );
-                          });
-                        })()}
-                      </div>
-                    </details>
+                    </div>
                   )}
-                  {lote.notas && <div style={{ marginTop:6, fontSize:12, color:'#888', fontStyle:'italic' }}>📝 {lote.notas}</div>}
                 </div>
-              ))}
+              </div>
+            ))}
 
-              {/* ── Cierre de despacho del día ── */}
-              {(() => {
-                const cierre   = cierrePorFecha[fecha];
-                const cortesD  = cortesPorFecha[fecha] || [];
-                const mermaDia = cortesD.reduce((s, r) => s + Math.max(0, (r.peso_antes||0)-(r.peso_funda||0)-(r.peso_remanente||0)), 0);
-                if (!cierre && cortesD.length === 0) return null;
+            {/* ── Cierre de despacho del día ── */}
+            {(() => {
+              const cierre   = cierrePorFecha[fecha];
+              const cortesD  = cortesPorFecha[fecha] || [];
+              const mermaDia = cortesD.reduce((s, r) => s + Math.max(0, (r.peso_antes||0)-(r.peso_funda||0)-(r.peso_remanente||0)), 0);
+              if (!cierre && cortesD.length === 0) return null;
 
-                const totalIdent    = cierre ? (parseFloat(cierre.peso_hueso||0) + parseFloat(cierre.peso_aserrin||0) + parseFloat(cierre.peso_carnudo||0)) : 0;
-                const mermaEnMaq    = mermaDia - totalIdent;
+              const totalIdent = cierre ? (parseFloat(cierre.peso_hueso||0) + parseFloat(cierre.peso_aserrin||0) + parseFloat(cierre.peso_carnudo||0)) : 0;
+              const mermaEnMaq = mermaDia - totalIdent;
 
-                // Resumen por corte
-                const porCorte = {};
-                cortesD.forEach(r => {
-                  const m = Math.max(0, (r.peso_antes||0)-(r.peso_funda||0)-(r.peso_remanente||0));
-                  if (!porCorte[r.corte_nombre]) porCorte[r.corte_nombre] = { n:0, merma:0 };
-                  porCorte[r.corte_nombre].n++;
-                  porCorte[r.corte_nombre].merma += m;
-                });
+              const porCorte = {};
+              cortesD.forEach(r => {
+                const m = Math.max(0, (r.peso_antes||0)-(r.peso_funda||0)-(r.peso_remanente||0));
+                if (!porCorte[r.corte_nombre]) porCorte[r.corte_nombre] = { n:0, merma:0 };
+                porCorte[r.corte_nombre].n++;
+                porCorte[r.corte_nombre].merma += m;
+              });
 
-                return (
-                  <div style={{ background:'white', borderRadius:10, padding:14, marginBottom:8, boxShadow:'0 1px 4px rgba(0,0,0,0.06)', border:'1.5px solid #e67e22' }}>
-                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
-                      <span style={{ fontWeight:'bold', color:'#d35400', fontSize:14 }}>📦 Despacho y Fraccionamiento</span>
-                      <button onClick={() => {
-                        setFormCierre({ hueso: String(cierre?.peso_hueso||''), aserrin: String(cierre?.peso_aserrin||''), carnudo: String(cierre?.peso_carnudo||'') });
-                        setEditandoCierre({ cierre, fecha });
-                      }} style={{ background:'#fff3cd', border:'1px solid #f39c12', borderRadius:7, padding:'5px 12px', cursor:'pointer', fontSize:11, fontWeight:'bold', color:'#856404' }}>
-                        ✏️ Editar cierre
-                      </button>
+              return (
+                <div style={{ background:'white', borderRadius:10, padding:14, marginBottom:8, boxShadow:'0 1px 4px rgba(0,0,0,0.06)', border:'1.5px solid #e67e22' }}>
+                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
+                    <span style={{ fontWeight:'bold', color:'#d35400', fontSize:14 }}>📦 Despacho y Fraccionamiento</span>
+                    <button onClick={() => {
+                      setFormCierre({ hueso: String(cierre?.peso_hueso||''), aserrin: String(cierre?.peso_aserrin||''), carnudo: String(cierre?.peso_carnudo||'') });
+                      setEditandoCierre({ cierre, fecha });
+                    }} style={{ background:'#fff3cd', border:'1px solid #f39c12', borderRadius:7, padding:'5px 12px', cursor:'pointer', fontSize:11, fontWeight:'bold', color:'#856404' }}>
+                      ✏️ Editar cierre
+                    </button>
+                  </div>
+                  {Object.entries(porCorte).map(([nombre, d]) => (
+                    <div key={nombre} style={{ fontSize:12, color:'#555', marginBottom:3, display:'flex', gap:10 }}>
+                      <span>🥩 {nombre} <span style={{ color:'#888' }}>({d.n} corte{d.n!==1?'s':''})</span></span>
+                      <span style={{ color:'#e74c3c', fontWeight:'bold' }}>merma: {d.merma.toFixed(3)} kg</span>
                     </div>
+                  ))}
+                  {mermaDia > 0 && (
+                    <div style={{ borderTop:'1px solid #f0f0f0', marginTop:8, paddingTop:8, display:'flex', flexWrap:'wrap', gap:14, fontSize:12 }}>
+                      <span style={{ color:'#e74c3c', fontWeight:'bold' }}>Total merma: {mermaDia.toFixed(3)} kg</span>
+                      {cierre ? (<>
+                        <span style={{ color:'#555' }}>🦴 Hueso: <b>{parseFloat(cierre.peso_hueso||0).toFixed(3)} kg</b></span>
+                        <span style={{ color:'#856404' }}>🪵 Aserrín: <b>{parseFloat(cierre.peso_aserrin||0).toFixed(3)} kg</b></span>
+                        <span style={{ color:'#155724' }}>🥩 Carnudo: <b>{parseFloat(cierre.peso_carnudo||0).toFixed(3)} kg</b></span>
+                        <span style={{ color:'#8e44ad', fontWeight:'bold' }}>🔧 En máquina: {mermaEnMaq.toFixed(3)} kg</span>
+                      </>) : (
+                        <span style={{ color:'#aaa', fontStyle:'italic' }}>Sin cierre registrado</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
-                    {/* Resumen cortes */}
-                    {Object.entries(porCorte).map(([nombre, d]) => (
-                      <div key={nombre} style={{ fontSize:12, color:'#555', marginBottom:3, display:'flex', gap:10 }}>
-                        <span>🥩 {nombre} <span style={{ color:'#888' }}>({d.n} corte{d.n!==1?'s':''})</span></span>
-                        <span style={{ color:'#e74c3c', fontWeight:'bold' }}>merma: {d.merma.toFixed(3)} kg</span>
-                      </div>
-                    ))}
-
-                    {mermaDia > 0 && (
-                      <div style={{ borderTop:'1px solid #f0f0f0', marginTop:8, paddingTop:8, display:'flex', flexWrap:'wrap', gap:14, fontSize:12 }}>
-                        <span style={{ color:'#e74c3c', fontWeight:'bold' }}>Total merma: {mermaDia.toFixed(3)} kg</span>
-                        {cierre ? (<>
-                          <span style={{ color:'#555' }}>🦴 Hueso: <b>{parseFloat(cierre.peso_hueso||0).toFixed(3)} kg</b></span>
-                          <span style={{ color:'#856404' }}>🪵 Aserrín: <b>{parseFloat(cierre.peso_aserrin||0).toFixed(3)} kg</b></span>
-                          <span style={{ color:'#155724' }}>🥩 Carnudo: <b>{parseFloat(cierre.peso_carnudo||0).toFixed(3)} kg</b></span>
-                          <span style={{ color:'#8e44ad', fontWeight:'bold' }}>🔧 En máquina: {mermaEnMaq.toFixed(3)} kg</span>
-                        </>) : (
-                          <span style={{ color:'#aaa', fontStyle:'italic' }}>Sin cierre registrado</span>
-                        )}
-                      </div>
+            {/* ── Registros produccion_diaria ── */}
+            {registros.map(r => (
+              <div key={r.id} style={{
+                background:'white', borderRadius:'10px',
+                padding:'14px', marginBottom:'8px',
+                boxShadow:'0 1px 4px rgba(0,0,0,0.06)',
+                border:'1px solid #f0f0f0'
+              }}>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
+                  <div style={{ flex:1 }}>
+                    <div style={{ display:'flex', gap:'8px', alignItems:'center', marginBottom:'6px', flexWrap:'wrap' }}>
+                      <span style={{ fontWeight:'bold', color:'#1a1a2e', fontSize:'14px' }}>
+                        {r.producto_nombre}
+                      </span>
+                      <span style={{
+                        background:
+                          r.turno === 'mañana' ? '#fff3cd' :
+                          r.turno === 'tarde'  ? '#fde8e8' : '#e8f4fd',
+                        color:
+                          r.turno === 'mañana' ? '#856404' :
+                          r.turno === 'tarde'  ? '#721c24' : '#1a5276',
+                        padding:'2px 8px', borderRadius:'6px',
+                        fontSize:'10px', fontWeight:'700'
+                      }}>
+                        {r.turno === 'mañana' ? '🌅' :
+                         r.turno === 'tarde'  ? '🌇' : '🌙'} {r.turno}
+                      </span>
+                      {r.editado && (
+                        <span style={{ background:'#f3e5f5', color:'#6c3483', padding:'2px 8px', borderRadius:'6px', fontSize:'10px' }}>editado</span>
+                      )}
+                    </div>
+                    <div style={{ display:'flex', gap:'16px', fontSize:'12px', color:'#555', flexWrap:'wrap' }}>
+                      <span>🔢 <strong>{r.num_paradas}</strong> paradas</span>
+                      <span>⚖️ <strong style={{ color:'#27ae60' }}>{parseFloat(r.kg_producidos || 0).toFixed(1)} kg</strong></span>
+                      <span>💰 <strong style={{ color:'#f39c12' }}>${parseFloat(r.costo_total || 0).toFixed(2)}</strong></span>
+                      <span>👤 {r.usuario_nombre}</span>
+                    </div>
+                    {r.nota && (
+                      <div style={{ marginTop:'6px', fontSize:'12px', color:'#888', fontStyle:'italic' }}>📝 {r.nota}</div>
+                    )}
+                    {r.ingredientes_usados && r.ingredientes_usados.length > 0 && (
+                      <details style={{ marginTop:'8px' }}>
+                        <summary style={{ fontSize:'11px', color:'#3498db', cursor:'pointer' }}>
+                          Ver ingredientes usados ({r.ingredientes_usados.length})
+                        </summary>
+                        <div style={{ marginTop:'6px', display:'flex', flexWrap:'wrap', gap:'4px' }}>
+                          {r.ingredientes_usados.map((ing, i) => (
+                            <span key={i} style={{ background:'#f0f2f5', padding:'2px 8px', borderRadius:'6px', fontSize:'10px', color:'#555' }}>
+                              {ing.ingrediente_nombre}: {parseFloat(ing.kg_usados).toFixed(2)} kg
+                            </span>
+                          ))}
+                        </div>
+                      </details>
                     )}
                   </div>
-                );
-              })()}
 
-              {/* ── Registros del día ── */}
-              {registros.map(r => (
-                <div key={r.id} style={{
-                  background:'white', borderRadius:'10px',
-                  padding:'14px', marginBottom:'8px',
-                  boxShadow:'0 1px 4px rgba(0,0,0,0.06)',
-                  border:'1px solid #f0f0f0'
-                }}>
-                  <div style={{
-                    display:'flex', justifyContent:'space-between',
-                    alignItems:'flex-start'
-                  }}>
-                    <div style={{ flex:1 }}>
-
-                      {/* Nombre + turno + badge editado */}
-                      <div style={{
-                        display:'flex', gap:'8px',
-                        alignItems:'center', marginBottom:'6px', flexWrap:'wrap'
-                      }}>
-                        <span style={{ fontWeight:'bold', color:'#1a1a2e', fontSize:'14px' }}>
-                          {r.producto_nombre}
-                        </span>
-
-                        <span style={{
-                          background:
-                            r.turno === 'mañana' ? '#fff3cd' :
-                            r.turno === 'tarde'  ? '#fde8e8' : '#e8f4fd',
-                          color:
-                            r.turno === 'mañana' ? '#856404' :
-                            r.turno === 'tarde'  ? '#721c24' : '#1a5276',
-                          padding:'2px 8px', borderRadius:'6px',
-                          fontSize:'10px', fontWeight:'700'
-                        }}>
-                          {r.turno === 'mañana' ? '🌅' :
-                           r.turno === 'tarde'  ? '🌇' : '🌙'} {r.turno}
-                        </span>
-
-                        {r.editado && (
-                          <span style={{
-                            background:'#f3e5f5', color:'#6c3483',
-                            padding:'2px 8px', borderRadius:'6px', fontSize:'10px'
-                          }}>editado</span>
-                        )}
-                      </div>
-
-                      {/* Stats */}
-                      <div style={{
-                        display:'flex', gap:'16px',
-                        fontSize:'12px', color:'#555', flexWrap:'wrap'
-                      }}>
-                        <span>
-                          🔢 <strong>{r.num_paradas}</strong> paradas
-                        </span>
-                        <span>
-                          ⚖️ <strong style={{ color:'#27ae60' }}>
-                            {parseFloat(r.kg_producidos || 0).toFixed(1)} kg
-                          </strong>
-                        </span>
-                        <span>
-                          💰 <strong style={{ color:'#f39c12' }}>
-                            ${parseFloat(r.costo_total || 0).toFixed(2)}
-                          </strong>
-                        </span>
-                        <span>👤 {r.usuario_nombre}</span>
-                      </div>
-
-                      {/* Nota */}
-                      {r.nota && (
-                        <div style={{
-                          marginTop:'6px', fontSize:'12px',
-                          color:'#888', fontStyle:'italic'
-                        }}>📝 {r.nota}</div>
-                      )}
-
-                      {/* Ingredientes usados — collapsible */}
-                      {r.ingredientes_usados && r.ingredientes_usados.length > 0 && (
-                        <details style={{ marginTop:'8px' }}>
-                          <summary style={{
-                            fontSize:'11px', color:'#3498db', cursor:'pointer'
-                          }}>
-                            Ver ingredientes usados ({r.ingredientes_usados.length})
-                          </summary>
-                          <div style={{
-                            marginTop:'6px',
-                            display:'flex', flexWrap:'wrap', gap:'4px'
-                          }}>
-                            {r.ingredientes_usados.map((ing, i) => (
-                              <span key={i} style={{
-                                background:'#f0f2f5', padding:'2px 8px',
-                                borderRadius:'6px', fontSize:'10px', color:'#555'
-                              }}>
-                                {ing.ingrediente_nombre}: {parseFloat(ing.kg_usados).toFixed(2)} kg
-                              </span>
-                            ))}
-                          </div>
-                        </details>
-                      )}
-                    </div>
-
-                    {/* Botón revertir — solo admin */}
-                    {esAdmin && (
+                  {/* Botones admin / ventana 24h */}
+                  {puedeEditar(r) && (
+                    <div style={{ display:'flex', gap:4, flexShrink:0, marginLeft:8 }}>
+                      <button
+                        onClick={() => { setEditandoRegistro(r); setNotaEdit(r.nota || ''); }}
+                        style={{ ...btnSm, background:'#fff3cd', color:'#856404', border:'1px solid #f0c040' }}>
+                        ✏️ Nota
+                      </button>
                       <button
                         onClick={() => setModalRevertir(r)}
-                        style={{
-                          background:'#f8d7da', color:'#721c24',
-                          border:'1px solid #f5c6c6',
-                          borderRadius:'7px', padding:'6px 12px',
-                          cursor:'pointer', fontSize:'11px',
-                          fontWeight:'bold', whiteSpace:'nowrap',
-                          marginLeft:'10px'
-                        }}>↩️ Revertir</button>
-                    )}
-                  </div>
+                        style={{ ...btnSm, background:'#f8d7da', color:'#721c24', border:'1px solid #f5c6c6' }}>
+                        ↩️ Revertir
+                      </button>
+                    </div>
+                  )}
                 </div>
-              ))}
+              </div>
+            ))}
+          </div>
+        );
+      })}
+
+      {/* ══ Modal editar kg lote horneado ══ */}
+      {editandoHorneado && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.55)', zIndex:1000, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
+          <div style={{ background:'white', borderRadius:16, padding:24, width:'100%', maxWidth:400, boxShadow:'0 8px 32px rgba(0,0,0,0.25)' }}>
+            <div style={{ fontWeight:'bold', fontSize:16, color:'#1a1a2e', marginBottom:4 }}>
+              ✏️ Editar lote — {editandoHorneado.lote_id}
             </div>
-          );
-        })
-      }
-      {/* Modal editar cierre despacho */}
+            <div style={{ fontSize:12, color:'#888', marginBottom:16 }}>
+              Valor actual: <strong>{parseFloat(editandoHorneado.kg_post_horno).toFixed(3)} kg</strong>
+              {' · '}C_final: <strong>${parseFloat(editandoHorneado.c_final_kg).toFixed(4)}/kg</strong>
+            </div>
+
+            <label style={{ fontSize:12, fontWeight:600, color:'#555', display:'block', marginBottom:4 }}>
+              Kg finales (post-horno)
+            </label>
+            <input
+              type="number" min="0.001" step="0.001"
+              value={kgHornoEdit}
+              onChange={e => setKgHornoEdit(e.target.value)}
+              placeholder="0.000"
+              style={{ width:'100%', padding:'10px 12px', borderRadius:8, border:'1.5px solid #ddd', fontSize:15, textAlign:'right', outline:'none', boxSizing:'border-box', marginBottom:8 }}
+            />
+
+            {/* Preview nuevo c_final_kg */}
+            {parseFloat(kgHornoEdit) > 0 && (
+              <div style={{ background:'#eafaf1', borderRadius:10, padding:'10px 14px', marginBottom:12, fontSize:12 }}>
+                <div style={{ display:'flex', justifyContent:'space-between', marginBottom:3 }}>
+                  <span style={{ color:'#555' }}>Costo total batch</span>
+                  <strong>${(parseFloat(editandoHorneado.c_final_kg) * parseFloat(editandoHorneado.kg_post_horno)).toFixed(4)}</strong>
+                </div>
+                <div style={{ display:'flex', justifyContent:'space-between', fontWeight:'bold' }}>
+                  <span style={{ color:'#27ae60' }}>Nuevo C_final/kg</span>
+                  <span style={{ color:'#27ae60', fontSize:15 }}>
+                    ${(parseFloat(editandoHorneado.c_final_kg) * parseFloat(editandoHorneado.kg_post_horno) / parseFloat(kgHornoEdit)).toFixed(4)}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {errorH && (
+              <div style={{ background:'#fdecea', color:'#c0392b', borderRadius:8, padding:'8px 12px', fontSize:12, marginBottom:10 }}>
+                {errorH}
+              </div>
+            )}
+
+            <div style={{ display:'flex', gap:10, justifyContent:'flex-end' }}>
+              <button onClick={() => setEditandoHorneado(null)} style={{ background:'#f0f2f5', border:'none', borderRadius:8, padding:'10px 20px', cursor:'pointer', fontSize:13 }}>
+                Cancelar
+              </button>
+              <button
+                onClick={guardarEdicionHorneado}
+                disabled={guardandoH}
+                style={{ background: guardandoH ? '#aaa' : 'linear-gradient(135deg,#27ae60,#1e8449)', color:'white', border:'none', borderRadius:8, padding:'10px 24px', cursor: guardandoH ? 'default' : 'pointer', fontSize:13, fontWeight:'bold' }}>
+                {guardandoH ? 'Guardando...' : '✅ Guardar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══ Modal editar nota registro ══ */}
+      {editandoRegistro && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.55)', zIndex:1000, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
+          <div style={{ background:'white', borderRadius:16, padding:24, width:'100%', maxWidth:420, boxShadow:'0 8px 32px rgba(0,0,0,0.25)' }}>
+            <div style={{ fontWeight:'bold', fontSize:16, color:'#1a1a2e', marginBottom:4 }}>
+              ✏️ Editar — {editandoRegistro.producto_nombre}
+            </div>
+            <div style={{ fontSize:12, color:'#888', marginBottom:16 }}>
+              {editandoRegistro.fecha} · {editandoRegistro.num_paradas} paradas · {parseFloat(editandoRegistro.kg_producidos).toFixed(1)} kg
+            </div>
+
+            <label style={{ fontSize:12, fontWeight:600, color:'#555', display:'block', marginBottom:4 }}>
+              Nota / observación
+            </label>
+            <textarea
+              value={notaEdit}
+              onChange={e => setNotaEdit(e.target.value)}
+              rows={3}
+              placeholder="Agrega una nota o corrección..."
+              style={{ width:'100%', padding:'10px 12px', borderRadius:8, border:'1.5px solid #ddd', fontSize:13, outline:'none', resize:'vertical', boxSizing:'border-box', marginBottom:12 }}
+            />
+
+            <div style={{ display:'flex', gap:10, justifyContent:'flex-end' }}>
+              <button onClick={() => setEditandoRegistro(null)} style={{ background:'#f0f2f5', border:'none', borderRadius:8, padding:'10px 20px', cursor:'pointer', fontSize:13 }}>
+                Cancelar
+              </button>
+              <button
+                onClick={guardarNota}
+                disabled={guardandoReg}
+                style={{ background: guardandoReg ? '#aaa' : 'linear-gradient(135deg,#2980b9,#1a5276)', color:'white', border:'none', borderRadius:8, padding:'10px 24px', cursor: guardandoReg ? 'default' : 'pointer', fontSize:13, fontWeight:'bold' }}>
+                {guardandoReg ? 'Guardando...' : '✅ Guardar nota'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══ Modal editar cierre despacho ══ */}
       {editandoCierre && (() => {
         const cortesD  = cortesPorFecha[editandoCierre.fecha] || [];
         const mermaDia = cortesD.reduce((s, r) => s + Math.max(0, (r.peso_antes||0)-(r.peso_funda||0)-(r.peso_remanente||0)), 0);

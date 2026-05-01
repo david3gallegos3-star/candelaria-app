@@ -139,6 +139,7 @@ function Produccion({ onVolver, onVolverMenu, userRol, currentUser }) {
             produccionDiaria={p.produccionDiaria}
             esAdmin={p.esAdmin}
             setModalRevertir={p.setModalRevertir}
+            recargarHistorial={p.cargarTodo}
           />
         )}
 

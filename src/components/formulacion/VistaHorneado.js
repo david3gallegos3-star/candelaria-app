@@ -610,23 +610,7 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
               const precVentaL  = cfg.margen < 100 ? cFinalL / (1 - cfg.margen / 100) : 0;
               const gananciaL   = precVentaL - cFinalL;
 
-              // Estimar kg de carne: restaurar créditos de sp para volver al costo bruto,
-              // y usar costoSalNeto (salmuera escalada a carne neta) como costo por kg bruto
-              const costoCarSalBruto = costoCarSal + totalSpRealValor;
-              const costoSalNetoPorKgBruto = costoSalKg * (1 - spInyeccionKg);
-              const costoPorKgCarne = precioCarne + costoSalNetoPorKgBruto;
-              const kgCarneEst  = costoPorKgCarne > 0 ? costoCarSalBruto / costoPorKgCarne : 0;
-              const kgCarneNetaEst = kgCarneEst * (1 - spInyeccionKg);
-              const kgSalEst    = kgCarneNetaEst * (pctSalmuera / 100);
-              const kgInjEst    = kgCarneNetaEst + kgSalEst;
-              const merMadKg    = Math.max(0, kgInjEst - kgEntL);
-              const merMadPct   = kgInjEst > 0 ? (merMadKg / kgInjEst * 100) : 0;
-
-              // Escalar ingredientes del rub al kg_rub real del lote
-              const totalRubFormKg = rubFilas.reduce((s, f) => s + parseFloat(f.gramos || 0) / 1000, 0);
-              const rubScale    = totalRubFormKg > 0 ? parseFloat(lote.kg_rub || 0) / totalRubFormKg : 0;
-
-              // Sub-productos reales para este lote (incluye perdida para mostrar merma real)
+              // Sub-productos reales para este lote — debe ir ANTES de la estimación
               const spRealesL = spRealesLote[lote.id] || {};
               const spPorFaseTipo = [];
               Object.entries(cfg.subproductos || {}).forEach(([fase, faseData]) => {
@@ -643,8 +627,23 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
               const haySpConf = spPorFaseTipo.length > 0;
               const totalSpRealKg    = spPorFaseTipo.reduce((s, x) => s + parseFloat(spRealesL[x.key] || 0), 0);
               const totalSpRealValor = spPorFaseTipo.reduce((s, x) => s + parseFloat(spRealesL[x.key] || 0) * x.precio, 0);
-              // c_final_kg y kg_post_horno ya incluyen todos los créditos/kg de sp → solo info
               const haySpReal = haySpConf && totalSpRealValor > 0;
+
+              // Estimar kg de carne: restaurar créditos de sp para volver al costo bruto,
+              // y usar costoSalNeto (salmuera escalada a carne neta) como costo por kg bruto
+              const costoCarSalBruto = costoCarSal + totalSpRealValor;
+              const costoSalNetoPorKgBruto = costoSalKg * (1 - spInyeccionKg);
+              const costoPorKgCarne = precioCarne + costoSalNetoPorKgBruto;
+              const kgCarneEst  = costoPorKgCarne > 0 ? costoCarSalBruto / costoPorKgCarne : 0;
+              const kgCarneNetaEst = kgCarneEst * (1 - spInyeccionKg);
+              const kgSalEst    = kgCarneNetaEst * (pctSalmuera / 100);
+              const kgInjEst    = kgCarneNetaEst + kgSalEst;
+              const merMadKg    = Math.max(0, kgInjEst - kgEntL);
+              const merMadPct   = kgInjEst > 0 ? (merMadKg / kgInjEst * 100) : 0;
+
+              // Escalar ingredientes del rub al kg_rub real del lote
+              const totalRubFormKg = rubFilas.reduce((s, f) => s + parseFloat(f.gramos || 0) / 1000, 0);
+              const rubScale    = totalRubFormKg > 0 ? parseFloat(lote.kg_rub || 0) / totalRubFormKg : 0;
 
               const renderSpDisplay = (fase) => {
                 const items = spPorFaseTipo.filter(x => x.fase === fase);
