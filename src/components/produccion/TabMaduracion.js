@@ -360,11 +360,31 @@ export default function TabMaduracion({ mobile, currentUser }) {
         setImprevisto({ activo: false, kgDaniado: '', motivo: '' });
         setSpWizardKgs({});
         setHorneadoPaso(1);
+        // Calcular crédito de sub-productos de inyección para el C_FINAL correcto
+        const spInyReal  = modalPesaje.sp_inyeccion_real || {};
+        const inyRawCfg  = cfgHorn.subproductos?.inyeccion || {};
+        const inyIsNew   = 'perdida' in inyRawCfg || 'nueva_mp' in inyRawCfg || 'mp_existente' in inyRawCfg;
+        const inyData    = inyIsNew ? inyRawCfg : {};
+        let creditoIny   = 0;
+        for (const tipo of ['nueva_mp', 'mp_existente']) {
+          const sp = inyData[tipo];
+          if (!sp?.activo) continue;
+          const kgReal = parseFloat(spInyReal[`inyeccion_${tipo}`] || 0);
+          if (kgReal <= 0) continue;
+          let precio = tipo === 'nueva_mp' ? parseFloat(sp.precio_kg || 0) : 0;
+          if (tipo === 'mp_existente' && sp.mp_id) {
+            const { data: mpIny } = await supabase.from('materias_primas').select('precio_kg').eq('id', sp.mp_id).maybeSingle();
+            precio = parseFloat(mpIny?.precio_kg || 0);
+          }
+          creditoIny += kgReal * precio;
+        }
+
         horneadoWizardData = {
           loteId: loteIdGuardado, kgMad: kgMad0, kgCarne: kgCarne0,
           costoTotal: costoTot0, cMadKg: kgMad0 > 0 ? costoTot0 / kgMad0 : 0,
           cfg: cfgHorn,
           spInyeccionReal: modalPesaje.sp_inyeccion_real || {},
+          creditoIny,
         };
       }
 
@@ -686,7 +706,7 @@ export default function TabMaduracion({ mobile, currentUser }) {
       }
     }
 
-    const costoFinalTotal = modalHorneado.costoTotal + costoMostaza + costoRub - creditoWizard;
+    const costoFinalTotal = modalHorneado.costoTotal + costoMostaza + costoRub - creditoWizard - (modalHorneado.creditoIny || 0);
     const cFinalKg        = kgFinalAjust > 0 ? costoFinalTotal / kgFinalAjust : 0;
 
     // Merma real
