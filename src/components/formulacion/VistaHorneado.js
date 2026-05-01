@@ -421,7 +421,7 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
                 { fase: 'inyeccion',  icon: '💉', titulo: 'Sub-producto Inyección', kgRef: kgSalInj },
                 { fase: 'maduracion', icon: '🧊', titulo: 'Merma Maduración',       kgRef: mermaGrMad   / 1000 },
                 { fase: 'horneado',   icon: '🔥', titulo: 'Merma Horneado',         kgRef: mermaGrHorno / 1000 },
-                { fase: 'mostaza',    icon: '🟡', titulo: 'Sub-producto Mostaza',   kgRef: parseFloat(cfg.gramos_mostaza || 0) / 1000 },
+                { fase: 'mostaza',    icon: '🟡', titulo: 'Sub-producto Mostaza',   kgRef: (parseFloat(cfg.gramos_mostaza || 0) / 1000) * kgCarneNeta },
                 { fase: 'rub',        icon: '🌶️', titulo: 'Sub-producto Rub',       kgRef: 0 },
               ].map(({ fase, icon, titulo, kgRef }) => (
                 <SubprodFasePanel key={fase}
@@ -639,16 +639,8 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
               const haySpConf = spPorFaseTipo.length > 0;
               const totalSpRealKg    = spPorFaseTipo.reduce((s, x) => s + parseFloat(spRealesL[x.key] || 0), 0);
               const totalSpRealValor = spPorFaseTipo.reduce((s, x) => s + parseFloat(spRealesL[x.key] || 0) * x.precio, 0);
-              // Solo sub-productos de horneado reducen el kg medido post-horno
-              // Inyección y maduración ya salieron antes del pesaje (no doble descuento)
-              const kgSpPostHorno    = spPorFaseTipo
-                .filter(x => x.fase === 'horneado')
-                .reduce((s, x) => s + parseFloat(spRealesL[x.key] || 0), 0);
-              const kgFinLAjust      = kgSpPostHorno > 0 ? Math.max(0, kgFinalL - kgSpPostHorno) : kgFinalL;
-              const costoNetoL       = costoTotL - totalSpRealValor;
-              const cFinalLAjust     = costoNetoL > 0 && kgFinLAjust > 0 ? costoNetoL / kgFinLAjust : cFinalL;
-              const precVentaLAjust  = cfg.margen < 100 ? cFinalLAjust / (1 - cfg.margen / 100) : 0;
-              const haySpReal        = haySpConf && totalSpRealValor > 0;
+              // c_final_kg y kg_post_horno ya incluyen todos los créditos/kg de sp → solo info
+              const haySpReal = haySpConf && totalSpRealValor > 0;
 
               const renderSpDisplay = (fase) => {
                 const items = spPorFaseTipo.filter(x => x.fase === fase);
@@ -780,46 +772,43 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
                       <span style={{ fontSize: 22, fontWeight: 900, color: '#7ec8f7' }}>${costoTotL.toFixed(4)}</span>
                     </div>
 
-                    {/* Sub-productos reales: ajuste de costo */}
+                    {/* Sub-productos reales (informativo — ya incluidos en c_final_kg) */}
                     {haySpReal && (
                       <div style={{ background: 'rgba(39,174,96,0.08)', borderRadius: 8, padding: '8px 12px', marginBottom: 8, border: '1px solid #a9dfbf44' }}>
+                        <div style={{ fontSize: 10, color: '#a9dfbf', marginBottom: 6, fontWeight: 700 }}>SUB-PRODUCTOS (ya incluidos en c_final/kg)</div>
                         {spPorFaseTipo.map(x => {
-                          const kgR      = parseFloat(spRealesL[x.key] || 0);
-                          const valR     = kgR * x.precio;
-                          const esPerd   = x.tipo === 'perdida';
+                          const kgR    = parseFloat(spRealesL[x.key] || 0);
+                          const valR   = kgR * x.precio;
+                          const esPerd = x.tipo === 'perdida';
                           if (kgR <= 0) return null;
                           return (
                             <div key={x.key} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 3 }}>
                               {esPerd
-                                ? <span style={{ color: '#e74c3c' }}>❌ Merma real: {x.nombre || x.fase} ({kgR.toFixed(3)} kg)</span>
-                                : <span style={{ color: '#2ecc71' }}>− {x.nombre || x.fase} ({kgR.toFixed(3)} kg × ${x.precio.toFixed(4)}/kg)</span>}
+                                ? <span style={{ color: '#e74c3c' }}>❌ Merma: {x.nombre || x.fase} ({kgR.toFixed(3)} kg)</span>
+                                : <span style={{ color: '#2ecc71' }}>📦 {x.nombre || x.fase} ({kgR.toFixed(3)} kg × ${x.precio.toFixed(4)}/kg)</span>}
                               {esPerd
                                 ? <span style={{ color: '#e74c3c', fontWeight: 700 }}>−{kgR.toFixed(3)} kg</span>
                                 : <span style={{ color: '#2ecc71', fontWeight: 700 }}>−${valR.toFixed(4)}</span>}
                             </div>
                           );
                         })}
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, borderTop: '1px solid #2ecc7144', paddingTop: 6, marginTop: 4 }}>
-                          <span style={{ color: '#a9dfbf' }}>= Costo neto ÷ {kgFinLAjust.toFixed(3)} kg ajustados</span>
-                          <span style={{ color: '#a9dfbf', fontWeight: 700 }}>${costoNetoL.toFixed(4)}</span>
-                        </div>
                       </div>
                     )}
 
                     <div style={{ fontSize: 11, color: '#555', marginBottom: 10, textAlign: 'right' }}>
-                      ÷ {haySpReal ? kgFinLAjust.toFixed(3) : kgFinalL.toFixed(3)} kg {haySpReal ? 'ajustados' : 'finales'}
+                      ÷ {kgFinalL.toFixed(3)} kg finales
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(39,174,96,0.15)', borderRadius: 8, padding: '10px 12px', marginBottom: 8 }}>
                       <span style={{ color: '#a9dfbf', fontWeight: 700, fontSize: 13 }}>C_FINAL / KG</span>
-                      <span style={{ fontSize: 22, fontWeight: 900, color: '#2ecc71' }}>${(haySpReal ? cFinalLAjust : cFinalL).toFixed(4)}</span>
+                      <span style={{ fontSize: 22, fontWeight: 900, color: '#2ecc71' }}>${cFinalL.toFixed(4)}</span>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(243,156,18,0.12)', borderRadius: 8, padding: '10px 12px', marginBottom: 6 }}>
                       <span style={{ color: '#f9ca74', fontWeight: 700, fontSize: 13 }}>PRECIO VENTA ({cfg.margen}%)</span>
-                      <span style={{ fontSize: 20, fontWeight: 900, color: '#f39c12' }}>${(haySpReal ? precVentaLAjust : precVentaL).toFixed(4)}</span>
+                      <span style={{ fontSize: 20, fontWeight: 900, color: '#f39c12' }}>${precVentaL.toFixed(4)}</span>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#888' }}>
                       <span>Ganancia por kg</span>
-                      <span style={{ color: '#f39c12' }}>+${((haySpReal ? precVentaLAjust : precVentaL) - (haySpReal ? cFinalLAjust : cFinalL)).toFixed(4)}</span>
+                      <span style={{ color: '#f39c12' }}>+${(precVentaL - cFinalL).toFixed(4)}</span>
                     </div>
                   </div>
                 </div>
