@@ -342,15 +342,6 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
                       </div>
                     )}
                   </div>
-                  {mpOut && (
-                    <div style={{ textAlign: 'right', minWidth: 110 }}>
-                      <div style={{ fontSize: 10, color: '#888', marginBottom: 2 }}>Precio actual en inventario</div>
-                      <div style={{ fontWeight: 900, fontSize: 22, color }}>
-                        ${parseFloat(mpOut.precio_kg || 0).toFixed(4)}
-                      </div>
-                      <div style={{ fontSize: 10, color: '#888' }}>por kg</div>
-                    </div>
-                  )}
                 </div>
               );
             })()}
