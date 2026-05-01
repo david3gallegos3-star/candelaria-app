@@ -69,11 +69,11 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
   const [pctSalmuera,   setPctSalmuera]   = useState(15);
   const [spRealesLote,  setSpRealesLote]  = useState({});
   const [rubFormulas,   setRubFormulas]   = useState([]);
-  // ── Estado del simulador (Pruebas) — subido al padre para guardar versiones ──
-  const [pruebaGramos, setPruebaGramos]  = useState('200');
-  const [pruebaEmpSel, setPruebaEmpSel]  = useState('');
-  const [pruebaEtiSel, setPruebaEtiSel]  = useState('');
-  const [modalVerPruebas, setModalVerPruebas] = useState(false);
+  // ── Estado del simulador (Pruebas) ──
+  const [pruebaGramos,    setPruebaGramos]    = useState('200');
+  const [pruebaEmpSel,    setPruebaEmpSel]    = useState('');
+  const [pruebaEtiSel,    setPruebaEtiSel]    = useState('');
+  const [verPruebasAbierto, setVerPruebasAbierto] = useState(false);
   const [guardandoPrueba, setGuardandoPrueba] = useState(false);
 
   // ── Carga inicial ──────────────────────────────────────────
@@ -205,6 +205,29 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
   const versionesFormula = versiones.filter(v => v.tipo !== 'prueba');
   const versionesPruebas = versiones.filter(v => v.tipo === 'prueba');
 
+  // Guardar versión de pruebas desde el header (usa estado del padre)
+  async function guardarVersionPruebaDesdeHeader() {
+    const mpsEmp   = mps.filter(m => { const c = (m.categoria||'').toUpperCase(); return c.includes('EMPAQUE')||c.includes('FUNDA')||c.includes('ENVASE')||c.includes('RETAZOS'); });
+    const mpsEti   = mps.filter(m => (m.categoria||'').toUpperCase().includes('ETIQUETA'));
+    const mpEmp    = mpsEmp.find(m => String(m.id) === pruebaEmpSel);
+    const mpEti    = mpsEti.find(m => String(m.id) === pruebaEtiSel);
+    const kgPorc   = parseFloat(pruebaGramos || 0) / 1000;
+    const costoPorc = cFinal * kgPorc;
+    const costoEmp  = parseFloat(mpEmp?.precio_kg || 0);
+    const costoEti  = parseFloat(mpEti?.precio_kg || 0);
+    const costoTot  = costoPorc + costoEmp + costoEti;
+    const precFunda = cfg.margen < 100 ? costoTot / (1 - cfg.margen / 100) : 0;
+    await guardarVersionPrueba({
+      gramos: parseFloat(pruebaGramos),
+      empSel: pruebaEmpSel, etiSel: pruebaEtiSel,
+      empNombre: mpEmp?.nombre_producto || mpEmp?.nombre || '',
+      etiNombre: mpEti?.nombre_producto || mpEti?.nombre || '',
+      cFinal, costoPorcion: costoPorc, costoEmp, costoEti,
+      costoTotal: costoTot, precioFunda: precFunda,
+      ganancia: precFunda - costoTot,
+    });
+  }
+
   const upd = (field, val) => setCfg(prev => ({ ...prev, [field]: val }));
 
   async function guardarSpLote(loteId, spData) {
@@ -302,10 +325,28 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
 
           {/* Derecha: botones */}
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            <button onClick={() => setModalVer(true)} style={btnStyle('#8e44ad')}>
-              🔄 Versiones {versionesFormula.length > 0 && `(${versionesFormula.length})`}
-            </button>
-            {!modoEdicion ? (
+            {/* Versiones fórmula — solo en tabs que no son Pruebas */}
+            {tab !== 'pruebas' && (
+              <button onClick={() => setModalVer(true)} style={btnStyle('#8e44ad')}>
+                🔄 Versiones {versionesFormula.length > 0 && `(${versionesFormula.length})`}
+              </button>
+            )}
+
+            {/* Tab Pruebas: botones del simulador en el header */}
+            {tab === 'pruebas' && (
+              <>
+                <button onClick={() => setVerPruebasAbierto(v => !v)} style={btnStyle('#8e44ad')}>
+                  🔄 Versiones {versionesPruebas.length > 0 && `(${versionesPruebas.length})`}
+                </button>
+                <button onClick={guardarVersionPruebaDesdeHeader} disabled={guardandoPrueba}
+                  style={btnStyle(guardandoPrueba ? '#aaa' : '#e67e22')}>
+                  {guardandoPrueba ? 'Guardando...' : '💾 Guardar versión'}
+                </button>
+              </>
+            )}
+
+            {/* Botones edición — solo fuera de Pruebas */}
+            {tab !== 'pruebas' && (!modoEdicion ? (
               <button onClick={() => setModoEdicion(true)} style={btnStyle('#f39c12')}>
                 ✏️ Editar
               </button>
@@ -318,7 +359,7 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
                   {autoGuardando ? 'Guardando...' : '📋 Guardar Historial'}
                 </button>
               </>
-            )}
+            ))}
           </div>
         </div>
       </div>
@@ -653,14 +694,11 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
         {/* ═══ TAB PRUEBAS ═══ */}
         {tab === 'pruebas' && (
           <Pruebas cfg={cfg} mps={mps} cFinal={cFinal}
-            costoSalKg={costoSalKg} costoMostKg={costoMostKg} costoRubKg={costoRubKg}
-            precioCarne={precioCarne}
             gramos={pruebaGramos} setGramos={setPruebaGramos}
             empSel={pruebaEmpSel} setEmpSel={setPruebaEmpSel}
             etiSel={pruebaEtiSel} setEtiSel={setPruebaEtiSel}
             versionesPruebas={versionesPruebas}
-            onGuardarVersion={guardarVersionPrueba}
-            guardandoPrueba={guardandoPrueba}
+            verAbierto={verPruebasAbierto} setVerAbierto={setVerPruebasAbierto}
             onCargarVersion={snap => {
               if (snap.gramos) setPruebaGramos(String(snap.gramos));
               if (snap.empSel !== undefined) setPruebaEmpSel(snap.empSel);
@@ -1454,10 +1492,9 @@ function FilaProd({ label, valor, color = '#555', bold }) {
 function Pruebas({
   cfg, mps, cFinal,
   gramos, setGramos, empSel, setEmpSel, etiSel, setEtiSel,
-  versionesPruebas, onGuardarVersion, guardandoPrueba, onCargarVersion,
+  versionesPruebas, verAbierto, setVerAbierto, onCargarVersion,
 }) {
-  const [verAbierto, setVerAbierto] = useState(false);
-  const [expandida,  setExpandida]  = useState(null);
+  const [expandida, setExpandida] = useState(null);
 
   const kgPorcion    = parseFloat(gramos || 0) / 1000;
   const costoPorcion = cFinal * kgPorcion;
@@ -1476,16 +1513,6 @@ function Pruebas({
   const precioFunda = cfg.margen < 100 ? costoTotal / (1 - cfg.margen / 100) : 0;
   const ganancia    = precioFunda - costoTotal;
 
-  function handleGuardar() {
-    onGuardarVersion({
-      gramos: parseFloat(gramos),
-      empSel, etiSel,
-      empNombre: mpEmp?.nombre_producto || mpEmp?.nombre || '',
-      etiNombre: mpEti?.nombre_producto || mpEti?.nombre || '',
-      cFinal, costoPorcion, costoEmp, costoEti, costoTotal, precioFunda, ganancia,
-    });
-  }
-
   const sel = (val, set, opts, placeholder, color) => (
     <select value={val} onChange={e => set(e.target.value)}
       style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: `1.5px solid ${color}`, fontSize: 13, background: 'white', boxSizing: 'border-box' }}>
@@ -1496,16 +1523,10 @@ function Pruebas({
 
   return (
     <div>
-      {/* Barra superior — C_final + botón versiones */}
+      {/* Referencia C_final */}
       <div style={{ background: '#eafaf1', borderRadius: 10, padding: '10px 14px', marginBottom: 14, border: '1px solid #a9dfbf', fontSize: 12, color: '#555', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <span>Costo Real por kg de producto (de Costos 1kg)</span>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <span style={{ fontWeight: 700, color: '#27ae60', fontSize: 14 }}>${cFinal.toFixed(4)}/kg</span>
-          <button onClick={() => setVerAbierto(v => !v)}
-            style={{ background: verAbierto ? '#8e44ad' : '#f3e5f5', color: verAbierto ? 'white' : '#6c3483', border: '1px solid #8e44ad', borderRadius: 7, padding: '5px 12px', cursor: 'pointer', fontSize: 11, fontWeight: 700 }}>
-            🔄 Versiones {versionesPruebas.length > 0 && `(${versionesPruebas.length})`}
-          </button>
-        </div>
+        <span style={{ fontWeight: 700, color: '#27ae60', fontSize: 14 }}>${cFinal.toFixed(4)}/kg</span>
       </div>
 
       {/* Panel de versiones guardadas */}
@@ -1630,11 +1651,6 @@ function Pruebas({
               <span style={{ fontSize: 13, color: '#a9dfbf', fontWeight: 700 }}>GANANCIA POR FUNDA</span>
               <span style={{ fontSize: 18, fontWeight: 'bold', color: '#27ae60' }}>${ganancia.toFixed(4)}</span>
             </div>
-            {/* Botón guardar versión */}
-            <button onClick={handleGuardar} disabled={guardandoPrueba}
-              style={{ width: '100%', padding: '12px', background: guardandoPrueba ? '#555' : 'linear-gradient(135deg,#8e44ad,#6c3483)', color: 'white', border: 'none', borderRadius: 9, cursor: guardandoPrueba ? 'default' : 'pointer', fontSize: 13, fontWeight: 700 }}>
-              {guardandoPrueba ? 'Guardando...' : '💾 Guardar esta versión del simulador'}
-            </button>
           </div>
         </div>
       )}
