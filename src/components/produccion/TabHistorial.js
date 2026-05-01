@@ -206,10 +206,13 @@ export default function TabHistorial({
         c_final_kg:       nuevoCFinalKg,
       }).eq('id', lote.id);
 
-      // ── Actualizar precio_kg Pastrame Horneado ──
-      await supabase.from('materias_primas')
-        .update({ precio_kg: nuevoCFinalKg })
-        .ilike('nombre', '%Pastrame Horneado%');
+      // ── Actualizar precio_kg del producto en materias_primas ──
+      const nomProd = lote.producto_nombre || '';
+      if (nomProd) {
+        await supabase.from('materias_primas')
+          .update({ precio_kg: nuevoCFinalKg })
+          .ilike('nombre', `%${nomProd}%`);
+      }
 
       // ── Refrescar lista local ──
       const { data } = await supabase.from('produccion_horneado_lotes')

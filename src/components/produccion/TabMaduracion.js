@@ -307,13 +307,17 @@ export default function TabMaduracion({ mobile, currentUser }) {
       setModalPesaje(null);
       await cargar();
 
-      // Detectar config del producto horneado
-      const formulaSal   = (modalPesaje.produccion_inyeccion?.formula_salmuera || '').toLowerCase();
-      const esPastrame   = formulaSal.includes('pastrame');
-      const cfgHorn      = (horneadoCfgs.find(hc =>
-        (hc.config?.formula_salmuera || '').toLowerCase().includes('pastrame') ||
-        (hc.producto_nombre || '').toLowerCase().includes('pastrame')
-      )?.config) || {};
+      // Detectar config del producto horneado — genérico para cualquier AHUMADOS-HORNEADOS
+      const formulaSal     = (modalPesaje.produccion_inyeccion?.formula_salmuera || '').toLowerCase();
+      const cfgHornEntry   = horneadoCfgs.find(hc =>
+        formulaSal && formulaSal === (hc.config?.formula_salmuera || '').toLowerCase()
+      ) || horneadoCfgs.find(hc =>
+        formulaSal && (hc.config?.formula_salmuera || '').toLowerCase() &&
+        formulaSal.includes((hc.config?.formula_salmuera || '').toLowerCase())
+      );
+      const esHorneado     = !!cfgHornEntry;
+      const cfgHorn        = cfgHornEntry?.config || {};
+      const productoNombreHorn = cfgHornEntry?.producto_nombre || '';
 
       // Solo sub-productos de MADURACION aquí — los demás van en el wizard de horneado
       const spActivosConf = [];
@@ -329,7 +333,7 @@ export default function TabMaduracion({ mobile, currentUser }) {
 
       // Preparar datos para wizard horneado si aplica
       let horneadoWizardData = null;
-      if (esPastrame) {
+      if (esHorneado) {
         const p0        = picortes[0];
         const kgMad0    = parseFloat(pesajes[p0?.corte_nombre]);
         const kgCarne0  = parseFloat(p0?.kg_carne_cruda || 0);
@@ -385,6 +389,7 @@ export default function TabMaduracion({ mobile, currentUser }) {
           cfg: cfgHorn,
           spInyeccionReal: modalPesaje.sp_inyeccion_real || {},
           creditoIny,
+          productoNombre: productoNombreHorn,
         };
       }
 
@@ -404,11 +409,11 @@ export default function TabMaduracion({ mobile, currentUser }) {
           subproductos: spActivosConf,
           loteId: loteIdGuardado,
           totalKgMad,
-          pendingFlow: esPastrame ? 'horneado' : deshueseEntries.length > 0 ? 'deshuese' : 'exito',
+          pendingFlow: esHorneado ? 'horneado' : deshueseEntries.length > 0 ? 'deshuese' : 'exito',
           horneadoData: horneadoWizardData,
           deshueseData: deshueseEntries.length > 0 ? deshueseEntries : null,
         });
-      } else if (esPastrame && horneadoWizardData) {
+      } else if (esHorneado && horneadoWizardData) {
         setModalHorneado(horneadoWizardData);
       } else if (deshueseEntries.length > 0) {
         const initData = {};
@@ -536,7 +541,7 @@ export default function TabMaduracion({ mobile, currentUser }) {
         materia_prima_id: mpMostaza.id,
         nombre_mp: mpMostaza.nombre,
         tipo: 'salida', kg: kgMos,
-        motivo: `Mostaza Pastrame — Lote ${modalHorneado.loteId} (${kgCarne.toFixed(3)} kg carne)`,
+        motivo: `Mostaza ${modalHorneado.productoNombre || modalHorneado.loteId} — Lote ${modalHorneado.loteId} (${kgCarne.toFixed(3)} kg carne)`,
         fecha: hoy,
       });
       setPaso1Listo(true);
@@ -587,7 +592,7 @@ export default function TabMaduracion({ mobile, currentUser }) {
           materia_prima_id: f.materia_prima_id,
           nombre_mp: f.ingrediente_nombre,
           tipo: 'salida', kg: kgUsar,
-          motivo: `Rub Pastrame — Lote ${modalHorneado.loteId} (${kgCarne.toFixed(3)} kg carne)`,
+          motivo: `Rub ${modalHorneado.productoNombre || modalHorneado.loteId} — Lote ${modalHorneado.loteId} (${kgCarne.toFixed(3)} kg carne)`,
           fecha: hoy,
         });
       }
@@ -620,7 +625,7 @@ export default function TabMaduracion({ mobile, currentUser }) {
           materia_prima_id: f.materia_prima_id,
           nombre_mp: f.ingrediente_nombre,
           tipo: 'salida', kg: kgUsar,
-          motivo: `Rub Pastrame — Lote ${modalHorneado.loteId} (${kgCarne.toFixed(3)} kg carne)`,
+          motivo: `Rub ${modalHorneado.productoNombre || modalHorneado.loteId} — Lote ${modalHorneado.loteId} (${kgCarne.toFixed(3)} kg carne)`,
           fecha: hoy,
         });
       }
@@ -717,7 +722,7 @@ export default function TabMaduracion({ mobile, currentUser }) {
     setErrorHorneado('');
     try {
       const hoy      = new Date().toISOString().split('T')[0];
-      const mpNombre = 'Pastrame Horneado';
+      const mpNombre = modalHorneado.productoNombre || 'Producto Horneado';
 
       // 1. Guardar produccion_horneado_lotes
       await supabase.from('produccion_horneado_lotes').insert({
@@ -740,20 +745,25 @@ export default function TabMaduracion({ mobile, currentUser }) {
       });
       setSpRealesData({});
 
-      // 2. Buscar o crear MP Pastrame Horneado en AHUMADOS-HORNEADOS
+      // 2. Buscar o crear MP del producto en AHUMADOS-HORNEADOS (genérico)
       const { data: mpExist } = await supabase.from('materias_primas')
-        .select('id').ilike('nombre', '%Pastrame Horneado%').maybeSingle();
+        .select('id').ilike('nombre', `%${mpNombre}%`).maybeSingle();
       let mpPastrameId;
       if (mpExist) {
         mpPastrameId = mpExist.id;
         await supabase.from('materias_primas').update({ precio_kg: cFinalKg }).eq('id', mpPastrameId);
       } else {
+        // Generar ID dinámico AHU00N
+        const { data: existIds } = await supabase.from('materias_primas').select('id').ilike('id', 'AHU%');
+        const nums = (existIds || []).map(m => parseInt((m.id || '').replace(/\D/g,'') || '0')).filter(n => !isNaN(n));
+        const nextNum = nums.length > 0 ? Math.max(...nums) + 1 : 1;
+        const newId = 'AHU' + String(nextNum).padStart(3, '0');
         const { data: nueva } = await supabase.from('materias_primas').insert({
-          id: 'AHU001', nombre: mpNombre, nombre_producto: mpNombre,
+          id: newId, nombre: mpNombre, nombre_producto: mpNombre,
           categoria: 'AHUMADOS - HORNEADOS', precio_kg: cFinalKg,
           tipo: 'MATERIAS PRIMAS', estado: 'ACTIVO', eliminado: false,
         }).select('id').single();
-        mpPastrameId = nueva?.id || 'AHU001';
+        mpPastrameId = nueva?.id || newId;
       }
 
       // 3. Sumar a inventario_mp (kg real medido)
@@ -769,7 +779,7 @@ export default function TabMaduracion({ mobile, currentUser }) {
       await supabase.from('inventario_movimientos').insert({
         materia_prima_id: mpPastrameId, nombre_mp: mpNombre,
         tipo: 'entrada', kg: kgHorno,
-        motivo: `Horneado Pastrame — Lote ${modalHorneado.loteId} · $${cFinalKg.toFixed(4)}/kg`,
+        motivo: `Horneado ${mpNombre} — Lote ${modalHorneado.loteId} · $${cFinalKg.toFixed(4)}/kg`,
         usuario_nombre: currentUser?.email || '', user_id: currentUser?.id || null, fecha: hoy,
       });
 
@@ -826,7 +836,7 @@ export default function TabMaduracion({ mobile, currentUser }) {
           usuario_nombre: currentUser?.email || 'Producción',
           user_id:        currentUser?.id || null,
           producto_nombre: mpNombre,
-          mensaje: `⚠️ IMPREVISTO — Lote ${modalHorneado.loteId} · Pastrame Horneado\n` +
+          mensaje: `⚠️ IMPREVISTO — Lote ${modalHorneado.loteId} · ${mpNombre}\n` +
                    (kgDan > 0 ? `Kg dañados: ${kgDan.toFixed(3)} kg\n` : '') +
                    `Motivo: ${imprevisto.motivo.trim()}`,
         });
@@ -834,7 +844,7 @@ export default function TabMaduracion({ mobile, currentUser }) {
 
       setModalHorneado(null);
       setImprevisto({ activo: false, kgDaniado: '', motivo: '' });
-      setExito(`✅ Pastrame Horneado — ${kgHorno.toFixed(3)} kg · C_final $${cFinalKg.toFixed(4)}/kg → Stock AHUMADOS`);
+      setExito(`✅ ${mpNombre} — ${kgHorno.toFixed(3)} kg · C_final $${cFinalKg.toFixed(4)}/kg → Stock AHUMADOS`);
       setTimeout(() => setExito(''), 10000);
     } catch (e) {
       setErrorHorneado('Error: ' + e.message);
@@ -1452,7 +1462,7 @@ export default function TabMaduracion({ mobile, currentUser }) {
             <div style={{ background: 'white', borderRadius: 18, padding: 24, width: '100%', maxWidth: 500, boxShadow: '0 8px 36px rgba(0,0,0,0.35)', maxHeight: '94vh', overflowY: 'auto' }}>
 
               {/* Encabezado */}
-              <div style={{ fontWeight: 'bold', fontSize: 17, color: '#1a1a2e', marginBottom: 2 }}>🔥 Pastrame Horneado</div>
+              <div style={{ fontWeight: 'bold', fontSize: 17, color: '#1a1a2e', marginBottom: 2 }}>🔥 {modalHorneado?.productoNombre || 'Horneado'}</div>
               <div style={{ fontSize: 12, color: '#888', marginBottom: 14 }}>
                 Lote <b>{loteId}</b> · <b>{kgMad.toFixed(3)} kg</b> · <b>{kgCarne.toFixed(3)} kg carne</b> · C_mad <b>${cMadKg.toFixed(4)}/kg</b>
               </div>
@@ -1521,7 +1531,7 @@ export default function TabMaduracion({ mobile, currentUser }) {
                 <div>
                   <div style={{ background: '#f5f0ff', borderRadius: 12, padding: 16, border: '2px solid #8e44ad', marginBottom: 18 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                      <div style={{ fontWeight: 700, color: '#8e44ad', fontSize: 12 }}>FASE 4 — {cfg.formula_rub || 'Rub Pastrame'}</div>
+                      <div style={{ fontWeight: 700, color: '#8e44ad', fontSize: 12 }}>FASE 4 — {cfg.formula_rub || 'Rub'}</div>
                       <button onClick={imprimirRub} style={{
                         background: '#8e44ad', color: 'white', border: 'none', borderRadius: 6,
                         padding: '5px 12px', fontSize: 11, cursor: 'pointer', fontWeight: 700
@@ -1604,7 +1614,7 @@ export default function TabMaduracion({ mobile, currentUser }) {
                       {[
                         ['Carne + Salmuera (C_mad)', `$${costoTotal.toFixed(4)}`, '#7ec8f7'],
                         ['Mostaza', `+$${costoMosAuto.toFixed(4)}`, '#f39c12'],
-                        ['Rub Pastrame', `+$${costoRubAuto.toFixed(4)}`, '#c39bd3'],
+                        [cfg.formula_rub || 'Rub', `+$${costoRubAuto.toFixed(4)}`, '#c39bd3'],
                         ['Merma total', `${mHorno.toFixed(1)}%`, '#e74c3c'],
                       ].map(([l, v, c]) => (
                         <div key={l} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
