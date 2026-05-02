@@ -121,9 +121,9 @@ export default function TabInyeccion({ currentUser, mobile, onSalmueraChange }) 
     : null;
   const precioVentaKgSalmuera = parseFloat(mpSalmuera?.precio_kg || 0);
 
-  const costoSalmueraTotal = precioVentaKgSalmuera > 0
-    ? precioVentaKgSalmuera * kgSalmueraReq
-    : ingredientesExp.reduce((s, i) => s + i.costo, 0);
+  const costoSalmueraTotal = ingredientesExp.length > 0
+    ? ingredientesExp.reduce((s, i) => s + i.costo, 0)
+    : precioVentaKgSalmuera * kgSalmueraReq;
   const costoSalmuera_kg   = kgBase > 0 ? costoSalmueraTotal / kgBase : 0;
 
   const cortesConCosto = filasCort.map(f => {

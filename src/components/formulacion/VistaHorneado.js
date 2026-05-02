@@ -839,12 +839,10 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
                       <div style={{ borderTop: '1px solid #eee', marginTop: 6, paddingTop: 6 }}>
                         <FilaProd label={esInmersion ? '→ Kg entrada maduración' : '→ Kg inyectado'} valor={`${kgInjEst.toFixed(3)} kg`} color="#2980b9" bold />
                       </div>
-                      {!esInmersion && (
-                        <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid #eee' }}>
-                          <FilaProd label={`⏱ Maduración ${cfg.horas_mad}h — merma (${merMadPct.toFixed(1)}%)`} valor={`−${merMadKg.toFixed(3)} kg`} color="#8e44ad" />
-                          <FilaProd label="→ Kg salida maduración" valor={`${kgEntL.toFixed(3)} kg`} color="#8e44ad" bold />
-                        </div>
-                      )}
+                      <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid #eee' }}>
+                        <FilaProd label={`⏱ Maduración ${cfg.horas_mad}h — merma (${merMadPct.toFixed(1)}%)`} valor={`−${merMadKg.toFixed(3)} kg`} color="#8e44ad" />
+                        <FilaProd label="→ Kg salida maduración" valor={`${kgEntL.toFixed(3)} kg`} color="#8e44ad" bold />
+                      </div>
                     </>}
                     {kgCarneEst <= 0 && <FilaProd label="→ Kg entrada horno" valor={`${kgEntL.toFixed(3)} kg`} color="#2980b9" bold />}
                     {!esInmersion && <div style={{ marginTop: 4, fontSize: 10, color: '#bbb' }}>* Carne y salmuera estimadas a partir del costo registrado</div>}
@@ -1067,12 +1065,10 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
                         <div style={{ borderTop: '1px solid #eee', marginTop: 6, paddingTop: 6 }}>
                           <FilaProd label={esInmersion ? '→ Kg entrada maduración' : '→ Kg inyectado'} valor={`${kgInjEstH.toFixed(3)} kg`} color="#2980b9" bold />
                         </div>
-                        {!esInmersion && (
-                          <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid #eee' }}>
-                            <FilaProd label={`⏱ Maduración ${cfg.horas_mad}h — merma (${merMadPctH.toFixed(1)}%)`} valor={`−${merMadKgH.toFixed(3)} kg`} color="#8e44ad" />
-                            <FilaProd label="→ Kg salida maduración" valor={`${kgEntL.toFixed(3)} kg`} color="#8e44ad" bold />
-                          </div>
-                        )}
+                        <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid #eee' }}>
+                          <FilaProd label={`⏱ Maduración ${cfg.horas_mad}h — merma (${merMadPctH.toFixed(1)}%)`} valor={`−${merMadKgH.toFixed(3)} kg`} color="#8e44ad" />
+                          <FilaProd label="→ Kg salida maduración" valor={`${kgEntL.toFixed(3)} kg`} color="#8e44ad" bold />
+                        </div>
                       </>}
                       {kgCarneEstH <= 0 && <FilaProd label="→ Kg entrada horno" valor={`${kgEntL.toFixed(3)} kg`} color="#2980b9" bold />}
                       {!esInmersion && <div style={{ marginTop: 4, fontSize: 10, color: '#bbb' }}>* Carne y salmuera estimadas a partir del costo registrado</div>}
