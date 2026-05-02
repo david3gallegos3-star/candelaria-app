@@ -12,6 +12,13 @@ function diasParaSalida(fechaSalida) {
   return Math.round((sal - hoy) / 86400000);
 }
 
+function esInmersionLote(lote, cfgs) {
+  const formulaSal = (lote.produccion_inyeccion?.formula_salmuera || '').toLowerCase();
+  if (!formulaSal) return false;
+  const cfg = cfgs.find(hc => (hc.config?.formula_salmuera || '').toLowerCase() === formulaSal);
+  return (cfg?.config?._categoria || '').replace(/[ÓÒ]/g, 'O').toUpperCase().includes('INMERSION');
+}
+
 export default function TabMaduracion({ mobile, currentUser }) {
   const [lotes,          setLotes]          = useState([]);
   const [historial,      setHistorial]      = useState([]);
@@ -425,6 +432,211 @@ export default function TabMaduracion({ mobile, currentUser }) {
         setModalDeshuese(deshueseEntries);
       } else {
         setExito(`✅ Lote ${loteIdGuardado} pasó a Stock de Congelación`);
+        setTimeout(() => setExito(''), 6000);
+      }
+    } catch (e) {
+      setError('Error: ' + e.message);
+    }
+    setGuardando(false);
+  }
+
+  // ── Completar lote INMERSIÓN (sin modal de pesaje — peso final = kg_carne_cruda) ──
+  async function completarInmersion(lote) {
+    setGuardando(true);
+    setError('');
+    try {
+      const picortes = lote.produccion_inyeccion?.produccion_inyeccion_cortes || [];
+      const deshueseEntries = [];
+      const hoy = new Date().toISOString().split('T')[0];
+
+      for (const p of picortes) {
+        const kgMad      = parseFloat(p.kg_carne_cruda || 0);  // peso final = carne (salmuera no suma)
+        const kgInj      = kgMad;                               // kg inyectado = kgCarne
+        const costoTotal = parseFloat(p.costo_carne || 0) + parseFloat(p.costo_salmuera_asignado || 0);
+        const costoInyKg = kgInj > 0 ? costoTotal / kgInj : 0;
+        const costoMadKg = kgMad > 0 ? costoTotal / kgMad : 0;
+
+        const { data: mpExist } = await supabase
+          .from('materias_primas').select('id')
+          .eq('nombre', p.corte_nombre).eq('categoria', 'Inyectados').maybeSingle();
+
+        let mpId;
+        if (mpExist) {
+          mpId = mpExist.id;
+        } else {
+          const { data: existIds } = await supabase.from('materias_primas')
+            .select('id').eq('categoria', 'Inyectados');
+          const nums = (existIds || [])
+            .map(m => parseInt((m.id || '').replace(/\D/g, '') || '0'))
+            .filter(n => !isNaN(n));
+          const nextNum = nums.length > 0 ? Math.max(...nums) + 1 : 1;
+          const newId = 'INY' + String(nextNum).padStart(3, '0');
+          const { data: nuevaMp, error: errMp } = await supabase.from('materias_primas').insert({
+            id: newId, nombre: p.corte_nombre, nombre_producto: p.corte_nombre,
+            categoria: 'Inyectados', precio_kg: 0,
+            tipo: 'MATERIAS PRIMAS', estado: 'ACTIVO', eliminado: false,
+          }).select('id').single();
+          if (errMp) throw new Error('Error creando MP: ' + errMp.message);
+          mpId = nuevaMp?.id;
+        }
+
+        if (mpId) {
+          const { data: inv } = await supabase.from('inventario_mp')
+            .select('id, stock_kg').eq('materia_prima_id', mpId).maybeSingle();
+          if (inv) {
+            await supabase.from('inventario_mp')
+              .update({ stock_kg: (inv.stock_kg || 0) + kgMad }).eq('id', inv.id);
+          } else {
+            await supabase.from('inventario_mp').insert({
+              materia_prima_id: mpId, stock_kg: kgMad, nombre: p.corte_nombre,
+            });
+          }
+          await supabase.from('inventario_movimientos').insert({
+            materia_prima_id: mpId, nombre_mp: p.corte_nombre,
+            tipo: 'entrada', kg: kgMad,
+            motivo: `Inmersión completada — Lote ${lote.lote_id}`,
+            usuario_nombre: currentUser?.email || '', user_id: currentUser?.id || null, fecha: hoy,
+          });
+
+          const { data: stockEntry } = await supabase.from('stock_lotes_inyectados').insert({
+            lote_id:            lote.lote_id,
+            lote_maduracion_id: lote.id,
+            corte_nombre:       p.corte_nombre,
+            materia_prima_id:   mpId,
+            kg_inicial:         kgMad,
+            kg_disponible:      kgMad,
+            fecha_entrada:      hoy,
+            kg_inyectado:       kgInj,
+            costo_total:        costoTotal,
+            costo_iny_kg:       costoInyKg,
+            costo_mad_kg:       costoMadKg,
+          }).select('id').single();
+
+          if (deshueseMap[p.corte_nombre] && stockEntry) {
+            deshueseEntries.push({
+              corteNombre: p.corte_nombre,
+              nombreHijo:  deshueseMap[p.corte_nombre],
+              stockId:     stockEntry.id,
+              kgMad, cMadKg: costoMadKg, costoTotal,
+              loteId: lote.lote_id,
+            });
+          }
+        }
+      }
+
+      await supabase.from('lotes_maduracion').update({ estado: 'completado' }).eq('id', lote.id);
+
+      const loteIdGuardado = lote.lote_id;
+      await cargar();
+
+      const formulaSal   = (lote.produccion_inyeccion?.formula_salmuera || '').toLowerCase();
+      const cfgHornEntry = horneadoCfgs.find(hc =>
+        formulaSal && formulaSal === (hc.config?.formula_salmuera || '').toLowerCase()
+      ) || horneadoCfgs.find(hc =>
+        formulaSal && (hc.config?.formula_salmuera || '').toLowerCase() &&
+        formulaSal.includes((hc.config?.formula_salmuera || '').toLowerCase())
+      );
+      const esHorneado         = !!cfgHornEntry;
+      const cfgHorn            = cfgHornEntry?.config || {};
+      const productoNombreHorn = cfgHornEntry?.producto_nombre || '';
+
+      const spActivosConf = [];
+      const madRaw = (cfgHorn.subproductos || {}).maduracion;
+      if (madRaw) {
+        const isNew = 'perdida' in madRaw || 'nueva_mp' in madRaw || 'mp_existente' in madRaw;
+        const tiposData = isNew ? madRaw : { [madRaw.tipo || 'perdida']: { ...madRaw } };
+        ['perdida', 'nueva_mp', 'mp_existente'].forEach(tipo => {
+          const sp = tiposData[tipo];
+          if (sp?.activo) spActivosConf.push({ fase: 'maduracion', tipo, sp });
+        });
+      }
+
+      let horneadoWizardData = null;
+      if (esHorneado) {
+        const p0        = picortes[0];
+        const kgMad0    = parseFloat(p0?.kg_carne_cruda || 0);
+        const costoTot0 = parseFloat(p0?.costo_carne || 0) + parseFloat(p0?.costo_salmuera_asignado || 0);
+
+        if (cfgHorn.mp_mostaza_id) {
+          const { data: mpMos } = await supabase.from('materias_primas')
+            .select('id,nombre,precio_kg').eq('id', cfgHorn.mp_mostaza_id).maybeSingle();
+          setMpMostaza(mpMos || null);
+        }
+        let rubF = [];
+        if (cfgHorn.formula_rub) {
+          const { data: rubRows } = await supabase.from('formulaciones')
+            .select('ingrediente_nombre,gramos,materia_prima_id').eq('producto_nombre', cfgHorn.formula_rub);
+          const ids = (rubRows || []).map(r => r.materia_prima_id).filter(Boolean);
+          const { data: rubMps } = ids.length
+            ? await supabase.from('materias_primas').select('id,nombre,nombre_producto,precio_kg').in('id', ids)
+            : { data: [] };
+          rubF = (rubRows || []).map(r => {
+            const mp = (rubMps || []).find(m => m.id === r.materia_prima_id);
+            return { ...r, mp, precioKg: parseFloat(mp?.precio_kg || 0) };
+          });
+        }
+        setRubFilas(rubF);
+        setHrnHornoKg(''); setErrorHorneado('');
+        setPaso1Listo(false); setPaso2Listo(false);
+        setImprevisto({ activo: false, kgDaniado: '', motivo: '' });
+        setSpWizardKgs({});
+        setHorneadoPaso(1);
+
+        const spInyReal = lote.sp_inyeccion_real || {};
+        const inyRawCfg = cfgHorn.subproductos?.inyeccion || {};
+        const inyIsNew  = 'perdida' in inyRawCfg || 'nueva_mp' in inyRawCfg || 'mp_existente' in inyRawCfg;
+        const inyData   = inyIsNew ? inyRawCfg : {};
+        let creditoIny  = 0;
+        for (const tipo of ['nueva_mp', 'mp_existente']) {
+          const sp = inyData[tipo];
+          if (!sp?.activo) continue;
+          const kgReal = parseFloat(spInyReal[`inyeccion_${tipo}`] || 0);
+          if (kgReal <= 0) continue;
+          let precio = tipo === 'nueva_mp' ? parseFloat(sp.precio_kg || 0) : 0;
+          if (tipo === 'mp_existente' && sp.mp_id) {
+            const { data: mpIny } = await supabase.from('materias_primas').select('precio_kg').eq('id', sp.mp_id).maybeSingle();
+            precio = parseFloat(mpIny?.precio_kg || 0);
+          }
+          creditoIny += kgReal * precio;
+        }
+
+        horneadoWizardData = {
+          loteId: loteIdGuardado, kgMad: kgMad0, kgCarne: kgMad0,
+          costoTotal: costoTot0, cMadKg: kgMad0 > 0 ? costoTot0 / kgMad0 : 0,
+          cfg: cfgHorn, spInyeccionReal: lote.sp_inyeccion_real || {},
+          creditoIny, productoNombre: productoNombreHorn,
+        };
+      }
+
+      if (spActivosConf.length > 0) {
+        const mpIds = spActivosConf.filter(x => x.tipo === 'mp_existente' && x.sp.mp_id).map(x => x.sp.mp_id);
+        let mpMap = {};
+        if (mpIds.length > 0) {
+          const { data: mpData } = await supabase.from('materias_primas')
+            .select('id,nombre,nombre_producto,precio_kg').in('id', mpIds);
+          (mpData || []).forEach(m => { mpMap[m.id] = m; });
+        }
+        setSpPostMps(mpMap);
+        const totalKgMad = picortes.reduce((s, p) => s + parseFloat(p.kg_carne_cruda || 0), 0);
+        setSpPostKgs({});
+        setModalSpPost({
+          subproductos: spActivosConf, loteId: loteIdGuardado, totalKgMad,
+          pendingFlow: esHorneado ? 'horneado' : deshueseEntries.length > 0 ? 'deshuese' : 'exito',
+          horneadoData: horneadoWizardData,
+          deshueseData: deshueseEntries.length > 0 ? deshueseEntries : null,
+        });
+      } else if (esHorneado && horneadoWizardData) {
+        setModalHorneado(horneadoWizardData);
+      } else if (deshueseEntries.length > 0) {
+        const initData = {};
+        deshueseEntries.forEach(e => {
+          initData[e.corteNombre] = { kgEntrada: '', kgResS: '', kgPuntas: '', kgDesecho: '' };
+        });
+        setDshData(initData);
+        setErrorDeshuese('');
+        setModalDeshuese(deshueseEntries);
+      } else {
+        setExito(`✅ Lote ${loteIdGuardado} (inmersión) pasó a Stock`);
         setTimeout(() => setExito(''), 6000);
       }
     } catch (e) {
@@ -1079,9 +1291,10 @@ export default function TabMaduracion({ mobile, currentUser }) {
             const dias      = diasParaSalida(lote.fecha_salida);
             const listo     = dias <= 0;
             const picortes  = lote.produccion_inyeccion?.produccion_inyeccion_cortes || [];
+            const esInm     = esInmersionLote(lote, horneadoCfgs);
             const totalCarne = picortes.reduce((s, p) => s + parseFloat(p.kg_carne_cruda || 0), 0);
             const totalSal   = picortes.reduce((s, p) => s + parseFloat(p.kg_salmuera_asignada || 0), 0);
-            const totalInj   = totalCarne + totalSal;
+            const totalInj   = esInm ? totalCarne : totalCarne + totalSal;
             const expandido  = !!expandidos[lote.id];
 
             return (
@@ -1143,7 +1356,7 @@ export default function TabMaduracion({ mobile, currentUser }) {
                         {picortes.map((p, idx) => {
                           const kgCarne = parseFloat(p.kg_carne_cruda       || 0);
                           const kgSal   = parseFloat(p.kg_salmuera_asignada || 0);
-                          const kgInj   = kgCarne + kgSal;
+                          const kgInj   = esInm ? kgCarne : kgCarne + kgSal;
                           const pctSal  = kgCarne > 0 ? ((kgSal / kgCarne) * 100).toFixed(1) : '0.0';
                           return (
                             <div key={idx} style={{
@@ -1194,12 +1407,21 @@ export default function TabMaduracion({ mobile, currentUser }) {
                       }}>🧪 Prueba</button>
                     )}
                     {listo && (
-                      <button onClick={() => abrirPesaje(lote)} style={{
-                        background: 'linear-gradient(135deg,#e74c3c,#c0392b)',
-                        color: 'white', border: 'none', borderRadius: 8,
-                        padding: '8px 14px', cursor: 'pointer',
-                        fontSize: 12, fontWeight: 'bold', whiteSpace: 'nowrap'
-                      }}>⚖️ Registrar pesaje</button>
+                      esInm ? (
+                        <button onClick={() => completarInmersion(lote)} disabled={guardando} style={{
+                          background: 'linear-gradient(135deg,#27ae60,#1e8449)',
+                          color: 'white', border: 'none', borderRadius: 8,
+                          padding: '8px 14px', cursor: guardando ? 'not-allowed' : 'pointer',
+                          fontSize: 12, fontWeight: 'bold', whiteSpace: 'nowrap'
+                        }}>🫙 Completar inmersión</button>
+                      ) : (
+                        <button onClick={() => abrirPesaje(lote)} style={{
+                          background: 'linear-gradient(135deg,#e74c3c,#c0392b)',
+                          color: 'white', border: 'none', borderRadius: 8,
+                          padding: '8px 14px', cursor: 'pointer',
+                          fontSize: 12, fontWeight: 'bold', whiteSpace: 'nowrap'
+                        }}>⚖️ Registrar pesaje</button>
+                      )
                     )}
                   </div>
                 </div>
