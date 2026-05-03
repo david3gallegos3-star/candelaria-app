@@ -713,6 +713,134 @@ export default function TabMaduracion({ mobile, currentUser }) {
     setGuardando(false);
   }
 
+  // ── Separación Padre/Hijo para lotes CORTES ──
+  async function confirmarSeparacionCortes() {
+    if (!modalCortesWizard) return;
+    const { loteId, lotesMadId, kgMad, costoTotal, corteNombrePadre, corteNombreHijo, mpPadreId, formulaSalmuera } = modalCortesWizard;
+
+    const kgPadre = parseFloat(cortesKgPadre) || 0;
+    if (kgPadre <= 0 || kgPadre >= kgMad) {
+      setErrorCortes('El peso Padre debe ser mayor que 0 y menor que el total madurado');
+      return;
+    }
+    const kgHijoTotal = parseFloat((kgMad - kgPadre).toFixed(3));
+
+    let creditoHijo = 0, kgSpTotal = 0;
+    for (const sp of cortesSpItems) {
+      const kg = parseFloat(sp.kg) || 0;
+      kgSpTotal += kg;
+      if (sp.tipo !== 'perdida') creditoHijo += kg * (parseFloat(sp.precio) || 0);
+    }
+    const kgFinalHijo = Math.max(0, parseFloat((kgHijoTotal - kgSpTotal).toFixed(3)));
+
+    const fracHijo        = kgMad > 0 ? kgHijoTotal / kgMad : 0;
+    const costoBaseHijo   = costoTotal * fracHijo;
+    const costoFinalHijo  = Math.max(0, costoBaseHijo - creditoHijo);
+    const costoFinalPadre = costoTotal - costoBaseHijo;
+    const cFinalPadre     = kgPadre     > 0 ? costoFinalPadre / kgPadre     : 0;
+    const cFinalHijo      = kgFinalHijo > 0 ? costoFinalHijo  / kgFinalHijo : 0;
+
+    setGuardandoCortes(true);
+    setErrorCortes('');
+    try {
+      const hoy        = new Date().toISOString().split('T')[0];
+      const loteIdHijo = loteId + '-H';
+
+      // ── PADRE ──
+      const { data: invPadre } = await supabase.from('inventario_mp')
+        .select('id, stock_kg').eq('materia_prima_id', mpPadreId).maybeSingle();
+      if (invPadre) {
+        await supabase.from('inventario_mp').update({ stock_kg: (invPadre.stock_kg || 0) + kgPadre }).eq('id', invPadre.id);
+      } else {
+        await supabase.from('inventario_mp').insert({ materia_prima_id: mpPadreId, stock_kg: kgPadre, nombre: corteNombrePadre });
+      }
+      await supabase.from('inventario_movimientos').insert({
+        materia_prima_id: mpPadreId, nombre_mp: corteNombrePadre,
+        tipo: 'entrada', kg: kgPadre,
+        motivo: `Separación Padre — Lote ${loteId}`,
+        usuario_nombre: currentUser?.email || '', user_id: currentUser?.id || null, fecha: hoy,
+      });
+      await supabase.from('stock_lotes_inyectados').insert({
+        lote_id: loteId, lote_maduracion_id: lotesMadId,
+        corte_nombre: corteNombrePadre, materia_prima_id: mpPadreId,
+        kg_inicial: kgPadre, kg_disponible: kgPadre, fecha_entrada: hoy,
+        kg_inyectado: kgPadre,
+        costo_total: costoFinalPadre, costo_iny_kg: cFinalPadre, costo_mad_kg: cFinalPadre,
+        tipo_corte: 'padre', formula_salmuera: formulaSalmuera,
+      });
+
+      // ── HIJO ──
+      if (corteNombreHijo && kgFinalHijo > 0) {
+        const { data: mpHijoEx } = await supabase.from('materias_primas')
+          .select('id').eq('nombre', corteNombreHijo).eq('categoria', 'Inyectados').maybeSingle();
+        let mpHijoId = mpHijoEx?.id;
+        if (!mpHijoId) {
+          const { data: existIds } = await supabase.from('materias_primas').select('id').eq('categoria', 'Inyectados');
+          const nums  = (existIds || []).map(m => parseInt((m.id || '').replace(/\D/g,'') || '0')).filter(n => !isNaN(n));
+          const nextN = nums.length > 0 ? Math.max(...nums) + 1 : 1;
+          const { data: nuevaMp } = await supabase.from('materias_primas').insert({
+            id: 'INY' + String(nextN).padStart(3,'0'),
+            nombre: corteNombreHijo, nombre_producto: corteNombreHijo,
+            categoria: 'Inyectados', precio_kg: 0,
+            tipo: 'MATERIAS PRIMAS', estado: 'ACTIVO', eliminado: false,
+          }).select('id').single();
+          mpHijoId = nuevaMp?.id;
+        }
+        if (mpHijoId) {
+          const { data: invH } = await supabase.from('inventario_mp')
+            .select('id, stock_kg').eq('materia_prima_id', mpHijoId).maybeSingle();
+          if (invH) {
+            await supabase.from('inventario_mp').update({ stock_kg: (invH.stock_kg || 0) + kgFinalHijo }).eq('id', invH.id);
+          } else {
+            await supabase.from('inventario_mp').insert({ materia_prima_id: mpHijoId, stock_kg: kgFinalHijo, nombre: corteNombreHijo });
+          }
+          await supabase.from('inventario_movimientos').insert({
+            materia_prima_id: mpHijoId, nombre_mp: corteNombreHijo,
+            tipo: 'entrada', kg: kgFinalHijo,
+            motivo: `Separación Hijo — Lote ${loteId}`,
+            usuario_nombre: currentUser?.email || '', user_id: currentUser?.id || null, fecha: hoy,
+          });
+          await supabase.from('stock_lotes_inyectados').insert({
+            lote_id: loteIdHijo, lote_maduracion_id: lotesMadId,
+            corte_nombre: corteNombreHijo, materia_prima_id: mpHijoId,
+            kg_inicial: kgFinalHijo, kg_disponible: kgFinalHijo, fecha_entrada: hoy,
+            kg_inyectado: kgHijoTotal,
+            costo_total: costoFinalHijo, costo_iny_kg: cFinalHijo, costo_mad_kg: cFinalHijo,
+            tipo_corte: 'hijo', parent_lote_id: loteId, formula_salmuera: formulaSalmuera,
+          });
+
+          for (const sp of cortesSpItems) {
+            const kg = parseFloat(sp.kg) || 0;
+            if (kg <= 0 || sp.tipo === 'perdida' || !sp.mp_id) continue;
+            const { data: invSp } = await supabase.from('inventario_mp')
+              .select('id, stock_kg').eq('materia_prima_id', sp.mp_id).maybeSingle();
+            if (invSp) {
+              await supabase.from('inventario_mp').update({ stock_kg: (invSp.stock_kg || 0) + kg }).eq('id', invSp.id);
+            } else {
+              await supabase.from('inventario_mp').insert({ materia_prima_id: sp.mp_id, stock_kg: kg, nombre: sp.nombre });
+            }
+            await supabase.from('inventario_movimientos').insert({
+              materia_prima_id: sp.mp_id, nombre_mp: sp.nombre,
+              tipo: 'entrada', kg,
+              motivo: `Sub-producto Hijo Lote ${loteIdHijo}`,
+              usuario_nombre: currentUser?.email || '', user_id: currentUser?.id || null, fecha: hoy,
+            });
+          }
+        }
+      }
+
+      setModalCortesWizard(null);
+      setCortesKgPadre('');
+      setCortesSpItems([]);
+      setExito(`✅ Separación completa — ${kgPadre.toFixed(3)} kg ${corteNombrePadre} + ${kgFinalHijo.toFixed(3)} kg ${corteNombreHijo}`);
+      setTimeout(() => setExito(''), 8000);
+      await cargar();
+    } catch (e) {
+      setErrorCortes('Error: ' + e.message);
+    }
+    setGuardandoCortes(false);
+  }
+
   // ── Confirmar sub-productos post-pesaje ───────────────────
   async function confirmarSpPost() {
     setGuardSpPost(true);
