@@ -359,6 +359,69 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
   return (
     <div style={{ padding: mobile ? '10px' : '0' }}>
 
+      {/* ── Header: versiones + guardar ── */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+        {/* Izquierda: badge tipo + relación */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          {tipo === 'padre' && <span style={{ background: '#1a3a5c', color: 'white', borderRadius: 20, padding: '4px 12px', fontSize: 11, fontWeight: 'bold' }}>👑 Corte Padre</span>}
+          {tipo === 'hijo'  && <span style={{ background: '#6c3483', color: 'white', borderRadius: 20, padding: '4px 12px', fontSize: 11, fontWeight: 'bold' }}>🔀 Corte Hijo</span>}
+          {tipo === 'independiente' && <span style={{ background: '#e67e22', color: 'white', borderRadius: 20, padding: '4px 12px', fontSize: 11, fontWeight: 'bold' }}>🥩 Corte</span>}
+          {deshueseConfig && tipo === 'padre' && <span style={{ fontSize: 11, color: '#555' }}>→ genera <strong>{deshueseConfig.corte_hijo}</strong></span>}
+          {deshueseConfig && tipo === 'hijo'  && <span style={{ fontSize: 11, color: '#555' }}>← de <strong>{deshueseConfig.corte_padre}</strong></span>}
+        </div>
+        {/* Derecha: versiones + guardar */}
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {versiones.length > 0 && (
+            <button onClick={() => setTabActivo('pruebas')} style={{ background: '#6c3483', color: 'white', border: 'none', borderRadius: 8, padding: '7px 14px', fontSize: 12, fontWeight: 'bold', cursor: 'pointer' }}>
+              📋 Versiones ({versiones.length})
+            </button>
+          )}
+          <button onClick={guardarConfig} disabled={guardando} style={{ background: guardando ? '#aaa' : '#1a3a5c', color: 'white', border: 'none', borderRadius: 8, padding: '7px 16px', fontSize: 12, fontWeight: 'bold', cursor: guardando ? 'default' : 'pointer' }}>
+            {guardando ? '⏳...' : '💾 Guardar'}
+          </button>
+        </div>
+      </div>
+
+      {/* ── Producto: MP entrada → producto salida ── */}
+      <div style={{ background: 'white', borderRadius: 10, padding: '10px 14px', marginBottom: 12, boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
+        <div style={{ fontSize: 10, color: '#888', fontWeight: 600, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 1 }}>
+          {tipo === 'hijo' ? 'MATERIA PRIMA ENTRADA — PRODUCTO QUE SE OBTIENE' : 'MATERIA PRIMA VINCULADA — PRODUCTO QUE PRODUCE ESTA FÓRMULA'}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          {mpVinculada && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div>
+                <div style={{ fontWeight: 'bold', color: '#1a1a2e', fontSize: 14 }}>{mpVinculada.nombre_producto || mpVinculada.nombre}</div>
+                <div style={{ fontSize: 11, color: '#888' }}>Categoría: {mpVinculada.categoria || 'CORTES'} · ${parseFloat(mpVinculada.precio_kg || 0).toFixed(4)}/kg</div>
+              </div>
+            </div>
+          )}
+          {deshueseConfig && (
+            <>
+              <span style={{ fontSize: 18, color: '#bbb' }}>→</span>
+              <div>
+                <div style={{ fontWeight: 'bold', fontSize: 14, color: tipo === 'padre' ? '#1a3a5c' : '#6c3483' }}>
+                  {tipo === 'padre' ? `👑 ${producto.nombre}` : `🔀 ${producto.nombre}`}
+                </div>
+                <div style={{ fontSize: 11, color: '#888' }}>
+                  {tipo === 'padre' ? `genera → ${deshueseConfig.corte_hijo}` : `derivado de ${deshueseConfig.corte_padre}`}
+                </div>
+              </div>
+            </>
+          )}
+          {!deshueseConfig && mpVinculada && (
+            <>
+              <span style={{ fontSize: 18, color: '#bbb' }}>→</span>
+              <div style={{ fontWeight: 'bold', fontSize: 14, color: '#e67e22' }}>🥩 {producto.nombre}</div>
+            </>
+          )}
+          <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
+            <div style={{ fontSize: 10, color: '#888' }}>Precio carne</div>
+            <div style={{ fontWeight: 'bold', color: '#27ae60', fontSize: 16 }}>${parseFloat(mpVinculada?.precio_kg || 0).toFixed(4)}/kg</div>
+          </div>
+        </div>
+      </div>
+
       {/* Tabs */}
       <div style={{ display: 'flex', background: 'white', borderRadius: 10, padding: 4, marginBottom: 14, gap: 4, boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
         {tabs.map(([key, label]) => (
@@ -377,38 +440,6 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
       ══════════════════════════════════════════ */}
       {tabActivo === 'costos' && (
         <div>
-          {/* Badge tipo */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-            {tipo === 'padre' && (
-              <span style={{ background: '#1a3a5c', color: 'white', borderRadius: 20, padding: '4px 12px', fontSize: 11, fontWeight: 'bold' }}>👑 Corte Padre</span>
-            )}
-            {tipo === 'hijo' && (
-              <span style={{ background: '#6c3483', color: 'white', borderRadius: 20, padding: '4px 12px', fontSize: 11, fontWeight: 'bold' }}>🔀 Corte Hijo</span>
-            )}
-            {tipo === 'independiente' && (
-              <span style={{ background: '#e67e22', color: 'white', borderRadius: 20, padding: '4px 12px', fontSize: 11, fontWeight: 'bold' }}>🥩 Corte</span>
-            )}
-            {deshueseConfig && tipo === 'padre' && (
-              <span style={{ fontSize: 11, color: '#888' }}>→ genera <strong>{deshueseConfig.corte_hijo}</strong></span>
-            )}
-            {deshueseConfig && tipo === 'hijo' && (
-              <span style={{ fontSize: 11, color: '#888' }}>← derivado de <strong>{deshueseConfig.corte_padre}</strong></span>
-            )}
-          </div>
-
-          {/* MP Vinculada */}
-          {mpVinculada && (
-            <div style={{ background: 'white', borderRadius: 10, padding: '10px 14px', marginBottom: 12, boxShadow: '0 1px 4px rgba(0,0,0,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div>
-                <div style={{ fontSize: 10, color: '#888', marginBottom: 2 }}>MP Vinculada</div>
-                <div style={{ fontWeight: 'bold', color: '#1a1a2e', fontSize: 13 }}>{mpVinculada.nombre_producto || mpVinculada.nombre}</div>
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: 10, color: '#888' }}>Precio actual</div>
-                <div style={{ fontWeight: 'bold', color: '#27ae60', fontSize: 15 }}>${parseFloat(mpVinculada.precio_kg || 0).toFixed(4)}/kg</div>
-              </div>
-            </div>
-          )}
 
           {/* ── PADRE / INDEPENDIENTE ── */}
           {(tipo === 'padre' || tipo === 'independiente') && (() => {
@@ -566,13 +597,6 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
                   </div>
                 </div>
 
-                <button onClick={guardarConfig} disabled={guardando} style={{
-                  width: '100%', padding: '12px', background: guardando ? '#aaa' : '#6c3483',
-                  color: 'white', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 'bold',
-                  cursor: guardando ? 'default' : 'pointer', marginBottom: 12,
-                }}>
-                  {guardando ? '⏳ Guardando...' : '💾 Guardar configuración'}
-                </button>
               </>
             );
           })()}
@@ -671,13 +695,6 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
                   </div>
                 </div>
 
-                <button onClick={guardarConfig} disabled={guardando} style={{
-                  width: '100%', padding: '12px', background: guardando ? '#aaa' : '#6c3483',
-                  color: 'white', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 'bold',
-                  cursor: guardando ? 'default' : 'pointer', marginBottom: 12,
-                }}>
-                  {guardando ? '⏳ Guardando...' : '💾 Guardar configuración'}
-                </button>
               </>
             );
           })()}
