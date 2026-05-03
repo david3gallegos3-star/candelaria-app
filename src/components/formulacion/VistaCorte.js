@@ -31,8 +31,12 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
   const [autoGuardando, setAutoGuardando] = useState(false);
 
   // Config inputs — padre
-  const [pctInj, setPctInj] = useState('');
-  const [pctMad, setPctMad] = useState('');
+  const [pctInj,     setPctInj]     = useState('');
+  const [pctMad,     setPctMad]     = useState('');
+  const [horasMad,   setHorasMad]   = useState('72');
+  const [minutosMad, setMinutosMad] = useState('0');
+  const [mpCarneId,  setMpCarneId]  = useState('');
+  const [mpsCarneOpts, setMpsCarneOpts] = useState([]);
 
   // Config inputs — hijo
   const [costoMadPadre,  setCostoMadPadre]  = useState('');
@@ -188,12 +192,15 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
         if (c.formula_salmuera) setFormulaSalmueraNombre(c.formula_salmuera);
         if (c.pct_rub)          setPctRub(String(c.pct_rub));
         if (c.costo_rub_kg)     setCostoRubKg(String(c.costo_rub_kg));
+        if (c.horas_mad   !== undefined) setHorasMad(String(c.horas_mad));
+        if (c.minutos_mad !== undefined) setMinutosMad(String(c.minutos_mad));
+        if (c.mp_carne_id) setMpCarneId(c.mp_carne_id);
       }
 
       // Formulaciones SALMUERAS + todas las MPs
       const [{ data: fmls }, { data: allMps }] = await Promise.all([
         supabase.from('formulaciones').select('nombre,categoria').not('nombre','is',null),
-        supabase.from('materias_primas').select('id,nombre,nombre_producto,precio_kg').eq('eliminado', false),
+        supabase.from('materias_primas').select('id,nombre,nombre_producto,precio_kg,categoria').eq('eliminado', false),
       ]);
       const nombresUnicos = [...new Set((fmls||[]).map(f => f.nombre))];
       const salmueras = nombresUnicos.filter(n =>
@@ -201,6 +208,12 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
       );
       setFormulaciones(salmueras);
       setMpsFormula(allMps || []);
+      // MPs de carne: categorías típicas de carne bovina
+      const carneOpts = (allMps||[]).filter(m => {
+        const cat = (m.categoria||'').toUpperCase();
+        return cat.includes('CARNE') || cat.includes('RES') || cat.includes('CORTE') || cat.includes('BOVINO');
+      });
+      setMpsCarneOpts(carneOpts.length > 0 ? carneOpts : (allMps||[]).filter(m => !(m.categoria||'').toUpperCase().includes('EMPAQUE') && !(m.categoria||'').toUpperCase().includes('ETIQUETA') && !(m.categoria||'').toUpperCase().includes('SALMUERA')));
 
       // Cierres sierra
       const { data: cierres } = await supabase
@@ -224,6 +237,9 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
       formula_salmuera: formulaSalmueraNombre       || '',
       pct_rub:         parseFloat(pctRub)          || 0,
       costo_rub_kg:    parseFloat(costoRubKg)      || 0,
+      horas_mad:       parseFloat(horasMad)        || 0,
+      minutos_mad:     parseFloat(minutosMad)      || 0,
+      mp_carne_id:     mpCarneId                   || '',
       tipo,
       _categoria:      'CORTES',
       _updated:        new Date().toISOString(),
@@ -261,6 +277,9 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
       formula_salmuera: formulaSalmueraNombre       || '',
       pct_rub:         parseFloat(pctRub)          || 0,
       costo_rub_kg:    parseFloat(costoRubKg)      || 0,
+      horas_mad:       parseFloat(horasMad)        || 0,
+      minutos_mad:     parseFloat(minutosMad)      || 0,
+      mp_carne_id:     mpCarneId                   || '',
       precio_kg_salmuera: pkgSal,
       pct_res_segunda: parseFloat(pctResSegunda)   || 0,
       pct_puntas:      parseFloat(pctPuntas)        || 0,
@@ -286,6 +305,9 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
     if (v.pct_res_segunda  !== undefined) setPctResSegunda(String(v.pct_res_segunda));
     if (v.pct_puntas       !== undefined) setPctPuntas(String(v.pct_puntas));
     if (v.pct_desecho      !== undefined) setPctDesecho(String(v.pct_desecho));
+    if (v.horas_mad        !== undefined) setHorasMad(String(v.horas_mad));
+    if (v.minutos_mad      !== undefined) setMinutosMad(String(v.minutos_mad));
+    if (v.mp_carne_id)                    setMpCarneId(v.mp_carne_id);
     setModalVer(false);
     setModoEdicion(true);
   }
@@ -391,7 +413,10 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
   const pruebaTotal    = pruebaCarne + pruebaEmp + pruebaEti;
   const versionesPruebas = versiones.filter(v => v.tipo === 'prueba');
 
-  const precioCarne = parseFloat(mpVinculada?.precio_kg || 0);
+  // MP carne seleccionada (prioridad: selector > mpVinculada)
+  const mpCarneSelec = mpCarneId ? mpsCarneOpts.find(m => String(m.id) === mpCarneId) || mpVinculada : mpVinculada;
+
+  const precioCarne = parseFloat(mpCarneSelec?.precio_kg || 0);
 
   // Costos salmuera desde fórmula seleccionada
   const totalGrFormula    = formulaSalmueraIngs.reduce((s,i) => s + i.gramos, 0);
@@ -535,6 +560,26 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
                     <span style={{ color: 'white', fontWeight: 'bold', fontSize: 13 }}>💉 Fase 1 — Inyección de Salmuera</span>
                   </div>
                   <div style={{ padding: '14px 16px' }}>
+                    {/* MP carne selector */}
+                    <div style={{ marginBottom: 12 }}>
+                      <label style={{ fontSize: 11, color: '#e74c3c', fontWeight: 600, display: 'block', marginBottom: 4 }}>🥩 Materia Prima (carne)</label>
+                      <select value={mpCarneId} onChange={e => setMpCarneId(e.target.value)}
+                        disabled={!modoEdicion}
+                        style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1.5px solid #e74c3c', fontSize: 13, background: modoEdicion ? 'white' : '#f8f9fa', boxSizing: 'border-box' }}>
+                        <option value="">— seleccionar carne —</option>
+                        {mpsCarneOpts.map(m => (
+                          <option key={m.id} value={String(m.id)}>
+                            {m.nombre_producto || m.nombre} — ${parseFloat(m.precio_kg||0).toFixed(4)}/kg
+                          </option>
+                        ))}
+                      </select>
+                      {mpCarneSelec && (
+                        <div style={{ fontSize: 10, color: '#27ae60', marginTop: 3 }}>
+                          {mpCarneSelec.nombre_producto || mpCarneSelec.nombre} · <strong>${parseFloat(mpCarneSelec.precio_kg||0).toFixed(4)}/kg</strong>
+                        </div>
+                      )}
+                    </div>
+
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
                       <div>
                         <label style={{ fontSize: 11, color: '#555', fontWeight: 600, display: 'block', marginBottom: 4 }}>% Inyección</label>
@@ -563,7 +608,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
                           </div>
                         ))}
                         <div style={{ borderTop: '1px solid #aed6f1', marginTop: 4, paddingTop: 4, fontWeight: 700, display: 'flex', justifyContent: 'space-between', color: '#1a3a5c' }}>
-                          <span>Costo/kg salmuera</span>
+                          <span>Batch {totalKgFormula.toFixed(3)} kg · costo/kg salmuera</span>
                           <span>${precioKgSalmuera.toFixed(4)}</span>
                         </div>
                       </div>
@@ -608,6 +653,30 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
                     <span style={{ color: 'white', fontWeight: 'bold', fontSize: 13 }}>🧊 Fase 2 — Maduración</span>
                   </div>
                   <div style={{ padding: '14px 16px' }}>
+                    {/* Horas + Minutos */}
+                    <div style={{ marginBottom: 12 }}>
+                      <label style={{ fontSize: 11, color: '#8e44ad', fontWeight: 600, display: 'block', marginBottom: 6 }}>⏱ Tiempo de maduración</label>
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        <div style={{ flex: 1 }}>
+                          <label style={{ fontSize: 10, color: '#8e44ad', display: 'block', marginBottom: 3 }}>Horas</label>
+                          <input type="number" min="0" step="1"
+                            value={horasMad} onChange={e => setHorasMad(e.target.value)}
+                            disabled={!modoEdicion}
+                            style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '2px solid #8e44ad', fontSize: 14, fontWeight: 'bold', boxSizing: 'border-box', background: modoEdicion ? 'white' : '#f8f9fa' }} />
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <label style={{ fontSize: 10, color: '#8e44ad', display: 'block', marginBottom: 3 }}>Minutos</label>
+                          <input type="number" min="0" max="59" step="1"
+                            value={minutosMad} onChange={e => setMinutosMad(e.target.value)}
+                            disabled={!modoEdicion}
+                            style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '2px solid #8e44ad', fontSize: 14, fontWeight: 'bold', boxSizing: 'border-box', background: modoEdicion ? 'white' : '#f8f9fa' }} />
+                        </div>
+                        <div style={{ fontSize: 13, color: '#8e44ad', fontWeight: 700, paddingTop: 18, whiteSpace: 'nowrap' }}>
+                          = {(parseFloat(horasMad||0) + parseFloat(minutosMad||0)/60).toFixed(1)}h
+                        </div>
+                      </div>
+                    </div>
+
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
                       <div>
                         <label style={{ fontSize: 11, color: '#555', fontWeight: 600, display: 'block', marginBottom: 4 }}>% Merma Maduración</label>
