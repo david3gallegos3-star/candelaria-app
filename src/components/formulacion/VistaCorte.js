@@ -42,7 +42,48 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
   const [pruebaEmpSel,  setPruebaEmpSel]  = useState('');
   const [pruebaEtiSel,  setPruebaEtiSel]  = useState('');
 
+  // Formulaciones salmuera
+  const [formulaciones,         setFormulaciones]         = useState([]);
+  const [formulaSalmueraNombre, setFormulaSalmueraNombre] = useState('');
+  const [formulaSalmueraIngs,   setFormulaSalmueraIngs]   = useState([]);
+  const [mpsFormula,            setMpsFormula]            = useState([]);
+  const [pctRub,                setPctRub]                = useState('');
+  const [costoRubKg,            setCostoRubKg]            = useState('');
+
+  // Cierre Sierra
+  const [cierreFecha,          setCierreFecha]          = useState(new Date().toISOString().split('T')[0]);
+  const [cierreKgHueso,        setCierreKgHueso]        = useState('');
+  const [cierreKgAserrin,      setCierreKgAserrin]      = useState('');
+  const [cierrePrecioAserrin,  setCierrePrecioAserrin]  = useState('');
+  const [cierreKgCarnudo,      setCierreKgCarnudo]      = useState('');
+  const [cierrePrecioCarnudo,  setCierrePrecioCarnudo]  = useState('');
+  const [cierreNotas,          setCierreNotas]          = useState('');
+  const [historicoCierres,     setHistoricoCierres]     = useState([]);
+  const [guardandoCierre,      setGuardandoCierre]      = useState(false);
+  const [errorCierre,          setErrorCierre]          = useState('');
+  const [kgCortesDia,          setKgCortesDia]          = useState(0);
+
   useEffect(() => { cargarTodo(); }, [producto.nombre, producto.mp_vinculado_id]);
+
+  useEffect(() => {
+    if (!formulaSalmueraNombre || mpsFormula.length === 0) { setFormulaSalmueraIngs([]); return; }
+    (async () => {
+      const { data: rows } = await supabase
+        .from('formulaciones').select('ingrediente_nombre,gramos,materia_prima_id')
+        .eq('nombre', formulaSalmueraNombre);
+      const ings = (rows || []).map(r => {
+        const mp = mpsFormula.find(m => m.id === r.materia_prima_id)
+          || mpsFormula.find(m => (m.nombre_producto||m.nombre||'').toLowerCase() === (r.ingrediente_nombre||'').toLowerCase());
+        return {
+          nombre: r.ingrediente_nombre,
+          gramos: parseFloat(r.gramos) || 0,
+          precioKg: parseFloat(mp?.precio_kg || 0),
+          costo: (parseFloat(r.gramos) / 1000) * parseFloat(mp?.precio_kg || 0),
+        };
+      });
+      setFormulaSalmueraIngs(ings);
+    })();
+  }, [formulaSalmueraNombre, mpsFormula]);
 
   async function cargarTodo() {
     setCargando(true);
@@ -140,7 +181,27 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
         if (c.pct_desecho)    setPctDesecho(String(c.pct_desecho));
         // costo_mad_padre: solo usar si no encontramos info real del padre
         if (c.costo_mad_padre && !encontroPadreReal) setCostoMadPadre(String(c.costo_mad_padre));
+        if (c.formula_salmuera) setFormulaSalmueraNombre(c.formula_salmuera);
+        if (c.pct_rub)          setPctRub(String(c.pct_rub));
+        if (c.costo_rub_kg)     setCostoRubKg(String(c.costo_rub_kg));
       }
+
+      // Formulaciones SALMUERAS + todas las MPs
+      const [{ data: fmls }, { data: allMps }] = await Promise.all([
+        supabase.from('formulaciones').select('nombre,categoria').not('nombre','is',null),
+        supabase.from('materias_primas').select('id,nombre,nombre_producto,precio_kg').eq('eliminado', false),
+      ]);
+      const nombresUnicos = [...new Set((fmls||[]).map(f => f.nombre))];
+      const salmueras = nombresUnicos.filter(n =>
+        (fmls||[]).some(f => f.nombre === n && (f.categoria||'').toUpperCase().includes('SALMUERA'))
+      );
+      setFormulaciones(salmueras);
+      setMpsFormula(allMps || []);
+
+      // Cierres sierra
+      const { data: cierres } = await supabase
+        .from('cierre_sierra_diario').select('*').order('fecha', { ascending: false }).limit(30);
+      setHistoricoCierres(cierres || []);
     } catch (e) {
       console.error('VistaCorte cargarTodo:', e);
     }
@@ -156,8 +217,12 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
       pct_puntas:      parseFloat(pctPuntas)        || 0,
       pct_desecho:     parseFloat(pctDesecho)       || 0,
       costo_mad_padre: parseFloat(costoMadPadre)   || 0,
+      formula_salmuera: formulaSalmueraNombre       || '',
+      pct_rub:         parseFloat(pctRub)          || 0,
+      costo_rub_kg:    parseFloat(costoRubKg)      || 0,
       tipo,
-      _updated: new Date().toISOString(),
+      _categoria:      'CORTES',
+      _updated:        new Date().toISOString(),
     };
     const { data: existing } = await supabase
       .from('vista_horneado_config').select('id, versiones')
@@ -228,6 +293,38 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
     return lotesConCosto.length > 0 ? parseFloat(lotesConCosto[0].costo_mad_kg) : 0;
   }
 
+  async function guardarCierre() {
+    const hoy = cierreFecha || new Date().toISOString().split('T')[0];
+    const kgH = parseFloat(cierreKgHueso)       || 0;
+    const kgA = parseFloat(cierreKgAserrin)     || 0;
+    const pA  = parseFloat(cierrePrecioAserrin) || 0;
+    const kgC = parseFloat(cierreKgCarnudo)     || 0;
+    const pC  = parseFloat(cierrePrecioCarnudo) || 0;
+    const { data: lotesHoy } = await supabase
+      .from('stock_lotes_inyectados').select('kg_inicial').eq('fecha_entrada', hoy);
+    const kgDia = (lotesHoy||[]).reduce((s,l) => s + parseFloat(l.kg_inicial||0), 0);
+    setKgCortesDia(kgDia);
+    const valorSub = (kgA * pA) + (kgC * pC);
+    const fi = kgDia > 0 ? valorSub / kgDia : 0;
+    setGuardandoCierre(true);
+    setErrorCierre('');
+    try {
+      await supabase.from('cierre_sierra_diario').insert({
+        fecha: hoy, kg_hueso: kgH,
+        kg_aserrin: kgA, precio_aserrin_kg: pA,
+        kg_carnudo: kgC, precio_carnudo_kg: pC,
+        valor_subproductos: valorSub, kg_cortes_producidos: kgDia,
+        factor_impacto_kg: fi, notas: cierreNotas || null, usuario_nombre: '',
+      });
+      const { data: cierres } = await supabase
+        .from('cierre_sierra_diario').select('*').order('fecha', { ascending: false }).limit(30);
+      setHistoricoCierres(cierres || []);
+      setCierreKgHueso(''); setCierreKgAserrin(''); setCierrePrecioAserrin('');
+      setCierreKgCarnudo(''); setCierrePrecioCarnudo(''); setCierreNotas('');
+    } catch (e) { setErrorCierre('Error: ' + e.message); }
+    setGuardandoCierre(false);
+  }
+
   if (cargando) return (
     <div style={{ textAlign: 'center', padding: '40px', color: '#888' }}>⏳ Cargando...</div>
   );
@@ -242,11 +339,13 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
   const pruebaTotal    = pruebaCarne + pruebaEmp + pruebaEti;
   const versionesPruebas = versiones.filter(v => v.tipo === 'prueba');
 
-  const refH = historialInj.find(h => parseFloat(h.kg_carne_cruda) > 0);
-  const costoSalPorKg = refH
-    ? parseFloat(refH.costo_salmuera_asignado || 0) / Math.max(parseFloat(refH.kg_carne_cruda || 1), 0.001)
-    : 0;
   const precioCarne = parseFloat(mpVinculada?.precio_kg || 0);
+
+  // Costos salmuera desde fórmula seleccionada
+  const totalGrFormula    = formulaSalmueraIngs.reduce((s,i) => s + i.gramos, 0);
+  const costoTotalFormula = formulaSalmueraIngs.reduce((s,i) => s + i.costo,  0);
+  const totalKgFormula    = totalGrFormula / 1000;
+  const precioKgSalmuera  = totalKgFormula > 0 ? costoTotalFormula / totalKgFormula : 0;
 
   // ── render ──
   const tabs = [
@@ -254,6 +353,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
     ['pruebas',   '🧪 Pruebas'],
     ['produccion','📦 Producción'],
     ['historial', '📋 Historial'],
+    ['cierre',    '🪚 Cierre Sierra'],
   ];
 
   return (
@@ -314,14 +414,23 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
           {(tipo === 'padre' || tipo === 'independiente') && (() => {
             const pctInjN = parseFloat(pctInj) || 0;
             const pctMadN = parseFloat(pctMad) || 0;
-            const kgSal1  = pctInjN / 100;
-            const kgInj1  = 1 + kgSal1;
-            const kgLost  = kgInj1 * pctMadN / 100;
-            const kgMad1  = kgInj1 - kgLost;
-            const cIny    = kgInj1 > 0 ? (precioCarne + costoSalPorKg) / kgInj1 : 0;
-            const cMadSim = kgMad1 > 0 ? (precioCarne + costoSalPorKg) / kgMad1 : 0;
+            const pctRubN = parseFloat(pctRub) || 0;
+            const rubKgN  = parseFloat(costoRubKg) || 0;
             const lotesConCMad = lotesStock.filter(l => parseFloat(l.costo_mad_kg || 0) > 0);
             const ultimoCMad   = lotesConCMad[0] ? parseFloat(lotesConCMad[0].costo_mad_kg) : 0;
+
+            // CB = CI / PT
+            const kgSal1   = pctInjN / 100;
+            const PT       = 1 + kgSal1;
+            const costoSal = kgSal1 * precioKgSalmuera;
+            const costoRub = (pctRubN / 100) * rubKgN;
+            const CI       = precioCarne + costoSal + costoRub;
+            const CB       = PT > 0 ? CI / PT : 0;
+
+            // Maduración
+            const kgLost  = PT * pctMadN / 100;
+            const kgMad1  = PT - kgLost;
+            const cMadSim = kgMad1 > 0 ? CI / kgMad1 : 0;
 
             return (
               <>
@@ -331,52 +440,64 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
                     <span style={{ color: 'white', fontWeight: 'bold', fontSize: 13 }}>💉 Fase 1 — Inyección de Salmuera</span>
                   </div>
                   <div style={{ padding: '14px 16px' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
                       <div>
-                        <label style={{ fontSize: 11, color: '#555', fontWeight: 600, display: 'block', marginBottom: 4 }}>% Inyección configurado</label>
-                        <input type="number" min="0" max="100" step="0.1"
-                          placeholder={refH ? `Último real: ${parseFloat(refH.produccion_inyeccion?.porcentaje_inyeccion || 0).toFixed(1)}%` : 'ej: 20'}
+                        <label style={{ fontSize: 11, color: '#555', fontWeight: 600, display: 'block', marginBottom: 4 }}>% Inyección</label>
+                        <input type="number" min="0" max="100" step="0.1" placeholder="ej: 20"
                           value={pctInj} onChange={e => setPctInj(e.target.value)}
                           style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '2px solid #2980b9', fontSize: 14, fontWeight: 'bold', boxSizing: 'border-box' }} />
                       </div>
-                      <div style={{ background: '#f0f8ff', borderRadius: 8, padding: '10px 12px', border: '1px solid #aed6f1' }}>
-                        <div style={{ fontSize: 10, color: '#888' }}>Costo salmuera/kg carne</div>
-                        <div style={{ fontSize: 13, fontWeight: 'bold', color: '#2980b9' }}>
-                          {costoSalPorKg > 0 ? `$${costoSalPorKg.toFixed(4)}` : '—'}
+                      <div>
+                        <label style={{ fontSize: 11, color: '#2980b9', fontWeight: 600, display: 'block', marginBottom: 4 }}>Fórmula Salmuera</label>
+                        <select value={formulaSalmueraNombre} onChange={e => setFormulaSalmueraNombre(e.target.value)}
+                          style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1.5px solid #2980b9', fontSize: 13, background: 'white', boxSizing: 'border-box' }}>
+                          <option value="">— seleccionar —</option>
+                          {formulaciones.map(n => <option key={n} value={n}>{n}</option>)}
+                        </select>
+                      </div>
+                    </div>
+
+                    {formulaSalmueraIngs.length > 0 && (
+                      <div style={{ background: '#eaf4fd', borderRadius: 8, padding: '8px 12px', marginBottom: 10, fontSize: 11 }}>
+                        {formulaSalmueraIngs.map((ing, i) => (
+                          <div key={i} style={{ display: 'flex', justifyContent: 'space-between', color: '#2980b9' }}>
+                            <span>{ing.nombre} ({ing.gramos}g)</span>
+                            <span>${ing.costo.toFixed(4)}</span>
+                          </div>
+                        ))}
+                        <div style={{ borderTop: '1px solid #aed6f1', marginTop: 4, paddingTop: 4, fontWeight: 700, display: 'flex', justifyContent: 'space-between', color: '#1a3a5c' }}>
+                          <span>Costo/kg salmuera</span>
+                          <span>${precioKgSalmuera.toFixed(4)}</span>
                         </div>
-                        <div style={{ fontSize: 9, color: '#aaa' }}>del último lote real</div>
+                      </div>
+                    )}
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+                      <div>
+                        <label style={{ fontSize: 11, color: '#8e44ad', fontWeight: 600, display: 'block', marginBottom: 4 }}>% Rub / kg carne</label>
+                        <input type="number" min="0" step="0.1" placeholder="ej: 2.5"
+                          value={pctRub} onChange={e => setPctRub(e.target.value)}
+                          style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '2px solid #8e44ad', fontSize: 14, fontWeight: 'bold', boxSizing: 'border-box' }} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 11, color: '#8e44ad', fontWeight: 600, display: 'block', marginBottom: 4 }}>Precio Rub ($/kg)</label>
+                        <input type="number" min="0" step="0.01" placeholder="ej: 3.50"
+                          value={costoRubKg} onChange={e => setCostoRubKg(e.target.value)}
+                          style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '2px solid #8e44ad', fontSize: 14, fontWeight: 'bold', boxSizing: 'border-box' }} />
                       </div>
                     </div>
 
                     {pctInjN > 0 && precioCarne > 0 && (
                       <div style={{ background: '#f0f8ff', borderRadius: 10, padding: '12px 14px' }}>
                         <div style={{ fontSize: 11, fontWeight: 700, color: '#1a3a5c', marginBottom: 8 }}>Para 1 kg de carne:</div>
-                        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
-                          {[
-                            { label: '1.000 kg', sub: 'Carne cruda', color: '#7f8c8d' },
-                            '→',
-                            { label: `+${kgSal1.toFixed(3)} kg`, sub: 'Salmuera', color: '#2980b9' },
-                            '→',
-                            { label: `${kgInj1.toFixed(3)} kg`, sub: 'Total inj.', color: '#1a3a5c' },
-                          ].map((n, i) => n === '→'
-                            ? <span key={i} style={{ color: '#bbb' }}>→</span>
-                            : <div key={i} style={{ textAlign: 'center', background: 'white', borderRadius: 8, padding: '6px 10px', border: `1.5px solid ${n.color}30` }}>
-                                <div style={{ fontWeight: 700, color: n.color, fontSize: 12 }}>{n.label}</div>
-                                <div style={{ fontSize: 9, color: '#888' }}>{n.sub}</div>
-                              </div>
-                          )}
+                        <div style={{ fontSize: 12, color: '#555', lineHeight: 1.9 }}>
+                          <div>CI = ${precioCarne.toFixed(4)} (carne) + ${costoSal.toFixed(4)} (sal) + ${costoRub.toFixed(4)} (rub) = <strong>${CI.toFixed(4)}</strong></div>
+                          <div>PT = 1 + {kgSal1.toFixed(3)} kg salmuera = <strong>{PT.toFixed(3)} kg</strong></div>
+                          <div style={{ borderTop: '1px solid #dde3ea', paddingTop: 6, marginTop: 4 }}>
+                            CB = CI ÷ PT = <strong style={{ fontSize: 15, color: '#1a3a5c' }}>${CB.toFixed(4)}/kg</strong>
+                            <span style={{ color: '#27ae60', marginLeft: 8, fontSize: 11 }}>↓ el agua baja el costo</span>
+                          </div>
                         </div>
-                        <div style={{ fontSize: 12, color: '#555', borderTop: '1px solid #dde3ea', paddingTop: 8 }}>
-                          C_iny = (${precioCarne.toFixed(4)} + ${costoSalPorKg.toFixed(4)}) ÷ {kgInj1.toFixed(3)} kg =&nbsp;
-                          <strong style={{ color: '#1a3a5c', fontSize: 14 }}>${cIny.toFixed(4)}/kg</strong>
-                          <span style={{ color: '#27ae60', marginLeft: 8, fontSize: 11 }}>→ viaja a Maduración</span>
-                        </div>
-                      </div>
-                    )}
-
-                    {refH && (
-                      <div style={{ marginTop: 8, fontSize: 11, color: '#888', background: '#f8f9fa', borderRadius: 8, padding: '7px 10px' }}>
-                        Último lote real: {refH.produccion_inyeccion?.fecha} · {parseFloat(refH.kg_carne_cruda||0).toFixed(2)} kg · {refH.produccion_inyeccion?.formula_salmuera}
                       </div>
                     )}
                   </div>
@@ -410,7 +531,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
                         <div style={{ fontSize: 11, fontWeight: 700, color: '#1a6b3c', marginBottom: 8 }}>Para 1 kg de carne → post maduración:</div>
                         <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
                           {[
-                            { label: `${kgInj1.toFixed(3)} kg`, sub: 'Inyectado', color: '#2980b9' },
+                            { label: `${PT.toFixed(3)} kg`, sub: 'Inyectado', color: '#2980b9' },
                             '→',
                             { label: `−${kgLost.toFixed(3)} kg`, sub: `Merma ${pctMadN}%`, color: '#e74c3c' },
                             '→',
@@ -424,7 +545,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
                           )}
                         </div>
                         <div style={{ fontSize: 12, color: '#555', borderTop: '1px solid #c8e6c9', paddingTop: 8 }}>
-                          C_mad simulado = ${(precioCarne + costoSalPorKg).toFixed(4)} ÷ {kgMad1.toFixed(3)} kg =&nbsp;
+                          C_mad simulado = ${CI.toFixed(4)} ÷ {kgMad1.toFixed(3)} kg =&nbsp;
                           <strong style={{ color: '#1a6b3c', fontSize: 14 }}>${cMadSim.toFixed(4)}/kg</strong>
                         </div>
                       </div>
@@ -740,6 +861,146 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
           })()}
         </div>
       )}
+
+      {/* ══════════════════════════════════════════
+          TAB CIERRE SIERRA
+      ══════════════════════════════════════════ */}
+      {tabActivo === 'cierre' && (() => {
+        const kgA = parseFloat(cierreKgAserrin)     || 0;
+        const pA  = parseFloat(cierrePrecioAserrin) || 0;
+        const kgC = parseFloat(cierreKgCarnudo)     || 0;
+        const pC  = parseFloat(cierrePrecioCarnudo) || 0;
+        const valorSubSim  = (kgA * pA) + (kgC * pC);
+        const fiSim        = kgCortesDia > 0 ? valorSubSim / kgCortesDia : 0;
+        return (
+          <div>
+            {/* Formulario cierre */}
+            <div style={{ background: 'white', borderRadius: 12, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', marginBottom: 14 }}>
+              <div style={{ background: 'linear-gradient(135deg,#5d4037,#8d6e63)', padding: '10px 16px' }}>
+                <span style={{ color: 'white', fontWeight: 'bold', fontSize: 13 }}>🪚 Cierre Sierra Diario</span>
+              </div>
+              <div style={{ padding: '14px 16px' }}>
+
+                {/* Fecha */}
+                <div style={{ marginBottom: 12 }}>
+                  <label style={{ fontSize: 11, color: '#555', fontWeight: 600, display: 'block', marginBottom: 4 }}>Fecha</label>
+                  <input type="date" value={cierreFecha} onChange={e => setCierreFecha(e.target.value)}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1.5px solid #8d6e63', fontSize: 14, boxSizing: 'border-box' }} />
+                </div>
+
+                {/* Hueso */}
+                <div style={{ marginBottom: 12 }}>
+                  <label style={{ fontSize: 11, color: '#555', fontWeight: 600, display: 'block', marginBottom: 4 }}>Kg Hueso (sin valor comercial)</label>
+                  <input type="number" min="0" step="0.001" placeholder="ej: 12.5"
+                    value={cierreKgHueso} onChange={e => setCierreKgHueso(e.target.value)}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1.5px solid #bdbdbd', fontSize: 14, boxSizing: 'border-box' }} />
+                </div>
+
+                {/* Aserrín */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+                  <div>
+                    <label style={{ fontSize: 11, color: '#555', fontWeight: 600, display: 'block', marginBottom: 4 }}>Kg Aserrín</label>
+                    <input type="number" min="0" step="0.001" placeholder="ej: 5.0"
+                      value={cierreKgAserrin} onChange={e => setCierreKgAserrin(e.target.value)}
+                      style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1.5px solid #e67e22', fontSize: 14, boxSizing: 'border-box' }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, color: '#e67e22', fontWeight: 600, display: 'block', marginBottom: 4 }}>Precio Aserrín ($/kg)</label>
+                    <input type="number" min="0" step="0.01" placeholder="ej: 0.30"
+                      value={cierrePrecioAserrin} onChange={e => setCierrePrecioAserrin(e.target.value)}
+                      style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1.5px solid #e67e22', fontSize: 14, boxSizing: 'border-box' }} />
+                  </div>
+                </div>
+
+                {/* Carnudo */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
+                  <div>
+                    <label style={{ fontSize: 11, color: '#555', fontWeight: 600, display: 'block', marginBottom: 4 }}>Kg Carnudo</label>
+                    <input type="number" min="0" step="0.001" placeholder="ej: 3.0"
+                      value={cierreKgCarnudo} onChange={e => setCierreKgCarnudo(e.target.value)}
+                      style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1.5px solid #27ae60', fontSize: 14, boxSizing: 'border-box' }} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, color: '#27ae60', fontWeight: 600, display: 'block', marginBottom: 4 }}>Precio Carnudo ($/kg)</label>
+                    <input type="number" min="0" step="0.01" placeholder="ej: 3.50"
+                      value={cierrePrecioCarnudo} onChange={e => setCierrePrecioCarnudo(e.target.value)}
+                      style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1.5px solid #27ae60', fontSize: 14, boxSizing: 'border-box' }} />
+                  </div>
+                </div>
+
+                {/* Notas */}
+                <div style={{ marginBottom: 14 }}>
+                  <label style={{ fontSize: 11, color: '#555', fontWeight: 600, display: 'block', marginBottom: 4 }}>Notas (opcional)</label>
+                  <input type="text" placeholder="observaciones del día"
+                    value={cierreNotas} onChange={e => setCierreNotas(e.target.value)}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1.5px solid #ddd', fontSize: 13, boxSizing: 'border-box' }} />
+                </div>
+
+                {/* Resumen pre-guardar */}
+                {(kgA > 0 || kgC > 0) && (
+                  <div style={{ background: '#fdf3e7', borderRadius: 10, padding: '12px 14px', marginBottom: 14 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: '#8d6e63', marginBottom: 8 }}>Resumen del día ({cierreFecha}):</div>
+                    <div style={{ fontSize: 12, color: '#555', lineHeight: 2 }}>
+                      {kgA > 0 && pA > 0 && <div>🪵 Aserrín: {kgA} kg × ${pA} = <strong>${(kgA * pA).toFixed(4)}</strong></div>}
+                      {kgC > 0 && pC > 0 && <div>🥩 Carnudo: {kgC} kg × ${pC} = <strong>${(kgC * pC).toFixed(4)}</strong></div>}
+                      <div style={{ borderTop: '1px solid #e0c9b0', paddingTop: 6, marginTop: 4 }}>
+                        Valor subproductos: <strong>${valorSubSim.toFixed(4)}</strong>
+                      </div>
+                      {kgCortesDia > 0 && (
+                        <div>
+                          Kg cortes del día: <strong>{kgCortesDia.toFixed(3)} kg</strong><br />
+                          <strong style={{ color: '#8d6e63', fontSize: 14 }}>FI = ${fiSim.toFixed(4)}/kg</strong>
+                          <span style={{ fontSize: 10, color: '#aaa', marginLeft: 6 }}>(crédito por kg de corte)</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {errorCierre && <div style={{ color: '#e74c3c', fontSize: 12, marginBottom: 10 }}>{errorCierre}</div>}
+
+                <button onClick={guardarCierre} disabled={guardandoCierre}
+                  style={{ width: '100%', padding: '12px', background: guardandoCierre ? '#aaa' : '#8d6e63', color: 'white', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 'bold', cursor: guardandoCierre ? 'default' : 'pointer' }}>
+                  {guardandoCierre ? '⏳ Guardando...' : '💾 Guardar cierre del día'}
+                </button>
+              </div>
+            </div>
+
+            {/* Historial cierres */}
+            {historicoCierres.length > 0 && (
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#555', marginBottom: 8 }}>📋 Historial de Cierres</div>
+                {historicoCierres.map((c, i) => (
+                  <details key={c.id || i} style={{ background: 'white', borderRadius: 10, marginBottom: 6, overflow: 'hidden', boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
+                    <summary style={{ padding: '10px 14px', cursor: 'pointer', listStyle: 'none', display: 'flex', justifyContent: 'space-between', alignItems: 'center', userSelect: 'none' }}>
+                      <div>
+                        <span style={{ fontWeight: 700, color: '#5d4037', marginRight: 10 }}>{c.fecha}</span>
+                        {c.kg_cortes_producidos > 0 && <span style={{ fontSize: 11, color: '#888' }}>{parseFloat(c.kg_cortes_producidos).toFixed(1)} kg cortes</span>}
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        {c.factor_impacto_kg > 0 && <span style={{ fontWeight: 'bold', color: '#27ae60', fontSize: 13 }}>FI ${parseFloat(c.factor_impacto_kg).toFixed(4)}</span>}
+                        <span style={{ fontWeight: 'bold', color: '#555', fontSize: 12 }}>${parseFloat(c.valor_subproductos || 0).toFixed(4)}</span>
+                        <span style={{ color: '#bbb' }}>▼</span>
+                      </div>
+                    </summary>
+                    <div style={{ padding: '10px 14px', borderTop: '1px solid #f0f0f0', background: '#fafafa', fontSize: 12, color: '#555', lineHeight: 2.2 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: '2px 16px' }}>
+                        {c.kg_hueso > 0 && <div>🦴 Hueso: <strong>{parseFloat(c.kg_hueso).toFixed(3)} kg</strong></div>}
+                        {c.kg_aserrin > 0 && <div>🪵 Aserrín: <strong>{parseFloat(c.kg_aserrin).toFixed(3)} kg</strong> @ ${parseFloat(c.precio_aserrin_kg||0).toFixed(4)}</div>}
+                        {c.kg_carnudo > 0 && <div>🥩 Carnudo: <strong>{parseFloat(c.kg_carnudo).toFixed(3)} kg</strong> @ ${parseFloat(c.precio_carnudo_kg||0).toFixed(4)}</div>}
+                        {c.kg_cortes_producidos > 0 && <div>📦 Kg cortes: <strong>{parseFloat(c.kg_cortes_producidos).toFixed(3)}</strong></div>}
+                        <div>💰 Subproductos: <strong>${parseFloat(c.valor_subproductos||0).toFixed(4)}</strong></div>
+                        {c.factor_impacto_kg > 0 && <div style={{ color: '#27ae60' }}>⚖️ FI: <strong>${parseFloat(c.factor_impacto_kg).toFixed(4)}/kg</strong></div>}
+                      </div>
+                      {c.notas && <div style={{ marginTop: 6, color: '#888', fontStyle: 'italic' }}>"{c.notas}"</div>}
+                    </div>
+                  </details>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* ══════════════════════════════════════════
           TAB HISTORIAL
