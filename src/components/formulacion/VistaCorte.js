@@ -56,6 +56,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
   const [formulaciones,         setFormulaciones]         = useState([]);
   const [formulaSalmueraNombre, setFormulaSalmueraNombre] = useState('');
   const [formulaSalmueraIngs,   setFormulaSalmueraIngs]   = useState([]);
+  const [pctSalmueraFormula,    setPctSalmueraFormula]    = useState(null); // % inyección de la salmuera
   const [mpsFormula,            setMpsFormula]            = useState([]);
   const [pctRub,                setPctRub]                = useState('');
   const [costoRubKg,            setCostoRubKg]            = useState('');
@@ -76,11 +77,18 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
   useEffect(() => { cargarTodo(); }, [producto.nombre, producto.mp_vinculado_id]);
 
   useEffect(() => {
-    if (!formulaSalmueraNombre || mpsFormula.length === 0) { setFormulaSalmueraIngs([]); return; }
+    if (!formulaSalmueraNombre || mpsFormula.length === 0) {
+      setFormulaSalmueraIngs([]);
+      setPctSalmueraFormula(null);
+      return;
+    }
     (async () => {
-      const { data: rows } = await supabase
-        .from('formulaciones').select('ingrediente_nombre,gramos,materia_prima_id')
-        .eq('producto_nombre', formulaSalmueraNombre);
+      const [{ data: rows }, { data: cfgSal }] = await Promise.all([
+        supabase.from('formulaciones').select('ingrediente_nombre,gramos,materia_prima_id')
+          .eq('producto_nombre', formulaSalmueraNombre),
+        supabase.from('config_productos').select('porcentaje_salmuera')
+          .eq('producto_nombre', formulaSalmueraNombre).maybeSingle(),
+      ]);
       const ings = (rows || []).map(r => {
         const mp = mpsFormula.find(m => m.id === r.materia_prima_id)
           || mpsFormula.find(m => (m.nombre_producto||m.nombre||'').toLowerCase() === (r.ingrediente_nombre||'').toLowerCase());
@@ -92,6 +100,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
         };
       });
       setFormulaSalmueraIngs(ings);
+      setPctSalmueraFormula(cfgSal?.porcentaje_salmuera != null ? parseFloat(cfgSal.porcentaje_salmuera) : null);
     })();
   }, [formulaSalmueraNombre, mpsFormula]);
 
@@ -594,11 +603,23 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
 
                     {/* % Inyección */}
                     <div style={{ marginBottom: 14 }}>
-                      <label style={{ fontSize: 11, color: '#555', fontWeight: 600, display: 'block', marginBottom: 4 }}>% Inyección</label>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                        <label style={{ fontSize: 11, color: '#555', fontWeight: 600 }}>% Inyección</label>
+                        {pctSalmueraFormula != null && (
+                          <span style={{ fontSize: 11, color: '#2980b9', fontWeight: 700, background: '#eaf4fd', borderRadius: 6, padding: '2px 8px' }}>
+                            Salmuera: {pctSalmueraFormula}% inyección
+                          </span>
+                        )}
+                      </div>
                       <input type="number" min="0" max="100" step="0.1" placeholder="ej: 20"
                         value={pctInj} onChange={e => setPctInj(e.target.value)}
                         disabled={!modoEdicion}
                         style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '2px solid #2980b9', fontSize: 14, fontWeight: 'bold', boxSizing: 'border-box', background: modoEdicion ? 'white' : '#f8f9fa' }} />
+                      {pctSalmueraFormula != null && parseFloat(pctInj||0) !== pctSalmueraFormula && (
+                        <div style={{ fontSize: 10, color: '#f39c12', marginTop: 3 }}>
+                          ⚠ Diferente al % configurado en la salmuera ({pctSalmueraFormula}%)
+                        </div>
+                      )}
                     </div>
 
                     {/* Salmuera — selector + kg de carne base */}
