@@ -23,8 +23,12 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
   const [precioPuntas,     setPrecioPuntas]     = useState(0);
 
   // Config persistida
-  const [versiones,   setVersiones]   = useState([]);
-  const [guardando,   setGuardando]   = useState(false);
+  const [versiones,     setVersiones]     = useState([]);
+  const [guardando,     setGuardando]     = useState(false);
+  const [modoEdicion,   setModoEdicion]   = useState(false);
+  const [modalVer,      setModalVer]      = useState(false);
+  const [verDetalle,    setVerDetalle]    = useState(null);
+  const [autoGuardando, setAutoGuardando] = useState(false);
 
   // Config inputs — padre
   const [pctInj, setPctInj] = useState('');
@@ -238,6 +242,54 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
     setGuardando(false);
   }
 
+  async function fijarCambios() {
+    await guardarConfig();
+    setModoEdicion(false);
+  }
+
+  async function guardarHistorial() {
+    setAutoGuardando(true);
+    const totalGrF   = formulaSalmueraIngs.reduce((s,i) => s + i.gramos, 0);
+    const totalCostF = formulaSalmueraIngs.reduce((s,i) => s + i.costo,  0);
+    const pkgSal     = totalGrF > 0 ? totalCostF / (totalGrF / 1000) : 0;
+    const snap = {
+      tipo: 'formula',
+      fecha: new Date().toISOString().split('T')[0],
+      tipo_corte: tipo,
+      pct_inj:         parseFloat(pctInj)         || 0,
+      pct_mad:         parseFloat(pctMad)          || 0,
+      formula_salmuera: formulaSalmueraNombre       || '',
+      pct_rub:         parseFloat(pctRub)          || 0,
+      costo_rub_kg:    parseFloat(costoRubKg)      || 0,
+      precio_kg_salmuera: pkgSal,
+      pct_res_segunda: parseFloat(pctResSegunda)   || 0,
+      pct_puntas:      parseFloat(pctPuntas)        || 0,
+      pct_desecho:     parseFloat(pctDesecho)       || 0,
+    };
+    const nuevasVer = [snap, ...versiones].slice(0, 20);
+    const { data: existing } = await supabase
+      .from('vista_horneado_config').select('id')
+      .eq('producto_nombre', producto.nombre).maybeSingle();
+    if (existing) {
+      await supabase.from('vista_horneado_config').update({ versiones: nuevasVer }).eq('id', existing.id);
+    }
+    setVersiones(nuevasVer);
+    setAutoGuardando(false);
+  }
+
+  function restaurarVersion(v) {
+    if (v.pct_inj          !== undefined) setPctInj(String(v.pct_inj));
+    if (v.pct_mad          !== undefined) setPctMad(String(v.pct_mad));
+    if (v.formula_salmuera)               setFormulaSalmueraNombre(v.formula_salmuera);
+    if (v.pct_rub          !== undefined) setPctRub(String(v.pct_rub));
+    if (v.costo_rub_kg     !== undefined) setCostoRubKg(String(v.costo_rub_kg));
+    if (v.pct_res_segunda  !== undefined) setPctResSegunda(String(v.pct_res_segunda));
+    if (v.pct_puntas       !== undefined) setPctPuntas(String(v.pct_puntas));
+    if (v.pct_desecho      !== undefined) setPctDesecho(String(v.pct_desecho));
+    setModalVer(false);
+    setModoEdicion(true);
+  }
+
   async function guardarVersionPrueba() {
     const gramos = parseFloat(pruebaGramos) || 0;
     if (!gramos) return;
@@ -359,65 +411,77 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
   return (
     <div style={{ padding: mobile ? '10px' : '0' }}>
 
-      {/* ── Header: versiones + guardar ── */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-        {/* Izquierda: badge tipo + relación */}
+      {/* ── Header: Versiones / Editar / Fijar / Guardar Historial ── */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
+        {/* Izquierda: badge tipo + estado edición */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           {tipo === 'padre' && <span style={{ background: '#1a3a5c', color: 'white', borderRadius: 20, padding: '4px 12px', fontSize: 11, fontWeight: 'bold' }}>👑 Corte Padre</span>}
           {tipo === 'hijo'  && <span style={{ background: '#6c3483', color: 'white', borderRadius: 20, padding: '4px 12px', fontSize: 11, fontWeight: 'bold' }}>🔀 Corte Hijo</span>}
           {tipo === 'independiente' && <span style={{ background: '#e67e22', color: 'white', borderRadius: 20, padding: '4px 12px', fontSize: 11, fontWeight: 'bold' }}>🥩 Corte</span>}
-          {deshueseConfig && tipo === 'padre' && <span style={{ fontSize: 11, color: '#555' }}>→ genera <strong>{deshueseConfig.corte_hijo}</strong></span>}
-          {deshueseConfig && tipo === 'hijo'  && <span style={{ fontSize: 11, color: '#555' }}>← de <strong>{deshueseConfig.corte_padre}</strong></span>}
+          <span style={{ fontSize: 11, color: modoEdicion ? '#f39c12' : '#888', fontWeight: 600 }}>
+            {modoEdicion ? '✏️ Modo edición' : '🔒 Fijado — presiona Editar'}
+          </span>
         </div>
-        {/* Derecha: versiones + guardar */}
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {versiones.length > 0 && (
-            <button onClick={() => setTabActivo('pruebas')} style={{ background: '#6c3483', color: 'white', border: 'none', borderRadius: 8, padding: '7px 14px', fontSize: 12, fontWeight: 'bold', cursor: 'pointer' }}>
-              📋 Versiones ({versiones.length})
-            </button>
-          )}
-          <button onClick={guardarConfig} disabled={guardando} style={{ background: guardando ? '#aaa' : '#1a3a5c', color: 'white', border: 'none', borderRadius: 8, padding: '7px 16px', fontSize: 12, fontWeight: 'bold', cursor: guardando ? 'default' : 'pointer' }}>
-            {guardando ? '⏳...' : '💾 Guardar'}
+        {/* Derecha: botones acción */}
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {/* Versiones — siempre visible si hay */}
+          <button onClick={() => setModalVer(true)}
+            style={{ background: '#8e44ad', color: 'white', border: 'none', borderRadius: 8, padding: '7px 14px', fontSize: 12, fontWeight: 'bold', cursor: 'pointer' }}>
+            🔄 Versiones {versiones.filter(v => v.tipo === 'formula').length > 0 && `(${versiones.filter(v => v.tipo === 'formula').length})`}
           </button>
+          {/* Editar / Fijar+Historial */}
+          {!modoEdicion ? (
+            <button onClick={() => setModoEdicion(true)}
+              style={{ background: '#f39c12', color: 'white', border: 'none', borderRadius: 8, padding: '7px 14px', fontSize: 12, fontWeight: 'bold', cursor: 'pointer' }}>
+              ✏️ Editar
+            </button>
+          ) : (
+            <>
+              <button onClick={fijarCambios} disabled={guardando}
+                style={{ background: guardando ? '#aaa' : '#27ae60', color: 'white', border: 'none', borderRadius: 8, padding: '7px 14px', fontSize: 12, fontWeight: 'bold', cursor: guardando ? 'default' : 'pointer' }}>
+                {guardando ? 'Fijando...' : '🔒 Fijar cambios'}
+              </button>
+              <button onClick={guardarHistorial} disabled={autoGuardando}
+                style={{ background: autoGuardando ? '#aaa' : '#e67e22', color: 'white', border: 'none', borderRadius: 8, padding: '7px 14px', fontSize: 12, fontWeight: 'bold', cursor: autoGuardando ? 'default' : 'pointer' }}>
+                {autoGuardando ? 'Guardando...' : '📋 Guardar Historial'}
+              </button>
+            </>
+          )}
         </div>
       </div>
 
       {/* ── Producto: MP entrada → producto salida ── */}
-      <div style={{ background: 'white', borderRadius: 10, padding: '10px 14px', marginBottom: 12, boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
-        <div style={{ fontSize: 10, color: '#888', fontWeight: 600, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 1 }}>
-          {tipo === 'hijo' ? 'MATERIA PRIMA ENTRADA — PRODUCTO QUE SE OBTIENE' : 'MATERIA PRIMA VINCULADA — PRODUCTO QUE PRODUCE ESTA FÓRMULA'}
+      <div style={{ background: 'white', borderRadius: 10, padding: '12px 16px', marginBottom: 12, boxShadow: '0 1px 4px rgba(0,0,0,0.06)', border: mpVinculada ? '2px solid #eafaf1' : '2px solid #fef9e7' }}>
+        <div style={{ fontSize: 10, color: '#27ae60', fontWeight: 700, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 1 }}>
+          🔗 {tipo === 'hijo' ? 'MATERIA PRIMA ENTRADA — PRODUCTO QUE SE OBTIENE' : 'MATERIA PRIMA VINCULADA — PRODUCTO QUE PRODUCE ESTA FÓRMULA'}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-          {mpVinculada && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div>
-                <div style={{ fontWeight: 'bold', color: '#1a1a2e', fontSize: 14 }}>{mpVinculada.nombre_producto || mpVinculada.nombre}</div>
-                <div style={{ fontSize: 11, color: '#888' }}>Categoría: {mpVinculada.categoria || 'CORTES'} · ${parseFloat(mpVinculada.precio_kg || 0).toFixed(4)}/kg</div>
-              </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+          {mpVinculada ? (
+            <div>
+              <div style={{ fontWeight: 800, color: '#1a1a2e', fontSize: 15 }}>{mpVinculada.nombre_producto || mpVinculada.nombre}</div>
+              <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>Categoría: {mpVinculada.categoria || 'CORTES'} &nbsp;·&nbsp; ID: {mpVinculada.id}</div>
             </div>
+          ) : (
+            <div style={{ fontSize: 12, color: '#aaa', fontStyle: 'italic' }}>Sin MP vinculada</div>
           )}
-          {deshueseConfig && (
+          {(deshueseConfig || !deshueseConfig) && mpVinculada && (
             <>
-              <span style={{ fontSize: 18, color: '#bbb' }}>→</span>
+              <span style={{ fontSize: 20, color: '#ccc' }}>→</span>
               <div>
-                <div style={{ fontWeight: 'bold', fontSize: 14, color: tipo === 'padre' ? '#1a3a5c' : '#6c3483' }}>
-                  {tipo === 'padre' ? `👑 ${producto.nombre}` : `🔀 ${producto.nombre}`}
+                <div style={{ fontWeight: 700, fontSize: 14, color: tipo === 'padre' ? '#1a3a5c' : tipo === 'hijo' ? '#6c3483' : '#e67e22' }}>
+                  {tipo === 'padre' ? '👑' : tipo === 'hijo' ? '🔀' : '🥩'} {producto.nombre}
                 </div>
-                <div style={{ fontSize: 11, color: '#888' }}>
-                  {tipo === 'padre' ? `genera → ${deshueseConfig.corte_hijo}` : `derivado de ${deshueseConfig.corte_padre}`}
-                </div>
+                {deshueseConfig && (
+                  <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>
+                    {tipo === 'padre' ? `genera → ${deshueseConfig.corte_hijo}` : `derivado de ${deshueseConfig.corte_padre}`}
+                  </div>
+                )}
               </div>
-            </>
-          )}
-          {!deshueseConfig && mpVinculada && (
-            <>
-              <span style={{ fontSize: 18, color: '#bbb' }}>→</span>
-              <div style={{ fontWeight: 'bold', fontSize: 14, color: '#e67e22' }}>🥩 {producto.nombre}</div>
             </>
           )}
           <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
-            <div style={{ fontSize: 10, color: '#888' }}>Precio carne</div>
-            <div style={{ fontWeight: 'bold', color: '#27ae60', fontSize: 16 }}>${parseFloat(mpVinculada?.precio_kg || 0).toFixed(4)}/kg</div>
+            <div style={{ fontSize: 10, color: '#888' }}>Precio actual</div>
+            <div style={{ fontWeight: 'bold', color: '#27ae60', fontSize: 17 }}>${parseFloat(mpVinculada?.precio_kg || 0).toFixed(4)}/kg</div>
           </div>
         </div>
       </div>
@@ -476,12 +540,14 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
                         <label style={{ fontSize: 11, color: '#555', fontWeight: 600, display: 'block', marginBottom: 4 }}>% Inyección</label>
                         <input type="number" min="0" max="100" step="0.1" placeholder="ej: 20"
                           value={pctInj} onChange={e => setPctInj(e.target.value)}
-                          style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '2px solid #2980b9', fontSize: 14, fontWeight: 'bold', boxSizing: 'border-box' }} />
+                          disabled={!modoEdicion}
+                          style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '2px solid #2980b9', fontSize: 14, fontWeight: 'bold', boxSizing: 'border-box', background: modoEdicion ? 'white' : '#f8f9fa' }} />
                       </div>
                       <div>
                         <label style={{ fontSize: 11, color: '#2980b9', fontWeight: 600, display: 'block', marginBottom: 4 }}>Fórmula Salmuera</label>
                         <select value={formulaSalmueraNombre} onChange={e => setFormulaSalmueraNombre(e.target.value)}
-                          style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1.5px solid #2980b9', fontSize: 13, background: 'white', boxSizing: 'border-box' }}>
+                          disabled={!modoEdicion}
+                          style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1.5px solid #2980b9', fontSize: 13, background: modoEdicion ? 'white' : '#f8f9fa', boxSizing: 'border-box' }}>
                           <option value="">— seleccionar —</option>
                           {formulaciones.map(n => <option key={n} value={n}>{n}</option>)}
                         </select>
@@ -508,13 +574,15 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
                         <label style={{ fontSize: 11, color: '#8e44ad', fontWeight: 600, display: 'block', marginBottom: 4 }}>% Rub / kg carne</label>
                         <input type="number" min="0" step="0.1" placeholder="ej: 2.5"
                           value={pctRub} onChange={e => setPctRub(e.target.value)}
-                          style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '2px solid #8e44ad', fontSize: 14, fontWeight: 'bold', boxSizing: 'border-box' }} />
+                          disabled={!modoEdicion}
+                          style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '2px solid #8e44ad', fontSize: 14, fontWeight: 'bold', boxSizing: 'border-box', background: modoEdicion ? 'white' : '#f8f9fa' }} />
                       </div>
                       <div>
                         <label style={{ fontSize: 11, color: '#8e44ad', fontWeight: 600, display: 'block', marginBottom: 4 }}>Precio Rub ($/kg)</label>
                         <input type="number" min="0" step="0.01" placeholder="ej: 3.50"
                           value={costoRubKg} onChange={e => setCostoRubKg(e.target.value)}
-                          style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '2px solid #8e44ad', fontSize: 14, fontWeight: 'bold', boxSizing: 'border-box' }} />
+                          disabled={!modoEdicion}
+                          style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '2px solid #8e44ad', fontSize: 14, fontWeight: 'bold', boxSizing: 'border-box', background: modoEdicion ? 'white' : '#f8f9fa' }} />
                       </div>
                     </div>
 
@@ -546,7 +614,8 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
                         <input type="number" min="0" max="100" step="0.1"
                           placeholder="ej: 3.5"
                           value={pctMad} onChange={e => setPctMad(e.target.value)}
-                          style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '2px solid #27ae60', fontSize: 14, fontWeight: 'bold', boxSizing: 'border-box' }} />
+                          disabled={!modoEdicion}
+                          style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '2px solid #27ae60', fontSize: 14, fontWeight: 'bold', boxSizing: 'border-box', background: modoEdicion ? 'white' : '#f8f9fa' }} />
                       </div>
                       <div style={{ background: '#f0fff4', borderRadius: 8, padding: '10px 12px', border: '1px solid #a9dfbf' }}>
                         <div style={{ fontSize: 10, color: '#888' }}>Último C_mad real/kg</div>
@@ -617,7 +686,8 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
                       <input type="number" min="0" step="0.0001"
                         placeholder="ej: 4.5000"
                         value={costoMadPadre} onChange={e => setCostoMadPadre(e.target.value)}
-                        style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '2px solid #2980b9', fontSize: 14, fontWeight: 'bold', boxSizing: 'border-box' }} />
+                        disabled={!modoEdicion}
+                        style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '2px solid #2980b9', fontSize: 14, fontWeight: 'bold', boxSizing: 'border-box', background: modoEdicion ? 'white' : '#f8f9fa' }} />
                       {padreInfo && (
                         <div style={{ fontSize: 10, color: '#27ae60', marginTop: 2 }}>
                           Último real del padre: ${parseFloat(padreInfo.costo_mad_kg).toFixed(4)}
@@ -629,7 +699,8 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
                       <input type="number" min="0" step="0.001"
                         placeholder="ej: 100"
                         value={kgEntrada} onChange={e => setKgEntrada(e.target.value)}
-                        style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '2px solid #e67e22', fontSize: 14, fontWeight: 'bold', boxSizing: 'border-box' }} />
+                        disabled={!modoEdicion}
+                        style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '2px solid #e67e22', fontSize: 14, fontWeight: 'bold', boxSizing: 'border-box', background: modoEdicion ? 'white' : '#f8f9fa' }} />
                       <div style={{ fontSize: 10, color: '#aaa', marginTop: 2 }}>Base de simulación</div>
                     </div>
                   </div>
@@ -651,7 +722,8 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
                           <label style={{ fontSize: 10, color: '#555', display: 'block', marginBottom: 4, fontWeight: 600 }}>{label}</label>
                           <input type="number" min="0" max="100" step="0.1"
                             placeholder="0" value={val} onChange={e => setter(e.target.value)}
-                            style={{ width: '100%', padding: '8px', borderRadius: 8, border: `2px solid ${color}`, fontSize: 14, fontWeight: 'bold', boxSizing: 'border-box', textAlign: 'right' }} />
+                            disabled={!modoEdicion}
+                            style={{ width: '100%', padding: '8px', borderRadius: 8, border: `2px solid ${color}`, fontSize: 14, fontWeight: 'bold', boxSizing: 'border-box', textAlign: 'right', background: modoEdicion ? 'white' : '#f8f9fa' }} />
                           {precio > 0 && <div style={{ fontSize: 9, color: '#aaa', marginTop: 2 }}>Precio: ${precio.toFixed(4)}/kg</div>}
                         </div>
                       ))}
@@ -1068,6 +1140,69 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
           )}
         </div>
       )}
+
+      {/* ══ Modal Versiones ══ */}
+      {modalVer && (() => {
+        const versionesFormula = versiones.filter(v => v.tipo === 'formula');
+        return (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+            <div style={{ background: 'white', borderRadius: 16, padding: 24, width: '100%', maxWidth: 560, maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 8px 32px rgba(0,0,0,0.25)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                <div style={{ fontWeight: 'bold', fontSize: 16, color: '#1a1a2e' }}>🔄 Versiones guardadas</div>
+                <button onClick={() => { setModalVer(false); setVerDetalle(null); }} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#888' }}>✕</button>
+              </div>
+              {versionesFormula.length === 0 ? (
+                <div style={{ textAlign: 'center', color: '#aaa', padding: 24 }}>Sin versiones — usa "Guardar Historial" en modo edición para guardar una</div>
+              ) : (
+                versionesFormula.map((v, i) => {
+                  const expandido = verDetalle === i;
+                  return (
+                    <div key={i} style={{ background: '#f8f9fa', borderRadius: 12, marginBottom: 10, overflow: 'hidden', border: expandido ? '2px solid #8e44ad' : '1px solid #e0e0e0' }}>
+                      <div style={{ padding: '12px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                          <div style={{ fontWeight: 700, fontSize: 13 }}>Versión {versionesFormula.length - i} — {v.fecha}</div>
+                          <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>
+                            {v.tipo_corte === 'padre' || v.tipo_corte === 'independiente'
+                              ? `Inj ${v.pct_inj}% · Mad ${v.pct_mad}% · Sal: ${v.formula_salmuera || '—'}`
+                              : `Res 2a ${v.pct_res_segunda}% · Puntas ${v.pct_puntas}% · Desecho ${v.pct_desecho}%`
+                            }
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <button onClick={() => setVerDetalle(expandido ? null : i)}
+                            style={{ background: expandido ? '#f0e6ff' : 'white', color: '#8e44ad', border: '1.5px solid #8e44ad', borderRadius: 8, padding: '5px 10px', cursor: 'pointer', fontSize: 11, fontWeight: 700 }}>
+                            {expandido ? '▲ Ocultar' : '▼ Ver'}
+                          </button>
+                          <button onClick={() => restaurarVersion(v)}
+                            style={{ background: '#8e44ad', color: 'white', border: 'none', borderRadius: 8, padding: '6px 12px', cursor: 'pointer', fontSize: 12, fontWeight: 'bold' }}>
+                            Restaurar
+                          </button>
+                        </div>
+                      </div>
+                      {expandido && (
+                        <div style={{ borderTop: '1px solid #e0e0e0', padding: '12px 16px', background: 'white', fontSize: 12, color: '#555' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 16px', lineHeight: 2 }}>
+                            {v.pct_inj   > 0 && <div>💉 Inyección: <strong>{v.pct_inj}%</strong></div>}
+                            {v.pct_mad   > 0 && <div>🧊 Merma mad: <strong>{v.pct_mad}%</strong></div>}
+                            {v.formula_salmuera && <div>🧂 Fórmula sal: <strong>{v.formula_salmuera}</strong></div>}
+                            {v.precio_kg_salmuera > 0 && <div>💧 $/kg sal: <strong>${v.precio_kg_salmuera.toFixed(4)}</strong></div>}
+                            {v.pct_rub   > 0 && <div>🌶️ Rub: <strong>{v.pct_rub}%</strong></div>}
+                            {v.costo_rub_kg > 0 && <div>💰 $/kg rub: <strong>${v.costo_rub_kg}</strong></div>}
+                            {v.pct_res_segunda > 0 && <div>🟢 Res 2a: <strong>{v.pct_res_segunda}%</strong></div>}
+                            {v.pct_puntas > 0 && <div>🟡 Puntas: <strong>{v.pct_puntas}%</strong></div>}
+                            {v.pct_desecho > 0 && <div>🔴 Desecho: <strong>{v.pct_desecho}%</strong></div>}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
     </div>
   );
 }
