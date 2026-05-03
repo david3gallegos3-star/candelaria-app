@@ -206,10 +206,24 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
         supabase.from('materias_primas').select('id,nombre,nombre_producto,precio_kg,categoria').eq('eliminado', false),
         (esPadre || !cfgEntry?.corte_padre)
           ? Promise.resolve({ data: null })
-          : supabase.from('vista_horneado_config').select('config').eq('producto_nombre', cfgEntry.corte_padre).maybeSingle(),
+          : supabase.from('vista_horneado_config').select('config,producto_nombre')
+              .ilike('producto_nombre', `%${(cfgEntry.corte_padre||'').split(' ')[0]}%`)
+              .limit(5),
       ]);
       setFormulaciones((prodsSal||[]).map(p => p.nombre));
-      if (padreCfgRow?.config) setPadreCfg(padreCfgRow.config);
+      // Buscar config del padre: primero match exacto, luego parcial
+      if (!esPadre && cfgEntry?.corte_padre && Array.isArray(padreCfgRow)) {
+        const padreNom = (cfgEntry.corte_padre || '').toLowerCase();
+        const exact = padreCfgRow.find(r => r.producto_nombre.toLowerCase() === padreNom);
+        const partial = padreCfgRow.find(r =>
+          padreNom.includes(r.producto_nombre.toLowerCase()) ||
+          r.producto_nombre.toLowerCase().includes(padreNom)
+        );
+        const found = exact || partial || padreCfgRow[0];
+        if (found?.config) setPadreCfg(found.config);
+      } else if (padreCfgRow?.config) {
+        setPadreCfg(padreCfgRow.config);
+      }
       setMpsFormula(allMps || []);
       // MPs de carne: categorías típicas de carne bovina
       const carneOpts = (allMps||[]).filter(m => {
@@ -754,41 +768,45 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
               : null;
             return (
               <>
-                {/* Info del Padre */}
-                {padreCfg && (
-                  <div style={{ background: '#f0f8ff', borderRadius: 10, padding: '12px 16px', marginBottom: 12, border: '2px solid #aed6f1' }}>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: '#1a3a5c', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>
-                      👑 Config del Padre — {deshueseConfig?.corte_padre}
+                {/* Info del Padre — siempre visible */}
+                <div style={{ background: '#eaf4fd', borderRadius: 10, padding: '12px 16px', marginBottom: 12, border: '2px solid #2980b9' }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: '#1a3a5c', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>
+                    👑 Configuración del Padre — {deshueseConfig?.corte_padre || '—'}
+                  </div>
+                  {!padreCfg ? (
+                    <div style={{ fontSize: 12, color: '#aaa', fontStyle: 'italic' }}>
+                      El padre aún no tiene configuración guardada. Abre "{deshueseConfig?.corte_padre}", rellena los campos y presiona Fijar Cambios.
                     </div>
+                  ) : (
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10 }}>
                       <div>
-                        <div style={{ fontSize: 10, color: '#888', marginBottom: 2 }}>🥩 Carne</div>
-                        <div style={{ fontSize: 12, fontWeight: 700, color: '#1a3a5c' }}>
+                        <div style={{ fontSize: 10, color: '#2980b9', fontWeight: 600, marginBottom: 4 }}>🥩 Carne</div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: '#1a3a5c' }}>
                           {padreMpCarne ? (padreMpCarne.nombre_producto || padreMpCarne.nombre) : '—'}
                         </div>
                         {padreMpCarne && (
-                          <div style={{ fontSize: 10, color: '#27ae60' }}>${parseFloat(padreMpCarne.precio_kg||0).toFixed(4)}/kg</div>
+                          <div style={{ fontSize: 11, color: '#27ae60', marginTop: 2 }}>${parseFloat(padreMpCarne.precio_kg||0).toFixed(4)}/kg</div>
                         )}
                       </div>
                       <div>
-                        <div style={{ fontSize: 10, color: '#888', marginBottom: 2 }}>⏱ Maduración</div>
-                        <div style={{ fontSize: 12, fontWeight: 700, color: '#8e44ad' }}>
+                        <div style={{ fontSize: 10, color: '#8e44ad', fontWeight: 600, marginBottom: 4 }}>⏱ Maduración</div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: '#8e44ad' }}>
                           {padreCfg.horas_mad !== undefined ? `${padreCfg.horas_mad}h ${padreCfg.minutos_mad||0}m` : '—'}
                         </div>
-                        {padreHorasTotal && <div style={{ fontSize: 10, color: '#aaa' }}>{padreHorasTotal} horas total</div>}
+                        {padreHorasTotal && <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>{padreHorasTotal} h total</div>}
                       </div>
                       <div>
-                        <div style={{ fontSize: 10, color: '#888', marginBottom: 2 }}>💉 Salmuera</div>
-                        <div style={{ fontSize: 12, fontWeight: 700, color: '#2980b9' }}>
+                        <div style={{ fontSize: 10, color: '#2980b9', fontWeight: 600, marginBottom: 4 }}>💉 Salmuera</div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: '#2980b9' }}>
                           {padreCfg.formula_salmuera || '—'}
                         </div>
                         {padreCfg.pct_inj > 0 && (
-                          <div style={{ fontSize: 10, color: '#aaa' }}>{padreCfg.pct_inj}% inyección</div>
+                          <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>{padreCfg.pct_inj}% inyección · {padreCfg.pct_mad || 0}% merma</div>
                         )}
                       </div>
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
 
                 {/* Costo de entrada del padre */}
                 <div style={{ background: '#f0f8ff', borderRadius: 10, padding: '12px 16px', marginBottom: 12, border: '1px solid #aed6f1' }}>
