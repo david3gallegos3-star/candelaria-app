@@ -244,9 +244,23 @@ export default function TabMaduracion({ mobile, currentUser }) {
     }
     setGuardando(true);
     setError('');
+
+    const formulaSalActual = (modalPesaje.produccion_inyeccion?.formula_salmuera || '').toLowerCase();
+    const cfgCortesEntry   = horneadoCfgs.find(hc =>
+      formulaSalActual && formulaSalActual === (hc.config?.formula_salmuera || '').toLowerCase()
+    );
+    const esCortesPadre = cfgCortesEntry &&
+      (cfgCortesEntry.config?._categoria || '').replace(/[ÓÒ]/g, 'O').toUpperCase().includes('CORTES') &&
+      cfgCortesEntry.config?.tipo === 'padre';
+
     try {
       const deshueseEntries = [];
       const hoy = new Date().toISOString().split('T')[0];
+
+      let cortesWizardMpPadreId = null;
+      let cortesWizardKgMad     = 0;
+      let cortesWizardCosto     = 0;
+      let cortesWizardNombre    = '';
 
       for (const p of picortes) {
         const kgMad      = parseFloat(pesajes[p.corte_nombre]);
@@ -282,49 +296,53 @@ export default function TabMaduracion({ mobile, currentUser }) {
         }
 
         if (mpId) {
-          const { data: inv } = await supabase.from('inventario_mp')
-            .select('id, stock_kg').eq('materia_prima_id', mpId).maybeSingle();
-          if (inv) {
-            await supabase.from('inventario_mp')
-              .update({ stock_kg: (inv.stock_kg || 0) + kgMad }).eq('id', inv.id);
+          if (!esCortesPadre) {
+            // ── FLUJO NORMAL: actualizar inventario y stock ──
+            const { data: inv } = await supabase.from('inventario_mp')
+              .select('id, stock_kg').eq('materia_prima_id', mpId).maybeSingle();
+            if (inv) {
+              await supabase.from('inventario_mp')
+                .update({ stock_kg: (inv.stock_kg || 0) + kgMad }).eq('id', inv.id);
+            } else {
+              await supabase.from('inventario_mp').insert({
+                materia_prima_id: mpId, stock_kg: kgMad, nombre: p.corte_nombre,
+              });
+            }
+            await supabase.from('inventario_movimientos').insert({
+              materia_prima_id: mpId, nombre_mp: p.corte_nombre,
+              tipo: 'entrada', kg: kgMad,
+              motivo: `Pesaje maduración — Lote ${modalPesaje.lote_id}`,
+              usuario_nombre: currentUser?.email || '', user_id: currentUser?.id || null, fecha: hoy,
+            });
+            const { data: stockEntry } = await supabase.from('stock_lotes_inyectados').insert({
+              lote_id:            modalPesaje.lote_id,
+              lote_maduracion_id: modalPesaje.id,
+              corte_nombre:       p.corte_nombre,
+              materia_prima_id:   mpId,
+              kg_inicial:         kgMad,
+              kg_disponible:      kgMad,
+              fecha_entrada:      hoy,
+              kg_inyectado:       kgInj,
+              costo_total:        costoTotal,
+              costo_iny_kg:       costoInyKg,
+              costo_mad_kg:       costoMadKg,
+            }).select('id').single();
+
+            if (deshueseMap[p.corte_nombre] && stockEntry) {
+              deshueseEntries.push({
+                corteNombre: p.corte_nombre,
+                nombreHijo:  deshueseMap[p.corte_nombre],
+                stockId:     stockEntry.id,
+                kgMad, cMadKg: costoMadKg, costoTotal,
+                loteId: modalPesaje.lote_id,
+              });
+            }
           } else {
-            await supabase.from('inventario_mp').insert({
-              materia_prima_id: mpId, stock_kg: kgMad, nombre: p.corte_nombre,
-            });
-          }
-          await supabase.from('inventario_movimientos').insert({
-            materia_prima_id: mpId, nombre_mp: p.corte_nombre,
-            tipo: 'entrada', kg: kgMad,
-            motivo: `Pesaje maduración — Lote ${modalPesaje.lote_id}`,
-            usuario_nombre: currentUser?.email || '', user_id: currentUser?.id || null, fecha: hoy,
-          });
-
-          // Insertar en stock_lotes_inyectados y capturar ID para NY
-          const { data: stockEntry } = await supabase.from('stock_lotes_inyectados').insert({
-            lote_id:            modalPesaje.lote_id,
-            lote_maduracion_id: modalPesaje.id,
-            corte_nombre:       p.corte_nombre,
-            materia_prima_id:   mpId,
-            kg_inicial:         kgMad,
-            kg_disponible:      kgMad,
-            fecha_entrada:      hoy,
-            kg_inyectado:       kgInj,
-            costo_total:        costoTotal,
-            costo_iny_kg:       costoInyKg,
-            costo_mad_kg:       costoMadKg,
-          }).select('id').single();
-
-          // Si es un corte con deshuese configurado, guardar para modal
-          if (deshueseMap[p.corte_nombre] && stockEntry) {
-            deshueseEntries.push({
-              corteNombre: p.corte_nombre,
-              nombreHijo:  deshueseMap[p.corte_nombre],
-              stockId:     stockEntry.id,
-              kgMad,
-              cMadKg:      costoMadKg,
-              costoTotal,
-              loteId:      modalPesaje.lote_id,
-            });
+            // ── CORTES PADRE: guardar mpId para el wizard ──
+            cortesWizardMpPadreId = mpId;
+            cortesWizardKgMad     = kgMad;
+            cortesWizardCosto     = costoTotal;
+            cortesWizardNombre    = p.corte_nombre;
           }
         }
       }
@@ -336,6 +354,33 @@ export default function TabMaduracion({ mobile, currentUser }) {
       const loteIdGuardado = modalPesaje.lote_id;
       setModalPesaje(null);
       await cargar();
+
+      // ── Si es CORTES Padre, abrir wizard de separación ──
+      if (esCortesPadre && cortesWizardMpPadreId) {
+        const { data: deshCfg } = await supabase
+          .from('deshuese_config').select('corte_hijo')
+          .eq('corte_padre', cortesWizardNombre).eq('activo', true).maybeSingle();
+        const { data: allMps } = await supabase
+          .from('materias_primas').select('id,nombre,nombre_producto,precio_kg,categoria')
+          .eq('eliminado', false);
+        setMpsParaCortes(allMps || []);
+        setModalCortesWizard({
+          loteId:           loteIdGuardado,
+          lotesMadId:       modalPesaje.id,
+          kgMad:            cortesWizardKgMad,
+          costoTotal:       cortesWizardCosto,
+          corteNombrePadre: cortesWizardNombre,
+          corteNombreHijo:  deshCfg?.corte_hijo || '',
+          mpPadreId:        cortesWizardMpPadreId,
+          formulaSalmuera:  formulaSalActual,
+        });
+        setCortesWizardPaso(1);
+        setCortesKgPadre('');
+        setCortesSpItems([]);
+        setErrorCortes('');
+        setGuardando(false);
+        return;
+      }
 
       // Detectar config del producto horneado — genérico para cualquier AHUMADOS-HORNEADOS
       const formulaSal     = (modalPesaje.produccion_inyeccion?.formula_salmuera || '').toLowerCase();
