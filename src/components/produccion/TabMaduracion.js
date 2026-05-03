@@ -19,6 +19,19 @@ function esInmersionLote(lote, cfgs) {
   return (cfg?.config?._categoria || '').replace(/[ÓÒ]/g, 'O').toUpperCase().includes('INMERSION');
 }
 
+function esCortesPadreLote(lote, cfgs) {
+  const formulaSal = (lote.produccion_inyeccion?.formula_salmuera || '').toLowerCase();
+  if (!formulaSal) return false;
+  const cfg = cfgs.find(hc =>
+    formulaSal === (hc.config?.formula_salmuera || '').toLowerCase()
+  ) || cfgs.find(hc =>
+    formulaSal && (hc.config?.formula_salmuera || '') &&
+    formulaSal.includes((hc.config?.formula_salmuera || '').toLowerCase())
+  );
+  const cat = (cfg?.config?._categoria || '').replace(/[ÓÒ]/g, 'O').toUpperCase();
+  return cat.includes('CORTES') && cfg?.config?.tipo === 'padre';
+}
+
 export default function TabMaduracion({ mobile, currentUser }) {
   const [lotes,          setLotes]          = useState([]);
   const [historial,      setHistorial]      = useState([]);
@@ -61,6 +74,16 @@ export default function TabMaduracion({ mobile, currentUser }) {
   const [errorDeshuese,  setErrorDeshuese]  = useState('');
   const [mpDeshuese,     setMpDeshuese]     = useState({ resS: null, puntas: null });
   const [deshueseMap,    setDeshueseMap]    = useState({}); // { corte_padre: corte_hijo }
+
+  // ── Wizard separación CORTES Padre/Hijo ──
+  const [modalCortesWizard, setModalCortesWizard] = useState(null);
+  // { loteId, lotesMadId, kgMad, costoTotal, corteNombrePadre, corteNombreHijo, mpPadreId, formulaSalmuera }
+  const [cortesWizardPaso,  setCortesWizardPaso]  = useState(1);
+  const [cortesKgPadre,     setCortesKgPadre]     = useState('');
+  const [cortesSpItems,     setCortesSpItems]      = useState([]);
+  const [guardandoCortes,   setGuardandoCortes]   = useState(false);
+  const [errorCortes,       setErrorCortes]       = useState('');
+  const [mpsParaCortes,     setMpsParaCortes]     = useState([]);
 
   function setDsh(corte, field, val) {
     setDshData(prev => ({ ...prev, [corte]: { ...prev[corte], [field]: val } }));
