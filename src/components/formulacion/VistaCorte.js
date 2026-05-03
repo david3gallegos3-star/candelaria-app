@@ -100,7 +100,9 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
         };
       });
       setFormulaSalmueraIngs(ings);
-      setPctSalmueraFormula(cfgSal?.porcentaje_salmuera != null ? parseFloat(cfgSal.porcentaje_salmuera) : null);
+      const pctSal = cfgSal?.porcentaje_salmuera != null ? parseFloat(cfgSal.porcentaje_salmuera) : null;
+      setPctSalmueraFormula(pctSal);
+      if (pctSal != null) setPctInj(String(pctSal));
     })();
   }, [formulaSalmueraNombre, mpsFormula]);
 
@@ -601,25 +603,19 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
                       </div>
                     </div>
 
-                    {/* % Inyección */}
+                    {/* % Inyección — viene directo de la salmuera seleccionada */}
                     <div style={{ marginBottom: 14 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                        <label style={{ fontSize: 11, color: '#555', fontWeight: 600 }}>% Inyección</label>
-                        {pctSalmueraFormula != null && (
-                          <span style={{ fontSize: 11, color: '#2980b9', fontWeight: 700, background: '#eaf4fd', borderRadius: 6, padding: '2px 8px' }}>
-                            Salmuera: {pctSalmueraFormula}% inyección
-                          </span>
-                        )}
+                      <label style={{ fontSize: 11, color: '#555', fontWeight: 600, display: 'block', marginBottom: 4 }}>% Inyección</label>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#f0f8ff', borderRadius: 8, padding: '10px 14px', border: '2px solid #aed6f1' }}>
+                        <span style={{ fontSize: 22, fontWeight: 900, color: '#2980b9' }}>
+                          {pctInj || '—'}{pctInj ? '%' : ''}
+                        </span>
+                        <span style={{ fontSize: 11, color: '#7fb3d3' }}>
+                          {pctSalmueraFormula != null
+                            ? `tomado de la fórmula "${formulaSalmueraNombre}"`
+                            : 'selecciona una salmuera para obtener el %'}
+                        </span>
                       </div>
-                      <input type="number" min="0" max="100" step="0.1" placeholder="ej: 20"
-                        value={pctInj} onChange={e => setPctInj(e.target.value)}
-                        disabled={!modoEdicion}
-                        style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '2px solid #2980b9', fontSize: 14, fontWeight: 'bold', boxSizing: 'border-box', background: modoEdicion ? 'white' : '#f8f9fa' }} />
-                      {pctSalmueraFormula != null && parseFloat(pctInj||0) !== pctSalmueraFormula && (
-                        <div style={{ fontSize: 10, color: '#f39c12', marginTop: 3 }}>
-                          ⚠ Diferente al % configurado en la salmuera ({pctSalmueraFormula}%)
-                        </div>
-                      )}
                     </div>
 
                     {/* Salmuera — selector + kg de carne base */}
