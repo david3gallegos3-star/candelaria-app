@@ -2452,6 +2452,186 @@ export default function TabMaduracion({ mobile, currentUser }) {
           </div>
         </div>
       )}
+
+      {/* ══ Wizard CORTES — Separación Padre / Hijo ══ */}
+      {modalCortesWizard && (() => {
+        const { kgMad, costoTotal, corteNombrePadre, corteNombreHijo } = modalCortesWizard;
+        const kgPadreN = parseFloat(cortesKgPadre) || 0;
+        const kgHijoN  = kgPadreN > 0 ? parseFloat((kgMad - kgPadreN).toFixed(3)) : 0;
+        const listoP1  = kgPadreN > 0 && kgPadreN < kgMad;
+
+        let creditoHijo = 0, kgSpTotal = 0;
+        cortesSpItems.forEach(sp => {
+          const kg = parseFloat(sp.kg) || 0;
+          kgSpTotal += kg;
+          if (sp.tipo !== 'perdida') creditoHijo += kg * (parseFloat(sp.precio) || 0);
+        });
+        const kgFinalHijo     = Math.max(0, parseFloat((kgHijoN - kgSpTotal).toFixed(3)));
+        const fracHijo        = kgMad > 0 ? kgHijoN / kgMad : 0;
+        const costoBaseHijo   = costoTotal * fracHijo;
+        const costoFinalHijo  = Math.max(0, costoBaseHijo - creditoHijo);
+        const costoFinalPadre = costoTotal - costoBaseHijo;
+        const cFinalPadre     = kgPadreN    > 0 ? costoFinalPadre / kgPadreN    : 0;
+        const cFinalHijo      = kgFinalHijo > 0 ? costoFinalHijo  / kgFinalHijo : 0;
+
+        return (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+            <div style={{ background: 'white', borderRadius: 16, width: '100%', maxWidth: 480, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+              {/* Header */}
+              <div style={{ background: 'linear-gradient(135deg,#1a3a5c,#2980b9)', borderRadius: '16px 16px 0 0', padding: '14px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <div style={{ color: 'white', fontWeight: 900, fontSize: 15 }}>✂️ Separación Padre / Hijo</div>
+                  <div style={{ color: 'rgba(255,255,255,0.75)', fontSize: 11 }}>Total madurado: {kgMad.toFixed(3)} kg · Paso {cortesWizardPaso}/2</div>
+                </div>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {[1,2].map(n => (
+                    <div key={n} style={{ width: 28, height: 28, borderRadius: '50%', background: cortesWizardPaso >= n ? 'white' : 'rgba(255,255,255,0.3)', color: cortesWizardPaso >= n ? '#1a3a5c' : 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 'bold' }}>{n}</div>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ padding: 20 }}>
+                {/* ── PASO 1: División kg ── */}
+                {cortesWizardPaso === 1 && (
+                  <>
+                    <div style={{ fontWeight: 700, color: '#1a3a5c', marginBottom: 14, fontSize: 14 }}>¿Cuántos kg se quedan como {corteNombrePadre}?</div>
+
+                    <div style={{ marginBottom: 16 }}>
+                      <label style={{ fontSize: 11, fontWeight: 600, color: '#555', display: 'block', marginBottom: 6 }}>👑 KG para {corteNombrePadre} (Padre)</label>
+                      <input
+                        type="number" min="0.001" max={kgMad - 0.001} step="0.001"
+                        placeholder={`0 – ${kgMad.toFixed(3)}`}
+                        value={cortesKgPadre}
+                        onChange={e => { setCortesKgPadre(e.target.value); setErrorCortes(''); }}
+                        style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '2px solid #1a3a5c', fontSize: 16, fontWeight: 'bold', boxSizing: 'border-box' }}
+                        autoFocus
+                      />
+                    </div>
+
+                    {listoP1 && (
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
+                        <div style={{ background: '#f0f8ff', borderRadius: 10, padding: '12px 14px', textAlign: 'center' }}>
+                          <div style={{ fontSize: 10, color: '#888', marginBottom: 4 }}>👑 {corteNombrePadre}</div>
+                          <div style={{ fontWeight: 900, color: '#1a3a5c', fontSize: 18 }}>{kgPadreN.toFixed(3)} kg</div>
+                          <div style={{ fontSize: 11, color: '#27ae60' }}>${cFinalPadre.toFixed(4)}/kg</div>
+                        </div>
+                        <div style={{ background: '#f5f0ff', borderRadius: 10, padding: '12px 14px', textAlign: 'center' }}>
+                          <div style={{ fontSize: 10, color: '#888', marginBottom: 4 }}>🔀 {corteNombreHijo || 'Hijo'}</div>
+                          <div style={{ fontWeight: 900, color: '#6c3483', fontSize: 18 }}>{kgHijoN.toFixed(3)} kg</div>
+                          <div style={{ fontSize: 11, color: '#27ae60' }}>${(kgMad > 0 ? (costoTotal - costoFinalPadre) / kgHijoN : 0).toFixed(4)}/kg</div>
+                        </div>
+                      </div>
+                    )}
+
+                    {errorCortes && <div style={{ background: '#ffeaea', border: '1px solid #e74c3c', borderRadius: 8, padding: '8px 12px', color: '#e74c3c', fontSize: 12, marginBottom: 10 }}>{errorCortes}</div>}
+
+                    <div style={{ display: 'flex', gap: 10 }}>
+                      <button onClick={() => setModalCortesWizard(null)} style={{ flex: 1, padding: '11px', background: '#f0f2f5', border: 'none', borderRadius: 10, cursor: 'pointer', fontSize: 13 }}>Cancelar</button>
+                      <button
+                        onClick={() => { if (!listoP1) { setErrorCortes('Ingresa un peso válido'); return; } setCortesWizardPaso(2); setErrorCortes(''); }}
+                        disabled={!listoP1}
+                        style={{ flex: 2, padding: '11px', background: listoP1 ? 'linear-gradient(135deg,#1a3a5c,#2980b9)' : '#aaa', color: 'white', border: 'none', borderRadius: 10, cursor: listoP1 ? 'pointer' : 'default', fontSize: 13, fontWeight: 'bold' }}>
+                        Siguiente → Sub-productos Hijo
+                      </button>
+                    </div>
+                  </>
+                )}
+
+                {/* ── PASO 2: Sub-productos del Hijo ── */}
+                {cortesWizardPaso === 2 && (
+                  <>
+                    <div style={{ fontWeight: 700, color: '#6c3483', marginBottom: 4, fontSize: 14 }}>🔀 Sub-productos del Hijo ({corteNombreHijo || 'Hijo'})</div>
+                    <div style={{ fontSize: 11, color: '#888', marginBottom: 14 }}>KG disponibles para el hijo: {kgHijoN.toFixed(3)} kg</div>
+
+                    {cortesSpItems.map((sp, idx) => (
+                      <div key={idx} style={{ background: '#f8f9fa', borderRadius: 10, padding: '12px', marginBottom: 8, position: 'relative' }}>
+                        <button onClick={() => setCortesSpItems(prev => prev.filter((_, i) => i !== idx))}
+                          style={{ position: 'absolute', top: 8, right: 8, background: '#e74c3c', color: 'white', border: 'none', borderRadius: 6, width: 22, height: 22, cursor: 'pointer', fontSize: 12 }}>×</button>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+                          <div>
+                            <label style={{ fontSize: 10, color: '#888', display: 'block', marginBottom: 3 }}>Tipo</label>
+                            <select value={sp.tipo} onChange={e => setCortesSpItems(prev => prev.map((s,i) => i===idx ? {...s, tipo: e.target.value, precio: e.target.value==='perdida' ? '0' : s.precio, mp_id: e.target.value==='perdida' ? null : s.mp_id} : s))}
+                              style={{ width: '100%', padding: '6px 8px', borderRadius: 7, border: '1.5px solid #ddd', fontSize: 12 }}>
+                              <option value="perdida">Pérdida (sin valor)</option>
+                              <option value="nueva_mp">MP con valor</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label style={{ fontSize: 10, color: '#888', display: 'block', marginBottom: 3 }}>Nombre</label>
+                            {sp.tipo === 'nueva_mp' ? (
+                              <select value={sp.mp_id || ''} onChange={e => {
+                                const mp = mpsParaCortes.find(m => String(m.id) === e.target.value);
+                                setCortesSpItems(prev => prev.map((s,i) => i===idx ? {...s, mp_id: e.target.value, nombre: mp ? (mp.nombre_producto||mp.nombre) : s.nombre, precio: mp ? String(mp.precio_kg||'') : s.precio} : s));
+                              }} style={{ width: '100%', padding: '6px 8px', borderRadius: 7, border: '1.5px solid #27ae60', fontSize: 12 }}>
+                                <option value="">— seleccionar MP —</option>
+                                {mpsParaCortes.map(m => <option key={m.id} value={String(m.id)}>{m.nombre_producto||m.nombre}</option>)}
+                              </select>
+                            ) : (
+                              <input type="text" placeholder="ej: Hueso" value={sp.nombre}
+                                onChange={e => setCortesSpItems(prev => prev.map((s,i) => i===idx ? {...s, nombre: e.target.value} : s))}
+                                style={{ width: '100%', padding: '6px 8px', borderRadius: 7, border: '1.5px solid #ddd', fontSize: 12 }} />
+                            )}
+                          </div>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                          <div>
+                            <label style={{ fontSize: 10, color: '#888', display: 'block', marginBottom: 3 }}>Kg</label>
+                            <input type="number" min="0" step="0.001" placeholder="0.000" value={sp.kg}
+                              onChange={e => setCortesSpItems(prev => prev.map((s,i) => i===idx ? {...s, kg: e.target.value} : s))}
+                              style={{ width: '100%', padding: '6px 8px', borderRadius: 7, border: '1.5px solid #ddd', fontSize: 12 }} />
+                          </div>
+                          <div>
+                            <label style={{ fontSize: 10, color: '#888', display: 'block', marginBottom: 3 }}>{sp.tipo === 'perdida' ? 'Valor: $0' : '$/kg'}</label>
+                            <input type="number" min="0" step="0.01" placeholder="0.00" value={sp.precio} disabled={sp.tipo === 'perdida'}
+                              onChange={e => setCortesSpItems(prev => prev.map((s,i) => i===idx ? {...s, precio: e.target.value} : s))}
+                              style={{ width: '100%', padding: '6px 8px', borderRadius: 7, border: '1.5px solid #ddd', fontSize: 12, background: sp.tipo === 'perdida' ? '#f8f8f8' : 'white' }} />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+
+                    <button onClick={() => setCortesSpItems(prev => [...prev, { tipo: 'perdida', nombre: '', kg: '', precio: '0', mp_id: null }])}
+                      style={{ width: '100%', padding: '9px', background: '#f0f2f5', border: '1.5px dashed #bbb', borderRadius: 10, cursor: 'pointer', fontSize: 13, color: '#666', marginBottom: 14 }}>
+                      + Agregar sub-producto
+                    </button>
+
+                    {/* Resumen */}
+                    <div style={{ background: 'linear-gradient(135deg,#1a1a2e,#2c3e50)', borderRadius: 12, padding: '14px 16px', marginBottom: 14 }}>
+                      <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 11, marginBottom: 8, fontWeight: 'bold' }}>RESULTADO SEPARACIÓN</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                        <div style={{ background: 'rgba(255,255,255,0.08)', borderRadius: 8, padding: '10px 12px', textAlign: 'center' }}>
+                          <div style={{ color: 'rgba(255,255,255,0.6)', fontSize: 10 }}>👑 {corteNombrePadre}</div>
+                          <div style={{ color: '#7ec8f7', fontWeight: 900, fontSize: 16 }}>{kgPadreN.toFixed(3)} kg</div>
+                          <div style={{ color: '#a9dfbf', fontSize: 11 }}>${cFinalPadre.toFixed(4)}/kg</div>
+                        </div>
+                        <div style={{ background: 'rgba(255,255,255,0.08)', borderRadius: 8, padding: '10px 12px', textAlign: 'center' }}>
+                          <div style={{ color: 'rgba(255,255,255,0.6)', fontSize: 10 }}>🔀 {corteNombreHijo||'Hijo'}</div>
+                          <div style={{ color: '#d7bde2', fontWeight: 900, fontSize: 16 }}>{kgFinalHijo.toFixed(3)} kg</div>
+                          <div style={{ color: '#a9dfbf', fontSize: 11 }}>${cFinalHijo.toFixed(4)}/kg</div>
+                        </div>
+                      </div>
+                      {creditoHijo > 0 && (
+                        <div style={{ color: '#a9dfbf', fontSize: 11, marginTop: 8, textAlign: 'center' }}>Crédito sub-productos Hijo: −${creditoHijo.toFixed(4)}</div>
+                      )}
+                    </div>
+
+                    {errorCortes && <div style={{ background: '#ffeaea', border: '1px solid #e74c3c', borderRadius: 8, padding: '8px 12px', color: '#e74c3c', fontSize: 12, marginBottom: 10 }}>{errorCortes}</div>}
+
+                    <div style={{ display: 'flex', gap: 10 }}>
+                      <button onClick={() => setCortesWizardPaso(1)} style={{ flex: 1, padding: '11px', background: '#f0f2f5', border: 'none', borderRadius: 10, cursor: 'pointer', fontSize: 13 }}>← Atrás</button>
+                      <button onClick={confirmarSeparacionCortes} disabled={guardandoCortes}
+                        style={{ flex: 2, padding: '11px', background: guardandoCortes ? '#aaa' : 'linear-gradient(135deg,#27ae60,#1e8449)', color: 'white', border: 'none', borderRadius: 10, cursor: guardandoCortes ? 'default' : 'pointer', fontSize: 13, fontWeight: 'bold' }}>
+                        {guardandoCortes ? '⏳ Guardando...' : '✅ Confirmar Separación'}
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
     </div>
   );
 }
