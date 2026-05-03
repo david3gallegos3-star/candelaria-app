@@ -36,8 +36,9 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
   const [pctMad,     setPctMad]     = useState('');
   const [horasMad,   setHorasMad]   = useState('72');
   const [minutosMad, setMinutosMad] = useState('0');
-  const [mpCarneId,  setMpCarneId]  = useState('');
-  const [mpsCarneOpts, setMpsCarneOpts] = useState([]);
+  const [kgSalBase,  setKgSalBase]  = useState('1');
+  const [mpCarneId,  setMpCarneId]  = useState(''); // solo para hijo (panel padre)
+  const [mpsCarneOpts, setMpsCarneOpts] = useState([]); // solo para hijo (panel padre)
 
   // Config inputs — hijo
   const [costoMadPadre,  setCostoMadPadre]  = useState('');
@@ -195,6 +196,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
         if (c.costo_rub_kg)     setCostoRubKg(String(c.costo_rub_kg));
         if (c.horas_mad   !== undefined) setHorasMad(String(c.horas_mad));
         if (c.minutos_mad !== undefined) setMinutosMad(String(c.minutos_mad));
+        if (c.kg_sal_base !== undefined) setKgSalBase(String(c.kg_sal_base));
         if (c.mp_carne_id) setMpCarneId(c.mp_carne_id);
       }
 
@@ -256,6 +258,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
       costo_rub_kg:    parseFloat(costoRubKg)      || 0,
       horas_mad:       parseFloat(horasMad)        || 0,
       minutos_mad:     parseFloat(minutosMad)      || 0,
+      kg_sal_base:     parseFloat(kgSalBase)       || 1,
       mp_carne_id:     mpCarneId                   || '',
       tipo,
       _categoria:      'CORTES',
@@ -430,10 +433,10 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
   const pruebaTotal    = pruebaCarne + pruebaEmp + pruebaEti;
   const versionesPruebas = versiones.filter(v => v.tipo === 'prueba');
 
-  // MP carne seleccionada (prioridad: selector > mpVinculada)
-  const mpCarneSelec = mpCarneId ? mpsCarneOpts.find(m => String(m.id) === mpCarneId) || mpVinculada : mpVinculada;
+  // MP carne seleccionada para panel del padre en hijo
+  const mpCarneSelec = mpCarneId ? mpsCarneOpts.find(m => String(m.id) === mpCarneId) || null : null;
 
-  const precioCarne = parseFloat(mpCarneSelec?.precio_kg || 0);
+  const precioCarne = parseFloat(mpVinculada?.precio_kg || 0);
 
   // Costos salmuera desde fórmula seleccionada
   const totalGrFormula    = formulaSalmueraIngs.reduce((s,i) => s + i.gramos, 0);
@@ -577,59 +580,55 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
                     <span style={{ color: 'white', fontWeight: 'bold', fontSize: 13 }}>💉 Fase 1 — Inyección de Salmuera</span>
                   </div>
                   <div style={{ padding: '14px 16px' }}>
-                    {/* MP carne selector */}
-                    <div style={{ marginBottom: 12 }}>
-                      <label style={{ fontSize: 11, color: '#e74c3c', fontWeight: 600, display: 'block', marginBottom: 4 }}>🥩 Materia Prima (carne)</label>
-                      <select value={mpCarneId} onChange={e => setMpCarneId(e.target.value)}
+                    {/* MP carne — solo muestra la vinculada */}
+                    <div style={{ background: '#fef9e7', borderRadius: 8, padding: '8px 12px', marginBottom: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <div style={{ fontSize: 10, color: '#e67e22', fontWeight: 700, marginBottom: 2 }}>🥩 Materia Prima (carne vinculada)</div>
+                        <div style={{ fontSize: 14, fontWeight: 800, color: '#1a1a2e' }}>{mpVinculada ? (mpVinculada.nombre_producto || mpVinculada.nombre) : '—'}</div>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontSize: 11, color: '#888' }}>Precio actual</div>
+                        <div style={{ fontSize: 18, fontWeight: 'bold', color: '#27ae60' }}>${precioCarne.toFixed(4)}/kg</div>
+                      </div>
+                    </div>
+
+                    {/* % Inyección */}
+                    <div style={{ marginBottom: 14 }}>
+                      <label style={{ fontSize: 11, color: '#555', fontWeight: 600, display: 'block', marginBottom: 4 }}>% Inyección</label>
+                      <input type="number" min="0" max="100" step="0.1" placeholder="ej: 20"
+                        value={pctInj} onChange={e => setPctInj(e.target.value)}
                         disabled={!modoEdicion}
-                        style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1.5px solid #e74c3c', fontSize: 13, background: modoEdicion ? 'white' : '#f8f9fa', boxSizing: 'border-box' }}>
-                        <option value="">— seleccionar carne —</option>
-                        {mpsCarneOpts.map(m => (
-                          <option key={m.id} value={String(m.id)}>
-                            {m.nombre_producto || m.nombre} — ${parseFloat(m.precio_kg||0).toFixed(4)}/kg
-                          </option>
-                        ))}
+                        style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '2px solid #2980b9', fontSize: 14, fontWeight: 'bold', boxSizing: 'border-box', background: modoEdicion ? 'white' : '#f8f9fa' }} />
+                    </div>
+
+                    {/* Salmuera — selector + kg de carne base */}
+                    <div style={{ marginBottom: 10 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                        <label style={{ fontSize: 11, color: '#2980b9', fontWeight: 600 }}>💉 Salmuera de inyección</label>
+                        {precioKgSalmuera > 0 && (
+                          <span style={{ fontSize: 12, fontWeight: 700, color: '#2980b9' }}>${precioKgSalmuera.toFixed(4)}/kg</span>
+                        )}
+                      </div>
+                      <select value={formulaSalmueraNombre} onChange={e => setFormulaSalmueraNombre(e.target.value)}
+                        disabled={!modoEdicion}
+                        style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1.5px solid #2980b9', fontSize: 13, background: modoEdicion ? 'white' : '#f8f9fa', boxSizing: 'border-box', marginBottom: 6 }}>
+                        <option value="">— seleccionar salmuera —</option>
+                        {formulaciones.map(n => <option key={n} value={n}>{n}</option>)}
                       </select>
-                      {mpCarneSelec && (
-                        <div style={{ fontSize: 10, color: '#27ae60', marginTop: 3 }}>
-                          {mpCarneSelec.nombre_producto || mpCarneSelec.nombre} · <strong>${parseFloat(mpCarneSelec.precio_kg||0).toFixed(4)}/kg</strong>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ fontSize: 12, color: '#888', whiteSpace: 'nowrap' }}>Fórmula para</span>
+                        <input type="number" min="0.1" step="0.1"
+                          value={kgSalBase} onChange={e => setKgSalBase(e.target.value)}
+                          disabled={!modoEdicion}
+                          style={{ width: 70, padding: '5px 8px', borderRadius: 6, border: '1.5px solid #aed6f1', fontSize: 13, fontWeight: 'bold', textAlign: 'center', background: modoEdicion ? 'white' : '#f8f9fa' }} />
+                        <span style={{ fontSize: 12, color: '#888', whiteSpace: 'nowrap' }}>kg de carne</span>
+                      </div>
+                      {totalKgFormula > 0 && (
+                        <div style={{ fontSize: 10, color: '#7fb3d3', marginTop: 4 }}>
+                          Batch ${costoTotalFormula.toFixed(4)} ÷ {totalKgFormula.toFixed(3)} kg = ${precioKgSalmuera.toFixed(4)}/kg
                         </div>
                       )}
                     </div>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
-                      <div>
-                        <label style={{ fontSize: 11, color: '#555', fontWeight: 600, display: 'block', marginBottom: 4 }}>% Inyección</label>
-                        <input type="number" min="0" max="100" step="0.1" placeholder="ej: 20"
-                          value={pctInj} onChange={e => setPctInj(e.target.value)}
-                          disabled={!modoEdicion}
-                          style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '2px solid #2980b9', fontSize: 14, fontWeight: 'bold', boxSizing: 'border-box', background: modoEdicion ? 'white' : '#f8f9fa' }} />
-                      </div>
-                      <div>
-                        <label style={{ fontSize: 11, color: '#2980b9', fontWeight: 600, display: 'block', marginBottom: 4 }}>Fórmula Salmuera</label>
-                        <select value={formulaSalmueraNombre} onChange={e => setFormulaSalmueraNombre(e.target.value)}
-                          disabled={!modoEdicion}
-                          style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1.5px solid #2980b9', fontSize: 13, background: modoEdicion ? 'white' : '#f8f9fa', boxSizing: 'border-box' }}>
-                          <option value="">— seleccionar —</option>
-                          {formulaciones.map(n => <option key={n} value={n}>{n}</option>)}
-                        </select>
-                      </div>
-                    </div>
-
-                    {formulaSalmueraIngs.length > 0 && (
-                      <div style={{ background: '#eaf4fd', borderRadius: 8, padding: '8px 12px', marginBottom: 10, fontSize: 11 }}>
-                        {formulaSalmueraIngs.map((ing, i) => (
-                          <div key={i} style={{ display: 'flex', justifyContent: 'space-between', color: '#2980b9' }}>
-                            <span>{ing.nombre} ({ing.gramos}g)</span>
-                            <span>${ing.costo.toFixed(4)}</span>
-                          </div>
-                        ))}
-                        <div style={{ borderTop: '1px solid #aed6f1', marginTop: 4, paddingTop: 4, fontWeight: 700, display: 'flex', justifyContent: 'space-between', color: '#1a3a5c' }}>
-                          <span>Batch {totalKgFormula.toFixed(3)} kg · costo/kg salmuera</span>
-                          <span>${precioKgSalmuera.toFixed(4)}</span>
-                        </div>
-                      </div>
-                    )}
 
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
                       <div>
