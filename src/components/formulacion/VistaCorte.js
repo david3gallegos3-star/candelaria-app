@@ -17,6 +17,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
   const [tipo,            setTipo]            = useState(null); // 'padre' | 'hijo' | 'independiente'
   const [deshueseConfig,  setDeshueseConfig]  = useState(null);
   const [padreInfo,       setPadreInfo]       = useState(null);
+  const [padreCfg,        setPadreCfg]        = useState(null); // config guardada del producto padre
 
   // Precios subproductos
   const [precioResSegunda, setPrecioResSegunda] = useState(0);
@@ -78,7 +79,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
     (async () => {
       const { data: rows } = await supabase
         .from('formulaciones').select('ingrediente_nombre,gramos,materia_prima_id')
-        .eq('nombre', formulaSalmueraNombre);
+        .eq('producto_nombre', formulaSalmueraNombre);
       const ings = (rows || []).map(r => {
         const mp = mpsFormula.find(m => m.id === r.materia_prima_id)
           || mpsFormula.find(m => (m.nombre_producto||m.nombre||'').toLowerCase() === (r.ingrediente_nombre||'').toLowerCase());
@@ -197,16 +198,18 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
         if (c.mp_carne_id) setMpCarneId(c.mp_carne_id);
       }
 
-      // Formulaciones SALMUERAS + todas las MPs
-      const [{ data: fmls }, { data: allMps }] = await Promise.all([
-        supabase.from('formulaciones').select('nombre,categoria').not('nombre','is',null),
+      // Formulaciones SALMUERAS + todas las MPs + config del padre (si es hijo)
+      const [{ data: prodsSal }, { data: allMps }, { data: padreCfgRow }] = await Promise.all([
+        supabase.from('productos').select('nombre,categoria')
+          .or('categoria.ilike.%salmuera%,nombre.ilike.%salmuera%')
+          .eq('estado', 'ACTIVO').order('nombre'),
         supabase.from('materias_primas').select('id,nombre,nombre_producto,precio_kg,categoria').eq('eliminado', false),
+        (esPadre || !cfgEntry?.corte_padre)
+          ? Promise.resolve({ data: null })
+          : supabase.from('vista_horneado_config').select('config').eq('producto_nombre', cfgEntry.corte_padre).maybeSingle(),
       ]);
-      const nombresUnicos = [...new Set((fmls||[]).map(f => f.nombre))];
-      const salmueras = nombresUnicos.filter(n =>
-        (fmls||[]).some(f => f.nombre === n && (f.categoria||'').toUpperCase().includes('SALMUERA'))
-      );
-      setFormulaciones(salmueras);
+      setFormulaciones((prodsSal||[]).map(p => p.nombre));
+      if (padreCfgRow?.config) setPadreCfg(padreCfgRow.config);
       setMpsFormula(allMps || []);
       // MPs de carne: categorías típicas de carne bovina
       const carneOpts = (allMps||[]).filter(m => {
@@ -742,8 +745,51 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
           {/* ── HIJO ── */}
           {tipo === 'hijo' && (() => {
             const { kgEnt, kgResS, kgPun, kgDes, kgHijo, costoEntrada, valorResS, valorPun, cLimpio } = computeCLimpio();
+            // Datos del padre para mostrar
+            const padreMpCarne = padreCfg?.mp_carne_id
+              ? mpsCarneOpts.find(m => String(m.id) === String(padreCfg.mp_carne_id)) || null
+              : null;
+            const padreHorasTotal = padreCfg
+              ? (parseFloat(padreCfg.horas_mad||0) + parseFloat(padreCfg.minutos_mad||0)/60).toFixed(1)
+              : null;
             return (
               <>
+                {/* Info del Padre */}
+                {padreCfg && (
+                  <div style={{ background: '#f0f8ff', borderRadius: 10, padding: '12px 16px', marginBottom: 12, border: '2px solid #aed6f1' }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: '#1a3a5c', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>
+                      👑 Config del Padre — {deshueseConfig?.corte_padre}
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10 }}>
+                      <div>
+                        <div style={{ fontSize: 10, color: '#888', marginBottom: 2 }}>🥩 Carne</div>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: '#1a3a5c' }}>
+                          {padreMpCarne ? (padreMpCarne.nombre_producto || padreMpCarne.nombre) : '—'}
+                        </div>
+                        {padreMpCarne && (
+                          <div style={{ fontSize: 10, color: '#27ae60' }}>${parseFloat(padreMpCarne.precio_kg||0).toFixed(4)}/kg</div>
+                        )}
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 10, color: '#888', marginBottom: 2 }}>⏱ Maduración</div>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: '#8e44ad' }}>
+                          {padreCfg.horas_mad !== undefined ? `${padreCfg.horas_mad}h ${padreCfg.minutos_mad||0}m` : '—'}
+                        </div>
+                        {padreHorasTotal && <div style={{ fontSize: 10, color: '#aaa' }}>{padreHorasTotal} horas total</div>}
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 10, color: '#888', marginBottom: 2 }}>💉 Salmuera</div>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: '#2980b9' }}>
+                          {padreCfg.formula_salmuera || '—'}
+                        </div>
+                        {padreCfg.pct_inj > 0 && (
+                          <div style={{ fontSize: 10, color: '#aaa' }}>{padreCfg.pct_inj}% inyección</div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Costo de entrada del padre */}
                 <div style={{ background: '#f0f8ff', borderRadius: 10, padding: '12px 16px', marginBottom: 12, border: '1px solid #aed6f1' }}>
                   <div style={{ fontSize: 11, fontWeight: 700, color: '#1a3a5c', marginBottom: 8 }}>
