@@ -306,7 +306,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
       _updated:        new Date().toISOString(),
     };
     try {
-      const payload = { producto_nombre: producto.nombre, producto_id: producto.id, config: newConfig, versiones };
+      const payload = { producto_nombre: producto.nombre, config: newConfig, versiones };
       console.log('[guardarConfig] upsert payload:', payload);
       const { data: saved, error } = await supabase.from('vista_horneado_config')
         .upsert(payload, { onConflict: 'producto_nombre' })
@@ -351,7 +351,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
     try {
       const { error } = await supabase.from('vista_horneado_config')
         .upsert(
-          { producto_nombre: producto.nombre, producto_id: producto.id, versiones: nuevasVer },
+          { producto_nombre: producto.nombre, versiones: nuevasVer },
           { onConflict: 'producto_nombre' }
         );
       if (error) throw error;
