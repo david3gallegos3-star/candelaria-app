@@ -67,6 +67,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
   const [mpAdicionalId,      setMpAdicionalId]      = useState('');
   const [gramosAdicional,    setGramosAdicional]    = useState('');
   const [kgSalidaMad,       setKgSalidaMad]       = useState('');
+  const [kgParaHijo,        setKgParaHijo]        = useState('');
   // Compat legacy (no se usan en UI pero se mantienen por si hay config guardada antigua)
   const [pctRub,             setPctRub]             = useState('');
   const [costoRubKg,         setCostoRubKg]         = useState('');
@@ -234,6 +235,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
         if (c.gramos_adicional !== undefined) setGramosAdicional(String(c.gramos_adicional));
         if (c.mp_carne_id) setMpCarneId(c.mp_carne_id);
         if (c.kg_salida_mad) setKgSalidaMad(String(c.kg_salida_mad));
+        if (c.kg_para_hijo)  setKgParaHijo(String(c.kg_para_hijo));
       }
 
       // Formulaciones SALMUERAS + todas las MPs + config del padre (si es hijo)
@@ -304,6 +306,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
       gramos_adicional:  parseFloat(gramosAdicional) || 0,
       mp_carne_id:       mpCarneId                   || '',
       kg_salida_mad:     parseFloat(kgSalidaMad)    || 0,
+      kg_para_hijo:      parseFloat(kgParaHijo)     || 0,
       tipo,
       _categoria:      'CORTES',
       _updated:        new Date().toISOString(),
@@ -885,6 +888,65 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
                       </div>
                     )}
 
+                    {/* Distribución post-maduración: Padre vs Hijo */}
+                    {kgSalidaN > 0 && (
+                      <div style={{ background: 'white', borderRadius: 10, padding: '14px 16px', marginBottom: 12, border: '2px solid #1a3a5c' }}>
+                        <div style={{ fontSize: 12, fontWeight: 800, color: '#1a3a5c', marginBottom: 10 }}>
+                          ✂️ Distribución de los {kgSalidaN.toFixed(3)} kg post-maduración
+                        </div>
+                        <div style={{ marginBottom: 10 }}>
+                          <label style={{ fontSize: 11, color: '#8e44ad', fontWeight: 700, display: 'block', marginBottom: 4 }}>
+                            kg que van al Hijo (deshuese → {deshueseConfig?.corte_hijo || 'producto hijo'})
+                          </label>
+                          <input type="number" min="0" step="0.001" max={kgSalidaN}
+                            placeholder={`máx ${kgSalidaN.toFixed(3)}`}
+                            value={kgParaHijo} onChange={e => setKgParaHijo(e.target.value)}
+                            disabled={!modoEdicion}
+                            style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '2px solid #8e44ad', fontSize: 16, fontWeight: 'bold', boxSizing: 'border-box', background: modoEdicion ? 'white' : '#f8f9fa' }} />
+                        </div>
+                        {(() => {
+                          const kgHijoN   = parseFloat(kgParaHijo) || 0;
+                          const kgPadreN  = Math.max(0, kgSalidaN - kgHijoN);
+                          const costoKg   = cMadReal > 0 ? cMadReal : (ultimoCMad > 0 ? ultimoCMad : 0);
+                          const showCosto = costoKg > 0;
+                          return (
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                              {/* Padre */}
+                              <div style={{ background: '#eaf4fd', borderRadius: 8, padding: '10px 12px', border: '1.5px solid #2980b9' }}>
+                                <div style={{ fontSize: 10, color: '#1a3a5c', fontWeight: 700, marginBottom: 4 }}>
+                                  🥩 Queda como Padre
+                                </div>
+                                <div style={{ fontSize: 20, fontWeight: 900, color: '#1a3a5c' }}>
+                                  {kgPadreN.toFixed(3)} kg
+                                </div>
+                                {showCosto && (
+                                  <div style={{ fontSize: 11, color: '#2980b9', marginTop: 4 }}>
+                                    {kgPadreN.toFixed(3)} kg × ${costoKg.toFixed(4)} =&nbsp;
+                                    <strong>${(kgPadreN * costoKg).toFixed(4)}</strong>
+                                  </div>
+                                )}
+                              </div>
+                              {/* Hijo */}
+                              <div style={{ background: '#f3e8fd', borderRadius: 8, padding: '10px 12px', border: '1.5px solid #8e44ad' }}>
+                                <div style={{ fontSize: 10, color: '#6c3483', fontWeight: 700, marginBottom: 4 }}>
+                                  ✂️ Va al Hijo (deshuese)
+                                </div>
+                                <div style={{ fontSize: 20, fontWeight: 900, color: '#6c3483' }}>
+                                  {kgHijoN > 0 ? `${kgHijoN.toFixed(3)} kg` : '— kg'}
+                                </div>
+                                {showCosto && kgHijoN > 0 && (
+                                  <div style={{ fontSize: 11, color: '#8e44ad', marginTop: 4 }}>
+                                    {kgHijoN.toFixed(3)} kg × ${costoKg.toFixed(4)} =&nbsp;
+                                    <strong>${(kgHijoN * costoKg).toFixed(4)}</strong>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    )}
+
                     {/* C_mad real del último lote */}
                     <div style={{ background: ultimoCMad > 0 ? 'linear-gradient(135deg,#1a6b3c,#27ae60)' : '#f8f9fa', borderRadius: 10, padding: '12px 16px' }}>
                       <div style={{ fontSize: 11, color: ultimoCMad > 0 ? 'rgba(255,255,255,0.7)' : '#888', marginBottom: 4 }}>
@@ -1001,6 +1063,32 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
                           );
                         })()}
                       </div>
+                      {/* Kg asignados al Hijo desde el Padre */}
+                      {padreCfg.kg_para_hijo > 0 && (() => {
+                        const kgIniP   = parseFloat(padreCfg.kg_sal_base || 2);
+                        const kgSalP   = parseFloat(padreCfg.kg_salida_mad || 0);
+                        const costoTotP = padreCfg.pct_inj > 0 && kgSalP > 0
+                          ? (parseFloat(padreCfg.pct_inj) / 100 * kgIniP * (precioKgSalmuera || 0) + kgIniP * precioCarne) / kgSalP
+                          : (padreInfo ? parseFloat(padreInfo.costo_mad_kg) : 0);
+                        return (
+                          <div style={{ background: '#f3e8fd', borderRadius: 8, padding: '10px 12px', marginTop: 8, border: '2px solid #8e44ad' }}>
+                            <div style={{ fontSize: 10, color: '#6c3483', fontWeight: 700, marginBottom: 4 }}>
+                              ✂️ kg recibidos del Padre para deshuese
+                            </div>
+                            <div style={{ fontSize: 22, fontWeight: 900, color: '#6c3483' }}>
+                              {parseFloat(padreCfg.kg_para_hijo).toFixed(3)} kg
+                            </div>
+                            {costoTotP > 0 && (
+                              <div style={{ fontSize: 11, color: '#8e44ad', marginTop: 2 }}>
+                                @ ${costoTotP.toFixed(4)}/kg = <strong>${(parseFloat(padreCfg.kg_para_hijo) * costoTotP).toFixed(4)}</strong> costo entrada
+                              </div>
+                            )}
+                            <div style={{ fontSize: 10, color: '#aaa', marginTop: 2 }}>
+                              Este es tu punto de partida para el deshuese ↓
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </>
                   )}
                 </div>
