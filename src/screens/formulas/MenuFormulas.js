@@ -327,16 +327,40 @@ export default function MenuFormulas({
                 const grupos = [];
                 const independientes = [];
 
+                // Fuzzy match: producto "New York" ↔ deshuese_config "New York Steak"
+                const findHijosParaPadre = (nombre) => {
+                  if (hijosDelPadre[nombre]) return { key: nombre, hijos: hijosDelPadre[nombre] };
+                  const n = nombre.toLowerCase();
+                  const key = Object.keys(hijosDelPadre).find(k => {
+                    const kl = k.toLowerCase();
+                    return n === kl || kl.startsWith(n) || n.startsWith(kl) || kl.startsWith(n.split(' ')[0]) || n.startsWith(kl.split(' ')[0]);
+                  });
+                  return key ? { key, hijos: hijosDelPadre[key] } : null;
+                };
+
+                const findPadreParaHijo = (nombre) => {
+                  if (padreDeHijo[nombre]) return padreDeHijo[nombre];
+                  const n = nombre.toLowerCase();
+                  const key = Object.keys(padreDeHijo).find(k => k.toLowerCase() === n || k.toLowerCase().startsWith(n) || n.startsWith(k.toLowerCase()));
+                  return key ? padreDeHijo[key] : null;
+                };
+
                 nombresProductos.forEach(nombre => {
                   if (yaIncluidos.has(nombre)) return;
-                  if (hijosDelPadre[nombre]) {
-                    // Es padre con hijos
-                    const hijosEnCat = hijosDelPadre[nombre].filter(h => nombresProductos.includes(h));
+                  const matchPadre = findHijosParaPadre(nombre);
+                  if (matchPadre) {
+                    // Es padre con hijos — resolver nombres de hijos a productos reales
+                    const hijosEnCat = matchPadre.hijos
+                      .map(hijoKey => nombresProductos.find(p => {
+                        const pl = p.toLowerCase(), kl = hijoKey.toLowerCase();
+                        return pl === kl || pl.startsWith(kl) || kl.startsWith(pl) || kl.startsWith(pl.split(' ')[0]);
+                      }))
+                      .filter(Boolean);
                     grupos.push({ padre: nombre, hijos: hijosEnCat });
                     yaIncluidos.add(nombre);
                     hijosEnCat.forEach(h => yaIncluidos.add(h));
-                  } else if (!padreDeHijo[nombre]) {
-                    // Independiente (no es padre ni hijo)
+                  } else if (!findPadreParaHijo(nombre)) {
+                    // Independiente
                     independientes.push(nombre);
                     yaIncluidos.add(nombre);
                   }
@@ -364,8 +388,10 @@ export default function MenuFormulas({
                         {esHijo  && <span style={{ fontSize:10, fontWeight:800, color:'#8e44ad', background:'#f5eef8', padding:'2px 7px', borderRadius:6, border:'1px solid #c39bd3' }}>✂️ HIJO</span>}
                       </div>
                       <div style={{ fontWeight:'bold', color:'#1a1a2e', fontSize:'13px', lineHeight:'1.3' }}>{nombre}</div>
-                      {esHijo && padreDeHijo[nombre] && (
-                        <div style={{ fontSize:10, color:'#8e44ad', marginTop:3 }}>de {padreDeHijo[nombre]}</div>
+                      {esHijo && (
+                        <div style={{ fontSize:10, color:'#8e44ad', marginTop:3 }}>
+                          de {padreDeHijo[nombre] || findPadreParaHijo(nombre) || ''}
+                        </div>
                       )}
                       <div style={{ fontSize:'11px', color: tieneFormula ? '#27ae60' : '#e74c3c', marginTop:6, fontWeight:'bold' }}>
                         {tieneFormula ? '✅ Con fórmula' : '🔴 Sin fórmula'}
