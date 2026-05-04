@@ -5,6 +5,7 @@
 // ============================================
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../supabase';
+import * as XLSX from 'xlsx';
 
 const TABS = [
   { k: 'costos',     label: '💰 Costos 1 kg' },
@@ -239,6 +240,78 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
 
   const upd = (field, val) => setCfg(prev => ({ ...prev, [field]: val }));
 
+  function descargarExcel() {
+    // Cálculos locales para el Excel
+    const mpCarneL     = mps.find(m => m.id === cfg.mp_carne_id);
+    const mpMostazaL   = mps.find(m => m.id === cfg.mp_mostaza_id);
+    const precioCarneL = parseFloat(mpCarneL?.precio_kg || 0);
+    const precioMostL  = parseFloat(mpMostazaL?.precio_kg || 0);
+    const precioKgSalL = totalSalKg > 0 ? costoSalmuera / totalSalKg : 0;
+    const costoSalKgL  = precioKgSalL * (pctSalmuera / 100);
+    const costoMostKgL = (parseFloat(cfg.gramos_mostaza) / 1000) * precioMostL;
+    const costoRubKgL  = cfg.kg_rub_base > 0 ? costoRub / cfg.kg_rub_base : 0;
+    const costoInputL  = precioCarneL + costoSalKgL + costoMostKgL + costoRubKgL;
+    const kgCarneNetaL = parseFloat(cfg.kg_carne_base) || 1;
+    const kgInyL       = kgCarneNetaL * (1 + pctSalmuera / 100);
+    const kgPostMadL   = kgInyL * (1 - (cfg.merma_mad_pct || 0) / 100);
+    const kgFinalL     = kgPostMadL * (1 - (cfg.merma_horno_pct || 0) / 100);
+    const cFinalL      = kgFinalL > 0 ? costoInputL / kgFinalL : 0;
+    const pvpL         = cfg.margen < 100 ? cFinalL / (1 - cfg.margen / 100) : 0;
+    const suffix = tab === 'costos' ? 'Costos1kg' : tab === 'pruebas' ? 'Pruebas' : 'Produccion';
+
+    let rows = [];
+    if (tab === 'costos' || tab !== 'produccion') {
+      rows = [
+        ['COSTOS 1 KG —', producto.nombre],
+        ['Categoría', producto.categoria],
+        [],
+        ['═══ CONFIGURACIÓN ═══'],
+        ['Materia Prima (carne)', mpCarneL?.nombre_producto || mpCarneL?.nombre || '—', '$' + precioCarneL.toFixed(4) + '/kg'],
+        ['Salmuera', cfg.formula_salmuera || '—'],
+        ['% Salmuera', pctSalmuera + '%'],
+        ['Costo salmuera/kg carne', '$' + costoSalKgL.toFixed(4)],
+        cfg.formula_rub ? ['Rub', cfg.formula_rub, '$' + costoRubKgL.toFixed(4) + '/kg'] : ['Rub', '—'],
+        cfg.mp_mostaza_id ? ['Mostaza', mpMostazaL?.nombre_producto || '—', cfg.gramos_mostaza + 'g/kg', '$' + costoMostKgL.toFixed(4)] : null,
+        [],
+        ['═══ FLUJO DE KG ═══'],
+        ['Kg base de carne', kgCarneNetaL.toFixed(3), 'kg'],
+        ['Kg post-inyección', kgInyL.toFixed(3), 'kg'],
+        ['% Merma maduración', (cfg.merma_mad_pct || 0) + '%'],
+        ['Kg post-maduración', kgPostMadL.toFixed(3), 'kg'],
+        ['% Merma horno/ahumado', (cfg.merma_horno_pct || 0) + '%'],
+        ['Kg final', kgFinalL.toFixed(3), 'kg'],
+        [],
+        ['═══ COSTOS ═══'],
+        ['Costo entrada/kg carne', '$' + costoInputL.toFixed(4)],
+        ['Costo final/kg producto', '$' + cFinalL.toFixed(4)],
+        [],
+        ['═══ PRECIO DE VENTA ═══'],
+        ['Margen', cfg.margen + '%'],
+        ['PRECIO VENTA/KG', '$' + pvpL.toFixed(4)],
+      ].filter(Boolean);
+    } else {
+      rows = [
+        ['PRODUCCIÓN —', producto.nombre],
+        [],
+        ['Fecha', 'kg entrada', 'kg salida', 'Merma real', 'Costo/kg', 'Estado'],
+        ...lotes.map(l => [
+          l.fecha_entrada || '—',
+          parseFloat(l.kg_entrada || 0).toFixed(3),
+          parseFloat(l.kg_salida || 0).toFixed(3),
+          l.kg_salida && l.kg_entrada ? (((l.kg_entrada - l.kg_salida) / l.kg_entrada) * 100).toFixed(1) + '%' : '—',
+          l.costo_kg ? '$' + parseFloat(l.costo_kg).toFixed(4) : '—',
+          l.estado || '—',
+        ]),
+      ];
+    }
+
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [{ wch: 30 }, { wch: 18 }, { wch: 14 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, suffix);
+    XLSX.writeFile(wb, `${producto.nombre}_${suffix}.xlsx`);
+  }
+
   async function guardarSpLote(loteId, spData) {
     try { await supabase.from('produccion_horneado_lotes').update({ subproductos_real: spData }).eq('id', loteId); }
     catch (_) {}
@@ -355,6 +428,11 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
                 </button>
               </>
             )}
+
+            {/* Descargar Excel */}
+            <button onClick={descargarExcel} style={{ ...btnStyle('#1a6b3c'), fontSize:12 }}>
+              📥 Excel
+            </button>
 
             {/* Botones edición — solo fuera de Pruebas */}
             {tab !== 'pruebas' && (!modoEdicion ? (
