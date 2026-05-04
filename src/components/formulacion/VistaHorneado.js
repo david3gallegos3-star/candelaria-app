@@ -414,54 +414,54 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
             <button onClick={onVolver} style={btnStyle('rgba(255,255,255,0.15)')}>← Volver</button>
             <div>
               <div style={{ color: 'white', fontWeight: 'bold', fontSize: mobile ? 14 : 17 }}>🔥 {producto.nombre}</div>
-              <div style={{ color: modoEdicion ? '#f9ca74' : 'rgba(255,255,255,0.6)', fontSize: 10, marginTop: 1 }}>
-                {modoEdicion ? '✏️ Modo edición' : '🔒 Fijada — presiona Editar'}
-              </div>
+              {tab === 'costos' && (
+                <div style={{ color: modoEdicion ? '#f9ca74' : 'rgba(255,255,255,0.6)', fontSize: 10, marginTop: 1 }}>
+                  {modoEdicion ? '✏️ Modo edición' : '🔒 Fijada — presiona Editar'}
+                </div>
+              )}
             </div>
           </div>
 
-          {/* Derecha: botones */}
+          {/* Derecha: botones contextuales por tab */}
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {/* Versiones fórmula — solo en tabs que no son Pruebas */}
-            {tab !== 'pruebas' && (
+
+            {/* ── TAB COSTOS 1KG ── */}
+            {tab === 'costos' && (<>
+              <button onClick={descargarExcel} style={{ ...btnStyle('#1a6b3c'), fontSize:12 }}>📥 Excel</button>
               <button onClick={() => setModalVer(true)} style={btnStyle('#8e44ad')}>
                 🔄 Versiones {versionesFormula.length > 0 && `(${versionesFormula.length})`}
               </button>
-            )}
-
-            {/* Tab Pruebas: botones del simulador en el header */}
-            {tab === 'pruebas' && (
-              <>
-                <button onClick={() => setVerPruebasAbierto(v => !v)} style={btnStyle('#8e44ad')}>
-                  🔄 Versiones {versionesPruebas.length > 0 && `(${versionesPruebas.length})`}
-                </button>
-                <button onClick={guardarVersionPruebaDesdeHeader} disabled={guardandoPrueba}
-                  style={btnStyle(guardandoPrueba ? '#aaa' : '#e67e22')}>
-                  {guardandoPrueba ? 'Guardando...' : '💾 Guardar versión'}
-                </button>
-              </>
-            )}
-
-            {/* Descargar Excel */}
-            <button onClick={descargarExcel} style={{ ...btnStyle('#1a6b3c'), fontSize:12 }}>
-              📥 Excel
-            </button>
-
-            {/* Botones edición — solo fuera de Pruebas */}
-            {tab !== 'pruebas' && (!modoEdicion ? (
-              <button onClick={() => setModoEdicion(true)} style={btnStyle('#f39c12')}>
-                ✏️ Editar
-              </button>
-            ) : (
-              <>
+              {!modoEdicion ? (
+                <button onClick={() => setModoEdicion(true)} style={btnStyle('#f39c12')}>✏️ Editar</button>
+              ) : (<>
                 <button onClick={fijarCambios} disabled={guardando} style={btnStyle(guardando ? '#aaa' : '#27ae60')}>
                   {guardando ? 'Fijando...' : '🔒 Fijar cambios'}
                 </button>
                 <button onClick={guardarHistorial} disabled={autoGuardando} style={btnStyle(autoGuardando ? '#aaa' : '#e67e22')}>
                   {autoGuardando ? 'Guardando...' : '📋 Guardar Historial'}
                 </button>
-              </>
-            ))}
+              </>)}
+            </>)}
+
+            {/* ── TAB PRUEBAS ── */}
+            {tab === 'pruebas' && (<>
+              <button onClick={descargarExcel} style={{ ...btnStyle('#1a6b3c'), fontSize:12 }}>📥 Excel</button>
+              <button onClick={() => setVerPruebasAbierto(v => !v)} style={btnStyle('#8e44ad')}>
+                🔄 Versiones {versionesPruebas.length > 0 && `(${versionesPruebas.length})`}
+              </button>
+              <button onClick={guardarVersionPruebaDesdeHeader} disabled={guardandoPrueba}
+                style={btnStyle(guardandoPrueba ? '#aaa' : '#27ae60')}>
+                {guardandoPrueba ? 'Guardando...' : '💾 Guardar versión'}
+              </button>
+            </>)}
+
+            {/* ── TAB PRODUCCIÓN ── */}
+            {tab === 'produccion' && (
+              <button onClick={descargarExcel} style={{ ...btnStyle('#1a6b3c'), fontSize:12 }}>📥 Excel</button>
+            )}
+
+            {/* Historial: sin botones de acción */}
+
           </div>
         </div>
       </div>

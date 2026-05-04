@@ -664,37 +664,39 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
   return (
     <div style={{ padding: mobile ? '10px' : '0' }}>
 
-      {/* ── Header: Versiones / Editar / Fijar / Guardar Historial ── */}
+      {/* ── Header: botones contextuales por tab ── */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
-        {/* Izquierda: badge tipo + estado edición */}
+        {/* Izquierda: badge + estado (solo en costos) */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           {tipo === 'padre' && <span style={{ background: '#1a3a5c', color: 'white', borderRadius: 20, padding: '4px 12px', fontSize: 11, fontWeight: 'bold' }}>👑 Corte Padre</span>}
           {tipo === 'hijo'  && <span style={{ background: '#6c3483', color: 'white', borderRadius: 20, padding: '4px 12px', fontSize: 11, fontWeight: 'bold' }}>🔀 Corte Hijo</span>}
           {tipo === 'independiente' && <span style={{ background: '#e67e22', color: 'white', borderRadius: 20, padding: '4px 12px', fontSize: 11, fontWeight: 'bold' }}>🥩 Corte</span>}
-          <span style={{ fontSize: 11, color: modoEdicion ? '#f39c12' : '#888', fontWeight: 600 }}>
-            {modoEdicion ? '✏️ Modo edición' : '🔒 Fijado — presiona Editar'}
-          </span>
+          {tabActivo === 'costos' && (
+            <span style={{ fontSize: 11, color: modoEdicion ? '#f39c12' : '#888', fontWeight: 600 }}>
+              {modoEdicion ? '✏️ Modo edición' : '🔒 Fijado — presiona Editar'}
+            </span>
+          )}
         </div>
-        {/* Derecha: botones acción */}
+
+        {/* Derecha: botones según tab */}
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          {/* Descargar Excel — según tab activo */}
-          <button onClick={tabActivo === 'costos' ? descargarExcelCostos : tabActivo === 'pruebas' ? descargarExcelPruebas : descargarExcelProduccion}
-            style={{ background: '#1a6b3c', color: 'white', border: 'none', borderRadius: 8, padding: '7px 14px', fontSize: 12, fontWeight: 'bold', cursor: 'pointer' }}>
-            📥 Excel
-          </button>
-          {/* Versiones — siempre visible si hay */}
-          <button onClick={() => setModalVer(true)}
-            style={{ background: '#8e44ad', color: 'white', border: 'none', borderRadius: 8, padding: '7px 14px', fontSize: 12, fontWeight: 'bold', cursor: 'pointer' }}>
-            🔄 Versiones {versiones.filter(v => v.tipo === 'formula').length > 0 && `(${versiones.filter(v => v.tipo === 'formula').length})`}
-          </button>
-          {/* Editar / Fijar+Historial */}
-          {!modoEdicion ? (
-            <button onClick={() => setModoEdicion(true)}
-              style={{ background: '#f39c12', color: 'white', border: 'none', borderRadius: 8, padding: '7px 14px', fontSize: 12, fontWeight: 'bold', cursor: 'pointer' }}>
-              ✏️ Editar
+
+          {/* ── TAB COSTOS 1KG ── */}
+          {tabActivo === 'costos' && (<>
+            <button onClick={descargarExcelCostos}
+              style={{ background: '#1a6b3c', color: 'white', border: 'none', borderRadius: 8, padding: '7px 14px', fontSize: 12, fontWeight: 'bold', cursor: 'pointer' }}>
+              📥 Excel
             </button>
-          ) : (
-            <>
+            <button onClick={() => setModalVer(true)}
+              style={{ background: '#8e44ad', color: 'white', border: 'none', borderRadius: 8, padding: '7px 14px', fontSize: 12, fontWeight: 'bold', cursor: 'pointer' }}>
+              🔄 Versiones {versiones.filter(v => v.tipo === 'formula').length > 0 && `(${versiones.filter(v => v.tipo === 'formula').length})`}
+            </button>
+            {!modoEdicion ? (
+              <button onClick={() => setModoEdicion(true)}
+                style={{ background: '#f39c12', color: 'white', border: 'none', borderRadius: 8, padding: '7px 14px', fontSize: 12, fontWeight: 'bold', cursor: 'pointer' }}>
+                ✏️ Editar
+              </button>
+            ) : (<>
               <button onClick={fijarCambios} disabled={guardando}
                 style={{ background: guardando ? '#aaa' : '#27ae60', color: 'white', border: 'none', borderRadius: 8, padding: '7px 14px', fontSize: 12, fontWeight: 'bold', cursor: guardando ? 'default' : 'pointer' }}>
                 {guardando ? 'Fijando...' : '🔒 Fijar cambios'}
@@ -703,8 +705,36 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
                 style={{ background: autoGuardando ? '#aaa' : '#e67e22', color: 'white', border: 'none', borderRadius: 8, padding: '7px 14px', fontSize: 12, fontWeight: 'bold', cursor: autoGuardando ? 'default' : 'pointer' }}>
                 {autoGuardando ? 'Guardando...' : '📋 Guardar Historial'}
               </button>
-            </>
+            </>)}
+          </>)}
+
+          {/* ── TAB PRUEBAS ── */}
+          {tabActivo === 'pruebas' && (<>
+            <button onClick={descargarExcelPruebas}
+              style={{ background: '#1a6b3c', color: 'white', border: 'none', borderRadius: 8, padding: '7px 14px', fontSize: 12, fontWeight: 'bold', cursor: 'pointer' }}>
+              📥 Excel
+            </button>
+            <button onClick={() => setModalVer(true)}
+              style={{ background: '#8e44ad', color: 'white', border: 'none', borderRadius: 8, padding: '7px 14px', fontSize: 12, fontWeight: 'bold', cursor: 'pointer' }}>
+              🔄 Versiones {versiones.filter(v => v.tipo === 'prueba').length > 0 && `(${versiones.filter(v => v.tipo === 'prueba').length})`}
+            </button>
+            {pruebaTotal > 0 && (
+              <button onClick={guardarVersionPrueba}
+                style={{ background: '#27ae60', color: 'white', border: 'none', borderRadius: 8, padding: '7px 14px', fontSize: 12, fontWeight: 'bold', cursor: 'pointer' }}>
+                💾 Guardar versión
+              </button>
+            )}
+          </>)}
+
+          {/* ── TAB PRODUCCIÓN ── */}
+          {tabActivo === 'produccion' && (
+            <button onClick={descargarExcelProduccion}
+              style={{ background: '#1a6b3c', color: 'white', border: 'none', borderRadius: 8, padding: '7px 14px', fontSize: 12, fontWeight: 'bold', cursor: 'pointer' }}>
+              📥 Excel
+            </button>
           )}
+          {/* Historial y Cierre Sierra: sin botones de acción */}
+
         </div>
       </div>
 
@@ -1516,11 +1546,6 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
               </div>
             </div>
             <div style={{ display:'flex', gap:8, alignItems:'center' }}>
-            {pruebaGramosN > 0 && pruebaTotal > 0 && (
-              <button onClick={guardarVersionPrueba} style={{ background: '#27ae60', color: 'white', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 12, fontWeight: 'bold', cursor: 'pointer' }}>
-                💾 Guardar versión
-              </button>
-            )}
             </div>
           </div>
 
@@ -1869,7 +1894,10 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
 
       {/* ══ Modal Versiones ══ */}
       {modalVer && (() => {
-        const versionesFormula = versiones.filter(v => v.tipo === 'formula');
+        const esPruebas = tabActivo === 'pruebas';
+        const versionesFormula = esPruebas
+          ? versiones.filter(v => v.tipo === 'prueba')
+          : versiones.filter(v => v.tipo === 'formula');
         return (
           <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
             <div style={{ background: 'white', borderRadius: 16, padding: 24, width: '100%', maxWidth: 560, maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 8px 32px rgba(0,0,0,0.25)' }}>
