@@ -1,6 +1,7 @@
 // VistaCorte.js — CORTES: Costos 1 kg | Pruebas | Producción | Historial
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../supabase';
+import * as XLSX from 'xlsx';
 
 export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
   const [tabActivo,       setTabActivo]       = useState('costos');
@@ -493,6 +494,129 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
     <div style={{ textAlign: 'center', padding: '40px', color: '#888' }}>⏳ Cargando...</div>
   );
 
+  // ── Funciones de descarga Excel ──────────────────────────────
+  function descargarExcelCostos() {
+    const pctInjN  = parseFloat(pctInj) || 0;
+    const kgIni    = parseFloat(kgSalBase) || 2;
+    const kgSal1   = pctInjN / 100;
+    const kgSalmueraNec = kgIni * kgSal1;
+    const kgEntradaMad  = kgIni + kgSalmueraNec;
+    const kgSalidaN     = parseFloat(kgSalidaMad) || 0;
+    const mermaMadKg    = kgSalidaN > 0 ? kgEntradaMad - kgSalidaN : 0;
+    const pctMermaMad   = kgEntradaMad > 0 && kgSalidaN > 0 ? (mermaMadKg / kgEntradaMad * 100) : 0;
+    const kgHijoN       = parseFloat(kgParaHijo) || 0;
+    const kgPadreN      = Math.max(0, kgSalidaN - kgHijoN);
+    const costoKg       = cMadReal > 0 ? cMadReal : 0;
+    const mgPadreN      = parseFloat(margenPadre) || 0;
+    const pvpPadre      = mgPadreN < 100 && costoKg > 0 ? costoKg / (1 - mgPadreN / 100) : 0;
+    const totalKgF      = formulaSalmueraIngs.reduce((s,i) => s + i.gramos, 0) / 1000;
+    const costoTotF     = formulaSalmueraIngs.reduce((s,i) => s + i.costo, 0);
+    const precioKgSal   = totalKgF > 0 ? costoTotF / totalKgF : 0;
+
+    const rows = [
+      ['COSTOS 1 KG —', producto.nombre],
+      [],
+      ['═══ FASE 1 — MATERIA PRIMA ═══'],
+      ['Materia Prima', mpVinculada ? (mpVinculada.nombre_producto || mpVinculada.nombre) : '—'],
+      ['Precio/kg', precioCarne, '$/kg'],
+      ['kg iniciales', kgIni, 'kg'],
+      ['Costo carne', kgIni * precioCarne, '$'],
+      [],
+      ['═══ FASE 2 — INYECCIÓN ═══'],
+      ['Salmuera', formulaSalmueraNombre || '—'],
+      ['% Inyección', pctInjN, '%'],
+      ['kg salmuera necesarios', kgSalmueraNec.toFixed(3), 'kg'],
+      ['Precio salmuera/kg', precioKgSal.toFixed(4), '$/kg'],
+      ...(formulaSalmueraIngs.length > 0 ? [
+        [],
+        ['  Ingredientes Salmuera', 'Gramos', 'Costo'],
+        ...formulaSalmueraIngs.map(i => [`  ${i.nombre}`, i.gramos + 'g', '$' + i.costo.toFixed(4)]),
+      ] : []),
+      ...(formulaRubNombre ? [[], ['Rub/Especias', formulaRubNombre]] : []),
+      ...(mpAdicionalId ? [['Adicional', mpsFormula.find(m => String(m.id) === mpAdicionalId)?.nombre_producto || mpAdicionalId, gramosAdicional + 'g/kg']] : []),
+      [],
+      ['═══ FASE 3 — MADURACIÓN ═══'],
+      ['Tiempo', `${horasMad}h ${minutosMad}m`, `= ${(parseFloat(horasMad||0)+parseFloat(minutosMad||0)/60).toFixed(1)}h`],
+      ['Peso entrada (calculado)', kgEntradaMad.toFixed(3), 'kg'],
+      ['Peso salida (real)', kgSalidaN > 0 ? kgSalidaN.toFixed(3) : '—', 'kg'],
+      ['Merma', kgSalidaN > 0 ? mermaMadKg.toFixed(3) : '—', 'kg'],
+      ['% Merma', kgSalidaN > 0 ? pctMermaMad.toFixed(1) + '%' : '—'],
+      ['C_mad (costo/kg post-mad)', costoKg > 0 ? costoKg.toFixed(4) : '—', '$/kg'],
+      [],
+      ['═══ DISTRIBUCIÓN ═══'],
+      ['kg totales post-maduración', kgSalidaN.toFixed(3), 'kg'],
+      ['kg para Padre (' + producto.nombre + ')', kgPadreN.toFixed(3), 'kg'],
+      ['kg para Hijo', kgHijoN.toFixed(3), 'kg'],
+      ['Costo/kg', costoKg.toFixed(4), '$/kg'],
+      ['Costo Padre', (kgPadreN * costoKg).toFixed(4), '$'],
+      ['Costo Hijo', (kgHijoN * costoKg).toFixed(4), '$'],
+      [],
+      ['═══ PRECIO DE VENTA — PADRE ═══'],
+      ['Costo/kg', costoKg.toFixed(4), '$/kg'],
+      ['Margen', mgPadreN + '%'],
+      ['PRECIO VENTA/KG', pvpPadre.toFixed(4), '$/kg'],
+    ];
+
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [{ wch: 35 }, { wch: 18 }, { wch: 12 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Costos 1kg');
+    XLSX.writeFile(wb, `${producto.nombre}_Costos1kg.xlsx`);
+  }
+
+  function descargarExcelPruebas() {
+    const rows = [
+      ['PRUEBAS —', producto.nombre],
+      ['Costo base/kg', cFinalActual.toFixed(4), '$/kg'],
+      [],
+      ['Peso funda', pruebaGramosN * 1000 + 'g', pruebaGramosN + ' kg'],
+      ['Costo carne', pruebaCarne.toFixed(4), '$'],
+      ['Empaque', pruebaEmpMp?.nombre_producto || pruebaEmpMp?.nombre || '—', pruebaEmp > 0 ? '$' + pruebaEmp.toFixed(4) : ''],
+      ['Etiqueta', pruebaEtiMp?.nombre_producto || pruebaEtiMp?.nombre || '—', pruebaEti > 0 ? '$' + pruebaEti.toFixed(4) : ''],
+      ['COSTO TOTAL FUNDA', pruebaTotal.toFixed(4), '$'],
+      [],
+      ['═══ HISTORIAL DE PRUEBAS ═══'],
+      ['Fecha', 'Gramos', 'Costo/kg', 'Precio venta'],
+      ...versionesPruebas.map(v => [v.fecha, v.gramos_prueba + 'g', v.costo_base ? '$' + parseFloat(v.costo_base).toFixed(4) : '—', v.precio_venta ? '$' + parseFloat(v.precio_venta).toFixed(4) : '—']),
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [{ wch: 28 }, { wch: 16 }, { wch: 14 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Pruebas');
+    XLSX.writeFile(wb, `${producto.nombre}_Pruebas.xlsx`);
+  }
+
+  function descargarExcelProduccion() {
+    const rows = [
+      ['PRODUCCIÓN —', producto.nombre],
+      [],
+      ['STOCK — LOTES INYECTADOS'],
+      ['Lote ID', 'Fecha entrada', 'kg entrada', 'kg salida mad', 'Costo mad/kg', 'Estado'],
+      ...lotesStock.map(l => [
+        l.lote_id || '—',
+        l.fecha_entrada || '—',
+        parseFloat(l.kg_inicial || 0).toFixed(3),
+        parseFloat(l.kg_salida_maduracion || 0).toFixed(3),
+        l.costo_mad_kg ? '$' + parseFloat(l.costo_mad_kg).toFixed(4) : '—',
+        l.estado || '—',
+      ]),
+      [],
+      ['HISTORIAL — INYECCIONES'],
+      ['Fecha', 'Salmuera', '% Inyección', 'Estado'],
+      ...historialInj.map(h => [
+        h.produccion_inyeccion?.fecha || '—',
+        h.produccion_inyeccion?.formula_salmuera || '—',
+        h.produccion_inyeccion?.porcentaje_inyeccion || '—',
+        h.produccion_inyeccion?.estado || '—',
+      ]),
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [{ wch: 18 }, { wch: 16 }, { wch: 14 }, { wch: 16 }, { wch: 14 }, { wch: 12 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Producción');
+    XLSX.writeFile(wb, `${producto.nombre}_Produccion.xlsx`);
+  }
+
   const cFinalActual   = getCFinal();
   const pruebaGramosN  = parseFloat(pruebaGramos)  || 0;
   const pruebaEmpMp    = mpsEmpaque.find(m => String(m.id) === pruebaEmpSel);
@@ -619,6 +743,11 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
       ══════════════════════════════════════════ */}
       {tabActivo === 'costos' && (
         <div>
+          <div style={{ display:'flex', justifyContent:'flex-end', padding:'8px 0 4px' }}>
+            <button onClick={descargarExcelCostos} style={{ padding:'7px 14px', background:'#1a6b3c', color:'white', border:'none', borderRadius:8, fontSize:12, fontWeight:700, cursor:'pointer' }}>
+              📥 Descargar Excel
+            </button>
+          </div>
 
           {/* ── PADRE / INDEPENDIENTE ── */}
           {(tipo === 'padre' || tipo === 'independiente') && (() => {
@@ -1372,11 +1501,16 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
                 Costo base: {cFinalActual > 0 ? <strong style={{ color: '#27ae60' }}>${cFinalActual.toFixed(4)}/kg</strong> : <span style={{ color: '#e74c3c' }}>sin datos — configura Costos 1 kg</span>}
               </div>
             </div>
+            <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+              <button onClick={descargarExcelPruebas} style={{ padding:'7px 14px', background:'#1a6b3c', color:'white', border:'none', borderRadius:8, fontSize:12, fontWeight:700, cursor:'pointer' }}>
+                📥 Excel
+              </button>
             {pruebaGramosN > 0 && pruebaTotal > 0 && (
               <button onClick={guardarVersionPrueba} style={{ background: '#27ae60', color: 'white', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 12, fontWeight: 'bold', cursor: 'pointer' }}>
                 💾 Guardar versión
               </button>
             )}
+            </div>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1fr 1fr 1fr', gap: 12, marginBottom: 14 }}>
@@ -1483,6 +1617,11 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
       ══════════════════════════════════════════ */}
       {tabActivo === 'produccion' && (
         <div>
+          <div style={{ display:'flex', justifyContent:'flex-end', padding:'8px 0 4px' }}>
+            <button onClick={descargarExcelProduccion} style={{ padding:'7px 14px', background:'#1a6b3c', color:'white', border:'none', borderRadius:8, fontSize:12, fontWeight:700, cursor:'pointer' }}>
+              📥 Descargar Excel
+            </button>
+          </div>
           {lotesStock.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '40px 20px', color: '#aaa', background: 'white', borderRadius: 12 }}>
               Sin lotes madurados registrados
