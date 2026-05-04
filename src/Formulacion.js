@@ -406,7 +406,7 @@ function Formulacion({ producto, onVolver, onVolverMenu, onAbrirMaterias, userRo
         <ScanFormula
           producto={producto}
           onCerrar={() => setScanAbierto(false)}
-          onImportada={() => { setScanAbierto(false); f.cargarFormulacion?.(); }}
+          onImportada={() => { setScanAbierto(false); f.cargarDatos?.(); }}
         />
       )}
 

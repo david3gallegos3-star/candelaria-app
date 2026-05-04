@@ -93,15 +93,34 @@ export default function ScanFormula({ producto, onCerrar, onImportada }) {
       // Borrar formulación actual y reemplazar
       await supabase.from('formulaciones').delete().eq('producto_nombre', producto.nombre);
 
-      const filas = aGuardar.map((ing, idx) => ({
-        producto_nombre:   producto.nombre,
-        producto_id:       producto.id,
-        seccion:           ing.seccion,
-        orden:             idx + 1,
-        ingrediente_nombre: ing.nombre,
-        gramos:            ing.gramos,
-        materia_prima_id:  ing.mp?.id || null,
-      }));
+      const mpFilas = aGuardar.filter(i => i.seccion === 'MP');
+      const adFilas = aGuardar.filter(i => i.seccion === 'AD');
+      const filas = [
+        ...mpFilas.map((ing, idx) => ({
+          producto_nombre:    producto.nombre,
+          producto_id:        producto.id,
+          seccion:            'MP',
+          orden:              idx,
+          ingrediente_nombre: ing.nombre,
+          gramos:             parseFloat(ing.gramos) || 0,
+          kilos:              (parseFloat(ing.gramos) || 0) / 1000,
+          materia_prima_id:   ing.mp?.id || null,
+          nota_cambio:        '',
+          especificacion:     '',
+        })),
+        ...adFilas.map((ing, idx) => ({
+          producto_nombre:    producto.nombre,
+          producto_id:        producto.id,
+          seccion:            'AD',
+          orden:              idx,
+          ingrediente_nombre: ing.nombre,
+          gramos:             parseFloat(ing.gramos) || 0,
+          kilos:              (parseFloat(ing.gramos) || 0) / 1000,
+          materia_prima_id:   ing.mp?.id || null,
+          nota_cambio:        '',
+          especificacion:     '',
+        })),
+      ];
 
       const { error: insErr } = await supabase.from('formulaciones').insert(filas);
       if (insErr) throw insErr;
