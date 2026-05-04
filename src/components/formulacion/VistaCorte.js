@@ -68,6 +68,8 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
   const [gramosAdicional,    setGramosAdicional]    = useState('');
   const [kgSalidaMad,       setKgSalidaMad]       = useState('');
   const [kgParaHijo,        setKgParaHijo]        = useState('');
+  const [margenPadre,       setMargenPadre]       = useState('15');
+  const [margenHijo,        setMargenHijo]        = useState('15');
   // Compat legacy (no se usan en UI pero se mantienen por si hay config guardada antigua)
   const [pctRub,             setPctRub]             = useState('');
   const [costoRubKg,         setCostoRubKg]         = useState('');
@@ -236,6 +238,8 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
         if (c.mp_carne_id) setMpCarneId(c.mp_carne_id);
         if (c.kg_salida_mad) setKgSalidaMad(String(c.kg_salida_mad));
         if (c.kg_para_hijo)  setKgParaHijo(String(c.kg_para_hijo));
+        if (c.margen_padre !== undefined) setMargenPadre(String(c.margen_padre));
+        if (c.margen_hijo  !== undefined) setMargenHijo(String(c.margen_hijo));
       }
 
       // Formulaciones SALMUERAS + todas las MPs + config del padre (si es hijo)
@@ -307,6 +311,8 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
       mp_carne_id:       mpCarneId                   || '',
       kg_salida_mad:     parseFloat(kgSalidaMad)    || 0,
       kg_para_hijo:      parseFloat(kgParaHijo)     || 0,
+      margen_padre:      parseFloat(margenPadre)   || 15,
+      margen_hijo:       parseFloat(margenHijo)    || 15,
       c_mad_real: (() => {
         const pctInjN   = parseFloat(pctInj) || 0;
         const kgIni     = parseFloat(kgSalBase) || 2;
@@ -976,14 +982,40 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
                                       <span>= ${costoKg.toFixed(4)}/kg</span>
                                     </div>
                                   </div>
-                                  {/* Costo final grande */}
+                                  {/* Costo final + Margen */}
                                   <div style={{ background: 'linear-gradient(135deg,#1a3a5c,#2980b9)', borderRadius: 10, padding: '14px 16px', marginTop: 12 }}>
-                                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', marginBottom: 2 }}>Costo final — {producto.nombre}</div>
+                                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', marginBottom: 2 }}>Costo — {producto.nombre}</div>
                                     <div style={{ fontSize: 32, fontWeight: 900, color: '#f9e79f' }}>${costoKg.toFixed(4)}/kg</div>
                                     <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', marginTop: 4 }}>
                                       {kgPadreN.toFixed(3)} kg · ${costoPadre.toFixed(4)} costo total
                                     </div>
                                   </div>
+                                  {/* Margen de ganancia */}
+                                  {(() => {
+                                    const mgN  = parseFloat(margenPadre) || 0;
+                                    const pvp  = mgN < 100 ? costoKg / (1 - mgN / 100) : 0;
+                                    return (
+                                      <div style={{ background: '#1c1c2e', borderRadius: 10, padding: '14px 16px', marginTop: 8 }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                                          <span style={{ fontSize: 12, color: '#aaa', whiteSpace: 'nowrap' }}>Margen de ganancia</span>
+                                          <input type="number" min="0" max="99" step="1"
+                                            value={margenPadre} onChange={e => setMargenPadre(e.target.value)}
+                                            disabled={!modoEdicion}
+                                            style={{ width: 70, padding: '5px 8px', borderRadius: 6, border: '1.5px solid #f39c12', fontSize: 15, fontWeight: 'bold', textAlign: 'center', background: modoEdicion ? '#2c2c3e' : '#111', color: '#f9e79f' }} />
+                                          <span style={{ fontSize: 12, color: '#aaa' }}>%</span>
+                                        </div>
+                                        {pvp > 0 && (
+                                          <div style={{ fontSize: 11, color: '#888', marginBottom: 6 }}>
+                                            Precio = ${costoKg.toFixed(4)} ÷ (1 − {mgN}%) = ${costoKg.toFixed(4)} ÷ {(1 - mgN/100).toFixed(2)}
+                                          </div>
+                                        )}
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                          <span style={{ fontSize: 13, fontWeight: 700, color: '#f39c12', textTransform: 'uppercase', letterSpacing: 1 }}>PRECIO DE VENTA/KG</span>
+                                          <span style={{ fontSize: 28, fontWeight: 900, color: '#f39c12' }}>{pvp > 0 ? `$${pvp.toFixed(4)}` : '—'}</span>
+                                        </div>
+                                      </div>
+                                    );
+                                  })()}
                                 </div>
                               )}
                             </>
@@ -1273,15 +1305,43 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
                         )}
 
                         {cLimpio > 0 && (
-                          <div style={{ background: 'linear-gradient(135deg,#6c3483,#8e44ad)', borderRadius: 10, padding: '14px 16px' }}>
-                            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', marginBottom: 2 }}>Costo final — {producto.nombre}</div>
-                            <div style={{ fontSize: 30, fontWeight: 'bold', color: '#f9e79f' }}>${cLimpio.toFixed(4)}/kg</div>
-                            {costoEntrada > 0 && (
-                              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', marginTop: 4 }}>
-                                Entrada ${(costoEntrada/kgEnt).toFixed(4)}/kg → después de créditos y merma deshuese
-                              </div>
-                            )}
-                          </div>
+                          <>
+                            <div style={{ background: 'linear-gradient(135deg,#6c3483,#8e44ad)', borderRadius: 10, padding: '14px 16px', marginBottom: 8 }}>
+                              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', marginBottom: 2 }}>Costo — {producto.nombre}</div>
+                              <div style={{ fontSize: 30, fontWeight: 'bold', color: '#f9e79f' }}>${cLimpio.toFixed(4)}/kg</div>
+                              {costoEntrada > 0 && (
+                                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', marginTop: 4 }}>
+                                  Entrada ${(costoEntrada/kgEnt).toFixed(4)}/kg → después de créditos y merma deshuese
+                                </div>
+                              )}
+                            </div>
+                            {/* Margen de ganancia */}
+                            {(() => {
+                              const mgN = parseFloat(margenHijo) || 0;
+                              const pvp = mgN < 100 ? cLimpio / (1 - mgN / 100) : 0;
+                              return (
+                                <div style={{ background: '#1c1c2e', borderRadius: 10, padding: '14px 16px' }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                                    <span style={{ fontSize: 12, color: '#aaa', whiteSpace: 'nowrap' }}>Margen de ganancia</span>
+                                    <input type="number" min="0" max="99" step="1"
+                                      value={margenHijo} onChange={e => setMargenHijo(e.target.value)}
+                                      disabled={!modoEdicion}
+                                      style={{ width: 70, padding: '5px 8px', borderRadius: 6, border: '1.5px solid #f39c12', fontSize: 15, fontWeight: 'bold', textAlign: 'center', background: modoEdicion ? '#2c2c3e' : '#111', color: '#f9e79f' }} />
+                                    <span style={{ fontSize: 12, color: '#aaa' }}>%</span>
+                                  </div>
+                                  {pvp > 0 && (
+                                    <div style={{ fontSize: 11, color: '#888', marginBottom: 6 }}>
+                                      Precio = ${cLimpio.toFixed(4)} ÷ (1 − {mgN}%) = ${cLimpio.toFixed(4)} ÷ {(1 - mgN/100).toFixed(2)}
+                                    </div>
+                                  )}
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <span style={{ fontSize: 13, fontWeight: 700, color: '#f39c12', textTransform: 'uppercase', letterSpacing: 1 }}>PRECIO DE VENTA/KG</span>
+                                    <span style={{ fontSize: 28, fontWeight: 900, color: '#f39c12' }}>{pvp > 0 ? `$${pvp.toFixed(4)}` : '—'}</span>
+                                  </div>
+                                </div>
+                              );
+                            })()}
+                          </>
                         )}
                       </>
                     )}
