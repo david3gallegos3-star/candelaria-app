@@ -237,7 +237,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
       }
 
       // Formulaciones SALMUERAS + todas las MPs + config del padre (si es hijo)
-      const [{ data: prodsSal }, { data: prodsRub }, { data: allMps }, { data: padreCfgRow }] = await Promise.all([
+      const [{ data: prodsSal }, { data: prodsRub }, { data: allMps }] = await Promise.all([
         supabase.from('productos').select('nombre,categoria')
           .or('categoria.ilike.%salmuera%,nombre.ilike.%salmuera%')
           .eq('estado', 'ACTIVO').order('nombre'),
@@ -245,28 +245,27 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
           .or('nombre.ilike.%rub%,categoria.ilike.%rub%,categoria.ilike.%especia%')
           .eq('estado', 'ACTIVO').order('nombre'),
         supabase.from('materias_primas').select('id,nombre,nombre_producto,precio_kg,categoria').eq('eliminado', false),
-        (esPadre || !cfgEntry?.corte_padre)
-          ? Promise.resolve({ data: null })
-          : supabase.from('vista_horneado_config').select('config,producto_nombre')
-              .or(`producto_nombre.eq.${cfgEntry.corte_padre},producto_nombre.ilike.%${(cfgEntry.corte_padre||'').split(' ').slice(0,2).join(' ')}%`)
-              .limit(10),
+        Promise.resolve({ data: null }), // placeholder — padre se carga abajo por separado
       ]);
       setFormulaciones((prodsSal||[]).map(p => p.nombre));
       setRubFormulas((prodsRub||[]).map(p => p.nombre));
-      // Buscar config del padre: exact → partial (padre dentro de hijo-nombre o viceversa)
-      if (!esPadre && cfgEntry?.corte_padre && Array.isArray(padreCfgRow)) {
-        const padreNom = (cfgEntry.corte_padre || '').toLowerCase();
-        const exact   = padreCfgRow.find(r => r.producto_nombre.toLowerCase() === padreNom);
-        const partial = padreCfgRow.find(r =>
-          padreNom.includes(r.producto_nombre.toLowerCase()) ||
-          r.producto_nombre.toLowerCase().includes(padreNom) ||
-          r.producto_nombre.toLowerCase().split(' ').every(w => padreNom.includes(w))
-        );
-        const byCat = padreCfgRow.find(r => r.config?._categoria === 'CORTES' && r.config?.tipo === 'padre');
-        const found = exact || partial || byCat || padreCfgRow[0];
+
+      // Buscar config del padre (hijo): dos intentos separados para evitar problemas con .or() y espacios
+      if (!esPadre && cfgEntry?.corte_padre) {
+        const padreNom   = (cfgEntry.corte_padre || '').toLowerCase();
+        const primeraPal = (cfgEntry.corte_padre || '').split(' ')[0];
+        // Intento 1: ilike con la primera palabra (cubre 'New York' buscando 'New')
+        const { data: r1 } = await supabase.from('vista_horneado_config')
+          .select('config,producto_nombre')
+          .ilike('producto_nombre', `%${primeraPal}%`)
+          .limit(20);
+        const rows = r1 || [];
+        // Match: exacto > el nombre del config está contenido dentro del corte_padre > primero con tipo padre
+        const exact   = rows.find(r => r.producto_nombre.toLowerCase() === padreNom);
+        const partial = rows.find(r => padreNom.includes(r.producto_nombre.toLowerCase()) || r.producto_nombre.toLowerCase().includes(padreNom));
+        const byCat   = rows.find(r => r.config?._categoria === 'CORTES' && r.config?.tipo === 'padre');
+        const found   = exact || partial || byCat;
         if (found?.config) setPadreCfg(found.config);
-      } else if (padreCfgRow?.config) {
-        setPadreCfg(padreCfgRow.config);
       }
       setMpsFormula(allMps || []);
       // MPs de carne: categorías típicas de carne bovina
