@@ -184,17 +184,15 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
         }
       }
 
-      // 6. Precios Res Segunda + Puntas
-      const { data: mpSubp } = await supabase.from('materias_primas')
-        .select('nombre, nombre_producto, precio_kg, codigo')
-        .or('nombre_producto.ilike.%res segunda%,nombre.ilike.%res segunda%,nombre_producto.ilike.%puntas%,nombre.ilike.%puntas%')
-        .limit(6);
-      if (mpSubp) {
-        const resS = (mpSubp || []).find(m => (m.nombre_producto || m.nombre || '').toLowerCase().includes('segunda'));
-        const punt = (mpSubp || []).find(m => (m.nombre_producto || m.nombre || '').toLowerCase().includes('punt'));
-        if (resS) setPrecioResSegunda(parseFloat(resS.precio_kg || 0));
-        if (punt) setPrecioPuntas(parseFloat(punt.precio_kg || 0));
-      }
+      // 6. Precios Res Segunda + Puntas (queries separadas para evitar .or() con espacios)
+      const [{ data: mpSegunda }, { data: mpPuntas }] = await Promise.all([
+        supabase.from('materias_primas').select('nombre,nombre_producto,precio_kg').ilike('nombre_producto', '%segunda%').eq('eliminado', false).limit(3),
+        supabase.from('materias_primas').select('nombre,nombre_producto,precio_kg').ilike('nombre_producto', '%puntas%').eq('eliminado', false).limit(3),
+      ]);
+      const resS = (mpSegunda || [])[0];
+      const punt = (mpPuntas  || [])[0];
+      if (resS) setPrecioResSegunda(parseFloat(resS.precio_kg || 0));
+      if (punt) setPrecioPuntas(parseFloat(punt.precio_kg || 0));
 
       // 7. Empaque / Etiqueta
       const { data: mpsAll } = await supabase.from('materias_primas')
@@ -307,16 +305,17 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
       _categoria:      'CORTES',
       _updated:        new Date().toISOString(),
     };
-    const { data: existing } = await supabase
-      .from('vista_horneado_config').select('id, versiones')
-      .eq('producto_nombre', producto.nombre).maybeSingle();
-    if (existing) {
-      await supabase.from('vista_horneado_config')
-        .update({ config: newConfig, versiones: existing.versiones || versiones })
-        .eq('id', existing.id);
-    } else {
-      await supabase.from('vista_horneado_config')
-        .insert({ producto_nombre: producto.nombre, producto_id: producto.id, config: newConfig, versiones: [] });
+    try {
+      const payload = { producto_nombre: producto.nombre, producto_id: producto.id, config: newConfig, versiones };
+      console.log('[guardarConfig] upsert payload:', payload);
+      const { data: saved, error } = await supabase.from('vista_horneado_config')
+        .upsert(payload, { onConflict: 'producto_nombre' })
+        .select();
+      console.log('[guardarConfig] result:', { saved, error });
+      if (error) throw error;
+      if (!saved || saved.length === 0) throw new Error('El servidor no confirmó el guardado (RLS o constraint)');
+    } catch (e) {
+      alert('Error al guardar: ' + e.message);
     }
     setGuardando(false);
   }
@@ -349,13 +348,17 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
       pct_desecho:     parseFloat(pctDesecho)       || 0,
     };
     const nuevasVer = [snap, ...versiones].slice(0, 20);
-    const { data: existing } = await supabase
-      .from('vista_horneado_config').select('id')
-      .eq('producto_nombre', producto.nombre).maybeSingle();
-    if (existing) {
-      await supabase.from('vista_horneado_config').update({ versiones: nuevasVer }).eq('id', existing.id);
+    try {
+      const { error } = await supabase.from('vista_horneado_config')
+        .upsert(
+          { producto_nombre: producto.nombre, producto_id: producto.id, versiones: nuevasVer },
+          { onConflict: 'producto_nombre' }
+        );
+      if (error) throw error;
+      setVersiones(nuevasVer);
+    } catch (e) {
+      alert('Error al guardar historial: ' + e.message);
     }
-    setVersiones(nuevasVer);
     setAutoGuardando(false);
   }
 
