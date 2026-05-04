@@ -248,20 +248,22 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
         (esPadre || !cfgEntry?.corte_padre)
           ? Promise.resolve({ data: null })
           : supabase.from('vista_horneado_config').select('config,producto_nombre')
-              .ilike('producto_nombre', `%${(cfgEntry.corte_padre||'').split(' ')[0]}%`)
-              .limit(5),
+              .or(`producto_nombre.eq.${cfgEntry.corte_padre},producto_nombre.ilike.%${(cfgEntry.corte_padre||'').split(' ').slice(0,2).join(' ')}%`)
+              .limit(10),
       ]);
       setFormulaciones((prodsSal||[]).map(p => p.nombre));
       setRubFormulas((prodsRub||[]).map(p => p.nombre));
-      // Buscar config del padre: primero match exacto, luego parcial
+      // Buscar config del padre: exact → partial (padre dentro de hijo-nombre o viceversa)
       if (!esPadre && cfgEntry?.corte_padre && Array.isArray(padreCfgRow)) {
         const padreNom = (cfgEntry.corte_padre || '').toLowerCase();
-        const exact = padreCfgRow.find(r => r.producto_nombre.toLowerCase() === padreNom);
+        const exact   = padreCfgRow.find(r => r.producto_nombre.toLowerCase() === padreNom);
         const partial = padreCfgRow.find(r =>
           padreNom.includes(r.producto_nombre.toLowerCase()) ||
-          r.producto_nombre.toLowerCase().includes(padreNom)
+          r.producto_nombre.toLowerCase().includes(padreNom) ||
+          r.producto_nombre.toLowerCase().split(' ').every(w => padreNom.includes(w))
         );
-        const found = exact || partial || padreCfgRow[0];
+        const byCat = padreCfgRow.find(r => r.config?._categoria === 'CORTES' && r.config?.tipo === 'padre');
+        const found = exact || partial || byCat || padreCfgRow[0];
         if (found?.config) setPadreCfg(found.config);
       } else if (padreCfgRow?.config) {
         setPadreCfg(padreCfgRow.config);
@@ -868,42 +870,65 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
             return (
               <>
                 {/* Info del Padre — siempre visible */}
-                <div style={{ background: '#eaf4fd', borderRadius: 10, padding: '12px 16px', marginBottom: 12, border: '2px solid #2980b9' }}>
+                <div style={{ background: '#eaf4fd', borderRadius: 12, padding: '14px 16px', marginBottom: 14, border: '2px solid #2980b9' }}>
                   <div style={{ fontSize: 10, fontWeight: 700, color: '#1a3a5c', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>
                     👑 Configuración del Padre — {deshueseConfig?.corte_padre || '—'}
                   </div>
                   {!padreCfg ? (
-                    <div style={{ fontSize: 12, color: '#aaa', fontStyle: 'italic' }}>
-                      El padre aún no tiene configuración guardada. Abre "{deshueseConfig?.corte_padre}", rellena los campos y presiona Fijar Cambios.
+                    <div style={{ fontSize: 12, color: '#e67e22', background: '#fef9e7', borderRadius: 8, padding: '10px 12px' }}>
+                      ⚠ El padre aún no tiene config guardada. Abre <strong>"{deshueseConfig?.corte_padre}"</strong>, completa los campos y presiona <strong>Fijar Cambios</strong>.
                     </div>
                   ) : (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10 }}>
-                      <div>
-                        <div style={{ fontSize: 10, color: '#2980b9', fontWeight: 600, marginBottom: 4 }}>🥩 Carne</div>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: '#1a3a5c' }}>
-                          {padreMpCarne ? (padreMpCarne.nombre_producto || padreMpCarne.nombre) : '—'}
+                    <>
+                      {/* Fila 1: Carne · Maduración · Salmuera */}
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, marginBottom: 10 }}>
+                        <div style={{ background: 'white', borderRadius: 8, padding: '8px 10px' }}>
+                          <div style={{ fontSize: 10, color: '#e74c3c', fontWeight: 700, marginBottom: 3 }}>🥩 Carne (MP vinculada)</div>
+                          <div style={{ fontSize: 13, fontWeight: 800, color: '#1a1a2e' }}>
+                            {mpVinculada ? (mpVinculada.nombre_producto || mpVinculada.nombre) : '—'}
+                          </div>
+                          <div style={{ fontSize: 11, color: '#27ae60', marginTop: 2 }}>${precioCarne.toFixed(4)}/kg</div>
                         </div>
-                        {padreMpCarne && (
-                          <div style={{ fontSize: 11, color: '#27ae60', marginTop: 2 }}>${parseFloat(padreMpCarne.precio_kg||0).toFixed(4)}/kg</div>
-                        )}
-                      </div>
-                      <div>
-                        <div style={{ fontSize: 10, color: '#8e44ad', fontWeight: 600, marginBottom: 4 }}>⏱ Maduración</div>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: '#8e44ad' }}>
-                          {padreCfg.horas_mad !== undefined ? `${padreCfg.horas_mad}h ${padreCfg.minutos_mad||0}m` : '—'}
+                        <div style={{ background: 'white', borderRadius: 8, padding: '8px 10px' }}>
+                          <div style={{ fontSize: 10, color: '#8e44ad', fontWeight: 700, marginBottom: 3 }}>⏱ Maduración</div>
+                          <div style={{ fontSize: 16, fontWeight: 800, color: '#8e44ad' }}>
+                            {padreCfg.horas_mad !== undefined ? `${padreCfg.horas_mad}h ${padreCfg.minutos_mad||0}m` : '—'}
+                          </div>
+                          {padreHorasTotal && <div style={{ fontSize: 10, color: '#aaa' }}>{padreHorasTotal} h total · {padreCfg.pct_mad||0}% merma</div>}
                         </div>
-                        {padreHorasTotal && <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>{padreHorasTotal} h total</div>}
-                      </div>
-                      <div>
-                        <div style={{ fontSize: 10, color: '#2980b9', fontWeight: 600, marginBottom: 4 }}>💉 Salmuera</div>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: '#2980b9' }}>
-                          {padreCfg.formula_salmuera || '—'}
+                        <div style={{ background: 'white', borderRadius: 8, padding: '8px 10px' }}>
+                          <div style={{ fontSize: 10, color: '#2980b9', fontWeight: 700, marginBottom: 3 }}>💉 Salmuera</div>
+                          <div style={{ fontSize: 13, fontWeight: 800, color: '#2980b9' }}>
+                            {padreCfg.formula_salmuera || '—'}
+                          </div>
+                          {padreCfg.pct_inj > 0 && <div style={{ fontSize: 10, color: '#aaa' }}>{padreCfg.pct_inj}% inyección</div>}
                         </div>
-                        {padreCfg.pct_inj > 0 && (
-                          <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>{padreCfg.pct_inj}% inyección · {padreCfg.pct_mad || 0}% merma</div>
-                        )}
                       </div>
-                    </div>
+                      {/* Fila 2: Rub · Adicional */}
+                      {(padreCfg.formula_rub || padreCfg.mp_adicional_id) && (
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                          {padreCfg.formula_rub && (
+                            <div style={{ background: 'white', borderRadius: 8, padding: '8px 10px' }}>
+                              <div style={{ fontSize: 10, color: '#8e44ad', fontWeight: 700, marginBottom: 3 }}>🌶️ Rub</div>
+                              <div style={{ fontSize: 13, fontWeight: 700, color: '#6c3483' }}>{padreCfg.formula_rub}</div>
+                              {padreCfg.kg_rub_base > 0 && <div style={{ fontSize: 10, color: '#aaa' }}>Fórmula para {padreCfg.kg_rub_base} kg de carne</div>}
+                            </div>
+                          )}
+                          {padreCfg.mp_adicional_id && (() => {
+                            const mpAdPadre = mpsFormula.find(m => String(m.id) === String(padreCfg.mp_adicional_id));
+                            return (
+                              <div style={{ background: 'white', borderRadius: 8, padding: '8px 10px' }}>
+                                <div style={{ fontSize: 10, color: '#f39c12', fontWeight: 700, marginBottom: 3 }}>🟡 Adicional</div>
+                                <div style={{ fontSize: 13, fontWeight: 700, color: '#d68910' }}>
+                                  {mpAdPadre ? (mpAdPadre.nombre_producto || mpAdPadre.nombre) : 'ID: ' + padreCfg.mp_adicional_id}
+                                </div>
+                                {padreCfg.gramos_adicional > 0 && <div style={{ fontSize: 10, color: '#aaa' }}>{padreCfg.gramos_adicional}g por kg de carne</div>}
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
 
