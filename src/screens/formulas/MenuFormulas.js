@@ -421,24 +421,22 @@ export default function MenuFormulas({
                           </span>
                         </div>
                         {/* Cards padre + flecha + hijos */}
-                        <div style={{ display:'flex', alignItems:'center', gap:10, flexWrap:'wrap' }}>
+                        <div style={{ display:'flex', alignItems:'stretch', gap:10, flexWrap:'wrap' }}>
                           {/* Padre */}
-                          <div style={{ minWidth:160, flex:'0 0 auto' }}>
+                          <div style={{ width:180, flex:'0 0 180px' }}>
                             <CardProducto nombre={padre} esPadre esHijo={false} />
                           </div>
                           {/* Flecha */}
-                          <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:2, flex:'0 0 auto' }}>
-                            <div style={{ width:32, height:2, background:'linear-gradient(90deg,#f39c12,#8e44ad)', borderRadius:2 }} />
-                            <div style={{ fontSize:18, color:'#8e44ad', lineHeight:1 }}>▶</div>
+                          <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:2, flex:'0 0 auto' }}>
+                            <div style={{ width:28, height:2, background:'linear-gradient(90deg,#f39c12,#8e44ad)', borderRadius:2 }} />
+                            <div style={{ fontSize:16, color:'#8e44ad', lineHeight:1 }}>▶</div>
                           </div>
                           {/* Hijos */}
-                          <div style={{ display:'flex', gap:10, flexWrap:'wrap', flex:1 }}>
-                            {hijos.map(hijo => (
-                              <div key={hijo} style={{ minWidth:160, flex:'1 1 160px' }}>
-                                <CardProducto nombre={hijo} esPadre={false} esHijo />
-                              </div>
-                            ))}
-                          </div>
+                          {hijos.map(hijo => (
+                            <div key={hijo} style={{ width:180, flex:'0 0 180px' }}>
+                              <CardProducto nombre={hijo} esPadre={false} esHijo />
+                            </div>
+                          ))}
                         </div>
                       </div>
                     ))}
