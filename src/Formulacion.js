@@ -16,6 +16,7 @@ import PanelComparador         from './components/formulacion/PanelComparador';
 import FormulaVersiones        from './components/formulacion/FormulaVersiones';
 import ModalBuscador           from './components/formulacion/ModalBuscador';
 import ModalNota               from './components/formulacion/ModalNota';
+import ScanFormula             from './components/formulacion/ScanFormula';
 
 function Formulacion({ producto, onVolver, onVolverMenu, onAbrirMaterias, userRol, currentUser, onContextoFormula, onIngredientesFormula }) {
 
@@ -26,6 +27,7 @@ function Formulacion({ producto, onVolver, onVolverMenu, onAbrirMaterias, userRo
                     || producto?.categoria === 'INMERSIÓN' || producto?.categoria === 'INMERSION';
   const [versionesAbierto, setVersionesAbierto] = useState(false);
   const [tabVersiones,     setTabVersiones]     = useState('versiones');
+  const [scanAbierto,      setScanAbierto]      = useState(false);
 
   // ── Envía contexto de fórmula al chat flotante ─────────────────────────────
   useEffect(() => {
@@ -164,6 +166,17 @@ function Formulacion({ producto, onVolver, onVolverMenu, onAbrirMaterias, userRo
               }}
             >📦 Materias Primas</button>
           )}
+          {/* Botón Escanear fórmula */}
+          <button
+            onClick={() => setScanAbierto(true)}
+            style={{
+              marginLeft:'auto', padding:'8px 18px',
+              background:'linear-gradient(135deg,#8e44ad,#6c3483)',
+              color:'white', border:'none', borderRadius:8,
+              cursor:'pointer', fontSize:'13px', fontWeight:'bold',
+              margin:'8px 12px 8px auto',
+            }}
+          >📷 Escanear fórmula</button>
         </div>
       )}
 
@@ -389,6 +402,14 @@ function Formulacion({ producto, onVolver, onVolverMenu, onAbrirMaterias, userRo
       />
 
       {/* Modal nota */}
+      {scanAbierto && (
+        <ScanFormula
+          producto={producto}
+          onCerrar={() => setScanAbierto(false)}
+          onImportada={() => { setScanAbierto(false); f.cargarFormulacion?.(); }}
+        />
+      )}
+
       <ModalNota
         mobile={f.mobile}
         producto={producto}
