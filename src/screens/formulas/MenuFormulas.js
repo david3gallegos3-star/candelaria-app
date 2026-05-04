@@ -408,7 +408,8 @@ export default function MenuFormulas({
                         background:'linear-gradient(135deg,#1a1a2e,#1e2a45)',
                         borderRadius:16, padding:'14px 16px',
                         border:'1.5px solid #2c3e6e',
-                        boxShadow:'0 4px 16px rgba(0,0,0,0.18)'
+                        boxShadow:'0 4px 16px rgba(0,0,0,0.18)',
+                        display:'inline-flex', flexDirection:'column',
                       }}>
                         {/* Etiqueta grupo */}
                         <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:12 }}>
