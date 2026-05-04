@@ -663,6 +663,11 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
         </div>
         {/* Derecha: botones acción */}
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {/* Descargar Excel — según tab activo */}
+          <button onClick={tabActivo === 'costos' ? descargarExcelCostos : tabActivo === 'pruebas' ? descargarExcelPruebas : descargarExcelProduccion}
+            style={{ background: '#1a6b3c', color: 'white', border: 'none', borderRadius: 8, padding: '7px 14px', fontSize: 12, fontWeight: 'bold', cursor: 'pointer' }}>
+            📥 Excel
+          </button>
           {/* Versiones — siempre visible si hay */}
           <button onClick={() => setModalVer(true)}
             style={{ background: '#8e44ad', color: 'white', border: 'none', borderRadius: 8, padding: '7px 14px', fontSize: 12, fontWeight: 'bold', cursor: 'pointer' }}>
@@ -743,11 +748,6 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
       ══════════════════════════════════════════ */}
       {tabActivo === 'costos' && (
         <div>
-          <div style={{ display:'flex', justifyContent:'flex-end', padding:'8px 0 4px' }}>
-            <button onClick={descargarExcelCostos} style={{ padding:'7px 14px', background:'#1a6b3c', color:'white', border:'none', borderRadius:8, fontSize:12, fontWeight:700, cursor:'pointer' }}>
-              📥 Descargar Excel
-            </button>
-          </div>
 
           {/* ── PADRE / INDEPENDIENTE ── */}
           {(tipo === 'padre' || tipo === 'independiente') && (() => {
@@ -1502,9 +1502,6 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
               </div>
             </div>
             <div style={{ display:'flex', gap:8, alignItems:'center' }}>
-              <button onClick={descargarExcelPruebas} style={{ padding:'7px 14px', background:'#1a6b3c', color:'white', border:'none', borderRadius:8, fontSize:12, fontWeight:700, cursor:'pointer' }}>
-                📥 Excel
-              </button>
             {pruebaGramosN > 0 && pruebaTotal > 0 && (
               <button onClick={guardarVersionPrueba} style={{ background: '#27ae60', color: 'white', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 12, fontWeight: 'bold', cursor: 'pointer' }}>
                 💾 Guardar versión
@@ -1617,11 +1614,6 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
       ══════════════════════════════════════════ */}
       {tabActivo === 'produccion' && (
         <div>
-          <div style={{ display:'flex', justifyContent:'flex-end', padding:'8px 0 4px' }}>
-            <button onClick={descargarExcelProduccion} style={{ padding:'7px 14px', background:'#1a6b3c', color:'white', border:'none', borderRadius:8, fontSize:12, fontWeight:700, cursor:'pointer' }}>
-              📥 Descargar Excel
-            </button>
-          </div>
           {lotesStock.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '40px 20px', color: '#aaa', background: 'white', borderRadius: 12 }}>
               Sin lotes madurados registrados
