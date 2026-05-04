@@ -1105,7 +1105,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
                   )}
                 </div>
 
-                {/* Entrada al deshuese — auto desde Padre, o manual si no hay config */}
+                {/* Entrada al deshuese — siempre desde el Padre */}
                 {padreCfg?.kg_para_hijo > 0 && padreCfg?.c_mad_real > 0 ? (
                   <div style={{ background: '#eaf4fd', borderRadius: 10, padding: '12px 16px', marginBottom: 12, border: '2px solid #2980b9' }}>
                     <div style={{ fontSize: 11, fontWeight: 700, color: '#1a3a5c', marginBottom: 8 }}>
@@ -1130,27 +1130,12 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
                     </div>
                   </div>
                 ) : (
-                  <div style={{ background: '#f0f8ff', borderRadius: 10, padding: '12px 16px', marginBottom: 12, border: '1px solid #aed6f1' }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: '#1a3a5c', marginBottom: 8 }}>
-                      📥 Entrada al deshuese (manual — el Padre aún no tiene config)
+                  <div style={{ background: '#fef9e7', borderRadius: 10, padding: '12px 16px', marginBottom: 12, border: '1.5px solid #f39c12' }}>
+                    <div style={{ fontSize: 12, color: '#b7770d', fontWeight: 700, marginBottom: 4 }}>
+                      ⚠ El Padre aún no ha asignado los kg para este Hijo
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                      <div>
-                        <label style={{ fontSize: 11, color: '#555', display: 'block', marginBottom: 4, fontWeight: 600 }}>Costo/kg del padre ($/kg)</label>
-                        <input type="number" min="0" step="0.0001"
-                          placeholder="ej: 4.5000"
-                          value={costoMadPadre} onChange={e => setCostoMadPadre(e.target.value)}
-                          disabled={!modoEdicion}
-                          style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '2px solid #2980b9', fontSize: 14, fontWeight: 'bold', boxSizing: 'border-box', background: modoEdicion ? 'white' : '#f8f9fa' }} />
-                      </div>
-                      <div>
-                        <label style={{ fontSize: 11, color: '#555', display: 'block', marginBottom: 4, fontWeight: 600 }}>kg entrada a deshuese</label>
-                        <input type="number" min="0" step="0.001"
-                          placeholder="ej: 100"
-                          value={kgEntrada} onChange={e => setKgEntrada(e.target.value)}
-                          disabled={!modoEdicion}
-                          style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '2px solid #e67e22', fontSize: 14, fontWeight: 'bold', boxSizing: 'border-box', background: modoEdicion ? 'white' : '#f8f9fa' }} />
-                      </div>
+                    <div style={{ fontSize: 11, color: '#7d6608' }}>
+                      Abre <strong>"{deshueseConfig?.corte_padre || 'el producto Padre'}"</strong>, ve a la <strong>Fase 3 — Maduración</strong>, ingresa el peso salida y cuántos kg van al Hijo, luego presiona <strong>Fijar Cambios</strong>.
                     </div>
                   </div>
                 )}
