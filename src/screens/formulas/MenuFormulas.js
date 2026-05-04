@@ -96,8 +96,9 @@ export default function MenuFormulas({
   }, [productos]);
 
   useEffect(() => {
-    supabase.from('deshuese_config').select('corte_padre,corte_hijo').eq('activo', true)
-      .then(({ data }) => {
+    supabase.from('deshuese_config').select('corte_padre,corte_hijo,activo')
+      .then(({ data, error }) => {
+        console.log('[deshuese_config]', data, error);
         const pdDe = {}, hijosDe = {};
         (data || []).forEach(({ corte_padre, corte_hijo }) => {
           if (!corte_padre || !corte_hijo) return;
@@ -105,6 +106,7 @@ export default function MenuFormulas({
           if (!hijosDe[corte_padre]) hijosDe[corte_padre] = [];
           if (!hijosDe[corte_padre].includes(corte_hijo)) hijosDe[corte_padre].push(corte_hijo);
         });
+        console.log('[hijosDelPadre]', hijosDe, '[padreDeHijo]', pdDe);
         setPadreDeHijo(pdDe);
         setHijosDelPadre(hijosDe);
       });
