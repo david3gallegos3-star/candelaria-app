@@ -917,43 +917,76 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
                             style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '2px solid #8e44ad', fontSize: 16, fontWeight: 'bold', boxSizing: 'border-box', background: modoEdicion ? 'white' : '#f8f9fa' }} />
                         </div>
                         {(() => {
-                          const kgHijoN   = parseFloat(kgParaHijo) || 0;
-                          const kgPadreN  = Math.max(0, kgSalidaN - kgHijoN);
-                          const costoKg   = cMadReal > 0 ? cMadReal : (ultimoCMad > 0 ? ultimoCMad : 0);
-                          const showCosto = costoKg > 0;
+                          const kgHijoN    = parseFloat(kgParaHijo) || 0;
+                          const kgPadreN   = Math.max(0, kgSalidaN - kgHijoN);
+                          const costoKg    = cMadReal > 0 ? cMadReal : (ultimoCMad > 0 ? ultimoCMad : 0);
+                          const costoTotal = kgSalidaN * costoKg;
+                          const costoHijo  = kgHijoN  * costoKg;
+                          const costoPadre = kgPadreN  * costoKg;
+                          const showCosto  = costoKg > 0;
                           return (
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                              {/* Padre */}
-                              <div style={{ background: '#eaf4fd', borderRadius: 8, padding: '10px 12px', border: '1.5px solid #2980b9' }}>
-                                <div style={{ fontSize: 10, color: '#1a3a5c', fontWeight: 700, marginBottom: 4 }}>
-                                  🥩 Queda como Padre
+                            <>
+                              {/* Tarjetas resumen */}
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: showCosto && kgPadreN > 0 ? 12 : 0 }}>
+                                <div style={{ background: '#eaf4fd', borderRadius: 8, padding: '10px 12px', border: '1.5px solid #2980b9' }}>
+                                  <div style={{ fontSize: 10, color: '#1a3a5c', fontWeight: 700, marginBottom: 4 }}>🥩 Queda como Padre</div>
+                                  <div style={{ fontSize: 20, fontWeight: 900, color: '#1a3a5c' }}>{kgPadreN.toFixed(3)} kg</div>
+                                  {showCosto && (
+                                    <div style={{ fontSize: 11, color: '#2980b9', marginTop: 4 }}>
+                                      {kgPadreN.toFixed(3)} × ${costoKg.toFixed(4)} = <strong>${costoPadre.toFixed(4)}</strong>
+                                    </div>
+                                  )}
                                 </div>
-                                <div style={{ fontSize: 20, fontWeight: 900, color: '#1a3a5c' }}>
-                                  {kgPadreN.toFixed(3)} kg
-                                </div>
-                                {showCosto && (
-                                  <div style={{ fontSize: 11, color: '#2980b9', marginTop: 4 }}>
-                                    {kgPadreN.toFixed(3)} kg × ${costoKg.toFixed(4)} =&nbsp;
-                                    <strong>${(kgPadreN * costoKg).toFixed(4)}</strong>
+                                <div style={{ background: '#f3e8fd', borderRadius: 8, padding: '10px 12px', border: '1.5px solid #8e44ad' }}>
+                                  <div style={{ fontSize: 10, color: '#6c3483', fontWeight: 700, marginBottom: 4 }}>✂️ Va al Hijo (deshuese)</div>
+                                  <div style={{ fontSize: 20, fontWeight: 900, color: '#6c3483' }}>
+                                    {kgHijoN > 0 ? `${kgHijoN.toFixed(3)} kg` : '— kg'}
                                   </div>
-                                )}
+                                  {showCosto && kgHijoN > 0 && (
+                                    <div style={{ fontSize: 11, color: '#8e44ad', marginTop: 4 }}>
+                                      {kgHijoN.toFixed(3)} × ${costoKg.toFixed(4)} = <strong>${costoHijo.toFixed(4)}</strong>
+                                    </div>
+                                  )}
+                                </div>
                               </div>
-                              {/* Hijo */}
-                              <div style={{ background: '#f3e8fd', borderRadius: 8, padding: '10px 12px', border: '1.5px solid #8e44ad' }}>
-                                <div style={{ fontSize: 10, color: '#6c3483', fontWeight: 700, marginBottom: 4 }}>
-                                  ✂️ Va al Hijo (deshuese)
-                                </div>
-                                <div style={{ fontSize: 20, fontWeight: 900, color: '#6c3483' }}>
-                                  {kgHijoN > 0 ? `${kgHijoN.toFixed(3)} kg` : '— kg'}
-                                </div>
-                                {showCosto && kgHijoN > 0 && (
-                                  <div style={{ fontSize: 11, color: '#8e44ad', marginTop: 4 }}>
-                                    {kgHijoN.toFixed(3)} kg × ${costoKg.toFixed(4)} =&nbsp;
-                                    <strong>${(kgHijoN * costoKg).toFixed(4)}</strong>
+
+                              {/* Desglose de costos del Padre */}
+                              {showCosto && kgPadreN > 0 && (
+                                <div style={{ background: '#f0f4f8', borderRadius: 10, padding: '14px 16px', marginTop: 4 }}>
+                                  <div style={{ fontSize: 11, fontWeight: 700, color: '#1a3a5c', marginBottom: 10 }}>
+                                    Cálculo de costo — {producto.nombre} (Padre):
                                   </div>
-                                )}
-                              </div>
-                            </div>
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 12 }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 10px', background: 'white', borderRadius: 7, border: '1px solid #d5e8f5' }}>
+                                      <span style={{ color: '#555' }}>Costo total batch ({kgSalidaN.toFixed(3)} kg × ${costoKg.toFixed(4)}/kg)</span>
+                                      <strong>${costoTotal.toFixed(4)}</strong>
+                                    </div>
+                                    {kgHijoN > 0 && (
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 10px', background: '#f3e8fd', borderRadius: 7, border: '1px solid #c39bd3' }}>
+                                        <span style={{ color: '#6c3483' }}>− Costo asignado al Hijo ({kgHijoN.toFixed(3)} kg × ${costoKg.toFixed(4)})</span>
+                                        <strong style={{ color: '#6c3483' }}>−${costoHijo.toFixed(4)}</strong>
+                                      </div>
+                                    )}
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 10px', background: '#eaf4fd', borderRadius: 7, border: '1px solid #aed6f1' }}>
+                                      <span style={{ color: '#1a3a5c', fontWeight: 600 }}>Costo del Padre ({kgPadreN.toFixed(3)} kg de {producto.nombre})</span>
+                                      <strong style={{ color: '#1a3a5c' }}>${costoPadre.toFixed(4)}</strong>
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 10px', background: 'white', borderRadius: 7, border: '1px solid #d5e8f5', fontSize: 11, color: '#888' }}>
+                                      <span>÷ {kgPadreN.toFixed(3)} kg de {producto.nombre}</span>
+                                      <span>= ${costoKg.toFixed(4)}/kg</span>
+                                    </div>
+                                  </div>
+                                  {/* Costo final grande */}
+                                  <div style={{ background: 'linear-gradient(135deg,#1a3a5c,#2980b9)', borderRadius: 10, padding: '14px 16px', marginTop: 12 }}>
+                                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', marginBottom: 2 }}>Costo final — {producto.nombre}</div>
+                                    <div style={{ fontSize: 32, fontWeight: 900, color: '#f9e79f' }}>${costoKg.toFixed(4)}/kg</div>
+                                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', marginTop: 4 }}>
+                                      {kgPadreN.toFixed(3)} kg · ${costoPadre.toFixed(4)} costo total
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                            </>
                           );
                         })()}
                       </div>
