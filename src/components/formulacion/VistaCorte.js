@@ -307,6 +307,18 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
       mp_carne_id:       mpCarneId                   || '',
       kg_salida_mad:     parseFloat(kgSalidaMad)    || 0,
       kg_para_hijo:      parseFloat(kgParaHijo)     || 0,
+      c_mad_real: (() => {
+        const pctInjN   = parseFloat(pctInj) || 0;
+        const kgIni     = parseFloat(kgSalBase) || 2;
+        const kgRubN    = parseFloat(kgRubBase) || 1;
+        const costoRubK = kgRubN > 0 ? costoRubFormula / kgRubN : 0;
+        const mpAdic    = mpAdicionalId ? mpsFormula.find(m => String(m.id) === mpAdicionalId) : null;
+        const costoAdic = (parseFloat(gramosAdicional) / 1000) * parseFloat(mpAdic?.precio_kg || 0);
+        const carne     = parseFloat(mpVinculada?.precio_kg || 0);
+        const CI        = carne + (pctInjN / 100) * precioKgSalmuera + costoRubK + costoAdic;
+        const kgSal     = parseFloat(kgSalidaMad) || 0;
+        return kgSal > 0 ? (CI * kgIni) / kgSal : 0;
+      })(),
       tipo,
       _categoria:      'CORTES',
       _updated:        new Date().toISOString(),
@@ -417,8 +429,8 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
   }
 
   function computeCLimpio() {
-    const cMadP  = parseFloat(costoMadPadre) || 0;
-    const kgEnt  = parseFloat(kgEntrada)     || 0;
+    const cMadP  = padreCfg?.c_mad_real > 0 ? padreCfg.c_mad_real : (parseFloat(costoMadPadre) || 0);
+    const kgEnt  = padreCfg?.kg_para_hijo > 0 ? padreCfg.kg_para_hijo : (parseFloat(kgEntrada) || 0);
     const pctRS  = parseFloat(pctResSegunda) || 0;
     const pctPu  = parseFloat(pctPuntas)     || 0;
     const pctDe  = parseFloat(pctDesecho)    || 0;
@@ -1093,36 +1105,55 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
                   )}
                 </div>
 
-                {/* Costo de entrada del padre */}
-                <div style={{ background: '#f0f8ff', borderRadius: 10, padding: '12px 16px', marginBottom: 12, border: '1px solid #aed6f1' }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: '#1a3a5c', marginBottom: 8 }}>
-                    👑 Costo entrada — desde {deshueseConfig?.corte_padre || 'producto padre'}
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                    <div>
-                      <label style={{ fontSize: 11, color: '#555', display: 'block', marginBottom: 4, fontWeight: 600 }}>costo_mad_kg del padre ($/kg)</label>
-                      <input type="number" min="0" step="0.0001"
-                        placeholder="ej: 4.5000"
-                        value={costoMadPadre} onChange={e => setCostoMadPadre(e.target.value)}
-                        disabled={!modoEdicion}
-                        style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '2px solid #2980b9', fontSize: 14, fontWeight: 'bold', boxSizing: 'border-box', background: modoEdicion ? 'white' : '#f8f9fa' }} />
-                      {padreInfo && (
-                        <div style={{ fontSize: 10, color: '#27ae60', marginTop: 2 }}>
-                          Último real del padre: ${parseFloat(padreInfo.costo_mad_kg).toFixed(4)}
+                {/* Entrada al deshuese — auto desde Padre, o manual si no hay config */}
+                {padreCfg?.kg_para_hijo > 0 && padreCfg?.c_mad_real > 0 ? (
+                  <div style={{ background: '#eaf4fd', borderRadius: 10, padding: '12px 16px', marginBottom: 12, border: '2px solid #2980b9' }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: '#1a3a5c', marginBottom: 8 }}>
+                      📥 Entrada al deshuese — desde {deshueseConfig?.corte_padre || 'Padre'}
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                      <div style={{ background: 'white', borderRadius: 8, padding: '10px 12px' }}>
+                        <div style={{ fontSize: 10, color: '#888', marginBottom: 2 }}>kg que llegan del Padre</div>
+                        <div style={{ fontSize: 22, fontWeight: 900, color: '#1a3a5c' }}>
+                          {parseFloat(padreCfg.kg_para_hijo).toFixed(3)} kg
                         </div>
-                      )}
-                    </div>
-                    <div>
-                      <label style={{ fontSize: 11, color: '#555', display: 'block', marginBottom: 4, fontWeight: 600 }}>kg entrada a deshuese</label>
-                      <input type="number" min="0" step="0.001"
-                        placeholder="ej: 100"
-                        value={kgEntrada} onChange={e => setKgEntrada(e.target.value)}
-                        disabled={!modoEdicion}
-                        style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '2px solid #e67e22', fontSize: 14, fontWeight: 'bold', boxSizing: 'border-box', background: modoEdicion ? 'white' : '#f8f9fa' }} />
-                      <div style={{ fontSize: 10, color: '#aaa', marginTop: 2 }}>Base de simulación</div>
+                      </div>
+                      <div style={{ background: 'white', borderRadius: 8, padding: '10px 12px' }}>
+                        <div style={{ fontSize: 10, color: '#888', marginBottom: 2 }}>Costo/kg entrada</div>
+                        <div style={{ fontSize: 22, fontWeight: 900, color: '#27ae60' }}>
+                          ${parseFloat(padreCfg.c_mad_real).toFixed(4)}
+                        </div>
+                        <div style={{ fontSize: 10, color: '#aaa' }}>
+                          = ${(parseFloat(padreCfg.kg_para_hijo) * parseFloat(padreCfg.c_mad_real)).toFixed(4)} total
+                        </div>
+                      </div>
                     </div>
                   </div>
-                </div>
+                ) : (
+                  <div style={{ background: '#f0f8ff', borderRadius: 10, padding: '12px 16px', marginBottom: 12, border: '1px solid #aed6f1' }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: '#1a3a5c', marginBottom: 8 }}>
+                      📥 Entrada al deshuese (manual — el Padre aún no tiene config)
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                      <div>
+                        <label style={{ fontSize: 11, color: '#555', display: 'block', marginBottom: 4, fontWeight: 600 }}>Costo/kg del padre ($/kg)</label>
+                        <input type="number" min="0" step="0.0001"
+                          placeholder="ej: 4.5000"
+                          value={costoMadPadre} onChange={e => setCostoMadPadre(e.target.value)}
+                          disabled={!modoEdicion}
+                          style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '2px solid #2980b9', fontSize: 14, fontWeight: 'bold', boxSizing: 'border-box', background: modoEdicion ? 'white' : '#f8f9fa' }} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 11, color: '#555', display: 'block', marginBottom: 4, fontWeight: 600 }}>kg entrada a deshuese</label>
+                        <input type="number" min="0" step="0.001"
+                          placeholder="ej: 100"
+                          value={kgEntrada} onChange={e => setKgEntrada(e.target.value)}
+                          disabled={!modoEdicion}
+                          style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '2px solid #e67e22', fontSize: 14, fontWeight: 'bold', boxSizing: 'border-box', background: modoEdicion ? 'white' : '#f8f9fa' }} />
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Deshuese config */}
                 <div style={{ background: 'white', borderRadius: 12, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', marginBottom: 12 }}>
