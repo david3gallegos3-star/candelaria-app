@@ -1165,35 +1165,89 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
 
                     {kgEnt > 0 && (
                       <>
+                        {/* Desglose completo de kg */}
                         <div style={{ background: '#f9f5ff', borderRadius: 10, padding: '12px 14px', marginBottom: 10 }}>
-                          <div style={{ fontSize: 11, fontWeight: 700, color: '#6c3483', marginBottom: 8 }}>Para {kgEnt} kg entrada:</div>
-                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: '4px 16px', fontSize: 12, lineHeight: 2.2 }}>
-                            <div>🟢 Res Segunda: <strong style={{ color: '#27ae60' }}>{kgResS.toFixed(3)} kg</strong></div>
-                            <div>🟡 Puntas: <strong style={{ color: '#e67e22' }}>{kgPun.toFixed(3)} kg</strong></div>
-                            <div>🔴 Desecho: <strong style={{ color: '#e74c3c' }}>{kgDes.toFixed(3)} kg</strong></div>
-                            <div>🥩 <strong>{producto.nombre}</strong>: <strong style={{ color: '#6c3483', fontSize: 14 }}>{kgHijo.toFixed(3)} kg</strong></div>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: '#6c3483', marginBottom: 10 }}>
+                            Distribución de {kgEnt.toFixed(3)} kg entrada:
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                            {[
+                              { label: 'Res Segunda', kg: kgResS, color: '#27ae60', precio: precioResSegunda, credito: true },
+                              { label: 'Puntas',      kg: kgPun,  color: '#e67e22', precio: precioPuntas,     credito: true },
+                              { label: 'Desecho',     kg: kgDes,  color: '#e74c3c', precio: 0,                credito: false },
+                            ].map(({ label, kg, color, precio, credito }) => (
+                              <div key={label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'white', borderRadius: 8, padding: '7px 10px', border: `1px solid ${color}30` }}>
+                                <div style={{ fontSize: 12, color: '#555', minWidth: 90 }}>{label}</div>
+                                <div style={{ fontSize: 13, fontWeight: 700, color, minWidth: 70, textAlign: 'right' }}>{kg.toFixed(3)} kg</div>
+                                {precio > 0 ? (
+                                  <div style={{ fontSize: 11, color: '#27ae60', textAlign: 'right', minWidth: 130 }}>
+                                    × ${precio.toFixed(4)}/kg = <strong style={{ color: '#1a6b3c' }}>${(kg * precio).toFixed(4)}</strong>
+                                    {credito && <span style={{ fontSize: 10, color: '#27ae60', marginLeft: 4 }}>crédito</span>}
+                                  </div>
+                                ) : (
+                                  <div style={{ fontSize: 11, color: '#aaa', textAlign: 'right', minWidth: 130 }}>sin valor</div>
+                                )}
+                              </div>
+                            ))}
+                            {/* Producto hijo */}
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f3e8fd', borderRadius: 8, padding: '9px 10px', border: '2px solid #8e44ad' }}>
+                              <div style={{ fontSize: 12, fontWeight: 700, color: '#6c3483' }}>🥩 {producto.nombre}</div>
+                              <div style={{ fontSize: 15, fontWeight: 900, color: '#6c3483' }}>{kgHijo.toFixed(3)} kg</div>
+                              <div style={{ fontSize: 11, color: '#8e44ad', textAlign: 'right', minWidth: 130 }}>
+                                {((kgResS + kgPun + kgDes) / kgEnt * 100).toFixed(1)}% merma deshuese
+                              </div>
+                            </div>
                           </div>
                         </div>
 
-                        {parseFloat(costoMadPadre) > 0 && kgHijo > 0 && (
-                          <div style={{ background: '#f0f4f8', borderRadius: 10, padding: '12px 14px', marginBottom: 10, fontSize: 12 }}>
-                            <div style={{ fontWeight: 700, color: '#1a3a5c', marginBottom: 6 }}>Cálculo C_limpio:</div>
-                            <div style={{ color: '#555', lineHeight: 2 }}>
-                              <div>Costo entrada: <strong>${costoEntrada.toFixed(4)}</strong></div>
-                              <div style={{ color: '#27ae60' }}>− Crédito Res Segunda: <strong>${valorResS.toFixed(4)}</strong></div>
-                              <div style={{ color: '#27ae60' }}>− Crédito Puntas: <strong>${valorPun.toFixed(4)}</strong></div>
-                              <div style={{ color: '#888', fontSize: 11 }}>÷ {kgHijo.toFixed(3)} kg ({producto.nombre})</div>
-                              <div style={{ marginTop: 6, paddingTop: 6, borderTop: '1px solid #dde3ea' }}>
-                                <span style={{ fontWeight: 'bold', fontSize: 16, color: '#6c3483' }}>C_limpio = ${cLimpio.toFixed(4)}/kg</span>
+                        {/* Cálculo de costo detallado */}
+                        {costoEntrada > 0 && kgHijo > 0 && (
+                          <div style={{ background: '#f0f4f8', borderRadius: 10, padding: '14px 16px', marginBottom: 10 }}>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: '#1a3a5c', marginBottom: 10 }}>
+                              Cálculo de costo — {producto.nombre}:
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 12 }}>
+                              {/* Costo entrada */}
+                              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 10px', background: 'white', borderRadius: 7, border: '1px solid #d5e8f5' }}>
+                                <span style={{ color: '#555' }}>Costo entrada ({kgEnt.toFixed(3)} kg × ${(costoEntrada / kgEnt).toFixed(4)}/kg)</span>
+                                <strong>${costoEntrada.toFixed(4)}</strong>
+                              </div>
+                              {/* Créditos */}
+                              {valorResS > 0 && (
+                                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 10px', background: '#f0fff4', borderRadius: 7, border: '1px solid #a9dfbf' }}>
+                                  <span style={{ color: '#1a6b3c' }}>− Crédito Res Segunda ({kgResS.toFixed(3)} kg × ${precioResSegunda.toFixed(4)}/kg)</span>
+                                  <strong style={{ color: '#1a6b3c' }}>−${valorResS.toFixed(4)}</strong>
+                                </div>
+                              )}
+                              {valorPun > 0 && (
+                                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 10px', background: '#fff8f0', borderRadius: 7, border: '1px solid #f0c080' }}>
+                                  <span style={{ color: '#7d4e00' }}>− Crédito Puntas ({kgPun.toFixed(3)} kg × ${precioPuntas.toFixed(4)}/kg)</span>
+                                  <strong style={{ color: '#7d4e00' }}>−${valorPun.toFixed(4)}</strong>
+                                </div>
+                              )}
+                              {/* Costo neto */}
+                              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 10px', background: '#eaf4fd', borderRadius: 7, border: '1px solid #aed6f1', marginTop: 2 }}>
+                                <span style={{ color: '#1a3a5c', fontWeight: 600 }}>Costo neto ({kgEnt.toFixed(3)} − {(kgResS + kgPun + kgDes).toFixed(3)} kg merma)</span>
+                                <strong style={{ color: '#1a3a5c' }}>${(costoEntrada - valorResS - valorPun).toFixed(4)}</strong>
+                              </div>
+                              {/* Dividir entre kg producto */}
+                              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 10px', background: 'white', borderRadius: 7, border: '1px solid #d5e8f5', color: '#888', fontSize: 11 }}>
+                                <span>÷ {kgHijo.toFixed(3)} kg de {producto.nombre}</span>
+                                <span>= ${cLimpio.toFixed(4)}/kg</span>
                               </div>
                             </div>
                           </div>
                         )}
 
                         {cLimpio > 0 && (
-                          <div style={{ background: 'linear-gradient(135deg,#6c3483,#8e44ad)', borderRadius: 10, padding: '12px 16px' }}>
-                            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)' }}>Costo de {producto.nombre}</div>
-                            <div style={{ fontSize: 26, fontWeight: 'bold', color: '#f9e79f' }}>${cLimpio.toFixed(4)}/kg</div>
+                          <div style={{ background: 'linear-gradient(135deg,#6c3483,#8e44ad)', borderRadius: 10, padding: '14px 16px' }}>
+                            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', marginBottom: 2 }}>Costo final — {producto.nombre}</div>
+                            <div style={{ fontSize: 30, fontWeight: 'bold', color: '#f9e79f' }}>${cLimpio.toFixed(4)}/kg</div>
+                            {costoEntrada > 0 && (
+                              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', marginTop: 4 }}>
+                                Entrada ${(costoEntrada/kgEnt).toFixed(4)}/kg → después de créditos y merma deshuese
+                              </div>
+                            )}
                           </div>
                         )}
                       </>
