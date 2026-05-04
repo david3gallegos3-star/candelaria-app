@@ -56,10 +56,19 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
   const [formulaciones,         setFormulaciones]         = useState([]);
   const [formulaSalmueraNombre, setFormulaSalmueraNombre] = useState('');
   const [formulaSalmueraIngs,   setFormulaSalmueraIngs]   = useState([]);
-  const [pctSalmueraFormula,    setPctSalmueraFormula]    = useState(null); // % inyección de la salmuera
+  const [pctSalmueraFormula,    setPctSalmueraFormula]    = useState(null);
   const [mpsFormula,            setMpsFormula]            = useState([]);
-  const [pctRub,                setPctRub]                = useState('');
-  const [costoRubKg,            setCostoRubKg]            = useState('');
+  // Rub (fórmula)
+  const [rubFormulas,        setRubFormulas]        = useState([]);
+  const [formulaRubNombre,   setFormulaRubNombre]   = useState('');
+  const [kgRubBase,          setKgRubBase]          = useState('1');
+  const [costoRubFormula,    setCostoRubFormula]    = useState(0);
+  // Adicional (Mostaza u otro MP)
+  const [mpAdicionalId,      setMpAdicionalId]      = useState('');
+  const [gramosAdicional,    setGramosAdicional]    = useState('');
+  // Compat legacy (no se usan en UI pero se mantienen por si hay config guardada antigua)
+  const [pctRub,             setPctRub]             = useState('');
+  const [costoRubKg,         setCostoRubKg]         = useState('');
 
   // Cierre Sierra
   const [cierreFecha,          setCierreFecha]          = useState(new Date().toISOString().split('T')[0]);
@@ -105,6 +114,18 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
       if (pctSal != null) setPctInj(String(pctSal));
     })();
   }, [formulaSalmueraNombre, mpsFormula]);
+
+  useEffect(() => {
+    if (!formulaRubNombre || mpsFormula.length === 0) { setCostoRubFormula(0); return; }
+    (async () => {
+      const { data: rows } = await supabase.from('formulaciones')
+        .select('gramos,materia_prima_id').eq('producto_nombre', formulaRubNombre);
+      setCostoRubFormula((rows||[]).reduce((s, r) => {
+        const mp = mpsFormula.find(m => m.id === r.materia_prima_id);
+        return s + (parseFloat(r.gramos) / 1000) * parseFloat(mp?.precio_kg || 0);
+      }, 0));
+    })();
+  }, [formulaRubNombre, mpsFormula]);
 
   async function cargarTodo() {
     setCargando(true);
@@ -208,13 +229,20 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
         if (c.horas_mad   !== undefined) setHorasMad(String(c.horas_mad));
         if (c.minutos_mad !== undefined) setMinutosMad(String(c.minutos_mad));
         if (c.kg_sal_base !== undefined) setKgSalBase(String(c.kg_sal_base));
+        if (c.formula_rub)              setFormulaRubNombre(c.formula_rub);
+        if (c.kg_rub_base !== undefined) setKgRubBase(String(c.kg_rub_base));
+        if (c.mp_adicional_id)          setMpAdicionalId(c.mp_adicional_id);
+        if (c.gramos_adicional !== undefined) setGramosAdicional(String(c.gramos_adicional));
         if (c.mp_carne_id) setMpCarneId(c.mp_carne_id);
       }
 
       // Formulaciones SALMUERAS + todas las MPs + config del padre (si es hijo)
-      const [{ data: prodsSal }, { data: allMps }, { data: padreCfgRow }] = await Promise.all([
+      const [{ data: prodsSal }, { data: prodsRub }, { data: allMps }, { data: padreCfgRow }] = await Promise.all([
         supabase.from('productos').select('nombre,categoria')
           .or('categoria.ilike.%salmuera%,nombre.ilike.%salmuera%')
+          .eq('estado', 'ACTIVO').order('nombre'),
+        supabase.from('productos').select('nombre')
+          .or('nombre.ilike.%rub%,categoria.ilike.%rub%,categoria.ilike.%especia%')
           .eq('estado', 'ACTIVO').order('nombre'),
         supabase.from('materias_primas').select('id,nombre,nombre_producto,precio_kg,categoria').eq('eliminado', false),
         (esPadre || !cfgEntry?.corte_padre)
@@ -224,6 +252,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
               .limit(5),
       ]);
       setFormulaciones((prodsSal||[]).map(p => p.nombre));
+      setRubFormulas((prodsRub||[]).map(p => p.nombre));
       // Buscar config del padre: primero match exacto, luego parcial
       if (!esPadre && cfgEntry?.corte_padre && Array.isArray(padreCfgRow)) {
         const padreNom = (cfgEntry.corte_padre || '').toLowerCase();
@@ -264,13 +293,15 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
       pct_puntas:      parseFloat(pctPuntas)        || 0,
       pct_desecho:     parseFloat(pctDesecho)       || 0,
       costo_mad_padre: parseFloat(costoMadPadre)   || 0,
-      formula_salmuera: formulaSalmueraNombre       || '',
-      pct_rub:         parseFloat(pctRub)          || 0,
-      costo_rub_kg:    parseFloat(costoRubKg)      || 0,
-      horas_mad:       parseFloat(horasMad)        || 0,
-      minutos_mad:     parseFloat(minutosMad)      || 0,
-      kg_sal_base:     parseFloat(kgSalBase)       || 1,
-      mp_carne_id:     mpCarneId                   || '',
+      formula_salmuera:  formulaSalmueraNombre        || '',
+      horas_mad:         parseFloat(horasMad)        || 0,
+      minutos_mad:       parseFloat(minutosMad)      || 0,
+      kg_sal_base:       parseFloat(kgSalBase)       || 1,
+      formula_rub:       formulaRubNombre            || '',
+      kg_rub_base:       parseFloat(kgRubBase)       || 1,
+      mp_adicional_id:   mpAdicionalId               || '',
+      gramos_adicional:  parseFloat(gramosAdicional) || 0,
+      mp_carne_id:       mpCarneId                   || '',
       tipo,
       _categoria:      'CORTES',
       _updated:        new Date().toISOString(),
@@ -565,17 +596,23 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
           {(tipo === 'padre' || tipo === 'independiente') && (() => {
             const pctInjN = parseFloat(pctInj) || 0;
             const pctMadN = parseFloat(pctMad) || 0;
-            const pctRubN = parseFloat(pctRub) || 0;
-            const rubKgN  = parseFloat(costoRubKg) || 0;
             const lotesConCMad = lotesStock.filter(l => parseFloat(l.costo_mad_kg || 0) > 0);
             const ultimoCMad   = lotesConCMad[0] ? parseFloat(lotesConCMad[0].costo_mad_kg) : 0;
+
+            // Rub: costo por kg de carne
+            const kgRubBaseN   = parseFloat(kgRubBase) || 1;
+            const costoRubKgN  = kgRubBaseN > 0 ? costoRubFormula / kgRubBaseN : 0;
+            // Adicional (mostaza/otro): costo por kg de carne
+            const mpAdic       = mpAdicionalId ? mpsFormula.find(m => String(m.id) === mpAdicionalId) : null;
+            const gramosAdicN  = parseFloat(gramosAdicional) || 0;
+            const costoAdicKgN = (gramosAdicN / 1000) * parseFloat(mpAdic?.precio_kg || 0);
 
             // CB = CI / PT
             const kgSal1   = pctInjN / 100;
             const PT       = 1 + kgSal1;
             const costoSal = kgSal1 * precioKgSalmuera;
-            const costoRub = (pctRubN / 100) * rubKgN;
-            const CI       = precioCarne + costoSal + costoRub;
+            const costoRub = costoRubKgN;
+            const CI       = precioCarne + costoSal + costoRub + costoAdicKgN;
             const CB       = PT > 0 ? CI / PT : 0;
 
             // Maduración
@@ -647,28 +684,74 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
                       )}
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
-                      <div>
-                        <label style={{ fontSize: 11, color: '#8e44ad', fontWeight: 600, display: 'block', marginBottom: 4 }}>% Rub / kg carne</label>
-                        <input type="number" min="0" step="0.1" placeholder="ej: 2.5"
-                          value={pctRub} onChange={e => setPctRub(e.target.value)}
-                          disabled={!modoEdicion}
-                          style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '2px solid #8e44ad', fontSize: 14, fontWeight: 'bold', boxSizing: 'border-box', background: modoEdicion ? 'white' : '#f8f9fa' }} />
+                    {/* Rub / Especias */}
+                    <div style={{ marginBottom: 12 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                        <label style={{ fontSize: 11, color: '#8e44ad', fontWeight: 600 }}>🌶️ Rub / Especias (costra)</label>
+                        {costoRubKgN > 0 && <span style={{ fontSize: 12, fontWeight: 700, color: '#8e44ad' }}>${costoRubKgN.toFixed(4)}/kg</span>}
                       </div>
-                      <div>
-                        <label style={{ fontSize: 11, color: '#8e44ad', fontWeight: 600, display: 'block', marginBottom: 4 }}>Precio Rub ($/kg)</label>
-                        <input type="number" min="0" step="0.01" placeholder="ej: 3.50"
-                          value={costoRubKg} onChange={e => setCostoRubKg(e.target.value)}
-                          disabled={!modoEdicion}
-                          style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '2px solid #8e44ad', fontSize: 14, fontWeight: 'bold', boxSizing: 'border-box', background: modoEdicion ? 'white' : '#f8f9fa' }} />
+                      <select value={formulaRubNombre} onChange={e => setFormulaRubNombre(e.target.value)}
+                        disabled={!modoEdicion}
+                        style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1.5px solid #8e44ad', fontSize: 13, background: modoEdicion ? 'white' : '#f8f9fa', boxSizing: 'border-box', marginBottom: 6 }}>
+                        <option value="">— sin rub —</option>
+                        {rubFormulas.map(n => <option key={n} value={n}>{n}</option>)}
+                      </select>
+                      {formulaRubNombre && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontSize: 12, color: '#888', whiteSpace: 'nowrap' }}>Fórmula para</span>
+                          <input type="number" min="0.1" step="0.1"
+                            value={kgRubBase} onChange={e => setKgRubBase(e.target.value)}
+                            disabled={!modoEdicion}
+                            style={{ width: 70, padding: '5px 8px', borderRadius: 6, border: '1.5px solid #c39bd3', fontSize: 13, fontWeight: 'bold', textAlign: 'center', background: modoEdicion ? 'white' : '#f8f9fa' }} />
+                          <span style={{ fontSize: 12, color: '#888', whiteSpace: 'nowrap' }}>kg de carne</span>
+                        </div>
+                      )}
+                      {costoRubFormula > 0 && (
+                        <div style={{ fontSize: 10, color: '#c39bd3', marginTop: 4 }}>
+                          Fórmula ${costoRubFormula.toFixed(4)} total · ${costoRubKgN.toFixed(4)}/kg carne
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Adicional (Mostaza u otro MP) */}
+                    <div style={{ marginBottom: 12 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                        <label style={{ fontSize: 11, color: '#f39c12', fontWeight: 600 }}>🟡 Adicional por kg de carne</label>
+                        {costoAdicKgN > 0 && <span style={{ fontSize: 12, fontWeight: 700, color: '#f39c12' }}>${costoAdicKgN.toFixed(4)}/kg</span>}
                       </div>
+                      <select value={mpAdicionalId} onChange={e => setMpAdicionalId(e.target.value)}
+                        disabled={!modoEdicion}
+                        style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1.5px solid #f39c12', fontSize: 13, background: modoEdicion ? 'white' : '#f8f9fa', boxSizing: 'border-box', marginBottom: 6 }}>
+                        <option value="">— sin adicional —</option>
+                        {mpsFormula.filter(m => {
+                          const cat = (m.categoria||'').toUpperCase();
+                          return !cat.includes('EMPAQUE') && !cat.includes('ETIQUETA') && !cat.includes('SALMUERA') && !cat.includes('FUNDA');
+                        }).map(m => <option key={m.id} value={String(m.id)}>{m.nombre_producto||m.nombre} — ${parseFloat(m.precio_kg||0).toFixed(4)}/kg</option>)}
+                      </select>
+                      {mpAdicionalId && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontSize: 12, color: '#888', whiteSpace: 'nowrap' }}>Gramos por kg de carne</span>
+                          <input type="number" min="0" step="1"
+                            value={gramosAdicional} onChange={e => setGramosAdicional(e.target.value)}
+                            disabled={!modoEdicion}
+                            style={{ width: 80, padding: '5px 8px', borderRadius: 6, border: '1.5px solid #f39c12', fontSize: 13, fontWeight: 'bold', textAlign: 'center', background: modoEdicion ? 'white' : '#f8f9fa' }} />
+                          <span style={{ fontSize: 11, color: '#f39c12', fontWeight: 700 }}>
+                            = {((parseFloat(gramosAdicional)||0)/1000).toFixed(3)} kg
+                          </span>
+                        </div>
+                      )}
+                      {costoAdicKgN > 0 && (
+                        <div style={{ fontSize: 10, color: '#f5cba7', marginTop: 4 }}>
+                          {gramosAdicional}g × ${parseFloat(mpAdic?.precio_kg||0).toFixed(4)}/kg = ${costoAdicKgN.toFixed(4)}
+                        </div>
+                      )}
                     </div>
 
                     {pctInjN > 0 && precioCarne > 0 && (
                       <div style={{ background: '#f0f8ff', borderRadius: 10, padding: '12px 14px' }}>
                         <div style={{ fontSize: 11, fontWeight: 700, color: '#1a3a5c', marginBottom: 8 }}>Para 1 kg de carne:</div>
                         <div style={{ fontSize: 12, color: '#555', lineHeight: 1.9 }}>
-                          <div>CI = ${precioCarne.toFixed(4)} (carne) + ${costoSal.toFixed(4)} (sal) + ${costoRub.toFixed(4)} (rub) = <strong>${CI.toFixed(4)}</strong></div>
+                          <div>CI = ${precioCarne.toFixed(4)} (carne) + ${costoSal.toFixed(4)} (sal){costoRub > 0 && ` + $${costoRub.toFixed(4)} (rub)`}{costoAdicKgN > 0 && ` + $${costoAdicKgN.toFixed(4)} (adic.)`} = <strong>${CI.toFixed(4)}</strong></div>
                           <div>PT = 1 + {kgSal1.toFixed(3)} kg salmuera = <strong>{PT.toFixed(3)} kg</strong></div>
                           <div style={{ borderTop: '1px solid #dde3ea', paddingTop: 6, marginTop: 4 }}>
                             CB = CI ÷ PT = <strong style={{ fontSize: 15, color: '#1a3a5c' }}>${CB.toFixed(4)}/kg</strong>
