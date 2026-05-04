@@ -64,6 +64,10 @@ export default function MenuFormulas({
   // Productos que tienen al menos una formulación guardada
   const [conFormula, setConFormula] = useState(new Set());
 
+  // Relaciones padre/hijo desde deshuese_config
+  const [padreDeHijo, setPadreDeHijo] = useState({});  // { hijoNombre: padreNombre }
+  const [hijosDelPadre, setHijosDelPadre] = useState({}); // { padreNombre: [hijoNombre] }
+
   // Búsqueda
   const [busqueda, setBusqueda] = useState('');
 
@@ -89,7 +93,22 @@ export default function MenuFormulas({
         const nombres = new Set((data || []).map(f => f.producto_nombre).filter(Boolean));
         setConFormula(nombres);
       });
-  }, [productos]); // recarga cuando cambian los productos
+  }, [productos]);
+
+  useEffect(() => {
+    supabase.from('deshuese_config').select('corte_padre,corte_hijo').eq('activo', true)
+      .then(({ data }) => {
+        const pdDe = {}, hijosDe = {};
+        (data || []).forEach(({ corte_padre, corte_hijo }) => {
+          if (!corte_padre || !corte_hijo) return;
+          pdDe[corte_hijo] = corte_padre;
+          if (!hijosDe[corte_padre]) hijosDe[corte_padre] = [];
+          if (!hijosDe[corte_padre].includes(corte_hijo)) hijosDe[corte_padre].push(corte_hijo);
+        });
+        setPadreDeHijo(pdDe);
+        setHijosDelPadre(hijosDe);
+      });
+  }, [productos]);
 
   return (
     <div style={{ minHeight:'100vh', background:'#f0f2f5', fontFamily:'Arial,sans-serif' }}>
@@ -300,51 +319,117 @@ export default function MenuFormulas({
                 }}>{nombresProductos.length}</span>
               </div>
 
-              <div style={{
-                display:'grid',
-                gridTemplateColumns:'repeat(auto-fill, minmax(200px, 1fr))',
-                gap:12
-              }}>
-                {nombresProductos.map(nombre => {
+              {(() => {
+                // Separar en grupos padre+hijo e independientes
+                const yaIncluidos = new Set();
+                const grupos = [];
+                const independientes = [];
+
+                nombresProductos.forEach(nombre => {
+                  if (yaIncluidos.has(nombre)) return;
+                  if (hijosDelPadre[nombre]) {
+                    // Es padre con hijos
+                    const hijosEnCat = hijosDelPadre[nombre].filter(h => nombresProductos.includes(h));
+                    grupos.push({ padre: nombre, hijos: hijosEnCat });
+                    yaIncluidos.add(nombre);
+                    hijosEnCat.forEach(h => yaIncluidos.add(h));
+                  } else if (!padreDeHijo[nombre]) {
+                    // Independiente (no es padre ni hijo)
+                    independientes.push(nombre);
+                    yaIncluidos.add(nombre);
+                  }
+                });
+
+                const CardProducto = ({ nombre, esPadre, esHijo }) => {
                   const tieneFormula = conFormula.has(nombre);
+                  const borderColor = esPadre ? '#f39c12' : esHijo ? '#8e44ad' : (tieneFormula ? '#aed6f1' : '#fdecea');
                   return (
                     <button
-                      key={nombre}
                       onClick={() => abrirProducto(nombre)}
                       style={{
-                        padding:'16px 14px',
-                        background: 'white',
-                        border: tieneFormula ? '2px solid #e8f4fd' : '2px solid #fdecea',
+                        padding:'14px 14px', background:'white',
+                        border:`2px solid ${borderColor}`,
                         borderRadius:12, cursor:'pointer', textAlign:'left',
-                        boxShadow:'0 2px 8px rgba(0,0,0,0.06)', transition:'all 0.2s'
+                        boxShadow:'0 2px 8px rgba(0,0,0,0.06)', transition:'all 0.2s',
+                        width:'100%'
                       }}
-                      onMouseEnter={e => {
-                        e.currentTarget.style.transform = 'translateY(-2px)';
-                        e.currentTarget.style.boxShadow = '0 6px 20px rgba(0,0,0,0.12)';
-                      }}
-                      onMouseLeave={e => {
-                        e.currentTarget.style.transform = 'translateY(0)';
-                        e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.06)';
-                      }}
+                      onMouseEnter={e => { e.currentTarget.style.transform='translateY(-2px)'; e.currentTarget.style.boxShadow='0 6px 20px rgba(0,0,0,0.14)'; }}
+                      onMouseLeave={e => { e.currentTarget.style.transform='translateY(0)'; e.currentTarget.style.boxShadow='0 2px 8px rgba(0,0,0,0.06)'; }}
                     >
-                      <div style={{ fontSize:'20px', marginBottom:6 }}>
-                        {EC[categoria]||'📋'}
+                      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:6 }}>
+                        <span style={{ fontSize:'20px' }}>{EC[categoria]||'📋'}</span>
+                        {esPadre && <span style={{ fontSize:10, fontWeight:800, color:'#f39c12', background:'#fef9e7', padding:'2px 7px', borderRadius:6, border:'1px solid #f0c040' }}>👑 PADRE</span>}
+                        {esHijo  && <span style={{ fontSize:10, fontWeight:800, color:'#8e44ad', background:'#f5eef8', padding:'2px 7px', borderRadius:6, border:'1px solid #c39bd3' }}>✂️ HIJO</span>}
                       </div>
-                      <div style={{
-                        fontWeight:'bold', color:'#1a1a2e',
-                        fontSize:'13px', lineHeight:'1.3'
-                      }}>{nombre}</div>
-                      <div style={{
-                        fontSize:'11px',
-                        color: tieneFormula ? '#27ae60' : '#e74c3c',
-                        marginTop:6, fontWeight:'bold'
-                      }}>
+                      <div style={{ fontWeight:'bold', color:'#1a1a2e', fontSize:'13px', lineHeight:'1.3' }}>{nombre}</div>
+                      {esHijo && padreDeHijo[nombre] && (
+                        <div style={{ fontSize:10, color:'#8e44ad', marginTop:3 }}>de {padreDeHijo[nombre]}</div>
+                      )}
+                      <div style={{ fontSize:'11px', color: tieneFormula ? '#27ae60' : '#e74c3c', marginTop:6, fontWeight:'bold' }}>
                         {tieneFormula ? '✅ Con fórmula' : '🔴 Sin fórmula'}
                       </div>
                     </button>
                   );
-                })}
-              </div>
+                };
+
+                return (
+                  <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+                    {/* Bloques padre + hijos */}
+                    {grupos.map(({ padre, hijos }) => (
+                      <div key={padre} style={{
+                        background:'linear-gradient(135deg,#1a1a2e,#1e2a45)',
+                        borderRadius:16, padding:'14px 16px',
+                        border:'1.5px solid #2c3e6e',
+                        boxShadow:'0 4px 16px rgba(0,0,0,0.18)'
+                      }}>
+                        {/* Etiqueta grupo */}
+                        <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:12 }}>
+                          <span style={{ fontSize:11, fontWeight:800, color:'#7fb3d3', textTransform:'uppercase', letterSpacing:1 }}>
+                            🔗 Bifurcación
+                          </span>
+                          <div style={{ flex:1, height:1, background:'rgba(255,255,255,0.1)' }} />
+                          <span style={{ fontSize:10, color:'rgba(255,255,255,0.3)' }}>
+                            1 padre · {hijos.length} {hijos.length === 1 ? 'hijo' : 'hijos'}
+                          </span>
+                        </div>
+                        {/* Cards padre + flecha + hijos */}
+                        <div style={{ display:'flex', alignItems:'center', gap:10, flexWrap:'wrap' }}>
+                          {/* Padre */}
+                          <div style={{ minWidth:160, flex:'0 0 auto' }}>
+                            <CardProducto nombre={padre} esPadre esHijo={false} />
+                          </div>
+                          {/* Flecha */}
+                          <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:2, flex:'0 0 auto' }}>
+                            <div style={{ width:32, height:2, background:'linear-gradient(90deg,#f39c12,#8e44ad)', borderRadius:2 }} />
+                            <div style={{ fontSize:18, color:'#8e44ad', lineHeight:1 }}>▶</div>
+                          </div>
+                          {/* Hijos */}
+                          <div style={{ display:'flex', gap:10, flexWrap:'wrap', flex:1 }}>
+                            {hijos.map(hijo => (
+                              <div key={hijo} style={{ minWidth:160, flex:'1 1 160px' }}>
+                                <CardProducto nombre={hijo} esPadre={false} esHijo />
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+
+                    {/* Productos independientes en grid normal */}
+                    {independientes.length > 0 && (
+                      <div style={{
+                        display:'grid',
+                        gridTemplateColumns:'repeat(auto-fill, minmax(160px, 1fr))',
+                        gap:12
+                      }}>
+                        {independientes.map(nombre => (
+                          <CardProducto key={nombre} nombre={nombre} esPadre={false} esHijo={false} />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           )
         )}
