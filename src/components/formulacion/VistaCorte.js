@@ -403,6 +403,20 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
     setModoEdicion(true);
   }
 
+  async function eliminarVersionCorte(idxEnFormula) {
+    if (!window.confirm('¿Eliminar esta versión?')) return;
+    const versionesFormula = versiones.filter(v => v.tipo === 'formula');
+    const vToDelete = versionesFormula[idxEnFormula];
+    const nuevas = versiones.filter(v => v !== vToDelete);
+    try {
+      const { error } = await supabase.from('vista_horneado_config')
+        .upsert({ producto_nombre: producto.nombre, versiones: nuevas }, { onConflict: 'producto_nombre' });
+      if (error) throw error;
+      setVersiones(nuevas);
+      setVerDetalle(null);
+    } catch (e) { alert('Error: ' + e.message); }
+  }
+
   async function guardarVersionPrueba() {
     const gramos = parseFloat(pruebaGramos) || 0;
     if (!gramos) return;
@@ -1888,6 +1902,10 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
                           <button onClick={() => restaurarVersion(v)}
                             style={{ background: '#8e44ad', color: 'white', border: 'none', borderRadius: 8, padding: '6px 12px', cursor: 'pointer', fontSize: 12, fontWeight: 'bold' }}>
                             Restaurar
+                          </button>
+                          <button onClick={() => eliminarVersionCorte(i)}
+                            style={{ background: '#e74c3c', color: 'white', border: 'none', borderRadius: 8, padding: '6px 10px', cursor: 'pointer', fontSize: 12, fontWeight: 'bold' }}>
+                            🗑
                           </button>
                         </div>
                       </div>

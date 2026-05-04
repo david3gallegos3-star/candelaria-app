@@ -194,6 +194,19 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
     setModoEdicion(true);
   }
 
+  async function eliminarVersion(idx) {
+    if (!window.confirm('¿Eliminar esta versión?')) return;
+    const nuevas = versiones.filter((_, i) => {
+      const versionesFormulaIdx = versiones.indexOf(versionesFormula[idx]);
+      return i !== versionesFormulaIdx;
+    });
+    try {
+      await saveConfigHorneado(cfg, nuevas);
+      setVersiones(nuevas);
+      setVerDetalle(null);
+    } catch (e) { alert('Error: ' + e.message); }
+  }
+
   // Detección de modo inmersión (salmuera como baño, no inyectada — no suma peso)
   const esInmersion = (producto?.categoria || '').replace(/[ÓÒÔ]/g,'O').toUpperCase().includes('INMERSION');
 
@@ -1287,6 +1300,10 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
                         <button onClick={() => restaurarVersion(v)}
                           style={{ background: '#8e44ad', color: 'white', border: 'none', borderRadius: 8, padding: '6px 12px', cursor: 'pointer', fontSize: 12, fontWeight: 'bold' }}>
                           Restaurar
+                        </button>
+                        <button onClick={() => eliminarVersion(i)}
+                          style={{ background: '#e74c3c', color: 'white', border: 'none', borderRadius: 8, padding: '6px 10px', cursor: 'pointer', fontSize: 12, fontWeight: 'bold' }}>
+                          🗑
                         </button>
                       </div>
                     </div>
