@@ -36,7 +36,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
   const [pctMad,     setPctMad]     = useState('');
   const [horasMad,   setHorasMad]   = useState('72');
   const [minutosMad, setMinutosMad] = useState('0');
-  const [kgSalBase,  setKgSalBase]  = useState('1');
+  const [kgSalBase,  setKgSalBase]  = useState('2');
   const [mpCarneId,  setMpCarneId]  = useState(''); // solo para hijo (panel padre)
   const [mpsCarneOpts, setMpsCarneOpts] = useState([]); // solo para hijo (panel padre)
 
@@ -66,6 +66,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
   // Adicional (Mostaza u otro MP)
   const [mpAdicionalId,      setMpAdicionalId]      = useState('');
   const [gramosAdicional,    setGramosAdicional]    = useState('');
+  const [kgSalidaMad,       setKgSalidaMad]       = useState('');
   // Compat legacy (no se usan en UI pero se mantienen por si hay config guardada antigua)
   const [pctRub,             setPctRub]             = useState('');
   const [costoRubKg,         setCostoRubKg]         = useState('');
@@ -232,6 +233,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
         if (c.mp_adicional_id)          setMpAdicionalId(c.mp_adicional_id);
         if (c.gramos_adicional !== undefined) setGramosAdicional(String(c.gramos_adicional));
         if (c.mp_carne_id) setMpCarneId(c.mp_carne_id);
+        if (c.kg_salida_mad) setKgSalidaMad(String(c.kg_salida_mad));
       }
 
       // Formulaciones SALMUERAS + todas las MPs + config del padre (si es hijo)
@@ -301,6 +303,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
       mp_adicional_id:   mpAdicionalId               || '',
       gramos_adicional:  parseFloat(gramosAdicional) || 0,
       mp_carne_id:       mpCarneId                   || '',
+      kg_salida_mad:     parseFloat(kgSalidaMad)    || 0,
       tipo,
       _categoria:      'CORTES',
       _updated:        new Date().toISOString(),
@@ -624,43 +627,57 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
             const kgMad1  = PT - kgLost;
             const cMadSim = kgMad1 > 0 ? CI / kgMad1 : 0;
 
+            // Cálculos con kgIniciales
+            const kgIniciales  = parseFloat(kgSalBase) || 2;
+            const kgSalmueraNec = kgIniciales * kgSal1;            // kg salmuera = kg carne × (pctInj/100)
+            const kgEntradaMad  = kgIniciales + kgSalmueraNec;     // peso total que entra a maduración
+            const kgSalidaN     = parseFloat(kgSalidaMad) || 0;
+            const mermaMadKg    = kgSalidaN > 0 ? kgEntradaMad - kgSalidaN : 0;
+            const pctMermaMad   = kgEntradaMad > 0 && kgSalidaN > 0 ? (mermaMadKg / kgEntradaMad * 100) : 0;
+            const cMadReal      = kgSalidaN > 0 ? (CI * kgIniciales) / kgSalidaN : 0;
+
             return (
               <>
-                {/* Fase 1: Inyección */}
+                {/* ── Fase 1: Materia Prima ── */}
                 <div style={{ background: 'white', borderRadius: 12, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', marginBottom: 12 }}>
-                  <div style={{ background: 'linear-gradient(135deg,#1a3a5c,#2980b9)', padding: '10px 16px' }}>
-                    <span style={{ color: 'white', fontWeight: 'bold', fontSize: 13 }}>💉 Fase 1 — Inyección de Salmuera</span>
+                  <div style={{ background: 'linear-gradient(135deg,#7d3c00,#e67e22)', padding: '10px 16px' }}>
+                    <span style={{ color: 'white', fontWeight: 'bold', fontSize: 13 }}>🥩 Fase 1 — Materia Prima</span>
                   </div>
                   <div style={{ padding: '14px 16px' }}>
-                    {/* MP carne — solo muestra la vinculada */}
-                    <div style={{ background: '#fef9e7', borderRadius: 8, padding: '8px 12px', marginBottom: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ background: '#fef9e7', borderRadius: 8, padding: '10px 14px', marginBottom: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div>
-                        <div style={{ fontSize: 10, color: '#e67e22', fontWeight: 700, marginBottom: 2 }}>🥩 Materia Prima (carne vinculada)</div>
-                        <div style={{ fontSize: 14, fontWeight: 800, color: '#1a1a2e' }}>{mpVinculada ? (mpVinculada.nombre_producto || mpVinculada.nombre) : '—'}</div>
+                        <div style={{ fontSize: 10, color: '#e67e22', fontWeight: 700, marginBottom: 2 }}>Carne vinculada</div>
+                        <div style={{ fontSize: 15, fontWeight: 800, color: '#1a1a2e' }}>{mpVinculada ? (mpVinculada.nombre_producto || mpVinculada.nombre) : '—'}</div>
                       </div>
                       <div style={{ textAlign: 'right' }}>
                         <div style={{ fontSize: 11, color: '#888' }}>Precio actual</div>
                         <div style={{ fontSize: 18, fontWeight: 'bold', color: '#27ae60' }}>${precioCarne.toFixed(4)}/kg</div>
                       </div>
                     </div>
-
-                    {/* % Inyección — viene directo de la salmuera seleccionada */}
-                    <div style={{ marginBottom: 14 }}>
-                      <label style={{ fontSize: 11, color: '#555', fontWeight: 600, display: 'block', marginBottom: 4 }}>% Inyección</label>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#f0f8ff', borderRadius: 8, padding: '10px 14px', border: '2px solid #aed6f1' }}>
-                        <span style={{ fontSize: 22, fontWeight: 900, color: '#2980b9' }}>
-                          {pctInj || '—'}{pctInj ? '%' : ''}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <label style={{ fontSize: 12, color: '#e67e22', fontWeight: 700, whiteSpace: 'nowrap' }}>kg iniciales de carne:</label>
+                      <input type="number" min="0.1" step="0.1"
+                        value={kgSalBase} onChange={e => setKgSalBase(e.target.value)}
+                        disabled={!modoEdicion}
+                        style={{ width: 90, padding: '8px 10px', borderRadius: 8, border: '2px solid #e67e22', fontSize: 16, fontWeight: 'bold', textAlign: 'center', background: modoEdicion ? 'white' : '#f8f9fa' }} />
+                      <span style={{ fontSize: 12, color: '#888' }}>kg</span>
+                      {precioCarne > 0 && (
+                        <span style={{ fontSize: 13, color: '#27ae60', fontWeight: 700, marginLeft: 8 }}>
+                          = ${(kgIniciales * precioCarne).toFixed(4)} en carne
                         </span>
-                        <span style={{ fontSize: 11, color: '#7fb3d3' }}>
-                          {pctSalmueraFormula != null
-                            ? `tomado de la fórmula "${formulaSalmueraNombre}"`
-                            : 'selecciona una salmuera para obtener el %'}
-                        </span>
-                      </div>
+                      )}
                     </div>
+                  </div>
+                </div>
 
-                    {/* Salmuera — selector + kg de carne base */}
-                    <div style={{ marginBottom: 10 }}>
+                {/* ── Fase 2: Inyección de Salmuera ── */}
+                <div style={{ background: 'white', borderRadius: 12, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', marginBottom: 12 }}>
+                  <div style={{ background: 'linear-gradient(135deg,#1a3a5c,#2980b9)', padding: '10px 16px' }}>
+                    <span style={{ color: 'white', fontWeight: 'bold', fontSize: 13 }}>💉 Fase 2 — Inyección de Salmuera</span>
+                  </div>
+                  <div style={{ padding: '14px 16px' }}>
+                    {/* Salmuera selector */}
+                    <div style={{ marginBottom: 12 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                         <label style={{ fontSize: 11, color: '#2980b9', fontWeight: 600 }}>💉 Salmuera de inyección</label>
                         {precioKgSalmuera > 0 && (
@@ -673,20 +690,41 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
                         <option value="">— seleccionar salmuera —</option>
                         {formulaciones.map(n => <option key={n} value={n}>{n}</option>)}
                       </select>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ fontSize: 12, color: '#888', whiteSpace: 'nowrap' }}>Fórmula para</span>
-                        <input type="number" min="0.1" step="0.1"
-                          value={kgSalBase} onChange={e => setKgSalBase(e.target.value)}
-                          disabled={!modoEdicion}
-                          style={{ width: 70, padding: '5px 8px', borderRadius: 6, border: '1.5px solid #aed6f1', fontSize: 13, fontWeight: 'bold', textAlign: 'center', background: modoEdicion ? 'white' : '#f8f9fa' }} />
-                        <span style={{ fontSize: 12, color: '#888', whiteSpace: 'nowrap' }}>kg de carne</span>
-                      </div>
                       {totalKgFormula > 0 && (
-                        <div style={{ fontSize: 10, color: '#7fb3d3', marginTop: 4 }}>
+                        <div style={{ fontSize: 10, color: '#7fb3d3' }}>
                           Batch ${costoTotalFormula.toFixed(4)} ÷ {totalKgFormula.toFixed(3)} kg = ${precioKgSalmuera.toFixed(4)}/kg
                         </div>
                       )}
                     </div>
+
+                    {/* % Inyección + kg salmuera necesarios */}
+                    {pctInjN > 0 && (
+                      <div style={{ background: '#f0f8ff', borderRadius: 8, padding: '10px 14px', marginBottom: 12, border: '2px solid #aed6f1' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                          <div>
+                            <span style={{ fontSize: 22, fontWeight: 900, color: '#2980b9' }}>{pctInjN}%</span>
+                            <span style={{ fontSize: 11, color: '#7fb3d3', marginLeft: 8 }}>inyección</span>
+                          </div>
+                          <div style={{ textAlign: 'right', fontSize: 11, color: '#7fb3d3' }}>
+                            de "{formulaSalmueraNombre}"
+                          </div>
+                        </div>
+                        <div style={{ fontSize: 12, color: '#1a3a5c', fontWeight: 600 }}>
+                          Para <strong>{kgIniciales} kg</strong> de carne →&nbsp;
+                          necesitas <strong>{kgSalmueraNec.toFixed(3)} kg</strong> de salmuera
+                          {precioKgSalmuera > 0 && (
+                            <span style={{ color: '#2980b9', marginLeft: 6 }}>
+                              (${(kgSalmueraNec * precioKgSalmuera).toFixed(4)})
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    {!pctInjN && (
+                      <div style={{ background: '#f0f8ff', borderRadius: 8, padding: '10px 14px', marginBottom: 12, border: '2px solid #aed6f1', fontSize: 11, color: '#7fb3d3' }}>
+                        — selecciona una salmuera para ver el % de inyección —
+                      </div>
+                    )}
 
                     {/* Rub / Especias */}
                     <div style={{ marginBottom: 12 }}>
@@ -751,9 +789,12 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
                       )}
                     </div>
 
+                    {/* Resumen costo inyección */}
                     {pctInjN > 0 && precioCarne > 0 && (
                       <div style={{ background: '#f0f8ff', borderRadius: 10, padding: '12px 14px' }}>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: '#1a3a5c', marginBottom: 8 }}>Para 1 kg de carne:</div>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: '#1a3a5c', marginBottom: 8 }}>
+                          Costo por kg de carne (post-inyección):
+                        </div>
                         <div style={{ fontSize: 12, color: '#555', lineHeight: 1.9 }}>
                           <div>CI = ${precioCarne.toFixed(4)} (carne) + ${costoSal.toFixed(4)} (sal){costoRub > 0 && ` + $${costoRub.toFixed(4)} (rub)`}{costoAdicKgN > 0 && ` + $${costoAdicKgN.toFixed(4)} (adic.)`} = <strong>${CI.toFixed(4)}</strong></div>
                           <div>PT = 1 + {kgSal1.toFixed(3)} kg salmuera = <strong>{PT.toFixed(3)} kg</strong></div>
@@ -767,14 +808,14 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
                   </div>
                 </div>
 
-                {/* Fase 2: Maduración */}
+                {/* ── Fase 3: Maduración ── */}
                 <div style={{ background: 'white', borderRadius: 12, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', marginBottom: 12 }}>
                   <div style={{ background: 'linear-gradient(135deg,#1a6b3c,#27ae60)', padding: '10px 16px' }}>
-                    <span style={{ color: 'white', fontWeight: 'bold', fontSize: 13 }}>🧊 Fase 2 — Maduración</span>
+                    <span style={{ color: 'white', fontWeight: 'bold', fontSize: 13 }}>🧊 Fase 3 — Maduración</span>
                   </div>
                   <div style={{ padding: '14px 16px' }}>
-                    {/* Horas + Minutos */}
-                    <div style={{ marginBottom: 12 }}>
+                    {/* Tiempo */}
+                    <div style={{ marginBottom: 14 }}>
                       <label style={{ fontSize: 11, color: '#8e44ad', fontWeight: 600, display: 'block', marginBottom: 6 }}>⏱ Tiempo de maduración</label>
                       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                         <div style={{ flex: 1 }}>
@@ -797,50 +838,54 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
                       </div>
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
-                      <div>
-                        <label style={{ fontSize: 11, color: '#555', fontWeight: 600, display: 'block', marginBottom: 4 }}>% Merma Maduración</label>
-                        <input type="number" min="0" max="100" step="0.1"
-                          placeholder="ej: 3.5"
-                          value={pctMad} onChange={e => setPctMad(e.target.value)}
-                          disabled={!modoEdicion}
-                          style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '2px solid #27ae60', fontSize: 14, fontWeight: 'bold', boxSizing: 'border-box', background: modoEdicion ? 'white' : '#f8f9fa' }} />
-                      </div>
-                      <div style={{ background: '#f0fff4', borderRadius: 8, padding: '10px 12px', border: '1px solid #a9dfbf' }}>
-                        <div style={{ fontSize: 10, color: '#888' }}>Último C_mad real/kg</div>
-                        <div style={{ fontSize: 15, fontWeight: 'bold', color: '#27ae60' }}>
-                          {ultimoCMad > 0 ? `$${ultimoCMad.toFixed(4)}` : '—'}
-                        </div>
-                        {lotesConCMad[0] && <div style={{ fontSize: 9, color: '#aaa' }}>Lote {lotesConCMad[0].lote_id}</div>}
+                    {/* Peso entrada (calculado) */}
+                    <div style={{ background: '#f0fff4', borderRadius: 8, padding: '10px 14px', marginBottom: 12, border: '1.5px solid #a9dfbf' }}>
+                      <div style={{ fontSize: 11, color: '#1a6b3c', fontWeight: 700, marginBottom: 4 }}>📥 Peso entrada a maduración (calculado)</div>
+                      <div style={{ fontSize: 13, color: '#555' }}>
+                        {kgIniciales} kg carne + {kgSalmueraNec.toFixed(3)} kg salmuera =&nbsp;
+                        <strong style={{ fontSize: 16, color: '#1a6b3c' }}>{kgEntradaMad.toFixed(3)} kg</strong>
                       </div>
                     </div>
 
-                    {pctMadN > 0 && pctInjN > 0 && precioCarne > 0 && (
-                      <div style={{ background: '#f0fff4', borderRadius: 10, padding: '12px 14px', marginBottom: 10 }}>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: '#1a6b3c', marginBottom: 8 }}>Para 1 kg de carne → post maduración:</div>
-                        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+                    {/* Peso salida (manual) */}
+                    <div style={{ marginBottom: 12 }}>
+                      <label style={{ fontSize: 11, color: '#e74c3c', fontWeight: 600, display: 'block', marginBottom: 4 }}>📤 Peso salida después de maduración (kg)</label>
+                      <input type="number" min="0" step="0.001"
+                        placeholder={`ej: ${(kgEntradaMad * 0.97).toFixed(2)}`}
+                        value={kgSalidaMad} onChange={e => setKgSalidaMad(e.target.value)}
+                        disabled={!modoEdicion}
+                        style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '2px solid #e74c3c', fontSize: 16, fontWeight: 'bold', boxSizing: 'border-box', background: modoEdicion ? 'white' : '#f8f9fa' }} />
+                    </div>
+
+                    {/* Merma calculada */}
+                    {kgSalidaN > 0 && (
+                      <div style={{ background: '#fdf2f8', borderRadius: 10, padding: '12px 14px', marginBottom: 12, border: '1.5px solid #e8b4c8' }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: '#922b21', marginBottom: 8 }}>Merma de maduración:</div>
+                        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
                           {[
-                            { label: `${PT.toFixed(3)} kg`, sub: 'Inyectado', color: '#2980b9' },
+                            { label: `${kgEntradaMad.toFixed(3)} kg`, sub: 'Entrada', color: '#2980b9' },
                             '→',
-                            { label: `−${kgLost.toFixed(3)} kg`, sub: `Merma ${pctMadN}%`, color: '#e74c3c' },
+                            { label: `−${mermaMadKg.toFixed(3)} kg`, sub: `${pctMermaMad.toFixed(1)}% merma`, color: '#e74c3c' },
                             '→',
-                            { label: `${kgMad1.toFixed(3)} kg`, sub: 'Post-mad', color: '#27ae60' },
+                            { label: `${kgSalidaN.toFixed(3)} kg`, sub: 'Salida real', color: '#27ae60' },
                           ].map((n, i) => n === '→'
                             ? <span key={i} style={{ color: '#bbb' }}>→</span>
-                            : <div key={i} style={{ textAlign: 'center', background: 'white', borderRadius: 8, padding: '6px 10px', border: `1.5px solid ${n.color}30` }}>
+                            : <div key={i} style={{ textAlign: 'center', background: 'white', borderRadius: 8, padding: '6px 10px', border: `1.5px solid ${n.color}40` }}>
                                 <div style={{ fontWeight: 700, color: n.color, fontSize: 12 }}>{n.label}</div>
                                 <div style={{ fontSize: 9, color: '#888' }}>{n.sub}</div>
                               </div>
                           )}
                         </div>
-                        <div style={{ fontSize: 12, color: '#555', borderTop: '1px solid #c8e6c9', paddingTop: 8 }}>
-                          C_mad simulado = ${CI.toFixed(4)} ÷ {kgMad1.toFixed(3)} kg =&nbsp;
-                          <strong style={{ color: '#1a6b3c', fontSize: 14 }}>${cMadSim.toFixed(4)}/kg</strong>
-                        </div>
+                        {CI > 0 && (
+                          <div style={{ fontSize: 12, color: '#555', borderTop: '1px solid #f0c8d8', paddingTop: 8 }}>
+                            C_mad = ${(CI * kgIniciales).toFixed(4)} costo total ÷ {kgSalidaN.toFixed(3)} kg salida =&nbsp;
+                            <strong style={{ color: '#922b21', fontSize: 14 }}>${cMadReal.toFixed(4)}/kg</strong>
+                          </div>
+                        )}
                       </div>
                     )}
 
-                    {/* Resultado costo_mad_kg */}
+                    {/* C_mad real del último lote */}
                     <div style={{ background: ultimoCMad > 0 ? 'linear-gradient(135deg,#1a6b3c,#27ae60)' : '#f8f9fa', borderRadius: 10, padding: '12px 16px' }}>
                       <div style={{ fontSize: 11, color: ultimoCMad > 0 ? 'rgba(255,255,255,0.7)' : '#888', marginBottom: 4 }}>
                         costo_mad_kg — referencia para Pruebas y para el Hijo
@@ -882,54 +927,80 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
                     </div>
                   ) : (
                     <>
-                      {/* Fila 1: Carne · Maduración · Salmuera */}
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, marginBottom: 10 }}>
-                        <div style={{ background: 'white', borderRadius: 8, padding: '8px 10px' }}>
-                          <div style={{ fontSize: 10, color: '#e74c3c', fontWeight: 700, marginBottom: 3 }}>🥩 Carne (MP vinculada)</div>
-                          <div style={{ fontSize: 13, fontWeight: 800, color: '#1a1a2e' }}>
-                            {mpVinculada ? (mpVinculada.nombre_producto || mpVinculada.nombre) : '—'}
+                      {/* Fase 1: Materia Prima */}
+                      <div style={{ background: '#fff8f0', borderRadius: 8, padding: '8px 12px', marginBottom: 8, border: '1px solid #f0c080' }}>
+                        <div style={{ fontSize: 10, color: '#7d3c00', fontWeight: 700, marginBottom: 4 }}>🥩 Fase 1 — Materia Prima</div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div>
+                            <div style={{ fontSize: 13, fontWeight: 800, color: '#1a1a2e' }}>
+                              {mpVinculada ? (mpVinculada.nombre_producto || mpVinculada.nombre) : '—'}
+                            </div>
+                            <div style={{ fontSize: 11, color: '#27ae60' }}>${precioCarne.toFixed(4)}/kg</div>
                           </div>
-                          <div style={{ fontSize: 11, color: '#27ae60', marginTop: 2 }}>${precioCarne.toFixed(4)}/kg</div>
-                        </div>
-                        <div style={{ background: 'white', borderRadius: 8, padding: '8px 10px' }}>
-                          <div style={{ fontSize: 10, color: '#8e44ad', fontWeight: 700, marginBottom: 3 }}>⏱ Maduración</div>
-                          <div style={{ fontSize: 16, fontWeight: 800, color: '#8e44ad' }}>
-                            {padreCfg.horas_mad !== undefined ? `${padreCfg.horas_mad}h ${padreCfg.minutos_mad||0}m` : '—'}
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontSize: 11, color: '#888' }}>kg iniciales</div>
+                            <div style={{ fontSize: 18, fontWeight: 900, color: '#e67e22' }}>
+                              {padreCfg.kg_sal_base || padreCfg.kg_iniciales || 2} kg
+                            </div>
                           </div>
-                          {padreHorasTotal && <div style={{ fontSize: 10, color: '#aaa' }}>{padreHorasTotal} h total · {padreCfg.pct_mad||0}% merma</div>}
-                        </div>
-                        <div style={{ background: 'white', borderRadius: 8, padding: '8px 10px' }}>
-                          <div style={{ fontSize: 10, color: '#2980b9', fontWeight: 700, marginBottom: 3 }}>💉 Salmuera</div>
-                          <div style={{ fontSize: 13, fontWeight: 800, color: '#2980b9' }}>
-                            {padreCfg.formula_salmuera || '—'}
-                          </div>
-                          {padreCfg.pct_inj > 0 && <div style={{ fontSize: 10, color: '#aaa' }}>{padreCfg.pct_inj}% inyección</div>}
                         </div>
                       </div>
-                      {/* Fila 2: Rub · Adicional */}
-                      {(padreCfg.formula_rub || padreCfg.mp_adicional_id) && (
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                          {padreCfg.formula_rub && (
-                            <div style={{ background: 'white', borderRadius: 8, padding: '8px 10px' }}>
-                              <div style={{ fontSize: 10, color: '#8e44ad', fontWeight: 700, marginBottom: 3 }}>🌶️ Rub</div>
-                              <div style={{ fontSize: 13, fontWeight: 700, color: '#6c3483' }}>{padreCfg.formula_rub}</div>
-                              {padreCfg.kg_rub_base > 0 && <div style={{ fontSize: 10, color: '#aaa' }}>Fórmula para {padreCfg.kg_rub_base} kg de carne</div>}
-                            </div>
+                      {/* Fase 2: Inyección */}
+                      <div style={{ background: '#f0f8ff', borderRadius: 8, padding: '8px 12px', marginBottom: 8, border: '1px solid #aed6f1' }}>
+                        <div style={{ fontSize: 10, color: '#1a3a5c', fontWeight: 700, marginBottom: 4 }}>💉 Fase 2 — Inyección</div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                          <div style={{ fontSize: 13, fontWeight: 800, color: '#2980b9' }}>{padreCfg.formula_salmuera || '—'}</div>
+                          {padreCfg.pct_inj > 0 && (
+                            <div style={{ fontSize: 15, fontWeight: 900, color: '#2980b9' }}>{padreCfg.pct_inj}%</div>
                           )}
-                          {padreCfg.mp_adicional_id && (() => {
-                            const mpAdPadre = mpsFormula.find(m => String(m.id) === String(padreCfg.mp_adicional_id));
-                            return (
-                              <div style={{ background: 'white', borderRadius: 8, padding: '8px 10px' }}>
-                                <div style={{ fontSize: 10, color: '#f39c12', fontWeight: 700, marginBottom: 3 }}>🟡 Adicional</div>
-                                <div style={{ fontSize: 13, fontWeight: 700, color: '#d68910' }}>
-                                  {mpAdPadre ? (mpAdPadre.nombre_producto || mpAdPadre.nombre) : 'ID: ' + padreCfg.mp_adicional_id}
-                                </div>
-                                {padreCfg.gramos_adicional > 0 && <div style={{ fontSize: 10, color: '#aaa' }}>{padreCfg.gramos_adicional}g por kg de carne</div>}
-                              </div>
-                            );
-                          })()}
                         </div>
-                      )}
+                        {padreCfg.pct_inj > 0 && (padreCfg.kg_sal_base || 2) > 0 && (
+                          <div style={{ fontSize: 11, color: '#555' }}>
+                            {(padreCfg.kg_sal_base||2)} kg carne × {padreCfg.pct_inj}% =&nbsp;
+                            <strong>{((padreCfg.kg_sal_base||2) * padreCfg.pct_inj / 100).toFixed(3)} kg salmuera</strong>
+                          </div>
+                        )}
+                        {(padreCfg.formula_rub || padreCfg.mp_adicional_id) && (
+                          <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                            {padreCfg.formula_rub && (
+                              <span style={{ fontSize: 10, background: '#e8d5f5', color: '#6c3483', borderRadius: 4, padding: '2px 6px', fontWeight: 700 }}>
+                                🌶️ {padreCfg.formula_rub}
+                              </span>
+                            )}
+                            {padreCfg.mp_adicional_id && (() => {
+                              const mpAdPadre = mpsFormula.find(m => String(m.id) === String(padreCfg.mp_adicional_id));
+                              return (
+                                <span style={{ fontSize: 10, background: '#fef3cd', color: '#d68910', borderRadius: 4, padding: '2px 6px', fontWeight: 700 }}>
+                                  🟡 {mpAdPadre ? (mpAdPadre.nombre_producto || mpAdPadre.nombre) : '?'}
+                                  {padreCfg.gramos_adicional > 0 && ` · ${padreCfg.gramos_adicional}g/kg`}
+                                </span>
+                              );
+                            })()}
+                          </div>
+                        )}
+                      </div>
+                      {/* Fase 3: Maduración */}
+                      <div style={{ background: '#f0fff4', borderRadius: 8, padding: '8px 12px', border: '1px solid #a9dfbf' }}>
+                        <div style={{ fontSize: 10, color: '#1a6b3c', fontWeight: 700, marginBottom: 4 }}>🧊 Fase 3 — Maduración</div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                          <div style={{ fontSize: 15, fontWeight: 800, color: '#8e44ad' }}>
+                            {padreCfg.horas_mad !== undefined ? `${padreCfg.horas_mad}h ${padreCfg.minutos_mad||0}m` : '—'}
+                          </div>
+                          <div style={{ fontSize: 11, color: '#888' }}>{padreHorasTotal} h total</div>
+                        </div>
+                        {padreCfg.kg_salida_mad > 0 && (padreCfg.kg_sal_base || 2) > 0 && padreCfg.pct_inj > 0 && (() => {
+                          const kgIniP = parseFloat(padreCfg.kg_sal_base || 2);
+                          const kgEntP = kgIniP * (1 + padreCfg.pct_inj / 100);
+                          const kgSalP = parseFloat(padreCfg.kg_salida_mad);
+                          const mermaP = ((kgEntP - kgSalP) / kgEntP * 100).toFixed(1);
+                          return (
+                            <div style={{ fontSize: 11, color: '#555' }}>
+                              {kgEntP.toFixed(3)} kg entrada → {kgSalP.toFixed(3)} kg salida&nbsp;
+                              <strong style={{ color: '#e74c3c' }}>({mermaP}% merma)</strong>
+                            </div>
+                          );
+                        })()}
+                      </div>
                     </>
                   )}
                 </div>
