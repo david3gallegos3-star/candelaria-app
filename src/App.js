@@ -430,6 +430,12 @@ function App() {
       .update({ producto_nombre: editando.nuevoNombre }).eq('producto_nombre', editando.nombre);
     await supabase.from('config_productos')
       .update({ producto_nombre: editando.nuevoNombre }).eq('producto_nombre', editando.nombre);
+    await supabase.from('vista_horneado_config')
+      .update({ producto_nombre: editando.nuevoNombre }).eq('producto_nombre', editando.nombre);
+    await supabase.from('deshuese_config')
+      .update({ corte_padre: editando.nuevoNombre }).eq('corte_padre', editando.nombre);
+    await supabase.from('deshuese_config')
+      .update({ corte_hijo: editando.nuevoNombre }).eq('corte_hijo', editando.nombre);
     if (MP_CAT_MAP[prod?.categoria]) {
       await supabase.from('materias_primas')
         .update({ nombre: editando.nuevoNombre, nombre_producto: editando.nuevoNombre })
