@@ -157,10 +157,10 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
   async function cargarTodo() {
     setCargando(true);
     try {
-      // 1. Detectar padre/hijo — ilike para ser case-insensitive, sin filtro activo (entradas nuevas tienen activo=NULL)
+      // 1. Detectar padre/hijo — eq exacto (ilike con espacios rompe PostgREST URL), sin filtro activo
       const [{ data: asPadre }, { data: asHijo }] = await Promise.all([
-        supabase.from('deshuese_config').select('*').ilike('corte_padre', producto.nombre).limit(3),
-        supabase.from('deshuese_config').select('*').ilike('corte_hijo',  producto.nombre).limit(3),
+        supabase.from('deshuese_config').select('*').eq('corte_padre', producto.nombre).limit(3),
+        supabase.from('deshuese_config').select('*').eq('corte_hijo',  producto.nombre).limit(3),
       ]);
       const esPadre = (asPadre || []).length > 0;
       const esHijo  = (asHijo  || []).length > 0;
