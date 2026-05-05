@@ -31,7 +31,7 @@ export default function ModalNuevoProducto({
     supabase.from('productos')
       .select('nombre').or('categoria.eq.Cortes,categoria.eq.CORTES')
       .eq('estado', 'ACTIVO').order('nombre')
-      .then(({ data }) => setCortesExist((data || []).map(p => p.nombre)));
+      .then(({ data }) => setCortesExist([...new Set((data || []).map(p => p.nombre))]));
   }, [esCorte]);
 
   const mpsFiltradas = mps.filter(m => {
