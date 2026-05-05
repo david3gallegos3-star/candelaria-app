@@ -280,28 +280,35 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
       setFormulaciones((prodsSal||[]).map(p => p.nombre));
       setRubFormulas((prodsRub||[]).map(p => p.nombre));
 
-      // Buscar config del padre (hijo): case-insensitive, con fallback fuzzy
+      // Buscar config del padre (hijo): word-overlap scoring para tolerar typos y variaciones
       if (!esPadre && cfgEntry?.corte_padre) {
-        const padreNom   = (cfgEntry.corte_padre || '').toLowerCase().trim();
-        const primeraPal = (cfgEntry.corte_padre || '').trim().split(' ')[0];
-        // Intento 1: ilike sin wildcards = case-insensitive exact match
-        const { data: exactRow } = await supabase.from('vista_horneado_config')
-          .select('config,producto_nombre')
-          .ilike('producto_nombre', cfgEntry.corte_padre)
-          .maybeSingle();
-        if (exactRow?.config) {
-          setPadreCfg(exactRow.config);
-        } else {
-          // Intento 2: ilike con primera palabra (cubre variaciones de nombre)
-          const { data: r1 } = await supabase.from('vista_horneado_config')
-            .select('config,producto_nombre')
-            .ilike('producto_nombre', `%${primeraPal}%`)
-            .limit(20);
-          const rows = r1 || [];
-          const exact   = rows.find(r => r.producto_nombre.toLowerCase() === padreNom);
-          const partial = rows.find(r => padreNom.includes(r.producto_nombre.toLowerCase()) || r.producto_nombre.toLowerCase().includes(padreNom));
-          const found   = exact || partial;
-          if (found?.config) setPadreCfg(found.config);
+        const palabrasPadre = (cfgEntry.corte_padre || '').toLowerCase().trim().split(/\s+/).filter(Boolean);
+        const primeraPal    = palabrasPadre[0] || '';
+        const segundaPal    = palabrasPadre[1] || '';
+
+        // Traer candidatos con primera + segunda palabra
+        let q = supabase.from('vista_horneado_config').select('config,producto_nombre').ilike('producto_nombre', `%${primeraPal}%`);
+        if (segundaPal) q = q.ilike('producto_nombre', `%${segundaPal}%`);
+        const { data: candidatos } = await q.limit(20);
+
+        // Si no hubo resultados con 2 palabras, intentar solo la primera
+        let rows = candidatos || [];
+        if (rows.length === 0 && segundaPal) {
+          const { data: r2 } = await supabase.from('vista_horneado_config')
+            .select('config,producto_nombre').ilike('producto_nombre', `%${primeraPal}%`).limit(20);
+          rows = r2 || [];
+        }
+
+        // Scoring por overlap de palabras — elige el candidato con más palabras en común
+        const score = (nombre) => {
+          const palabrasNombre = (nombre || '').toLowerCase().split(/\s+/).filter(Boolean);
+          return palabrasPadre.filter(p => palabrasNombre.some(n => n.startsWith(p.slice(0,4)) || p.startsWith(n.slice(0,4)))).length;
+        };
+
+        const conConfig = rows.filter(r => r.config);
+        if (conConfig.length > 0) {
+          const mejor = conConfig.reduce((a, b) => score(b.producto_nombre) > score(a.producto_nombre) ? b : a);
+          if (score(mejor.producto_nombre) > 0) setPadreCfg(mejor.config);
         }
       }
       setMpsFormula(allMps || []);
@@ -383,17 +390,27 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
 
   async function recargarConfigPadre() {
     if (!deshueseConfig?.corte_padre) return;
-    const padreNom = (deshueseConfig.corte_padre || '').toLowerCase().trim();
-    const primeraPal = deshueseConfig.corte_padre.trim().split(' ')[0];
-    const { data: exactRow } = await supabase.from('vista_horneado_config')
-      .select('config,producto_nombre').ilike('producto_nombre', deshueseConfig.corte_padre).maybeSingle();
-    if (exactRow?.config) { setPadreCfg(exactRow.config); return; }
-    const { data: r1 } = await supabase.from('vista_horneado_config')
-      .select('config,producto_nombre').ilike('producto_nombre', `%${primeraPal}%`).limit(20);
-    const rows = r1 || [];
-    const found = rows.find(r => r.producto_nombre.toLowerCase() === padreNom)
-      || rows.find(r => padreNom.includes(r.producto_nombre.toLowerCase()) || r.producto_nombre.toLowerCase().includes(padreNom));
-    if (found?.config) setPadreCfg(found.config);
+    const palabrasPadre = (deshueseConfig.corte_padre || '').toLowerCase().trim().split(/\s+/).filter(Boolean);
+    const primeraPal = palabrasPadre[0] || '';
+    const segundaPal = palabrasPadre[1] || '';
+    let q = supabase.from('vista_horneado_config').select('config,producto_nombre').ilike('producto_nombre', `%${primeraPal}%`);
+    if (segundaPal) q = q.ilike('producto_nombre', `%${segundaPal}%`);
+    const { data: candidatos } = await q.limit(20);
+    let rows = candidatos || [];
+    if (rows.length === 0 && segundaPal) {
+      const { data: r2 } = await supabase.from('vista_horneado_config')
+        .select('config,producto_nombre').ilike('producto_nombre', `%${primeraPal}%`).limit(20);
+      rows = r2 || [];
+    }
+    const score = (nombre) => {
+      const palabrasNombre = (nombre || '').toLowerCase().split(/\s+/).filter(Boolean);
+      return palabrasPadre.filter(p => palabrasNombre.some(n => n.startsWith(p.slice(0,4)) || p.startsWith(n.slice(0,4)))).length;
+    };
+    const conConfig = rows.filter(r => r.config);
+    if (conConfig.length > 0) {
+      const mejor = conConfig.reduce((a, b) => score(b.producto_nombre) > score(a.producto_nombre) ? b : a);
+      if (score(mejor.producto_nombre) > 0) setPadreCfg(mejor.config);
+    }
   }
 
   async function guardarHistorial() {
