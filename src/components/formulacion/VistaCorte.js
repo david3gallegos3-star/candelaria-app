@@ -133,25 +133,33 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
     })();
   }, [formulaRubNombre, mpsFormula]);
 
-  // Realtime: si el padre guarda config, el hijo la recibe automáticamente
+  // Sync automático del padre: visibilitychange + polling cada 20s + realtime
   useEffect(() => {
     if (tipo !== 'hijo' || !deshueseConfig?.corte_padre) return;
-    const padreNombre = (deshueseConfig.corte_padre || '').toLowerCase().trim();
+
+    // 1. Realtime (funciona si la tabla tiene Realtime habilitado en Supabase)
+    const padreNombreLow = (deshueseConfig.corte_padre || '').toLowerCase().trim();
     const channel = supabase
       .channel(`padre-config-${producto.nombre}`)
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'vista_horneado_config',
-      }, payload => {
-        // Sin filtro en el servidor para evitar problemas con espacios — filtramos en JS
-        const rowNombre = (payload.new?.producto_nombre || '').toLowerCase().trim();
-        if (rowNombre === padreNombre && payload.new?.config) {
-          setPadreCfg(payload.new.config);
-        }
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'vista_horneado_config' },
+        payload => {
+          const rowNombre = (payload.new?.producto_nombre || '').toLowerCase().trim();
+          if (rowNombre === padreNombreLow && payload.new?.config) setPadreCfg(payload.new.config);
+        })
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+
+    // 2. Al volver a la pestaña/ventana — recarga inmediata
+    const onFocus = () => { if (!document.hidden) recargarConfigPadre(); };
+    document.addEventListener('visibilitychange', onFocus);
+
+    // 3. Polling cada 20s como respaldo
+    const interval = setInterval(() => recargarConfigPadre(), 20000);
+
+    return () => {
+      supabase.removeChannel(channel);
+      document.removeEventListener('visibilitychange', onFocus);
+      clearInterval(interval);
+    };
   }, [tipo, deshueseConfig, producto.nombre]);
 
   async function cargarTodo() {
