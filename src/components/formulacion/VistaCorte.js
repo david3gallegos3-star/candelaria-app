@@ -1417,11 +1417,18 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
                   </div>
                 ) : (
                   <div style={{ background: '#fef9e7', borderRadius: 10, padding: '12px 16px', marginBottom: 12, border: '1.5px solid #f39c12' }}>
-                    <div style={{ fontSize: 12, color: '#b7770d', fontWeight: 700, marginBottom: 4 }}>
-                      ⚠ El Padre aún no ha asignado los kg para este Hijo
-                    </div>
-                    <div style={{ fontSize: 11, color: '#7d6608' }}>
-                      Abre <strong>"{deshueseConfig?.corte_padre || 'el producto Padre'}"</strong>, ve a la <strong>Fase 3 — Maduración</strong>, ingresa el peso salida y cuántos kg van al Hijo, luego presiona <strong>Fijar Cambios</strong>.
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
+                      <div>
+                        <div style={{ fontSize: 12, color: '#b7770d', fontWeight: 700, marginBottom: 4 }}>
+                          ⚠ El Padre aún no ha asignado los kg para este Hijo
+                        </div>
+                        <div style={{ fontSize: 11, color: '#7d6608' }}>
+                          Abre <strong>"{deshueseConfig?.corte_padre || 'el producto Padre'}"</strong>, ve a la <strong>Fase 3 — Maduración</strong>, ingresa el peso salida y cuántos kg van al Hijo, luego presiona <strong>Fijar Cambios</strong>.
+                        </div>
+                      </div>
+                      <button onClick={recargarConfigPadre} style={{ flexShrink: 0, background: '#e67e22', color: 'white', border: 'none', borderRadius: 7, padding: '6px 12px', fontSize: 11, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                        🔄 Recargar
+                      </button>
                     </div>
                   </div>
                 )}
