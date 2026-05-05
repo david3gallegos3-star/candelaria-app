@@ -1363,11 +1363,9 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
                       </div>
                       {/* Kg asignados al Hijo desde el Padre */}
                       {padreCfg.kg_para_hijo > 0 && (() => {
-                        const kgIniP   = parseFloat(padreCfg.kg_sal_base || 2);
-                        const kgSalP   = parseFloat(padreCfg.kg_salida_mad || 0);
-                        const costoTotP = padreCfg.pct_inj > 0 && kgSalP > 0
-                          ? (parseFloat(padreCfg.pct_inj) / 100 * kgIniP * (precioKgSalmuera || 0) + kgIniP * precioCarne) / kgSalP
-                          : (padreInfo ? parseFloat(padreInfo.costo_mad_kg) : 0);
+                        const costoTotP = padreCfg.c_mad_real > 0
+                          ? parseFloat(padreCfg.c_mad_real)
+                          : (padreInfo ? parseFloat(padreInfo.costo_mad_kg) : parseFloat(mpVinculada?.precio_kg || 0));
                         return (
                           <div style={{ background: '#f3e8fd', borderRadius: 8, padding: '10px 12px', marginTop: 8, border: '2px solid #8e44ad' }}>
                             <div style={{ fontSize: 10, color: '#6c3483', fontWeight: 700, marginBottom: 4 }}>
