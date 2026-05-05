@@ -53,16 +53,14 @@ export default function ScanFormula({ producto, onCerrar, onImportada }) {
       const nombres = todosLosIngredientes.map(i => i.nombre);
       const { data: mpsEncontradas } = await supabase
         .from('materias_primas')
-        .select('id, nombre, nombre_producto, categoria')
+        .select('id, nombre, nombre_producto, categoria, precio_kg')
         .eq('eliminado', false);
 
       const verificados = todosLosIngredientes.map(ing => {
         const norm = s => (s || '').toLowerCase().trim();
         const match = (mpsEncontradas || []).find(mp =>
           norm(mp.nombre_producto) === norm(ing.nombre) ||
-          norm(mp.nombre)          === norm(ing.nombre) ||
-          norm(mp.nombre_producto).includes(norm(ing.nombre)) ||
-          norm(ing.nombre).includes(norm(mp.nombre_producto || '').split(' ')[0])
+          norm(mp.nombre)          === norm(ing.nombre)
         );
         return { ...ing, mp: match || null, incluir: true };
       });
@@ -257,7 +255,7 @@ export default function ScanFormula({ producto, onCerrar, onImportada }) {
                         const encontrado = !!ing.mp;
                         return (
                           <div key={idx} style={{
-                            display:'grid', gridTemplateColumns:'auto 1fr auto auto',
+                            display:'grid', gridTemplateColumns:'auto 1fr auto auto auto',
                             alignItems:'center', gap:10,
                             padding:'8px 14px',
                             background: !ing.incluir ? '#f8f9fa' : encontrado ? 'white' : '#fff5f5',
@@ -275,7 +273,7 @@ export default function ScanFormula({ producto, onCerrar, onImportada }) {
                                 {ing.nombre}
                                 {!encontrado && ing.incluir && (
                                   <span style={{ fontSize:10, marginLeft:6, background:'#fdecea', color:'#e74c3c', padding:'1px 5px', borderRadius:4 }}>
-                                    No en BD
+                                    No encontrado
                                   </span>
                                 )}
                               </div>
@@ -288,6 +286,18 @@ export default function ScanFormula({ producto, onCerrar, onImportada }) {
                             {/* Gramos */}
                             <div style={{ textAlign:'right', fontSize:13, fontWeight:700, color:'#555', minWidth:60 }}>
                               {ing.gramos}g
+                            </div>
+                            {/* Precio/kg desde BD */}
+                            <div style={{ textAlign:'right', minWidth:80 }}>
+                              {encontrado ? (
+                                <span style={{ fontSize:12, fontWeight:700, color:'#1a6b3c', background:'#d5f5e3', padding:'2px 7px', borderRadius:5 }}>
+                                  ${(ing.mp.precio_kg || 0).toFixed(2)}/kg
+                                </span>
+                              ) : (
+                                <span style={{ fontSize:12, fontWeight:700, color:'#e74c3c', background:'#fdecea', padding:'2px 7px', borderRadius:5 }}>
+                                  Sin precio
+                                </span>
+                              )}
                             </div>
                             {/* Status dot */}
                             <div style={{
