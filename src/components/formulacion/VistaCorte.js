@@ -838,10 +838,6 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
               </div>
             </>
           )}
-          <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
-            <div style={{ fontSize: 10, color: '#888' }}>Precio actual</div>
-            <div style={{ fontWeight: 'bold', color: '#27ae60', fontSize: 17 }}>${parseFloat(mpVinculada?.precio_kg || 0).toFixed(4)}/kg</div>
-          </div>
         </div>
       </div>
 
