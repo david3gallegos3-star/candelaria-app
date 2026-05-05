@@ -1434,19 +1434,36 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
                   <div style={{ padding: '14px 16px' }}>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, marginBottom: 12 }}>
                       {[
-                        ['% Res Segunda', pctResSegunda, setPctResSegunda, '#27ae60', precioResSegunda],
-                        ['% Puntas',      pctPuntas,     setPctPuntas,     '#e67e22', precioPuntas],
-                        ['% Desecho',     pctDesecho,    setPctDesecho,    '#e74c3c', 0],
-                      ].map(([label, val, setter, color, precio]) => (
-                        <div key={label}>
-                          <label style={{ fontSize: 10, color: '#555', display: 'block', marginBottom: 4, fontWeight: 600 }}>{label}</label>
-                          <input type="number" min="0" max="100" step="0.1"
-                            placeholder="0" value={val} onChange={e => setter(e.target.value)}
-                            disabled={!modoEdicion}
-                            style={{ width: '100%', padding: '8px', borderRadius: 8, border: `2px solid ${color}`, fontSize: 14, fontWeight: 'bold', boxSizing: 'border-box', textAlign: 'right', background: modoEdicion ? 'white' : '#f8f9fa' }} />
-                          {precio > 0 && <div style={{ fontSize: 9, color: '#aaa', marginTop: 2 }}>Precio: ${precio.toFixed(4)}/kg</div>}
-                        </div>
-                      ))}
+                        ['Res Segunda', pctResSegunda, setPctResSegunda, '#27ae60', precioResSegunda],
+                        ['Puntas',      pctPuntas,     setPctPuntas,     '#e67e22', precioPuntas],
+                        ['Desecho',     pctDesecho,    setPctDesecho,    '#e74c3c', 0],
+                      ].map(([label, val, setter, color, precio]) => {
+                        const pctNum = parseFloat(val) || 0;
+                        const gramsVal = val !== '' && kgEnt > 0
+                          ? +(pctNum * kgEnt * 10).toFixed(1)
+                          : '';
+                        return (
+                          <div key={label}>
+                            <label style={{ fontSize: 10, color: '#555', display: 'block', marginBottom: 4, fontWeight: 600 }}>
+                              {label} <span style={{ color: '#aaa' }}>(g)</span>
+                            </label>
+                            <input type="number" min="0" step="0.1"
+                              placeholder="0"
+                              value={gramsVal}
+                              onChange={e => {
+                                const g = e.target.value === '' ? '' : parseFloat(e.target.value);
+                                if (g === '') { setter(''); return; }
+                                setter(kgEnt > 0 ? String(+(g / (kgEnt * 10)).toFixed(4)) : '0');
+                              }}
+                              disabled={!modoEdicion}
+                              style={{ width: '100%', padding: '8px', borderRadius: 8, border: `2px solid ${color}`, fontSize: 14, fontWeight: 'bold', boxSizing: 'border-box', textAlign: 'right', background: modoEdicion ? 'white' : '#f8f9fa' }} />
+                            <div style={{ fontSize: 9, color: '#888', marginTop: 2, fontWeight: 600 }}>
+                              = {pctNum > 0 ? pctNum.toFixed(3) : '0'}%
+                            </div>
+                            {precio > 0 && <div style={{ fontSize: 9, color: '#aaa', marginTop: 1 }}>Precio: ${precio.toFixed(4)}/kg</div>}
+                          </div>
+                        );
+                      })}
                     </div>
 
                     {kgEnt > 0 && (
