@@ -331,6 +331,20 @@ function App() {
     if (error) console.error(`Error sync ${categoriaMp} MP:`, error.message);
   }
 
+  async function limpiarConfigHuerfana(nombre) {
+    const nombreLow = nombre.toLowerCase().trim();
+    const w1 = nombreLow.split(/\s+/)[0];
+    if (!w1) return;
+    const { data: rows } = await supabase.from('vista_horneado_config')
+      .select('producto_nombre').ilike('producto_nombre', `%${w1}%`);
+    const matches = (rows || [])
+      .filter(r => (r.producto_nombre || '').toLowerCase().trim() === nombreLow)
+      .map(r => r.producto_nombre);
+    for (const n of matches) {
+      await supabase.from('vista_horneado_config').delete().eq('producto_nombre', n);
+    }
+  }
+
   async function crearProducto(deshueseConfig = null) {
     if (!nuevoNombre.trim()) return alert('Escribe el nombre del producto');
     const catSel = nuevaCategoria || Object.keys(categoriasConfig)[0];
@@ -340,6 +354,14 @@ function App() {
     const { data: existe } = await supabase.from('productos')
       .select('id').eq('nombre', nuevoNombre.trim()).eq('estado', 'ACTIVO').limit(1);
     if ((existe || []).length > 0) return alert(`Ya existe un producto activo llamado "${nuevoNombre.trim()}". Usa un nombre diferente o elimina el existente primero.`);
+    // Limpiar datos huérfanos case-insensitive (eq es case-sensitive, usamos fetch+filter+delete)
+    await limpiarConfigHuerfana(nuevoNombre.trim());
+    if (esCorte) {
+      await Promise.all([
+        supabase.from('deshuese_config').delete().eq('corte_padre', nuevoNombre.trim()),
+        supabase.from('deshuese_config').delete().eq('corte_hijo',  nuevoNombre.trim()),
+      ]);
+    }
     const { data, error } = await supabase.from('productos')
       .insert([{
         nombre: nuevoNombre.trim(),

@@ -290,33 +290,37 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
 
       // Buscar config del padre (hijo): word-overlap scoring para tolerar typos y variaciones
       if (!esPadre && cfgEntry?.corte_padre) {
-        const palabrasPadre = (cfgEntry.corte_padre || '').toLowerCase().trim().split(/\s+/).filter(Boolean);
-        const primeraPal    = palabrasPadre[0] || '';
-        const segundaPal    = palabrasPadre[1] || '';
+        // Validar que el padre siga activo
+        const { data: padreActivo } = await supabase.from('productos')
+          .select('id').eq('nombre', cfgEntry.corte_padre).eq('estado', 'ACTIVO').limit(1);
+        if ((padreActivo || []).length === 0) {
+          setPadreCfg(null);
+        } else {
+          const palabrasPadre = (cfgEntry.corte_padre || '').toLowerCase().trim().split(/\s+/).filter(Boolean);
+          const primeraPal    = palabrasPadre[0] || '';
+          const segundaPal    = palabrasPadre[1] || '';
 
-        // Traer candidatos con primera + segunda palabra
-        let q = supabase.from('vista_horneado_config').select('config,producto_nombre').ilike('producto_nombre', `%${primeraPal}%`);
-        if (segundaPal) q = q.ilike('producto_nombre', `%${segundaPal}%`);
-        const { data: candidatos } = await q.limit(20);
+          let q = supabase.from('vista_horneado_config').select('config,producto_nombre').ilike('producto_nombre', `%${primeraPal}%`);
+          if (segundaPal) q = q.ilike('producto_nombre', `%${segundaPal}%`);
+          const { data: candidatos } = await q.limit(20);
 
-        // Si no hubo resultados con 2 palabras, intentar solo la primera
-        let rows = candidatos || [];
-        if (rows.length === 0 && segundaPal) {
-          const { data: r2 } = await supabase.from('vista_horneado_config')
-            .select('config,producto_nombre').ilike('producto_nombre', `%${primeraPal}%`).limit(20);
-          rows = r2 || [];
-        }
+          let rows = candidatos || [];
+          if (rows.length === 0 && segundaPal) {
+            const { data: r2 } = await supabase.from('vista_horneado_config')
+              .select('config,producto_nombre').ilike('producto_nombre', `%${primeraPal}%`).limit(20);
+            rows = r2 || [];
+          }
 
-        // Scoring por overlap de palabras — elige el candidato con más palabras en común
-        const score = (nombre) => {
-          const palabrasNombre = (nombre || '').toLowerCase().split(/\s+/).filter(Boolean);
-          return palabrasPadre.filter(p => palabrasNombre.some(n => n.startsWith(p.slice(0,4)) || p.startsWith(n.slice(0,4)))).length;
-        };
+          const score = (nombre) => {
+            const palabrasNombre = (nombre || '').toLowerCase().split(/\s+/).filter(Boolean);
+            return palabrasPadre.filter(p => palabrasNombre.some(n => n.startsWith(p.slice(0,4)) || p.startsWith(n.slice(0,4)))).length;
+          };
 
-        const conConfig = rows.filter(r => r.config);
-        if (conConfig.length > 0) {
-          const mejor = conConfig.reduce((a, b) => score(b.producto_nombre) > score(a.producto_nombre) ? b : a);
-          if (score(mejor.producto_nombre) > 0) setPadreCfg(mejor.config);
+          const conConfig = rows.filter(r => r.config);
+          if (conConfig.length > 0) {
+            const mejor = conConfig.reduce((a, b) => score(b.producto_nombre) > score(a.producto_nombre) ? b : a);
+            if (score(mejor.producto_nombre) > 0) setPadreCfg(mejor.config);
+          }
         }
       }
       setMpsFormula(allMps || []);
@@ -398,6 +402,9 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
 
   async function recargarConfigPadre() {
     if (!deshueseConfig?.corte_padre) return;
+    const { data: padreActivo } = await supabase.from('productos')
+      .select('id').eq('nombre', deshueseConfig.corte_padre).eq('estado', 'ACTIVO').limit(1);
+    if ((padreActivo || []).length === 0) { setPadreCfg(null); return; }
     const palabrasPadre = (deshueseConfig.corte_padre || '').toLowerCase().trim().split(/\s+/).filter(Boolean);
     const primeraPal = palabrasPadre[0] || '';
     const segundaPal = palabrasPadre[1] || '';
@@ -418,6 +425,9 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
     if (conConfig.length > 0) {
       const mejor = conConfig.reduce((a, b) => score(b.producto_nombre) > score(a.producto_nombre) ? b : a);
       if (score(mejor.producto_nombre) > 0) setPadreCfg(mejor.config);
+      else setPadreCfg(null);
+    } else {
+      setPadreCfg(null);
     }
   }
 

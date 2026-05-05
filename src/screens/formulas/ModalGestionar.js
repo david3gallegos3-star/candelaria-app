@@ -66,10 +66,22 @@ export default function ModalGestionar({
     if (!window.confirm(
       `⚠️ ELIMINAR PERMANENTEMENTE "${prod.nombre}" y toda su formulación?\n\nEsto NO se puede deshacer.`
     )) return;
+    // Limpieza case-insensitive de vista_horneado_config
+    const nombreLow = prod.nombre.toLowerCase().trim();
+    const w1 = nombreLow.split(/\s+/)[0];
+    if (w1) {
+      const { data: vhcRows } = await supabase.from('vista_horneado_config')
+        .select('producto_nombre').ilike('producto_nombre', `%${w1}%`);
+      const matches = (vhcRows || [])
+        .filter(r => (r.producto_nombre || '').toLowerCase().trim() === nombreLow)
+        .map(r => r.producto_nombre);
+      for (const n of matches) {
+        await supabase.from('vista_horneado_config').delete().eq('producto_nombre', n);
+      }
+    }
     await Promise.all([
       supabase.from('formulaciones').delete().eq('producto_nombre', prod.nombre),
       supabase.from('config_productos').delete().eq('producto_nombre', prod.nombre),
-      supabase.from('vista_horneado_config').delete().eq('producto_nombre', prod.nombre),
       supabase.from('deshuese_config').delete().eq('corte_padre', prod.nombre),
       supabase.from('deshuese_config').delete().eq('corte_hijo', prod.nombre),
       supabase.from('historial_general').delete().eq('producto_nombre', prod.nombre),
