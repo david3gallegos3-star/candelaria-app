@@ -28,6 +28,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
   const [versiones,     setVersiones]     = useState([]);
   const [guardando,     setGuardando]     = useState(false);
   const [modoEdicion,   setModoEdicion]   = useState(false);
+  const [configExiste,  setConfigExiste]  = useState(false);
   const [modalVer,      setModalVer]      = useState(false);
   const [verDetalle,    setVerDetalle]    = useState(null);
   const [autoGuardando, setAutoGuardando] = useState(false);
@@ -88,7 +89,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
   const [errorCierre,          setErrorCierre]          = useState('');
   const [kgCortesDia,          setKgCortesDia]          = useState(0);
 
-  useEffect(() => { cargarTodo(); }, [producto.nombre, producto.mp_vinculado_id]);
+  useEffect(() => { setConfigExiste(false); cargarTodo(); }, [producto.nombre, producto.mp_vinculado_id]);
 
   useEffect(() => {
     if (!formulaSalmueraNombre || mpsFormula.length === 0) {
@@ -132,13 +133,34 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
     })();
   }, [formulaRubNombre, mpsFormula]);
 
+  // Realtime: si el padre guarda config, el hijo la recibe automáticamente
+  useEffect(() => {
+    if (tipo !== 'hijo' || !deshueseConfig?.corte_padre) return;
+    const padreNombre = (deshueseConfig.corte_padre || '').toLowerCase().trim();
+    const channel = supabase
+      .channel(`padre-config-${producto.nombre}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'vista_horneado_config',
+      }, payload => {
+        // Sin filtro en el servidor para evitar problemas con espacios — filtramos en JS
+        const rowNombre = (payload.new?.producto_nombre || '').toLowerCase().trim();
+        if (rowNombre === padreNombre && payload.new?.config) {
+          setPadreCfg(payload.new.config);
+        }
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [tipo, deshueseConfig, producto.nombre]);
+
   async function cargarTodo() {
     setCargando(true);
     try {
-      // 1. Detectar padre/hijo
+      // 1. Detectar padre/hijo — ilike para ser case-insensitive, sin filtro activo (entradas nuevas tienen activo=NULL)
       const [{ data: asPadre }, { data: asHijo }] = await Promise.all([
-        supabase.from('deshuese_config').select('*').eq('corte_padre', producto.nombre).eq('activo', true).limit(3),
-        supabase.from('deshuese_config').select('*').eq('corte_hijo',  producto.nombre).eq('activo', true).limit(3),
+        supabase.from('deshuese_config').select('*').ilike('corte_padre', producto.nombre).limit(3),
+        supabase.from('deshuese_config').select('*').ilike('corte_hijo',  producto.nombre).limit(3),
       ]);
       const esPadre = (asPadre || []).length > 0;
       const esHijo  = (asHijo  || []).length > 0;
@@ -217,6 +239,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
         .from('vista_horneado_config').select('*')
         .eq('producto_nombre', producto.nombre).maybeSingle();
       if (cfg) {
+        setConfigExiste(true);
         setVersiones(cfg.versiones || []);
         const c = cfg.config || {};
         if (c.pct_inj)        setPctInj(String(c.pct_inj));
@@ -257,22 +280,29 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
       setFormulaciones((prodsSal||[]).map(p => p.nombre));
       setRubFormulas((prodsRub||[]).map(p => p.nombre));
 
-      // Buscar config del padre (hijo): dos intentos separados para evitar problemas con .or() y espacios
+      // Buscar config del padre (hijo): case-insensitive, con fallback fuzzy
       if (!esPadre && cfgEntry?.corte_padre) {
-        const padreNom   = (cfgEntry.corte_padre || '').toLowerCase();
-        const primeraPal = (cfgEntry.corte_padre || '').split(' ')[0];
-        // Intento 1: ilike con la primera palabra (cubre 'New York' buscando 'New')
-        const { data: r1 } = await supabase.from('vista_horneado_config')
+        const padreNom   = (cfgEntry.corte_padre || '').toLowerCase().trim();
+        const primeraPal = (cfgEntry.corte_padre || '').trim().split(' ')[0];
+        // Intento 1: ilike sin wildcards = case-insensitive exact match
+        const { data: exactRow } = await supabase.from('vista_horneado_config')
           .select('config,producto_nombre')
-          .ilike('producto_nombre', `%${primeraPal}%`)
-          .limit(20);
-        const rows = r1 || [];
-        // Match: exacto > el nombre del config está contenido dentro del corte_padre > primero con tipo padre
-        const exact   = rows.find(r => r.producto_nombre.toLowerCase() === padreNom);
-        const partial = rows.find(r => padreNom.includes(r.producto_nombre.toLowerCase()) || r.producto_nombre.toLowerCase().includes(padreNom));
-        const byCat   = rows.find(r => r.config?._categoria === 'CORTES' && r.config?.tipo === 'padre');
-        const found   = exact || partial || byCat;
-        if (found?.config) setPadreCfg(found.config);
+          .ilike('producto_nombre', cfgEntry.corte_padre)
+          .maybeSingle();
+        if (exactRow?.config) {
+          setPadreCfg(exactRow.config);
+        } else {
+          // Intento 2: ilike con primera palabra (cubre variaciones de nombre)
+          const { data: r1 } = await supabase.from('vista_horneado_config')
+            .select('config,producto_nombre')
+            .ilike('producto_nombre', `%${primeraPal}%`)
+            .limit(20);
+          const rows = r1 || [];
+          const exact   = rows.find(r => r.producto_nombre.toLowerCase() === padreNom);
+          const partial = rows.find(r => padreNom.includes(r.producto_nombre.toLowerCase()) || r.producto_nombre.toLowerCase().includes(padreNom));
+          const found   = exact || partial;
+          if (found?.config) setPadreCfg(found.config);
+        }
       }
       setMpsFormula(allMps || []);
       // MPs de carne: categorías típicas de carne bovina
@@ -339,6 +369,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
       console.log('[guardarConfig] result:', { saved, error });
       if (error) throw error;
       if (!saved || saved.length === 0) throw new Error('El servidor no confirmó el guardado (RLS o constraint)');
+      setConfigExiste(true);
     } catch (e) {
       alert('Error al guardar: ' + e.message);
     }
@@ -348,6 +379,21 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
   async function fijarCambios() {
     await guardarConfig();
     setModoEdicion(false);
+  }
+
+  async function recargarConfigPadre() {
+    if (!deshueseConfig?.corte_padre) return;
+    const padreNom = (deshueseConfig.corte_padre || '').toLowerCase().trim();
+    const primeraPal = deshueseConfig.corte_padre.trim().split(' ')[0];
+    const { data: exactRow } = await supabase.from('vista_horneado_config')
+      .select('config,producto_nombre').ilike('producto_nombre', deshueseConfig.corte_padre).maybeSingle();
+    if (exactRow?.config) { setPadreCfg(exactRow.config); return; }
+    const { data: r1 } = await supabase.from('vista_horneado_config')
+      .select('config,producto_nombre').ilike('producto_nombre', `%${primeraPal}%`).limit(20);
+    const rows = r1 || [];
+    const found = rows.find(r => r.producto_nombre.toLowerCase() === padreNom)
+      || rows.find(r => padreNom.includes(r.producto_nombre.toLowerCase()) || r.producto_nombre.toLowerCase().includes(padreNom));
+    if (found?.config) setPadreCfg(found.config);
   }
 
   async function guardarHistorial() {
@@ -672,8 +718,8 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
           {tipo === 'hijo'  && <span style={{ background: '#6c3483', color: 'white', borderRadius: 20, padding: '4px 12px', fontSize: 11, fontWeight: 'bold' }}>🔀 Corte Hijo</span>}
           {tipo === 'independiente' && <span style={{ background: '#e67e22', color: 'white', borderRadius: 20, padding: '4px 12px', fontSize: 11, fontWeight: 'bold' }}>🥩 Corte</span>}
           {tabActivo === 'costos' && (
-            <span style={{ fontSize: 11, color: modoEdicion ? '#f39c12' : '#888', fontWeight: 600 }}>
-              {modoEdicion ? '✏️ Modo edición' : '🔒 Fijado — presiona Editar'}
+            <span style={{ fontSize: 11, color: modoEdicion ? '#f39c12' : configExiste ? '#888' : '#e74c3c', fontWeight: 600 }}>
+              {modoEdicion ? '✏️ Modo edición' : configExiste ? '🔒 Fijado — presiona Editar' : '⚠ Sin datos — presiona Editar para guardar'}
             </span>
           )}
         </div>
@@ -1235,7 +1281,10 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
                   </div>
                   {!padreCfg ? (
                     <div style={{ fontSize: 12, color: '#e67e22', background: '#fef9e7', borderRadius: 8, padding: '10px 12px' }}>
-                      ⚠ El padre aún no tiene config guardada. Abre <strong>"{deshueseConfig?.corte_padre}"</strong>, completa los campos y presiona <strong>Fijar Cambios</strong>.
+                      <div>⚠ El padre aún no tiene config guardada. Abre <strong>"{deshueseConfig?.corte_padre}"</strong>, completa los campos y presiona <strong>Fijar Cambios</strong>.</div>
+                      <button onClick={recargarConfigPadre} style={{ marginTop: 8, background: '#e67e22', color: 'white', border: 'none', borderRadius: 6, padding: '5px 12px', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+                        🔄 Recargar config del padre
+                      </button>
                     </div>
                   ) : (
                     <>
