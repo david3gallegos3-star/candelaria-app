@@ -1392,43 +1392,41 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
                 </div>
 
                 {/* Entrada al deshuese — siempre desde el Padre */}
-                {padreCfg?.kg_para_hijo > 0 && padreCfg?.c_mad_real > 0 ? (
-                  <div style={{ background: '#eaf4fd', borderRadius: 10, padding: '12px 16px', marginBottom: 12, border: '2px solid #2980b9' }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: '#1a3a5c', marginBottom: 8 }}>
-                      📥 Entrada al deshuese — desde {deshueseConfig?.corte_padre || 'Padre'}
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                      <div style={{ background: 'white', borderRadius: 8, padding: '10px 12px' }}>
-                        <div style={{ fontSize: 10, color: '#888', marginBottom: 2 }}>kg que llegan del Padre</div>
-                        <div style={{ fontSize: 22, fontWeight: 900, color: '#1a3a5c' }}>
-                          {parseFloat(padreCfg.kg_para_hijo).toFixed(3)} kg
+                {padreCfg?.kg_para_hijo > 0 ? (() => {
+                  const costoEntrada = padreCfg.c_mad_real > 0
+                    ? parseFloat(padreCfg.c_mad_real)
+                    : (padreInfo ? parseFloat(padreInfo.costo_mad_kg) : parseFloat(mpVinculada?.precio_kg || 0));
+                  return (
+                    <div style={{ background: '#eaf4fd', borderRadius: 10, padding: '12px 16px', marginBottom: 12, border: '2px solid #2980b9' }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: '#1a3a5c', marginBottom: 8 }}>
+                        📥 Entrada al deshuese — desde {deshueseConfig?.corte_padre || 'Padre'}
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                        <div style={{ background: 'white', borderRadius: 8, padding: '10px 12px' }}>
+                          <div style={{ fontSize: 10, color: '#888', marginBottom: 2 }}>kg que llegan del Padre</div>
+                          <div style={{ fontSize: 22, fontWeight: 900, color: '#1a3a5c' }}>
+                            {parseFloat(padreCfg.kg_para_hijo).toFixed(3)} kg
+                          </div>
+                        </div>
+                        <div style={{ background: 'white', borderRadius: 8, padding: '10px 12px' }}>
+                          <div style={{ fontSize: 10, color: '#888', marginBottom: 2 }}>Costo/kg entrada</div>
+                          <div style={{ fontSize: 22, fontWeight: 900, color: '#27ae60' }}>
+                            ${costoEntrada.toFixed(4)}
+                          </div>
+                          <div style={{ fontSize: 10, color: '#aaa' }}>
+                            = ${(parseFloat(padreCfg.kg_para_hijo) * costoEntrada).toFixed(4)} total
+                          </div>
                         </div>
                       </div>
-                      <div style={{ background: 'white', borderRadius: 8, padding: '10px 12px' }}>
-                        <div style={{ fontSize: 10, color: '#888', marginBottom: 2 }}>Costo/kg entrada</div>
-                        <div style={{ fontSize: 22, fontWeight: 900, color: '#27ae60' }}>
-                          ${parseFloat(padreCfg.c_mad_real).toFixed(4)}
-                        </div>
-                        <div style={{ fontSize: 10, color: '#aaa' }}>
-                          = ${(parseFloat(padreCfg.kg_para_hijo) * parseFloat(padreCfg.c_mad_real)).toFixed(4)} total
-                        </div>
-                      </div>
                     </div>
-                  </div>
-                ) : (
+                  );
+                })() : (
                   <div style={{ background: '#fef9e7', borderRadius: 10, padding: '12px 16px', marginBottom: 12, border: '1.5px solid #f39c12' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
-                      <div>
-                        <div style={{ fontSize: 12, color: '#b7770d', fontWeight: 700, marginBottom: 4 }}>
-                          ⚠ El Padre aún no ha asignado los kg para este Hijo
-                        </div>
-                        <div style={{ fontSize: 11, color: '#7d6608' }}>
-                          Abre <strong>"{deshueseConfig?.corte_padre || 'el producto Padre'}"</strong>, ve a la <strong>Fase 3 — Maduración</strong>, ingresa el peso salida y cuántos kg van al Hijo, luego presiona <strong>Fijar Cambios</strong>.
-                        </div>
-                      </div>
-                      <button onClick={recargarConfigPadre} style={{ flexShrink: 0, background: '#e67e22', color: 'white', border: 'none', borderRadius: 7, padding: '6px 12px', fontSize: 11, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                        🔄 Recargar
-                      </button>
+                    <div style={{ fontSize: 12, color: '#b7770d', fontWeight: 700, marginBottom: 4 }}>
+                      ⚠ El Padre aún no ha asignado los kg para este Hijo
+                    </div>
+                    <div style={{ fontSize: 11, color: '#7d6608' }}>
+                      Abre <strong>"{deshueseConfig?.corte_padre || 'el producto Padre'}"</strong>, ve a la <strong>Fase 3 — Maduración</strong>, ingresa el peso salida y cuántos kg van al Hijo, luego presiona <strong>Fijar Cambios</strong>.
                     </div>
                   </div>
                 )}
