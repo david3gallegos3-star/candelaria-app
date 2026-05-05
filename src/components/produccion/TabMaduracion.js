@@ -84,6 +84,7 @@ export default function TabMaduracion({ mobile, currentUser }) {
   const [guardandoCortes,   setGuardandoCortes]   = useState(false);
   const [errorCortes,       setErrorCortes]       = useState('');
   const [mpsParaCortes,     setMpsParaCortes]     = useState([]);
+  const [hijoCfgDeshuese,   setHijoCfgDeshuese]   = useState(null);
 
   function setDsh(corte, field, val) {
     setDshData(prev => ({ ...prev, [corte]: { ...prev[corte], [field]: val } }));
@@ -360,10 +361,14 @@ export default function TabMaduracion({ mobile, currentUser }) {
         const { data: deshCfg } = await supabase
           .from('deshuese_config').select('corte_hijo')
           .eq('corte_padre', cortesWizardNombre).eq('activo', true).maybeSingle();
-        const { data: allMps } = await supabase
-          .from('materias_primas').select('id,nombre,nombre_producto,precio_kg,categoria')
-          .eq('eliminado', false);
+        const [{ data: allMps }, { data: hijoCfgRow }] = await Promise.all([
+          supabase.from('materias_primas').select('id,nombre,nombre_producto,precio_kg,categoria').eq('eliminado', false),
+          deshCfg?.corte_hijo
+            ? supabase.from('vista_horneado_config').select('config').eq('producto_nombre', deshCfg.corte_hijo).maybeSingle()
+            : Promise.resolve({ data: null }),
+        ]);
         setMpsParaCortes(allMps || []);
+        setHijoCfgDeshuese(hijoCfgRow?.config || null);
         setModalCortesWizard({
           loteId:           loteIdGuardado,
           lotesMadId:       modalPesaje.id,
@@ -2528,7 +2533,22 @@ export default function TabMaduracion({ mobile, currentUser }) {
                     <div style={{ display: 'flex', gap: 10 }}>
                       <button onClick={() => setModalCortesWizard(null)} style={{ flex: 1, padding: '11px', background: '#f0f2f5', border: 'none', borderRadius: 10, cursor: 'pointer', fontSize: 13 }}>Cancelar</button>
                       <button
-                        onClick={() => { if (!listoP1) { setErrorCortes('Ingresa un peso válido'); return; } setCortesWizardPaso(2); setErrorCortes(''); }}
+                        onClick={() => {
+                          if (!listoP1) { setErrorCortes('Ingresa un peso válido'); return; }
+                          if (hijoCfgDeshuese && kgHijoN > 0) {
+                            const items = [];
+                            const mpResS   = mpsParaCortes.find(m => (m.nombre_producto || m.nombre || '').toLowerCase().includes('segunda'));
+                            const mpPuntas = mpsParaCortes.find(m => (m.nombre_producto || m.nombre || '').toLowerCase().includes('puntas'));
+                            if ((hijoCfgDeshuese.pct_res_segunda || 0) > 0)
+                              items.push({ tipo: 'mp_con_valor', nombre: mpResS ? (mpResS.nombre_producto || mpResS.nombre) : 'Res Segunda', kg: String(+(kgHijoN * hijoCfgDeshuese.pct_res_segunda / 100).toFixed(3)), precio: mpResS ? String(mpResS.precio_kg) : '0', mp_id: mpResS?.id || null });
+                            if ((hijoCfgDeshuese.pct_puntas || 0) > 0)
+                              items.push({ tipo: 'mp_con_valor', nombre: mpPuntas ? (mpPuntas.nombre_producto || mpPuntas.nombre) : 'Puntas', kg: String(+(kgHijoN * hijoCfgDeshuese.pct_puntas / 100).toFixed(3)), precio: mpPuntas ? String(mpPuntas.precio_kg) : '0', mp_id: mpPuntas?.id || null });
+                            if ((hijoCfgDeshuese.pct_desecho || 0) > 0)
+                              items.push({ tipo: 'perdida', nombre: 'Desecho', kg: String(+(kgHijoN * hijoCfgDeshuese.pct_desecho / 100).toFixed(3)), precio: '0', mp_id: null });
+                            if (items.length > 0) setCortesSpItems(items);
+                          }
+                          setCortesWizardPaso(2); setErrorCortes('');
+                        }}
                         disabled={!listoP1}
                         style={{ flex: 2, padding: '11px', background: listoP1 ? 'linear-gradient(135deg,#1a3a5c,#2980b9)' : '#aaa', color: 'white', border: 'none', borderRadius: 10, cursor: listoP1 ? 'pointer' : 'default', fontSize: 13, fontWeight: 'bold' }}>
                         Siguiente → Sub-productos Hijo
