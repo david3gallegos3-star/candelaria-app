@@ -66,8 +66,14 @@ export default function ModalGestionar({
     if (!window.confirm(
       `⚠️ ELIMINAR PERMANENTEMENTE "${prod.nombre}" y toda su formulación?\n\nEsto NO se puede deshacer.`
     )) return;
-    await supabase.from('formulaciones').delete().eq('producto_nombre', prod.nombre);
-    await supabase.from('config_productos').delete().eq('producto_nombre', prod.nombre);
+    await Promise.all([
+      supabase.from('formulaciones').delete().eq('producto_nombre', prod.nombre),
+      supabase.from('config_productos').delete().eq('producto_nombre', prod.nombre),
+      supabase.from('vista_horneado_config').delete().eq('producto_nombre', prod.nombre),
+      supabase.from('deshuese_config').delete().eq('corte_padre', prod.nombre),
+      supabase.from('deshuese_config').delete().eq('corte_hijo', prod.nombre),
+      supabase.from('historial_general').delete().eq('producto_nombre', prod.nombre),
+    ]);
     await supabase.from('productos').delete().eq('id', prod.id);
     await cargarEliminados();
   }
