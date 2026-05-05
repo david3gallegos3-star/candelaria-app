@@ -336,6 +336,10 @@ function App() {
     const catSel = nuevaCategoria || Object.keys(categoriasConfig)[0];
     const esCorte = catSel === 'Cortes' || catSel === 'CORTES';
     if (esCorte && !nuevoMpVinculado) return alert('Selecciona la materia prima vinculada a este corte');
+    // Verificar duplicado
+    const { data: existe } = await supabase.from('productos')
+      .select('id').eq('nombre', nuevoNombre.trim()).eq('estado', 'ACTIVO').limit(1);
+    if ((existe || []).length > 0) return alert(`Ya existe un producto activo llamado "${nuevoNombre.trim()}". Usa un nombre diferente o elimina el existente primero.`);
     const { data, error } = await supabase.from('productos')
       .insert([{
         nombre: nuevoNombre.trim(),
