@@ -327,21 +327,29 @@ export default function MenuFormulas({
                 const grupos = [];
                 const independientes = [];
 
-                // Fuzzy match: producto "New York" ↔ deshuese_config "New York Steak"
+                // Solo mostrar bifurcación en categoría CORTES
+                const esCatCortes = categoria === 'Cortes' || categoria === 'CORTES';
+
+                // Fuzzy match conservador: solo si uno contiene al otro completo (evita match por primera palabra)
                 const findHijosParaPadre = (nombre) => {
+                  if (!esCatCortes) return null;
                   if (hijosDelPadre[nombre]) return { key: nombre, hijos: hijosDelPadre[nombre] };
                   const n = nombre.toLowerCase();
                   const key = Object.keys(hijosDelPadre).find(k => {
                     const kl = k.toLowerCase();
-                    return n === kl || kl.startsWith(n) || n.startsWith(kl) || kl.startsWith(n.split(' ')[0]) || n.startsWith(kl.split(' ')[0]);
+                    return n === kl || kl.startsWith(n + ' ') || n.startsWith(kl + ' ');
                   });
                   return key ? { key, hijos: hijosDelPadre[key] } : null;
                 };
 
                 const findPadreParaHijo = (nombre) => {
+                  if (!esCatCortes) return null;
                   if (padreDeHijo[nombre]) return padreDeHijo[nombre];
                   const n = nombre.toLowerCase();
-                  const key = Object.keys(padreDeHijo).find(k => k.toLowerCase() === n || k.toLowerCase().startsWith(n) || n.startsWith(k.toLowerCase()));
+                  const key = Object.keys(padreDeHijo).find(k => {
+                    const kl = k.toLowerCase();
+                    return kl === n || kl.startsWith(n + ' ') || n.startsWith(kl + ' ');
+                  });
                   return key ? padreDeHijo[key] : null;
                 };
 
