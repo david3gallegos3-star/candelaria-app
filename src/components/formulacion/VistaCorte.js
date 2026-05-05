@@ -1320,24 +1320,35 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
                             <strong>{((padreCfg.kg_sal_base||2) * padreCfg.pct_inj / 100).toFixed(3)} kg salmuera</strong>
                           </div>
                         )}
-                        {(padreCfg.formula_rub || padreCfg.mp_adicional_id) && (
-                          <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-                            {padreCfg.formula_rub && (
-                              <span style={{ fontSize: 10, background: '#e8d5f5', color: '#6c3483', borderRadius: 4, padding: '2px 6px', fontWeight: 700 }}>
-                                🌶️ {padreCfg.formula_rub}
-                              </span>
+                        {padreCfg.formula_rub && (
+                          <div style={{ background: '#f5eef8', borderRadius: 6, padding: '6px 10px', marginTop: 6, border: '1px solid #d7bde2' }}>
+                            <div style={{ fontSize: 10, color: '#6c3483', fontWeight: 700, marginBottom: 2 }}>🌶️ Rub / Especias (costra)</div>
+                            <div style={{ fontSize: 12, fontWeight: 800, color: '#6c3483' }}>{padreCfg.formula_rub}</div>
+                            {padreCfg.kg_rub_base > 0 && (
+                              <div style={{ fontSize: 10, color: '#888', marginTop: 1 }}>
+                                Fórmula para {padreCfg.kg_rub_base} kg de carne
+                              </div>
                             )}
-                            {padreCfg.mp_adicional_id && (() => {
-                              const mpAdPadre = mpsFormula.find(m => String(m.id) === String(padreCfg.mp_adicional_id));
-                              return (
-                                <span style={{ fontSize: 10, background: '#fef3cd', color: '#d68910', borderRadius: 4, padding: '2px 6px', fontWeight: 700 }}>
-                                  🟡 {mpAdPadre ? (mpAdPadre.nombre_producto || mpAdPadre.nombre) : '?'}
-                                  {padreCfg.gramos_adicional > 0 && ` · ${padreCfg.gramos_adicional}g/kg`}
-                                </span>
-                              );
-                            })()}
                           </div>
                         )}
+                        {padreCfg.mp_adicional_id && (() => {
+                          const mpAdPadre = mpsFormula.find(m => String(m.id) === String(padreCfg.mp_adicional_id));
+                          return (
+                            <div style={{ background: '#fef9e7', borderRadius: 6, padding: '6px 10px', marginTop: 6, border: '1px solid #f9e79f' }}>
+                              <div style={{ fontSize: 10, color: '#d68910', fontWeight: 700, marginBottom: 2 }}>🟡 Adicional por kg de carne</div>
+                              <div style={{ fontSize: 12, fontWeight: 800, color: '#d68910' }}>
+                                {mpAdPadre ? (mpAdPadre.nombre_producto || mpAdPadre.nombre) : '?'}
+                                {mpAdPadre?.precio_kg > 0 && <span style={{ fontSize: 10, fontWeight: 400, color: '#888', marginLeft: 6 }}>${parseFloat(mpAdPadre.precio_kg).toFixed(4)}/kg</span>}
+                              </div>
+                              {padreCfg.gramos_adicional > 0 && (
+                                <div style={{ fontSize: 10, color: '#888', marginTop: 1 }}>
+                                  {padreCfg.gramos_adicional}g/kg de carne
+                                  {mpAdPadre?.precio_kg > 0 && ` = $${(padreCfg.gramos_adicional / 1000 * parseFloat(mpAdPadre.precio_kg)).toFixed(4)}/kg`}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </div>
                       {/* Fase 3: Maduración */}
                       <div style={{ background: '#f0fff4', borderRadius: 8, padding: '8px 12px', border: '1px solid #a9dfbf' }}>
