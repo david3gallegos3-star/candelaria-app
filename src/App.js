@@ -351,7 +351,8 @@ function App() {
       const padre = deshueseConfig.dshTipo === 'padre' ? nuevoNombre.trim() : deshueseConfig.dshNombreHijo;
       const hijo  = deshueseConfig.dshTipo === 'padre' ? deshueseConfig.dshNombreHijo : nuevoNombre.trim();
       if (padre && hijo) {
-        await supabase.from('deshuese_config').upsert({ corte_padre: padre, corte_hijo: hijo, activo: true }, { onConflict: 'corte_padre' });
+        await supabase.from('deshuese_config').delete().eq('corte_padre', padre);
+        await supabase.from('deshuese_config').insert({ corte_padre: padre, corte_hijo: hijo, activo: true });
       }
     }
     if (MP_CAT_MAP[catSel]) await sincronizarFormulaMP(nuevoNombre.trim(), 0, MP_CAT_MAP[catSel].cat, MP_CAT_MAP[catSel].pref);
