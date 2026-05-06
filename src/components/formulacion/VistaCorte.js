@@ -1792,13 +1792,17 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
                 const miCorte  = picortes.find(pc => (pc.corte_nombre||'').toLowerCase() === producto.nombre.toLowerCase()) || picortes[0];
                 const kgCarne  = madInfo?.produccion_inyeccion?.kg_carne_total || parseFloat(miCorte?.kg_carne_cruda || 0) || 0;
                 const kgSalAbs = parseFloat(miCorte?.kg_salmuera_asignada || 0);
-                const pctInjN  = parseFloat(madInfo?.produccion_inyeccion?.porcentaje_inyeccion || 0);
+                const pctInjN  = kgCarne > 0 && kgSalAbs > 0
+                  ? Math.round(kgSalAbs / kgCarne * 100)
+                  : parseFloat(madInfo?.produccion_inyeccion?.porcentaje_inyeccion || 0);
                 const kgPostInj = kgCarne + kgSalAbs;
                 const hijoL    = companionSplit.hijoLotes.find(h => h.parent_lote_id === l.lote_id);
                 const padreL   = companionSplit.padreLotes.find(p => p.lote_id === l.parent_lote_id);
                 const kgPostMad = esPadre && hijoL
                   ? parseFloat(l.kg_inicial||0) + parseFloat(hijoL.kg_inyectado||0)
-                  : parseFloat(l.kg_inyectado||0);
+                  : esHijo && padreL
+                    ? parseFloat(padreL.kg_inicial||0) + parseFloat(l.kg_inyectado||0)
+                    : parseFloat(l.kg_inyectado||0);
                 const kgDisp = parseFloat(l.kg_disponible || l.kg_inicial || 0);
                 const cMad   = parseFloat(l.costo_mad_kg || 0);
                 const hdrBg  = esPadre
