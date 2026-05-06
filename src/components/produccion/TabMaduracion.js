@@ -360,7 +360,7 @@ export default function TabMaduracion({ mobile, currentUser }) {
       if (esCortesPadre && cortesWizardMpPadreId) {
         const { data: deshCfg } = await supabase
           .from('deshuese_config').select('corte_hijo')
-          .eq('corte_padre', cortesWizardNombre).eq('activo', true).maybeSingle();
+          .eq('corte_padre', cortesWizardNombre).maybeSingle();
         const [{ data: allMps }, { data: hijoCfgRow }] = await Promise.all([
           supabase.from('materias_primas').select('id,nombre,nombre_producto,precio_kg,categoria').eq('eliminado', false),
           deshCfg?.corte_hijo
@@ -777,7 +777,7 @@ export default function TabMaduracion({ mobile, currentUser }) {
       // ── HIJO ── (siempre crear entry aunque kgFinalHijo sea 0)
       if (corteNombreHijo && kgHijoTotal > 0) {
         const { data: mpHijoEx } = await supabase.from('materias_primas')
-          .select('id').eq('nombre', corteNombreHijo).eq('categoria', 'Inyectados').maybeSingle();
+          .select('id').ilike('nombre', corteNombreHijo).ilike('categoria', 'inyectados').eq('eliminado', false).maybeSingle();
         let mpHijoId = mpHijoEx?.id;
         if (!mpHijoId) {
           const { data: existIds } = await supabase.from('materias_primas').select('id').eq('categoria', 'Inyectados');
