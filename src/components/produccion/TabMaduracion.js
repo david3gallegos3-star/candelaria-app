@@ -360,7 +360,7 @@ export default function TabMaduracion({ mobile, currentUser }) {
       if (esCortesPadre && cortesWizardMpPadreId) {
         const { data: deshCfg } = await supabase
           .from('deshuese_config').select('corte_hijo')
-          .eq('corte_padre', cortesWizardNombre).maybeSingle();
+          .ilike('corte_padre', cortesWizardNombre).maybeSingle();
         const [{ data: allMps }, { data: hijoCfgRow }] = await Promise.all([
           supabase.from('materias_primas').select('id,nombre,nombre_producto,precio_kg,categoria').eq('eliminado', false),
           deshCfg?.corte_hijo
