@@ -1732,14 +1732,37 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
                   <span style={{ fontWeight: 'bold', fontSize: 22, color: '#f9e79f' }}>${pruebaTotal.toFixed(4)}</span>
                 </div>
               </div>
-              <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>
-                {[['30%', 0.70], ['35%', 0.65], ['40%', 0.60]].map(([pct, div]) => (
-                  <div key={pct} style={{ background: 'rgba(255,255,255,0.15)', borderRadius: 8, padding: '6px 10px', textAlign: 'center' }}>
-                    <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)' }}>Margen {pct}</div>
-                    <div style={{ fontSize: 14, fontWeight: 'bold', color: '#f9e79f' }}>${(pruebaTotal / div).toFixed(4)}</div>
+              {(() => {
+                const mgConf = tipo === 'padre' ? parseFloat(margenPadre) || null
+                             : tipo === 'hijo'  ? parseFloat(margenHijo)  || null
+                             : null;
+                if (mgConf !== null && mgConf > 0 && mgConf < 100) {
+                  const opts = [mgConf - 5, mgConf, mgConf + 5].filter(m => m > 0 && m < 100);
+                  return (
+                    <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: opts.map((m, i) => i === opts.indexOf(mgConf) ? '2fr' : '1fr').join(' '), gap: 8 }}>
+                      {opts.map(m => {
+                        const isMain = m === mgConf;
+                        return (
+                          <div key={m} style={{ background: isMain ? 'rgba(255,255,255,0.28)' : 'rgba(255,255,255,0.13)', borderRadius: 8, padding: isMain ? '8px 10px' : '6px 10px', textAlign: 'center', border: isMain ? '1.5px solid rgba(255,255,255,0.5)' : 'none' }}>
+                            <div style={{ fontSize: 10, color: isMain ? 'white' : 'rgba(255,255,255,0.65)' }}>{isMain ? `Tu margen (${m}%)` : `Margen ${m}%`}</div>
+                            <div style={{ fontSize: isMain ? 17 : 13, fontWeight: 'bold', color: '#f9e79f' }}>${(pruebaTotal / (1 - m / 100)).toFixed(4)}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                }
+                return (
+                  <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>
+                    {[['30%', 0.70], ['35%', 0.65], ['40%', 0.60]].map(([pct, div]) => (
+                      <div key={pct} style={{ background: 'rgba(255,255,255,0.15)', borderRadius: 8, padding: '6px 10px', textAlign: 'center' }}>
+                        <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)' }}>Margen {pct}</div>
+                        <div style={{ fontSize: 14, fontWeight: 'bold', color: '#f9e79f' }}>${(pruebaTotal / div).toFixed(4)}</div>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                );
+              })()}
             </div>
           ) : (
             <div style={{ textAlign: 'center', padding: '30px 20px', color: '#aaa', fontSize: 13, background: 'white', borderRadius: 12, border: '1px dashed #ddd', marginBottom: 14 }}>
