@@ -195,7 +195,22 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
         .from('stock_lotes_inyectados').select('*')
         .ilike('corte_nombre', `%${producto.nombre}%`)
         .order('fecha_entrada', { ascending: false }).limit(30);
-      const allLotes = lotes || [];
+      let allLotes = lotes || [];
+
+      // Fallback hijo: si no encontró nada y es hijo, buscar via parent_lote_id del padre
+      if (allLotes.length === 0 && !esPadre && cfgEntry?.corte_padre) {
+        const { data: padreLotesQ } = await supabase
+          .from('stock_lotes_inyectados').select('lote_id')
+          .ilike('corte_nombre', `%${cfgEntry.corte_padre}%`)
+          .eq('tipo_corte', 'padre').order('fecha_entrada', { ascending: false }).limit(20);
+        if ((padreLotesQ || []).length > 0) {
+          const { data: hijoFallback } = await supabase
+            .from('stock_lotes_inyectados').select('*')
+            .in('parent_lote_id', padreLotesQ.map(l => l.lote_id))
+            .order('fecha_entrada', { ascending: false });
+          allLotes = hijoFallback || [];
+        }
+      }
       setLotesStock(allLotes);
 
       // Enriquecer con datos de maduración + lotes compañero (padre↔hijo)
@@ -1843,18 +1858,25 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
                               <div style={{ fontWeight: 900, color: '#1a3a5c', fontSize: 17 }}>{parseFloat(l.kg_inicial||0).toFixed(3)} kg</div>
                               <div style={{ fontSize: 11, color: '#2980b9', marginTop: 2 }}>${cMad.toFixed(4)}/kg</div>
                             </div>
-                            {hijoL && (
-                              <div style={{ background: '#f0e6ff', borderRadius: 8, padding: '10px', textAlign: 'center' }}>
-                                <div style={{ fontSize: 10, color: '#6c3483', marginBottom: 4 }}>🔀 {hijoL.corte_nombre}</div>
-                                <div style={{ fontWeight: 900, color: '#6c3483', fontSize: 17 }}>{parseFloat(hijoL.kg_inicial||0).toFixed(3)} kg</div>
-                                <div style={{ fontSize: 11, color: '#9b59b6', marginTop: 2 }}>${parseFloat(hijoL.costo_mad_kg||0).toFixed(4)}/kg</div>
-                                {parseFloat(hijoL.kg_inyectado||0) > parseFloat(hijoL.kg_inicial||0) && (
-                                  <div style={{ fontSize: 10, color: '#aaa', marginTop: 2 }}>
-                                    + {(parseFloat(hijoL.kg_inyectado||0) - parseFloat(hijoL.kg_inicial||0)).toFixed(3)} kg subprod.
-                                  </div>
-                                )}
-                              </div>
-                            )}
+                            {hijoL && (() => {
+                              const hijoKgNeto = parseFloat(hijoL.kg_inicial||0);
+                              const hijoKgInj  = parseFloat(hijoL.kg_inyectado||0);
+                              const hijoSp     = Math.max(0, hijoKgInj - hijoKgNeto);
+                              const todoSp     = hijoKgNeto === 0 && hijoKgInj > 0;
+                              return (
+                                <div style={{ background: todoSp ? '#fdf2e9' : '#f0e6ff', borderRadius: 8, padding: '10px', textAlign: 'center' }}>
+                                  <div style={{ fontSize: 10, color: todoSp ? '#e67e22' : '#6c3483', marginBottom: 4 }}>🔀 {hijoL.corte_nombre}</div>
+                                  <div style={{ fontWeight: 900, color: todoSp ? '#e67e22' : '#6c3483', fontSize: 17 }}>{hijoKgNeto.toFixed(3)} kg</div>
+                                  {todoSp
+                                    ? <div style={{ fontSize: 10, color: '#e67e22', marginTop: 2 }}>todo → subproductos ({hijoSp.toFixed(3)} kg)</div>
+                                    : <>
+                                        <div style={{ fontSize: 11, color: '#9b59b6', marginTop: 2 }}>${parseFloat(hijoL.costo_mad_kg||0).toFixed(4)}/kg</div>
+                                        {hijoSp > 0 && <div style={{ fontSize: 10, color: '#aaa', marginTop: 2 }}>+ {hijoSp.toFixed(3)} kg subprod.</div>}
+                                      </>
+                                  }
+                                </div>
+                              );
+                            })()}
                           </div>
                         </div>
                       )}

@@ -774,8 +774,8 @@ export default function TabMaduracion({ mobile, currentUser }) {
         tipo_corte: 'padre', formula_salmuera: formulaSalmuera,
       });
 
-      // ── HIJO ──
-      if (corteNombreHijo && kgFinalHijo > 0) {
+      // ── HIJO ── (siempre crear entry aunque kgFinalHijo sea 0)
+      if (corteNombreHijo && kgHijoTotal > 0) {
         const { data: mpHijoEx } = await supabase.from('materias_primas')
           .select('id').eq('nombre', corteNombreHijo).eq('categoria', 'Inyectados').maybeSingle();
         let mpHijoId = mpHijoEx?.id;
@@ -792,19 +792,23 @@ export default function TabMaduracion({ mobile, currentUser }) {
           mpHijoId = nuevaMp?.id;
         }
         if (mpHijoId) {
-          const { data: invH } = await supabase.from('inventario_mp')
-            .select('id, stock_kg').eq('materia_prima_id', mpHijoId).maybeSingle();
-          if (invH) {
-            await supabase.from('inventario_mp').update({ stock_kg: (invH.stock_kg || 0) + kgFinalHijo }).eq('id', invH.id);
-          } else {
-            await supabase.from('inventario_mp').insert({ materia_prima_id: mpHijoId, stock_kg: kgFinalHijo, nombre: corteNombreHijo });
+          // Solo actualizar inventario si hay kg neto
+          if (kgFinalHijo > 0) {
+            const { data: invH } = await supabase.from('inventario_mp')
+              .select('id, stock_kg').eq('materia_prima_id', mpHijoId).maybeSingle();
+            if (invH) {
+              await supabase.from('inventario_mp').update({ stock_kg: (invH.stock_kg || 0) + kgFinalHijo }).eq('id', invH.id);
+            } else {
+              await supabase.from('inventario_mp').insert({ materia_prima_id: mpHijoId, stock_kg: kgFinalHijo, nombre: corteNombreHijo });
+            }
+            await supabase.from('inventario_movimientos').insert({
+              materia_prima_id: mpHijoId, nombre_mp: corteNombreHijo,
+              tipo: 'entrada', kg: kgFinalHijo,
+              motivo: `Separación Hijo — Lote ${loteId}`,
+              usuario_nombre: currentUser?.email || '', user_id: currentUser?.id || null, fecha: hoy,
+            });
           }
-          await supabase.from('inventario_movimientos').insert({
-            materia_prima_id: mpHijoId, nombre_mp: corteNombreHijo,
-            tipo: 'entrada', kg: kgFinalHijo,
-            motivo: `Separación Hijo — Lote ${loteId}`,
-            usuario_nombre: currentUser?.email || '', user_id: currentUser?.id || null, fecha: hoy,
-          });
+          // Siempre crear el registro de stock para trazabilidad del lote
           await supabase.from('stock_lotes_inyectados').insert({
             lote_id: loteIdHijo, lote_maduracion_id: lotesMadId,
             corte_nombre: corteNombreHijo, materia_prima_id: mpHijoId,
