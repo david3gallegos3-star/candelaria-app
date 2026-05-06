@@ -1737,18 +1737,12 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
                              : tipo === 'hijo'  ? parseFloat(margenHijo)  || null
                              : null;
                 if (mgConf !== null && mgConf > 0 && mgConf < 100) {
-                  const opts = [mgConf - 5, mgConf, mgConf + 5].filter(m => m > 0 && m < 100);
                   return (
-                    <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: opts.map((m, i) => i === opts.indexOf(mgConf) ? '2fr' : '1fr').join(' '), gap: 8 }}>
-                      {opts.map(m => {
-                        const isMain = m === mgConf;
-                        return (
-                          <div key={m} style={{ background: isMain ? 'rgba(255,255,255,0.28)' : 'rgba(255,255,255,0.13)', borderRadius: 8, padding: isMain ? '8px 10px' : '6px 10px', textAlign: 'center', border: isMain ? '1.5px solid rgba(255,255,255,0.5)' : 'none' }}>
-                            <div style={{ fontSize: 10, color: isMain ? 'white' : 'rgba(255,255,255,0.65)' }}>{isMain ? `Tu margen (${m}%)` : `Margen ${m}%`}</div>
-                            <div style={{ fontSize: isMain ? 17 : 13, fontWeight: 'bold', color: '#f9e79f' }}>${(pruebaTotal / (1 - m / 100)).toFixed(4)}</div>
-                          </div>
-                        );
-                      })}
+                    <div style={{ marginTop: 12 }}>
+                      <div style={{ background: 'rgba(255,255,255,0.22)', borderRadius: 8, padding: '10px 14px', textAlign: 'center', border: '1.5px solid rgba(255,255,255,0.45)' }}>
+                        <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.8)', marginBottom: 2 }}>Margen {mgConf}% — precio de venta funda</div>
+                        <div style={{ fontSize: 22, fontWeight: 'bold', color: '#f9e79f' }}>${(pruebaTotal / (1 - mgConf / 100)).toFixed(4)}</div>
+                      </div>
                     </div>
                   );
                 }
