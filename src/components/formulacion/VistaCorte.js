@@ -89,6 +89,10 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
   const [errorCierre,          setErrorCierre]          = useState('');
   const [kgCortesDia,          setKgCortesDia]          = useState(0);
 
+  // Producción — datos enriquecidos para tab
+  const [lotsDetail,    setLotsDetail]    = useState({});
+  const [companionSplit, setCompanionSplit] = useState({ hijoLotes: [], padreLotes: [] });
+
   useEffect(() => { setConfigExiste(false); cargarTodo(); }, [producto.nombre, producto.mp_vinculado_id]);
 
   useEffect(() => {
@@ -191,7 +195,32 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
         .from('stock_lotes_inyectados').select('*')
         .ilike('corte_nombre', `%${producto.nombre}%`)
         .order('fecha_entrada', { ascending: false }).limit(30);
-      setLotesStock(lotes || []);
+      const allLotes = lotes || [];
+      setLotesStock(allLotes);
+
+      // Enriquecer con datos de maduración + lotes compañero (padre↔hijo)
+      {
+        const madIds = [...new Set(allLotes.map(l => l.lote_maduracion_id).filter(Boolean))];
+        const padreLoteIds = allLotes.filter(l => l.tipo_corte === 'padre').map(l => l.lote_id).filter(Boolean);
+        const hijoParentIds = allLotes.filter(l => l.tipo_corte === 'hijo').map(l => l.parent_lote_id).filter(Boolean);
+        const [{ data: madRows }, { data: hijoRows }, { data: padreRows }] = await Promise.all([
+          madIds.length > 0
+            ? supabase.from('lotes_maduracion')
+                .select('id, produccion_inyeccion(kg_carne_total, porcentaje_inyeccion, produccion_inyeccion_cortes(corte_nombre, kg_carne_cruda, kg_salmuera_asignada))')
+                .in('id', madIds)
+            : Promise.resolve({ data: [] }),
+          padreLoteIds.length > 0
+            ? supabase.from('stock_lotes_inyectados').select('*').in('parent_lote_id', padreLoteIds)
+            : Promise.resolve({ data: [] }),
+          hijoParentIds.length > 0
+            ? supabase.from('stock_lotes_inyectados').select('*').in('lote_id', hijoParentIds)
+            : Promise.resolve({ data: [] }),
+        ]);
+        const madMap = {};
+        (madRows || []).forEach(m => { madMap[m.id] = m; });
+        setLotsDetail(madMap);
+        setCompanionSplit({ hijoLotes: hijoRows || [], padreLotes: padreRows || [] });
+      }
 
       // 4. Historial inyección
       let qInj = supabase
@@ -1453,7 +1482,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
                         ['Desecho',     pctDesecho,    setPctDesecho,    '#e74c3c', 0],
                       ].map(([label, val, setter, color, precio]) => {
                         const pctNum = parseFloat(val) || 0;
-                        const gramsVal = val !== '' && kgEnt > 0
+                        const gramsVal = (val !== '' && pctNum > 0 && kgEnt > 0)
                           ? +(pctNum * kgEnt * 10).toFixed(1)
                           : '';
                         return (
@@ -1734,50 +1763,154 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
         <div>
           {lotesStock.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '40px 20px', color: '#aaa', background: 'white', borderRadius: 12 }}>
-              Sin lotes madurados registrados
+              {tipo === 'hijo'
+                ? 'Sin lotes registrados. El lote del hijo se crea al completar la separación en Producción › Maduración.'
+                : 'Sin lotes madurados registrados'}
             </div>
-          ) : (() => {
-            const l = lotesStock[0];
-            const kgInj  = parseFloat(l.kg_inyectado  || 0);
-            const kgMad  = parseFloat(l.kg_inicial     || 0);
-            const kgDisp = parseFloat(l.kg_disponible  || l.kg_inicial || 0);
-            const mermaP = kgInj > 0 ? ((kgInj - kgMad) / kgInj * 100).toFixed(1) : null;
-            const cIny   = parseFloat(l.costo_iny_kg  || 0);
-            const cMad   = parseFloat(l.costo_mad_kg  || 0);
-            const cTotal = parseFloat(l.costo_total   || 0);
-            return (
-              <div style={{ background: 'white', borderRadius: 12, overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
-                <div style={{ background: 'linear-gradient(135deg,#1a6b3c,#27ae60)', padding: '10px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ color: 'white', fontWeight: 'bold', fontSize: 13 }}>📦 Último Lote en Stock</span>
-                  <span style={{ color: 'rgba(255,255,255,0.8)', fontSize: 12, fontWeight: 'bold' }}>{l.lote_id}</span>
-                </div>
-                <div style={{ padding: '16px' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 10, marginBottom: 12 }}>
-                    {[
-                      ['Fecha entrada',  l.fecha_entrada, '#1a6b3c'],
-                      ['KG disponible',  `${kgDisp.toFixed(3)} kg`, '#27ae60'],
-                      ['KG inyectado',   kgInj > 0 ? `${kgInj.toFixed(3)} kg` : '—', '#2980b9'],
-                      ['KG madurado',    `${kgMad.toFixed(3)} kg`, '#1a6b3c'],
-                      ['Merma',          mermaP !== null ? `${mermaP}%` : '—', '#e74c3c'],
-                      ['C_mad/kg',       cMad > 0 ? `$${cMad.toFixed(4)}` : '—', '#27ae60'],
-                      ['C_iny/kg',       cIny > 0 ? `$${cIny.toFixed(4)}` : '—', '#2980b9'],
-                      ['Costo total',    cTotal > 0 ? `$${cTotal.toFixed(4)}` : '—', '#555'],
-                    ].map(([lbl, val, color]) => (
-                      <div key={lbl} style={{ background: '#f8f9fa', borderRadius: 8, padding: '10px 12px' }}>
-                        <div style={{ fontSize: 10, color: '#888', marginBottom: 2 }}>{lbl}</div>
-                        <div style={{ fontWeight: 'bold', color, fontSize: 14 }}>{val}</div>
-                      </div>
-                    ))}
-                  </div>
-                  {l.formula_salmuera && (
-                    <div style={{ fontSize: 11, color: '#888', background: '#f8f9fa', borderRadius: 8, padding: '7px 10px' }}>
-                      Fórmula salmuera: <strong>{l.formula_salmuera}</strong>
+          ) : (
+            <div>
+              {lotesStock.map((l, idx) => {
+                const esPadre = l.tipo_corte === 'padre';
+                const esHijo  = l.tipo_corte === 'hijo';
+                const madInfo = lotsDetail[l.lote_maduracion_id];
+                const picortes = madInfo?.produccion_inyeccion?.produccion_inyeccion_cortes || [];
+                const miCorte  = picortes.find(pc => (pc.corte_nombre||'').toLowerCase() === producto.nombre.toLowerCase()) || picortes[0];
+                const kgCarne  = madInfo?.produccion_inyeccion?.kg_carne_total || parseFloat(miCorte?.kg_carne_cruda || 0) || 0;
+                const kgSalAbs = parseFloat(miCorte?.kg_salmuera_asignada || 0);
+                const pctInjN  = parseFloat(madInfo?.produccion_inyeccion?.porcentaje_inyeccion || 0);
+                const kgPostInj = kgCarne + kgSalAbs;
+                const hijoL    = companionSplit.hijoLotes.find(h => h.parent_lote_id === l.lote_id);
+                const padreL   = companionSplit.padreLotes.find(p => p.lote_id === l.parent_lote_id);
+                const kgPostMad = esPadre && hijoL
+                  ? parseFloat(l.kg_inicial||0) + parseFloat(hijoL.kg_inyectado||0)
+                  : parseFloat(l.kg_inyectado||0);
+                const kgDisp = parseFloat(l.kg_disponible || l.kg_inicial || 0);
+                const cMad   = parseFloat(l.costo_mad_kg || 0);
+                const hdrBg  = esPadre
+                  ? 'linear-gradient(135deg,#1a3a5c,#2980b9)'
+                  : esHijo
+                    ? 'linear-gradient(135deg,#6c3483,#9b59b6)'
+                    : 'linear-gradient(135deg,#1a6b3c,#27ae60)';
+                return (
+                  <div key={l.id || idx} style={{ background: 'white', borderRadius: 12, overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 12 }}>
+                    <div style={{ background: hdrBg, padding: '10px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ color: 'white', fontWeight: 'bold', fontSize: 13 }}>
+                        📦 {esPadre ? 'Padre' : esHijo ? 'Hijo' : 'Lote'} — {l.lote_id}
+                      </span>
+                      <span style={{ color: 'rgba(255,255,255,0.8)', fontSize: 12 }}>{l.fecha_entrada}</span>
                     </div>
-                  )}
-                </div>
-              </div>
-            );
-          })()}
+                    <div style={{ padding: '14px 16px' }}>
+
+                      {/* Proceso */}
+                      <div style={{ fontSize: 11, fontWeight: 700, color: '#555', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 }}>Proceso</div>
+
+                      {/* Carne original */}
+                      {kgCarne > 0 && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, flexWrap: 'wrap', fontSize: 12 }}>
+                          <span style={{ background: '#e8f4fd', borderRadius: 6, padding: '3px 8px', color: '#1a5276', fontWeight: 700 }}>
+                            🥩 Carne: {kgCarne.toFixed(3)} kg
+                          </span>
+                          {pctInjN > 0 && <>
+                            <span style={{ color: '#bbb' }}>+</span>
+                            <span style={{ background: '#eafaf1', borderRadius: 6, padding: '3px 8px', color: '#1a6b3c', fontWeight: 700 }}>
+                              💉 {pctInjN}% salmuera
+                            </span>
+                            <span style={{ color: '#bbb' }}>→ {kgPostInj.toFixed(3)} kg</span>
+                          </>}
+                        </div>
+                      )}
+
+                      {/* Post-maduración y merma (solo si hay datos y no es independiente sin datos) */}
+                      {(esPadre || esHijo) && kgPostMad > 0 && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, fontSize: 12 }}>
+                          <span style={{ color: '#888' }}>↓ Maduración →</span>
+                          <span style={{ fontWeight: 700, color: '#555' }}>{kgPostMad.toFixed(3)} kg</span>
+                          {kgPostInj > 0 && kgPostMad < kgPostInj && (
+                            <span style={{ color: '#e74c3c', fontSize: 11 }}>
+                              (merma {((kgPostInj - kgPostMad) / kgPostInj * 100).toFixed(1)}%)
+                            </span>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Separación — vista padre */}
+                      {esPadre && (
+                        <div style={{ background: '#f4f7ff', borderRadius: 8, padding: '10px 12px', marginBottom: 12 }}>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: '#555', marginBottom: 8 }}>Separación</div>
+                          <div style={{ display: 'grid', gridTemplateColumns: hijoL ? '1fr 1fr' : '1fr', gap: 8 }}>
+                            <div style={{ background: '#ddeeff', borderRadius: 8, padding: '10px', textAlign: 'center' }}>
+                              <div style={{ fontSize: 10, color: '#1a3a5c', marginBottom: 4 }}>👑 {l.corte_nombre}</div>
+                              <div style={{ fontWeight: 900, color: '#1a3a5c', fontSize: 17 }}>{parseFloat(l.kg_inicial||0).toFixed(3)} kg</div>
+                              <div style={{ fontSize: 11, color: '#2980b9', marginTop: 2 }}>${cMad.toFixed(4)}/kg</div>
+                            </div>
+                            {hijoL && (
+                              <div style={{ background: '#f0e6ff', borderRadius: 8, padding: '10px', textAlign: 'center' }}>
+                                <div style={{ fontSize: 10, color: '#6c3483', marginBottom: 4 }}>🔀 {hijoL.corte_nombre}</div>
+                                <div style={{ fontWeight: 900, color: '#6c3483', fontSize: 17 }}>{parseFloat(hijoL.kg_inicial||0).toFixed(3)} kg</div>
+                                <div style={{ fontSize: 11, color: '#9b59b6', marginTop: 2 }}>${parseFloat(hijoL.costo_mad_kg||0).toFixed(4)}/kg</div>
+                                {parseFloat(hijoL.kg_inyectado||0) > parseFloat(hijoL.kg_inicial||0) && (
+                                  <div style={{ fontSize: 10, color: '#aaa', marginTop: 2 }}>
+                                    + {(parseFloat(hijoL.kg_inyectado||0) - parseFloat(hijoL.kg_inicial||0)).toFixed(3)} kg subprod.
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Separación — vista hijo */}
+                      {esHijo && (
+                        <div style={{ background: '#faf0ff', borderRadius: 8, padding: '10px 12px', marginBottom: 12 }}>
+                          {padreL && (
+                            <div style={{ fontSize: 11, color: '#888', marginBottom: 8 }}>
+                              Separado del lote <strong>{padreL.lote_id}</strong> ({padreL.corte_nombre})
+                            </div>
+                          )}
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8, textAlign: 'center' }}>
+                            <div style={{ background: '#ede0ff', borderRadius: 6, padding: '8px 6px' }}>
+                              <div style={{ fontSize: 10, color: '#6c3483', marginBottom: 2 }}>Total hijo</div>
+                              <div style={{ fontWeight: 700, color: '#6c3483' }}>{parseFloat(l.kg_inyectado||0).toFixed(3)} kg</div>
+                            </div>
+                            <div style={{ background: '#fff3e0', borderRadius: 6, padding: '8px 6px' }}>
+                              <div style={{ fontSize: 10, color: '#e67e22', marginBottom: 2 }}>Subprod.</div>
+                              <div style={{ fontWeight: 700, color: '#e67e22' }}>
+                                {Math.max(0, parseFloat(l.kg_inyectado||0) - parseFloat(l.kg_inicial||0)).toFixed(3)} kg
+                              </div>
+                            </div>
+                            <div style={{ background: '#e8f8f0', borderRadius: 6, padding: '8px 6px' }}>
+                              <div style={{ fontSize: 10, color: '#1a6b3c', marginBottom: 2 }}>Neto</div>
+                              <div style={{ fontWeight: 700, color: '#1a6b3c' }}>{parseFloat(l.kg_inicial||0).toFixed(3)} kg</div>
+                            </div>
+                          </div>
+                          <div style={{ textAlign: 'center', marginTop: 8, fontSize: 12, color: '#555' }}>
+                            Costo: <strong>${cMad.toFixed(4)}/kg</strong>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Stock disponible */}
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 8 }}>
+                        <div style={{ background: '#f0fff4', borderRadius: 8, padding: '10px 12px' }}>
+                          <div style={{ fontSize: 10, color: '#888', marginBottom: 2 }}>KG disponible</div>
+                          <div style={{ fontWeight: 'bold', color: '#27ae60', fontSize: 14 }}>{kgDisp.toFixed(3)} kg</div>
+                        </div>
+                        <div style={{ background: '#f8f9fa', borderRadius: 8, padding: '10px 12px' }}>
+                          <div style={{ fontSize: 10, color: '#888', marginBottom: 2 }}>Costo/kg</div>
+                          <div style={{ fontWeight: 'bold', color: '#1a6b3c', fontSize: 14 }}>{cMad > 0 ? `$${cMad.toFixed(4)}` : '—'}</div>
+                        </div>
+                      </div>
+                      {l.formula_salmuera && (
+                        <div style={{ fontSize: 11, color: '#888', background: '#f8f9fa', borderRadius: 8, padding: '7px 10px', marginTop: 8 }}>
+                          Fórmula salmuera: <strong>{l.formula_salmuera}</strong>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
