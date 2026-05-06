@@ -2557,63 +2557,96 @@ export default function TabMaduracion({ mobile, currentUser }) {
                   </>
                 )}
 
-                {/* ── PASO 2: Sub-productos del Hijo ── */}
-                {cortesWizardPaso === 2 && (
+                {/* ── PASO 2: Deshuese del Hijo ── */}
+                {cortesWizardPaso === 2 && (() => {
+                  const mpResS   = mpsParaCortes.find(m => (m.nombre_producto||m.nombre||'').toLowerCase().includes('segunda'));
+                  const mpPuntas = mpsParaCortes.find(m => (m.nombre_producto||m.nombre||'').toLowerCase().includes('puntas'));
+                  const spResS    = cortesSpItems.find(s => (s.nombre||'').toLowerCase().includes('segunda'));
+                  const spPuntas  = cortesSpItems.find(s => (s.nombre||'').toLowerCase().includes('puntas'));
+                  const spDesecho = cortesSpItems.find(s => (s.nombre||'').toLowerCase().includes('desecho') || (s.tipo === 'perdida' && !(s.nombre||'').toLowerCase().includes('segunda') && !(s.nombre||'').toLowerCase().includes('puntas')));
+                  const gResS    = spResS    ? +(parseFloat(spResS.kg   ||0)*1000).toFixed(1) : 0;
+                  const gPuntas  = spPuntas  ? +(parseFloat(spPuntas.kg ||0)*1000).toFixed(1) : 0;
+                  const gDesecho = spDesecho ? +(parseFloat(spDesecho.kg||0)*1000).toFixed(1) : 0;
+                  const pResS    = parseFloat(mpResS?.precio_kg   || spResS?.precio   || 0);
+                  const pPuntas  = parseFloat(mpPuntas?.precio_kg || spPuntas?.precio || 0);
+                  const pctResS    = kgHijoN > 0 ? parseFloat(spResS?.kg   ||0)/kgHijoN*100 : 0;
+                  const pctPuntas  = kgHijoN > 0 ? parseFloat(spPuntas?.kg ||0)/kgHijoN*100 : 0;
+                  const pctDesecho = kgHijoN > 0 ? parseFloat(spDesecho?.kg||0)/kgHijoN*100 : 0;
+
+                  const setGrams = (tipo, grams) => {
+                    const kg = String(+(grams/1000).toFixed(3));
+                    setCortesSpItems(prev => {
+                      const idx = tipo === 'segunda'
+                        ? prev.findIndex(s => (s.nombre||'').toLowerCase().includes('segunda'))
+                        : tipo === 'puntas'
+                          ? prev.findIndex(s => (s.nombre||'').toLowerCase().includes('puntas'))
+                          : prev.findIndex(s => (s.nombre||'').toLowerCase().includes('desecho') || (s.tipo === 'perdida' && !(s.nombre||'').toLowerCase().includes('segunda') && !(s.nombre||'').toLowerCase().includes('puntas')));
+                      if (idx >= 0) return prev.map((s,i) => i === idx ? {...s, kg} : s);
+                      if (tipo === 'segunda') return [...prev, { tipo: 'mp_con_valor', nombre: mpResS ? (mpResS.nombre_producto||mpResS.nombre) : 'Res Segunda', kg, precio: String(pResS), mp_id: mpResS?.id||null }];
+                      if (tipo === 'puntas')  return [...prev, { tipo: 'mp_con_valor', nombre: mpPuntas ? (mpPuntas.nombre_producto||mpPuntas.nombre) : 'Puntas', kg, precio: String(pPuntas), mp_id: mpPuntas?.id||null }];
+                      return [...prev, { tipo: 'perdida', nombre: 'Desecho', kg, precio: '0', mp_id: null }];
+                    });
+                  };
+
+                  const iStyle = (color) => ({ width: '100%', padding: '8px 10px', borderRadius: 8, border: `1.5px solid ${color}`, fontSize: 14, boxSizing: 'border-box', textAlign: 'right' });
+                  return (
                   <>
-                    <div style={{ fontWeight: 700, color: '#6c3483', marginBottom: 4, fontSize: 14 }}>🔀 Sub-productos del Hijo ({corteNombreHijo || 'Hijo'})</div>
+                    <div style={{ fontWeight: 700, color: '#6c3483', marginBottom: 4, fontSize: 14 }}>🔀 Deshuese — {corteNombreHijo || 'Hijo'}</div>
                     <div style={{ fontSize: 11, color: '#888', marginBottom: 14 }}>KG disponibles para el hijo: {kgHijoN.toFixed(3)} kg</div>
 
-                    {cortesSpItems.map((sp, idx) => (
-                      <div key={idx} style={{ background: '#f8f9fa', borderRadius: 10, padding: '12px', marginBottom: 8, position: 'relative' }}>
-                        <button onClick={() => setCortesSpItems(prev => prev.filter((_, i) => i !== idx))}
-                          style={{ position: 'absolute', top: 8, right: 8, background: '#e74c3c', color: 'white', border: 'none', borderRadius: 6, width: 22, height: 22, cursor: 'pointer', fontSize: 12 }}>×</button>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
-                          <div>
-                            <label style={{ fontSize: 10, color: '#888', display: 'block', marginBottom: 3 }}>Tipo</label>
-                            <select value={sp.tipo} onChange={e => setCortesSpItems(prev => prev.map((s,i) => i===idx ? {...s, tipo: e.target.value, precio: e.target.value==='perdida' ? '0' : s.precio, mp_id: e.target.value==='perdida' ? null : s.mp_id} : s))}
-                              style={{ width: '100%', padding: '6px 8px', borderRadius: 7, border: '1.5px solid #ddd', fontSize: 12 }}>
-                              <option value="perdida">Pérdida (sin valor)</option>
-                              <option value="nueva_mp">MP con valor</option>
-                            </select>
-                          </div>
-                          <div>
-                            <label style={{ fontSize: 10, color: '#888', display: 'block', marginBottom: 3 }}>Nombre</label>
-                            {sp.tipo === 'nueva_mp' ? (
-                              <select value={sp.mp_id || ''} onChange={e => {
-                                const mp = mpsParaCortes.find(m => String(m.id) === e.target.value);
-                                setCortesSpItems(prev => prev.map((s,i) => i===idx ? {...s, mp_id: e.target.value, nombre: mp ? (mp.nombre_producto||mp.nombre) : s.nombre, precio: mp ? String(mp.precio_kg||'') : s.precio} : s));
-                              }} style={{ width: '100%', padding: '6px 8px', borderRadius: 7, border: '1.5px solid #27ae60', fontSize: 12 }}>
-                                <option value="">— seleccionar MP —</option>
-                                {mpsParaCortes.map(m => <option key={m.id} value={String(m.id)}>{m.nombre_producto||m.nombre}</option>)}
-                              </select>
-                            ) : (
-                              <input type="text" placeholder="ej: Hueso" value={sp.nombre}
-                                onChange={e => setCortesSpItems(prev => prev.map((s,i) => i===idx ? {...s, nombre: e.target.value} : s))}
-                                style={{ width: '100%', padding: '6px 8px', borderRadius: 7, border: '1.5px solid #ddd', fontSize: 12 }} />
-                            )}
-                          </div>
-                        </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                          <div>
-                            <label style={{ fontSize: 10, color: '#888', display: 'block', marginBottom: 3 }}>Kg</label>
-                            <input type="number" min="0" step="0.001" placeholder="0.000" value={sp.kg}
-                              onChange={e => setCortesSpItems(prev => prev.map((s,i) => i===idx ? {...s, kg: e.target.value} : s))}
-                              style={{ width: '100%', padding: '6px 8px', borderRadius: 7, border: '1.5px solid #ddd', fontSize: 12 }} />
-                          </div>
-                          <div>
-                            <label style={{ fontSize: 10, color: '#888', display: 'block', marginBottom: 3 }}>{sp.tipo === 'perdida' ? 'Valor: $0' : '$/kg'}</label>
-                            <input type="number" min="0" step="0.01" placeholder="0.00" value={sp.precio} disabled={sp.tipo === 'perdida'}
-                              onChange={e => setCortesSpItems(prev => prev.map((s,i) => i===idx ? {...s, precio: e.target.value} : s))}
-                              style={{ width: '100%', padding: '6px 8px', borderRadius: 7, border: '1.5px solid #ddd', fontSize: 12, background: sp.tipo === 'perdida' ? '#f8f8f8' : 'white' }} />
-                          </div>
-                        </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, marginBottom: 14 }}>
+                      <div>
+                        <label style={{ fontSize: 11, color: '#1a6b3c', fontWeight: 600, display: 'block', marginBottom: 4 }}>Res Segunda (g)</label>
+                        <input type="number" min="0" step="1" placeholder="0"
+                          value={gResS > 0 ? gResS : ''}
+                          onChange={e => setGrams('segunda', parseFloat(e.target.value)||0)}
+                          style={iStyle('#27ae60')} />
+                        <div style={{ fontSize: 10, color: '#888', marginTop: 2 }}>= {pctResS.toFixed(1)}%</div>
+                        <div style={{ fontSize: 10, color: '#888' }}>Precio: ${pResS.toFixed(4)}/kg</div>
                       </div>
-                    ))}
+                      <div>
+                        <label style={{ fontSize: 11, color: '#e67e22', fontWeight: 600, display: 'block', marginBottom: 4 }}>Puntas (g)</label>
+                        <input type="number" min="0" step="1" placeholder="0"
+                          value={gPuntas > 0 ? gPuntas : ''}
+                          onChange={e => setGrams('puntas', parseFloat(e.target.value)||0)}
+                          style={iStyle('#e67e22')} />
+                        <div style={{ fontSize: 10, color: '#888', marginTop: 2 }}>= {pctPuntas.toFixed(1)}%</div>
+                        <div style={{ fontSize: 10, color: '#888' }}>Precio: ${pPuntas.toFixed(4)}/kg</div>
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 11, color: '#e74c3c', fontWeight: 600, display: 'block', marginBottom: 4 }}>Desecho (g)</label>
+                        <input type="number" min="0" step="1" placeholder="0"
+                          value={gDesecho > 0 ? gDesecho : ''}
+                          onChange={e => setGrams('desecho', parseFloat(e.target.value)||0)}
+                          style={iStyle('#e74c3c')} />
+                        <div style={{ fontSize: 10, color: '#888', marginTop: 2 }}>= {pctDesecho.toFixed(1)}%</div>
+                      </div>
+                    </div>
 
-                    <button onClick={() => setCortesSpItems(prev => [...prev, { tipo: 'perdida', nombre: '', kg: '', precio: '0', mp_id: null }])}
-                      style={{ width: '100%', padding: '9px', background: '#f0f2f5', border: '1.5px dashed #bbb', borderRadius: 10, cursor: 'pointer', fontSize: 13, color: '#666', marginBottom: 14 }}>
-                      + Agregar sub-producto
-                    </button>
+                    {/* Tabla distribución */}
+                    <div style={{ background: '#f8f0ff', borderRadius: 10, padding: '12px 14px', marginBottom: 14 }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: '#6c3483', marginBottom: 8 }}>Distribución de {kgHijoN.toFixed(3)} kg entrada:</div>
+                      {[
+                        { nombre: spResS?.nombre||'Res Segunda', kg: parseFloat(spResS?.kg||0),    precio: pResS,   esCredito: true },
+                        { nombre: spPuntas?.nombre||'Puntas',    kg: parseFloat(spPuntas?.kg||0),  precio: pPuntas, esCredito: true },
+                        { nombre: 'Desecho',                     kg: parseFloat(spDesecho?.kg||0), precio: 0,       esCredito: false },
+                      ].map(({ nombre, kg, precio, esCredito }) => (
+                        <div key={nombre} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0', borderBottom: '1px solid rgba(108,52,131,0.1)', fontSize: 12 }}>
+                          <span style={{ color: '#333', minWidth: 80 }}>{nombre}</span>
+                          <span style={{ fontWeight: 700, color: kg > 0 ? '#27ae60' : '#aaa' }}>{kg.toFixed(3)} kg</span>
+                          <span style={{ color: esCredito ? '#27ae60' : '#aaa', fontSize: 11 }}>
+                            {esCredito ? `× $${precio.toFixed(4)}/kg = $${(kg*precio).toFixed(4)} crédito` : 'sin valor'}
+                          </span>
+                        </div>
+                      ))}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 8, fontSize: 13 }}>
+                        <span style={{ fontWeight: 800, color: '#6c3483' }}>🔀 {corteNombreHijo}</span>
+                        <span style={{ fontWeight: 900, color: '#6c3483', fontSize: 16 }}>{kgFinalHijo.toFixed(3)} kg</span>
+                        <span style={{ fontSize: 11, color: '#e74c3c' }}>
+                          {kgHijoN > 0 ? ((kgHijoN-kgFinalHijo)/kgHijoN*100).toFixed(1) : '0.0'}% merma deshuese
+                        </span>
+                      </div>
+                    </div>
 
                     {/* Resumen */}
                     <div style={{ background: 'linear-gradient(135deg,#1a1a2e,#2c3e50)', borderRadius: 12, padding: '14px 16px', marginBottom: 14 }}>
@@ -2645,7 +2678,8 @@ export default function TabMaduracion({ mobile, currentUser }) {
                       </button>
                     </div>
                   </>
-                )}
+                  );
+                })()}
               </div>
             </div>
           </div>
