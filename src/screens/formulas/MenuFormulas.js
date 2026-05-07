@@ -62,7 +62,11 @@ export default function MenuFormulas({
   const EC = emojisExterno || EMOJIS_CAT;
 
   // Productos que tienen al menos una formulación guardada
-  const [conFormula, setConFormula] = useState(new Set());
+  const [conFormula,       setConFormula]       = useState(new Set());
+  // Productos con versión guardada en vista_horneado_config (CORTES, AHUMADOS, MARINADOS, INMERSIÓN)
+  const [conFormulaCfg,    setConFormulaCfg]    = useState(new Set());
+  // Productos cuya fórmula tiene algún ingrediente sin precio
+  const [pendienteRevisar, setPendienteRevisar] = useState(new Set());
 
   // Relaciones padre/hijo desde deshuese_config
   const [padreDeHijo, setPadreDeHijo] = useState({});  // { hijoNombre: padreNombre }
@@ -86,13 +90,28 @@ export default function MenuFormulas({
     .filter(({ prods }) => prods.length > 0);
 
   useEffect(() => {
-    supabase
-      .from('formulaciones')
-      .select('producto_nombre')
-      .then(({ data }) => {
-        const nombres = new Set((data || []).map(f => f.producto_nombre).filter(Boolean));
-        setConFormula(nombres);
+    Promise.all([
+      supabase.from('formulaciones').select('producto_nombre, materia_prima_id'),
+      supabase.from('vista_horneado_config').select('producto_nombre'),
+      supabase.from('materias_primas').select('id, precio_kg'),
+    ]).then(([{ data: forms }, { data: cfgs }, { data: mps }]) => {
+      setConFormula(new Set((forms || []).map(f => f.producto_nombre).filter(Boolean)));
+      setConFormulaCfg(new Set((cfgs || []).map(c => c.producto_nombre).filter(Boolean)));
+
+      const mpPriceMap = {};
+      (mps || []).forEach(m => { mpPriceMap[m.id] = parseFloat(m.precio_kg || 0); });
+      const prodMpIds = {};
+      (forms || []).forEach(f => {
+        if (!f.producto_nombre || !f.materia_prima_id) return;
+        if (!prodMpIds[f.producto_nombre]) prodMpIds[f.producto_nombre] = [];
+        prodMpIds[f.producto_nombre].push(f.materia_prima_id);
       });
+      const pendientes = new Set();
+      Object.entries(prodMpIds).forEach(([prod, ids]) => {
+        if (ids.some(id => id in mpPriceMap && mpPriceMap[id] === 0)) pendientes.add(prod);
+      });
+      setPendienteRevisar(pendientes);
+    });
   }, [productos]);
 
   useEffect(() => {
@@ -375,8 +394,26 @@ export default function MenuFormulas({
                 });
 
                 const CardProducto = ({ nombre, esPadre, esHijo }) => {
-                  const tieneFormula = conFormula.has(nombre);
-                  const borderColor = esPadre ? '#f39c12' : esHijo ? '#8e44ad' : (tieneFormula ? '#aed6f1' : '#fdecea');
+                  const catNorm = categoria.toUpperCase().replace(/[ÓÒ]/g, 'O').replace(/[ÉÈ]/g, 'E');
+                  const esCatVersiones = catNorm === 'CORTES'
+                    || catNorm.includes('AHUMADOS')
+                    || catNorm === 'MARINADOS'
+                    || catNorm.includes('INMERSION');
+
+                  const estado = esCatVersiones
+                    ? (conFormulaCfg.has(nombre) ? 'con' : 'sin')
+                    : (!conFormula.has(nombre) ? 'sin'
+                        : pendienteRevisar.has(nombre) ? 'pendiente'
+                        : 'con');
+
+                  const formulaColor = estado === 'con' ? '#27ae60' : estado === 'pendiente' ? '#e67e22' : '#e74c3c';
+                  const formulaLabel = estado === 'con' ? '✅ Con fórmula'
+                                     : estado === 'pendiente' ? '⚠️ Pendiente revisar'
+                                     : '🔴 Sin fórmula';
+                  const borderColor  = esPadre ? '#f39c12' : esHijo ? '#8e44ad'
+                                     : estado === 'con' ? '#aed6f1'
+                                     : estado === 'pendiente' ? '#fce5c0'
+                                     : '#fdecea';
                   return (
                     <button
                       onClick={() => abrirProducto(nombre)}
@@ -401,8 +438,8 @@ export default function MenuFormulas({
                           de {padreDeHijo[nombre] || findPadreParaHijo(nombre) || ''}
                         </div>
                       )}
-                      <div style={{ fontSize:'11px', color: tieneFormula ? '#27ae60' : '#e74c3c', marginTop:6, fontWeight:'bold' }}>
-                        {tieneFormula ? '✅ Con fórmula' : '🔴 Sin fórmula'}
+                      <div style={{ fontSize:'11px', color: formulaColor, marginTop:6, fontWeight:'bold' }}>
+                        {formulaLabel}
                       </div>
                     </button>
                   );
