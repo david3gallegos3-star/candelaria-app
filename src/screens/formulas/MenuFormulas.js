@@ -91,15 +91,12 @@ export default function MenuFormulas({
 
   useEffect(() => {
     Promise.all([
-      supabase.from('formulaciones').select('producto_nombre, materia_prima_id').limit(10000),
+      supabase.from('formulaciones').select('producto_nombre, materia_prima_id, ingrediente_nombre').limit(10000),
       supabase.from('vista_horneado_config').select('producto_nombre, versiones').limit(2000),
-      // Cargar TODOS los precios en JS — evita problemas con filtros de eliminado/null en PostgREST
-      supabase.from('materias_primas').select('id, precio_kg').limit(5000),
+      supabase.from('materias_primas').select('id, nombre, nombre_producto, precio_kg').limit(5000),
     ]).then(([{ data: forms }, { data: cfgs }, { data: mps }]) => {
-      // 1. productos con al menos una fila en formulaciones
       setConFormula(new Set((forms || []).map(f => f.producto_nombre).filter(Boolean)));
 
-      // 2. productos con al menos 1 versión guardada en vista_horneado_config
       setConFormulaCfg(new Set(
         (cfgs || [])
           .filter(c => Array.isArray(c.versiones) && c.versiones.length > 0)
@@ -107,17 +104,30 @@ export default function MenuFormulas({
           .filter(Boolean)
       ));
 
-      // 3. pendiente si algún ingrediente tiene precio $0 (mp vinculada con precio=0)
-      //    O no está vinculado a ninguna MP (materia_prima_id = null → muestra $0.00 en UI)
-      const mpsSinPrecio = new Set(
-        (mps || []).filter(m => !parseFloat(m.precio_kg || 0)).map(m => m.id)
-      );
+      // Replicar la misma lógica de obtenerPrecioLive (useFormulacion.js):
+      // 1. buscar por materia_prima_id, 2. fallback por nombre normalizado
+      const normStr = s => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+      const mpList  = mps || [];
+
+      const getPrecio = (f) => {
+        if (f.materia_prima_id) {
+          const mp = mpList.find(m => m.id === f.materia_prima_id);
+          if (mp) return parseFloat(mp.precio_kg) || 0;
+        }
+        const n = normStr(f.ingrediente_nombre);
+        const mp = mpList.find(m => {
+          const np = normStr(m.nombre_producto);
+          const nb = normStr(m.nombre);
+          return np === n || nb === n ||
+            (np && n.includes(np) && np.length > 4) ||
+            (n.length > 4 && nb.includes(n));
+        });
+        return mp ? parseFloat(mp.precio_kg) || 0 : 0;
+      };
+
       const pendientes = new Set();
       (forms || []).forEach(f => {
-        if (!f.producto_nombre) return;
-        if (!f.materia_prima_id || mpsSinPrecio.has(f.materia_prima_id)) {
-          pendientes.add(f.producto_nombre);
-        }
+        if (f.producto_nombre && getPrecio(f) === 0) pendientes.add(f.producto_nombre);
       });
       setPendienteRevisar(pendientes);
     });
