@@ -91,13 +91,11 @@ export default function MenuFormulas({
 
   useEffect(() => {
     Promise.all([
-      // formulaciones: existencia + materia_prima_id para cruzar precios
       supabase.from('formulaciones').select('producto_nombre, materia_prima_id').limit(10000),
-      // vista_horneado_config: necesitamos versiones para saber si tiene ≥1 guardada
       supabase.from('vista_horneado_config').select('producto_nombre, versiones').limit(2000),
-      // MPs con precio 0 o nulo
-      supabase.from('materias_primas').select('id').or('precio_kg.eq.0,precio_kg.is.null').eq('eliminado', false).limit(2000),
-    ]).then(([{ data: forms }, { data: cfgs }, { data: mpsCero }]) => {
+      // Cargar TODOS los precios en JS — evita problemas con filtros de eliminado/null en PostgREST
+      supabase.from('materias_primas').select('id, precio_kg').limit(5000),
+    ]).then(([{ data: forms }, { data: cfgs }, { data: mps }]) => {
       // 1. productos con al menos una fila en formulaciones
       setConFormula(new Set((forms || []).map(f => f.producto_nombre).filter(Boolean)));
 
@@ -109,11 +107,15 @@ export default function MenuFormulas({
           .filter(Boolean)
       ));
 
-      // 3. productos cuya fórmula tiene algún ingrediente con precio $0
-      const mpsSinPrecio = new Set((mpsCero || []).map(m => m.id));
+      // 3. pendiente si algún ingrediente tiene precio $0 (mp vinculada con precio=0)
+      //    O no está vinculado a ninguna MP (materia_prima_id = null → muestra $0.00 en UI)
+      const mpsSinPrecio = new Set(
+        (mps || []).filter(m => !parseFloat(m.precio_kg || 0)).map(m => m.id)
+      );
       const pendientes = new Set();
       (forms || []).forEach(f => {
-        if (f.materia_prima_id && mpsSinPrecio.has(f.materia_prima_id)) {
+        if (!f.producto_nombre) return;
+        if (!f.materia_prima_id || mpsSinPrecio.has(f.materia_prima_id)) {
           pendientes.add(f.producto_nombre);
         }
       });
