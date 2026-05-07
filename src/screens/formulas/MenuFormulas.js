@@ -91,24 +91,31 @@ export default function MenuFormulas({
 
   useEffect(() => {
     Promise.all([
-      supabase.from('formulaciones').select('producto_nombre, materia_prima_id'),
-      supabase.from('vista_horneado_config').select('producto_nombre'),
-      supabase.from('materias_primas').select('id, precio_kg'),
-    ]).then(([{ data: forms }, { data: cfgs }, { data: mps }]) => {
+      // formulaciones: existencia + materia_prima_id para cruzar precios
+      supabase.from('formulaciones').select('producto_nombre, materia_prima_id').limit(10000),
+      // vista_horneado_config: necesitamos versiones para saber si tiene ≥1 guardada
+      supabase.from('vista_horneado_config').select('producto_nombre, versiones').limit(2000),
+      // MPs con precio 0 o nulo
+      supabase.from('materias_primas').select('id').or('precio_kg.eq.0,precio_kg.is.null').eq('eliminado', false).limit(2000),
+    ]).then(([{ data: forms }, { data: cfgs }, { data: mpsCero }]) => {
+      // 1. productos con al menos una fila en formulaciones
       setConFormula(new Set((forms || []).map(f => f.producto_nombre).filter(Boolean)));
-      setConFormulaCfg(new Set((cfgs || []).map(c => c.producto_nombre).filter(Boolean)));
 
-      const mpPriceMap = {};
-      (mps || []).forEach(m => { mpPriceMap[m.id] = parseFloat(m.precio_kg || 0); });
-      const prodMpIds = {};
-      (forms || []).forEach(f => {
-        if (!f.producto_nombre || !f.materia_prima_id) return;
-        if (!prodMpIds[f.producto_nombre]) prodMpIds[f.producto_nombre] = [];
-        prodMpIds[f.producto_nombre].push(f.materia_prima_id);
-      });
+      // 2. productos con al menos 1 versión guardada en vista_horneado_config
+      setConFormulaCfg(new Set(
+        (cfgs || [])
+          .filter(c => Array.isArray(c.versiones) && c.versiones.length > 0)
+          .map(c => c.producto_nombre)
+          .filter(Boolean)
+      ));
+
+      // 3. productos cuya fórmula tiene algún ingrediente con precio $0
+      const mpsSinPrecio = new Set((mpsCero || []).map(m => m.id));
       const pendientes = new Set();
-      Object.entries(prodMpIds).forEach(([prod, ids]) => {
-        if (ids.some(id => id in mpPriceMap && mpPriceMap[id] === 0)) pendientes.add(prod);
+      (forms || []).forEach(f => {
+        if (f.materia_prima_id && mpsSinPrecio.has(f.materia_prima_id)) {
+          pendientes.add(f.producto_nombre);
+        }
       });
       setPendienteRevisar(pendientes);
     });
