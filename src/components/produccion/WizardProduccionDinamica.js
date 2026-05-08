@@ -1,5 +1,5 @@
 // src/components/produccion/WizardProduccionDinamica.js
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { supabase } from '../../supabase';
 
 // Construye la lista de pasos activos para el momento/rama indicado
@@ -54,8 +54,9 @@ export default function WizardProduccionDinamica({
   const [kgHijoF,      setKgHijoF]      = useState(null);
   const [stockIdPadre, setStockIdPadre] = useState(null);
   const [inputKg,      setInputKg]      = useState('');
-  const [guardando,    setGuardando]    = useState(false);
-  const [error,        setError]        = useState('');
+  const [guardando,       setGuardando]       = useState(false);
+  const [error,           setError]           = useState('');
+  const [rubIngredientes, setRubIngredientes] = useState(null); // null=cargando, []=sin fórmula, [...]= cargado
 
   const pasos = useMemo(
     () => buildPasos({ modo, rama, bloques, bloquesHijo }),
@@ -63,6 +64,28 @@ export default function WizardProduccionDinamica({
   );
 
   const pasoActual = pasos[pasoIdx] || null;
+
+  // Cargar ingredientes cuando llegamos al paso Rub
+  useEffect(() => {
+    if (pasoActual?.tipo !== 'rub') return;
+    const formulaRub = pasoActual.formula_rub || cfg?.formula_rub || '';
+    if (!formulaRub) { setRubIngredientes([]); return; }
+    setRubIngredientes(null);
+    (async () => {
+      const { data: filas } = await supabase.from('formulaciones')
+        .select('ingrediente_nombre,gramos,materia_prima_id')
+        .eq('producto_nombre', formulaRub);
+      if (!filas?.length) { setRubIngredientes([]); return; }
+      const ids = filas.map(f => f.materia_prima_id).filter(Boolean);
+      const { data: mps } = ids.length
+        ? await supabase.from('materias_primas').select('id,precio_kg').in('id', ids)
+        : { data: [] };
+      setRubIngredientes(filas.map(f => ({
+        ...f,
+        precio_kg: parseFloat((mps || []).find(m => m.id === f.materia_prima_id)?.precio_kg || 0),
+      })));
+    })();
+  }, [pasoActual?.id, pasoActual?.tipo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const pasosPadre = useMemo(
     () => buildPasos({ modo, rama: 'padre', bloques, bloquesHijo }),
@@ -290,6 +313,29 @@ export default function WizardProduccionDinamica({
       setPasoIdx(prev => prev + 1);
     } catch (e) { setError(e.message); }
     setGuardando(false);
+  }
+
+  function imprimirRub(b) {
+    const formulaRub = b.formula_rub || cfg?.formula_rub || '';
+    const kgBase = parseFloat(b.kg_rub_base || cfg?.kg_rub_base || 1);
+    const escala = kgBase > 0 ? kgActual / kgBase : 0;
+    const filas = rubIngredientes || [];
+    const totalGr = filas.reduce((s, f) => s + parseFloat(f.gramos || 0), 0);
+    const w = window.open('', '_blank');
+    w.document.write(`<html><head><title>Rub — ${formulaRub}</title>
+      <style>body{font-family:Arial;padding:20px}table{width:100%;border-collapse:collapse}
+      th,td{border:1px solid #ddd;padding:8px;text-align:left}th{background:#8e44ad;color:white}
+      .total{font-weight:bold;background:#f5eeff}.nota{color:#888;font-size:12px}</style></head><body>
+      <h2>🧂 ${formulaRub}</h2>
+      <p><strong>Lote:</strong> ${lote?.loteId || '—'} &nbsp;|&nbsp;
+         <strong>Carne:</strong> ${kgActual.toFixed(3)} kg &nbsp;|&nbsp;
+         <strong>Fecha:</strong> ${new Date().toLocaleDateString()}</p>
+      <table><tr><th>Ingrediente</th><th>Base (${kgBase}kg)</th><th>Para ${kgActual.toFixed(2)}kg</th></tr>
+      ${filas.map(f => {const gr=parseFloat(f.gramos||0);return`<tr><td>${f.ingrediente_nombre}</td><td>${gr.toFixed(1)} g</td><td><strong>${(gr*escala).toFixed(1)} g</strong></td></tr>`;}).join('')}
+      <tr class="total"><td>TOTAL</td><td>${totalGr.toFixed(1)} g</td><td>${(totalGr*escala).toFixed(1)} g</td></tr>
+      </table><p class="nota">Fórmula base ${kgBase}kg × ${escala.toFixed(3)}</p>
+      <script>window.print();</script></body></html>`);
+    w.document.close();
   }
 
   async function confirmarRub(b) {
@@ -618,42 +664,113 @@ export default function WizardProduccionDinamica({
     }
 
     if (b.tipo === 'rub') {
-      const kgBase = parseFloat(b.kg_rub_base || cfg?.kg_rub_base || 1);
-      const escala = kgBase > 0 ? kgActual / kgBase : 0;
+      const formulaRub = b.formula_rub || cfg?.formula_rub || '';
+      const kgBase  = parseFloat(b.kg_rub_base || cfg?.kg_rub_base || 1);
+      const escala  = kgBase > 0 ? kgActual / kgBase : 0;
+      const filas   = rubIngredientes || [];
+      const cargandoRub = rubIngredientes === null && !!formulaRub;
+      const totalGr = filas.reduce((s, f) => s + parseFloat(f.gramos || 0), 0);
+      const costoRubKg = kgBase > 0
+        ? filas.reduce((s, f) => s + (parseFloat(f.gramos || 0) / 1000) * f.precio_kg, 0) / kgBase
+        : 0;
+      const costoTotal = costoRubKg * kgActual;
       return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={{ background: '#f5eeff', borderRadius: 10, padding: '12px 16px', border: '1.5px solid #8e44ad' }}>
-            <div style={{ fontWeight: 700, color: '#8e44ad', fontSize: 14, marginBottom: 8 }}>🧂 Rub / Especias</div>
-            <div style={{ fontSize: 12, color: '#555' }}>
-              <div>Fórmula: <strong>{b.formula_rub || cfg?.formula_rub || '—'}</strong></div>
-              <div style={{ marginTop: 4 }}>Escala: {kgBase} kg base × {escala.toFixed(3)} = <strong>{kgActual.toFixed(3)} kg carne</strong></div>
+          <div style={{ background: '#f5f0ff', borderRadius: 12, padding: 16, border: '2px solid #8e44ad' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <div style={{ fontWeight: 700, color: '#8e44ad', fontSize: 12 }}>
+                {formulaRub || 'Rub / Especias'}
+              </div>
+              {filas.length > 0 && (
+                <button onClick={() => imprimirRub(b)} style={{
+                  background: '#8e44ad', color: 'white', border: 'none', borderRadius: 6,
+                  padding: '5px 12px', fontSize: 11, cursor: 'pointer', fontWeight: 700
+                }}>🖨️ Imprimir</button>
+              )}
+            </div>
+
+            {/* Encabezado tabla */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: '4px 12px', fontSize: 10, fontWeight: 700, color: '#9b59b6', borderBottom: '1.5px solid #d7bde2', paddingBottom: 4, marginBottom: 6 }}>
+              <span>INGREDIENTE</span>
+              <span style={{ textAlign: 'right' }}>BASE ({kgBase}kg)</span>
+              <span style={{ textAlign: 'right' }}>PARA {kgActual.toFixed(3)}kg</span>
+            </div>
+
+            {cargandoRub && <div style={{ fontSize: 12, color: '#aaa', padding: '8px 0' }}>Cargando...</div>}
+            {!cargandoRub && filas.length === 0 && (
+              <div style={{ fontSize: 12, color: '#aaa', padding: '10px 0' }}>Sin fórmula Rub cargada</div>
+            )}
+            {filas.map((f, i) => {
+              const grBase  = parseFloat(f.gramos || 0);
+              return (
+                <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: '2px 12px', fontSize: 12, padding: '4px 0', borderBottom: '1px solid #e8daef' }}>
+                  <span style={{ color: '#333' }}>{f.ingrediente_nombre}</span>
+                  <span style={{ textAlign: 'right', color: '#888' }}>{grBase.toFixed(1)} g</span>
+                  <span style={{ textAlign: 'right', fontWeight: 700, color: '#6c3483' }}>{(grBase * escala).toFixed(1)} g</span>
+                </div>
+              );
+            })}
+            {filas.length > 0 && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: '2px 12px', fontSize: 12, padding: '8px 0 0', fontWeight: 700, borderTop: '1.5px solid #d7bde2', marginTop: 4 }}>
+                <span style={{ color: '#6c3483' }}>TOTAL</span>
+                <span style={{ textAlign: 'right', color: '#9b59b6' }}>{totalGr.toFixed(1)} g</span>
+                <span style={{ textAlign: 'right', color: '#6c3483' }}>{(totalGr * escala).toFixed(1)} g</span>
+              </div>
+            )}
+            <div style={{ marginTop: 10, display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
+              <span style={{ color: '#888' }}>Costo Rub: ${costoRubKg.toFixed(4)}/kg</span>
+              <span style={{ fontWeight: 700, color: '#8e44ad' }}>Total: ${costoTotal.toFixed(4)}</span>
             </div>
           </div>
-          <button onClick={() => confirmarRub(b)} disabled={guardando}
-            style={{ width: '100%', padding: '12px', background: guardando ? '#aaa' : '#8e44ad', color: 'white', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 'bold', cursor: guardando ? 'default' : 'pointer' }}>
-            {guardando ? 'Procesando...' : '🧂 Confirmar y descontar Rub'}
-          </button>
+
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+            {pasoIdx > 0 && (
+              <button onClick={() => setPasoIdx(p => p - 1)} style={{ background: '#f0f2f5', border: 'none', borderRadius: 8, padding: '10px 16px', cursor: 'pointer', fontSize: 13 }}>← Atrás</button>
+            )}
+            <button onClick={() => confirmarRub(b)} disabled={guardando}
+              style={{ background: guardando ? '#aaa' : 'linear-gradient(135deg,#8e44ad,#6c3483)', color: 'white', border: 'none', borderRadius: 8, padding: '11px 26px', cursor: guardando ? 'default' : 'pointer', fontSize: 14, fontWeight: 'bold' }}>
+              {guardando ? 'Registrando...' : '✅ Registrar y continuar'}
+            </button>
+          </div>
         </div>
       );
     }
 
     if (b.tipo === 'adicional') {
-      const mpAdic = b.mp_adicional_id ? mpsFormula.find(m => String(m.id) === String(b.mp_adicional_id)) : null;
-      const grN = parseFloat(b.gramos_adicional || 0);
-      const kgTotal = (grN / 1000) * kgActual;
+      const mpAdic   = b.mp_adicional_id ? mpsFormula.find(m => String(m.id) === String(b.mp_adicional_id)) : null;
+      const grN      = parseFloat(b.gramos_adicional || 0);
+      const kgTotal  = (grN / 1000) * kgActual;
+      const costoAd  = kgTotal * parseFloat(mpAdic?.precio_kg || 0);
       return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={{ background: '#fff8e8', borderRadius: 10, padding: '12px 16px', border: '1.5px solid #f39c12' }}>
-            <div style={{ fontWeight: 700, color: '#f39c12', fontSize: 14, marginBottom: 8 }}>🍋 Ingrediente Adicional</div>
-            <div style={{ fontSize: 12, color: '#555' }}>
-              <div>MP: <strong>{mpAdic?.nombre_producto || mpAdic?.nombre || '—'}</strong> · ${parseFloat(mpAdic?.precio_kg||0).toFixed(4)}/kg</div>
-              <div style={{ marginTop: 4 }}>{grN}g/kg × {kgActual.toFixed(3)} kg = <strong>{kgTotal.toFixed(3)} kg</strong></div>
+          <div style={{ background: '#fff8e8', borderRadius: 12, padding: 16, border: '2px solid #f39c12' }}>
+            <div style={{ fontWeight: 700, color: '#f39c12', fontSize: 12, marginBottom: 12 }}>
+              {mpAdic?.nombre_producto || mpAdic?.nombre || 'Ingrediente Adicional'}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: '4px 12px', fontSize: 10, fontWeight: 700, color: '#e67e22', borderBottom: '1.5px solid #fde3a7', paddingBottom: 4, marginBottom: 6 }}>
+              <span>INGREDIENTE</span>
+              <span style={{ textAlign: 'right' }}>g/kg</span>
+              <span style={{ textAlign: 'right' }}>PARA {kgActual.toFixed(3)}kg</span>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: '2px 12px', fontSize: 12, padding: '4px 0' }}>
+              <span style={{ color: '#333' }}>{mpAdic?.nombre_producto || mpAdic?.nombre || '—'}</span>
+              <span style={{ textAlign: 'right', color: '#888' }}>{grN.toFixed(1)} g</span>
+              <span style={{ textAlign: 'right', fontWeight: 700, color: '#e67e22' }}>{(kgTotal * 1000).toFixed(1)} g</span>
+            </div>
+            <div style={{ marginTop: 10, display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
+              <span style={{ color: '#888' }}>${parseFloat(mpAdic?.precio_kg || 0).toFixed(4)}/kg</span>
+              <span style={{ fontWeight: 700, color: '#f39c12' }}>Total: ${costoAd.toFixed(4)}</span>
             </div>
           </div>
-          <button onClick={() => confirmarAdicional(b)} disabled={guardando}
-            style={{ width: '100%', padding: '12px', background: guardando ? '#aaa' : '#f39c12', color: 'white', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 'bold', cursor: guardando ? 'default' : 'pointer' }}>
-            {guardando ? 'Procesando...' : '🍋 Confirmar y descontar adicional'}
-          </button>
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+            {pasoIdx > 0 && (
+              <button onClick={() => setPasoIdx(p => p - 1)} style={{ background: '#f0f2f5', border: 'none', borderRadius: 8, padding: '10px 16px', cursor: 'pointer', fontSize: 13 }}>← Atrás</button>
+            )}
+            <button onClick={() => confirmarAdicional(b)} disabled={guardando}
+              style={{ background: guardando ? '#aaa' : 'linear-gradient(135deg,#f39c12,#e67e22)', color: 'white', border: 'none', borderRadius: 8, padding: '11px 26px', cursor: guardando ? 'default' : 'pointer', fontSize: 14, fontWeight: 'bold' }}>
+              {guardando ? 'Registrando...' : '✅ Registrar y continuar'}
+            </button>
+          </div>
         </div>
       );
     }
