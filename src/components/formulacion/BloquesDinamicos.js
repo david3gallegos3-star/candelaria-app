@@ -274,9 +274,14 @@ export function BloquesDinamicosEditor({
                           }
                         </div>
                         {(b.pct_inj || 0) > 0 && (
-                          <div style={{ fontSize: 11, color: meta.color, background: `${meta.color}10`, padding: '6px 10px', borderRadius: 6 }}>
-                            {kgAntes.toFixed(3)} kg × {b.pct_inj}% = <strong>{kgSal.toFixed(3)} kg salmuera</strong>
-                            {precioKgSalmuera > 0 && ` · $${(kgSal * precioKgSalmuera).toFixed(4)}`}
+                          <div style={{ fontSize: 11, color: meta.color, background: `${meta.color}10`, padding: '8px 12px', borderRadius: 6 }}>
+                            <div>
+                              {kgAntes.toFixed(3)} kg × {b.pct_inj}% = <strong>{kgSal.toFixed(3)} kg salmuera</strong>
+                              {precioKgSalmuera > 0 && ` · $${(kgSal * precioKgSalmuera).toFixed(4)}`}
+                            </div>
+                            <div style={{ marginTop: 4, fontWeight: 700, color: meta.color }}>
+                              → <strong style={{ fontSize: 13 }}>{(kgAntes + kgSal).toFixed(3)} kg</strong> total después de inyección
+                            </div>
                           </div>
                         )}
                       </div>
