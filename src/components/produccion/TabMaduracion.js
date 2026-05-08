@@ -1784,6 +1784,23 @@ export default function TabMaduracion({ mobile, currentUser }) {
                         </div>
                       ))}
                     </div>
+                    {lote.bloques_resultado?.pasos?.length > 0 && (
+                      <details style={{ marginTop: 6 }}>
+                        <summary style={{ fontSize: 11, color: '#8e44ad', cursor: 'pointer', fontWeight: 600 }}>
+                          🧩 Ver pasos del flujo dinámico ({lote.bloques_resultado.pasos.length} pasos)
+                        </summary>
+                        <div style={{ marginTop: 6, paddingLeft: 8 }}>
+                          {lote.bloques_resultado.pasos.map((p, i) => {
+                            const costoKg = p.kgSalida > 0 ? p.costoAcum / p.kgSalida : 0;
+                            return (
+                              <div key={i} style={{ fontSize: 10, color: '#555', padding: '2px 0', borderBottom: '1px solid #f0f0f0' }}>
+                                {p.tipo}{p.merma_tipo ? ` T${p.merma_tipo}` : ''}: {p.kgSalida?.toFixed(3)} kg · ${costoKg.toFixed(4)}/kg
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </details>
+                    )}
                   </div>
                 </div>
               </div>
