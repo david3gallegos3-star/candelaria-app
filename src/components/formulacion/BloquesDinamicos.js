@@ -154,13 +154,11 @@ export function BloquesDinamicosEditor({
     setBloques(prev => [...prev, { id: newId(), ...templates[tipo] }]);
   }
 
-  const inp = (extra = {}) => ({
-    style: {
-      width: '100%', padding: '7px 10px', borderRadius: 7, fontSize: 13,
-      fontWeight: 'bold', textAlign: 'center', boxSizing: 'border-box',
-      background: modoEdicion ? 'white' : '#f8f9fa', ...extra,
-    },
-    disabled: !modoEdicion,
+  // Estilo base para inputs del editor
+  const baseInputStyle = (extra = {}) => ({
+    width: '100%', padding: '7px 10px', borderRadius: 7, fontSize: 13,
+    fontWeight: 'bold', textAlign: 'center', boxSizing: 'border-box',
+    background: modoEdicion ? 'white' : '#f8f9fa', ...extra,
   });
 
   return (
@@ -295,13 +293,13 @@ export function BloquesDinamicosEditor({
                         <div>
                           <label style={{ fontSize: 11, fontWeight: 600, color: meta.color, display: 'block', marginBottom: 4 }}>Horas</label>
                           <input type="number" min="0" step="1" value={b.horas_mad}
-                            {...inp({ border: `1.5px solid ${meta.color}` })}
+                            style={baseInputStyle({ border: `1.5px solid ${meta.color}` })} disabled={!modoEdicion}
                             onChange={e => { const v = parseFloat(e.target.value) || 0; updateBloque(b.id, { horas_mad: v }); setHorasMad(String(v)); }} />
                         </div>
                         <div>
                           <label style={{ fontSize: 11, fontWeight: 600, color: meta.color, display: 'block', marginBottom: 4 }}>Minutos</label>
                           <input type="number" min="0" max="59" step="1" value={b.minutos_mad}
-                            {...inp({ border: `1.5px solid ${meta.color}` })}
+                            style={baseInputStyle({ border: `1.5px solid ${meta.color}` })} disabled={!modoEdicion}
                             onChange={e => { const v = parseFloat(e.target.value) || 0; updateBloque(b.id, { minutos_mad: v }); setMinutosMad(String(v)); }} />
                         </div>
                       </div>
@@ -324,7 +322,7 @@ export function BloquesDinamicosEditor({
                             </label>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                               <input type="number" min="0" step="0.001" value={b.kg_salida_mad} placeholder="ej: 1.800"
-                                {...inp({ border: '1.5px solid #e74c3c', textAlign: 'left', flex: 1 })}
+                                style={baseInputStyle({ border: '1.5px solid #e74c3c', textAlign: 'left' })} disabled={!modoEdicion}
                                 onChange={e => { const v = parseFloat(e.target.value) || 0; updateBloque(b.id, { kg_salida_mad: v }); setKgSalidaMad(String(v)); }} />
                               {pctMerma !== null && (
                                 <div style={{ background: '#fdf2f2', border: '1.5px solid #e74c3c', borderRadius: 7, padding: '6px 12px', textAlign: 'center', whiteSpace: 'nowrap' }}>
@@ -366,7 +364,7 @@ export function BloquesDinamicosEditor({
                             </span>
                           </label>
                           <input type="number" min="0.1" step="0.1" value={b.kg_rub_base}
-                            {...inp({ border: `1.5px solid ${meta.color}` })}
+                            style={baseInputStyle({ border: `1.5px solid ${meta.color}` })} disabled={!modoEdicion}
                             onChange={e => { const v = parseFloat(e.target.value) || 1; updateBloque(b.id, { kg_rub_base: v }); setKgRubBase(String(v)); }} />
                         </div>
                         {costoRubFormula > 0 && (
@@ -415,7 +413,7 @@ export function BloquesDinamicosEditor({
                       <div>
                         <label style={{ fontSize: 11, fontWeight: 600, color: meta.color, display: 'block', marginBottom: 4 }}>Gramos por kg en proceso</label>
                         <input type="number" min="0" step="1" value={b.gramos_adicional}
-                          {...inp({ border: `1.5px solid ${meta.color}` })}
+                          style={baseInputStyle({ border: `1.5px solid ${meta.color}` })} disabled={!modoEdicion}
                           onChange={e => { const v = parseFloat(e.target.value) || 0; updateBloque(b.id, { gramos_adicional: v }); setGramosAdicional(String(v)); }} />
                       </div>
                       {mpSel && grN > 0 && (
@@ -457,14 +455,14 @@ export function BloquesDinamicosEditor({
                         <div>
                           <label style={{ fontSize: 11, fontWeight: 600, color: meta.color, display: 'block', marginBottom: 4 }}>% merma</label>
                           <input type="number" min="0" max="99" step="0.1" value={b.pct_merma}
-                            {...inp({ border: `1.5px solid ${meta.color}` })}
+                            style={baseInputStyle({ border: `1.5px solid ${meta.color}` })} disabled={!modoEdicion}
                             onChange={e => updateBloque(b.id, { pct_merma: parseFloat(e.target.value) || 0 })} />
                         </div>
                         {(b.merma_tipo === 2 || b.merma_tipo === 3) && (
                           <div>
                             <label style={{ fontSize: 11, fontWeight: 600, color: '#27ae60', display: 'block', marginBottom: 4 }}>Precio merma ($/kg)</label>
                             <input type="number" min="0" step="0.01" value={b.precio_merma_kg}
-                              {...inp({ border: '1.5px solid #27ae60' })}
+                              style={baseInputStyle({ border: '1.5px solid #27ae60' })} disabled={!modoEdicion}
                               onChange={e => updateBloque(b.id, { precio_merma_kg: parseFloat(e.target.value) || 0 })} />
                           </div>
                         )}
@@ -497,7 +495,7 @@ export function BloquesDinamicosEditor({
                             <span style={{ fontWeight: 400, color: '#aaa', marginLeft: 8 }}>disponibles: {kgAntes.toFixed(3)} kg</span>
                           </label>
                           <input type="number" min="0" step="0.001" value={b.kg_para_hijo} placeholder="ej: 1.000"
-                            {...inp({ border: `1.5px solid ${meta.color}`, textAlign: 'left' })}
+                            style={baseInputStyle({ border: `1.5px solid ${meta.color}`, textAlign: 'left' })} disabled={!modoEdicion}
                             onChange={e => { const v = parseFloat(e.target.value) || 0; updateBloque(b.id, { kg_para_hijo: v }); setKgParaHijo(String(v)); }} />
                         </div>
                         {kgHijoV > 0 && (
