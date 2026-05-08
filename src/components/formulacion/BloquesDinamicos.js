@@ -171,6 +171,21 @@ export function BloquesDinamicosEditor({
         )}
       </div>
 
+      {/* ── Carne inicial — siempre arriba, siempre editable ── */}
+      <div style={{ background: 'white', borderRadius: 10, padding: '12px 16px', marginBottom: 12, border: '2px solid #e67e22', display: 'flex', alignItems: 'center', gap: 14 }}>
+        <span style={{ fontSize: 18 }}>🥩</span>
+        <span style={{ fontWeight: 700, color: '#e67e22', flex: 1, fontSize: 13 }}>Carne inicial</span>
+        <input
+          type="number" min="0.1" step="0.1"
+          value={kgSalBase}
+          disabled={!modoEdicion}
+          onChange={e => setKgSalBase(e.target.value)}
+          style={{ width: 80, padding: '7px 10px', borderRadius: 7, border: '2px solid #e67e22', fontSize: 15, fontWeight: 'bold', textAlign: 'center', background: modoEdicion ? 'white' : '#fef9e7' }}
+        />
+        <span style={{ fontSize: 12, color: '#888' }}>kg</span>
+        <span style={{ fontSize: 13, fontWeight: 700, color: '#27ae60' }}>${precioCarne.toFixed(4)}/kg</span>
+      </div>
+
       {/* ── Lista de bloques ── */}
       <div style={{ marginBottom: 12 }}>
         {bloques.map((b, idx) => {
@@ -442,19 +457,10 @@ export function BloquesDinamicosEditor({
           <span style={{ color: 'white', fontWeight: 'bold', fontSize: 13 }}>📊 Flujo de costo — paso a paso</span>
         </div>
         <div style={{ padding: '12px 14px' }}>
-          {/* Punto de partida — kg iniciales editable */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', background: '#fef9e7', borderRadius: 7, marginBottom: 4, fontSize: 12, border: '1.5px solid #f0c040' }}>
-            <span style={{ color: '#e67e22', fontWeight: 600 }}>🥩 Carne inicial</span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <input
-                type="number" min="0.1" step="0.1"
-                value={kgSalBase}
-                disabled={!modoEdicion}
-                onChange={e => setKgSalBase(e.target.value)}
-                style={{ width: 70, padding: '5px 8px', borderRadius: 6, border: '2px solid #e67e22', fontSize: 14, fontWeight: 'bold', textAlign: 'center', background: modoEdicion ? 'white' : '#fef9e7' }}
-              />
-              <span style={{ color: '#888' }}>kg · <strong style={{ color: '#27ae60' }}>${precioCarne.toFixed(4)}/kg</strong></span>
-            </div>
+          {/* Punto de partida — solo display del costo inicial */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 10px', background: '#fef9e7', borderRadius: 7, marginBottom: 4, fontSize: 12 }}>
+            <span style={{ color: '#e67e22', fontWeight: 600 }}>🥩 {kgSalBase} kg carne</span>
+            <span style={{ fontWeight: 700, color: '#27ae60' }}>${(parseFloat(kgSalBase)||0 * precioCarne).toFixed(4)} · ${precioCarne.toFixed(4)}/kg</span>
           </div>
 
           {resultado.pasos.length === 0 && (
@@ -495,17 +501,37 @@ export function BloquesDinamicosEditor({
               <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', marginTop: 4 }}>
                 {resultado.kg.toFixed(3)} kg finales · ${resultado.costoAcum.toFixed(4)} costo total
               </div>
-              {/* Margen y PVP */}
+              {/* Margen de ganancia — siempre visible y editable */}
               {(() => {
                 const bifB = bloques.find(b => b.tipo === 'bifurcacion' && b.activo);
-                const mg   = parseFloat(bifB ? (bifB.margen_padre ?? margenPadre) : margenPadre) || 0;
-                const pvp  = mg > 0 && mg < 100 && resultado.costoKgFinal > 0
+                const mgVal = bifB ? String(bifB.margen_padre ?? margenPadre) : margenPadre;
+                const mg    = parseFloat(mgVal) || 0;
+                const pvp   = mg > 0 && mg < 100 && resultado.costoKgFinal > 0
                   ? resultado.costoKgFinal / (1 - mg / 100) : 0;
-                return pvp > 0 ? (
-                  <div style={{ marginTop: 8, borderTop: '1px solid rgba(255,255,255,0.2)', paddingTop: 8, fontSize: 12, color: 'rgba(255,255,255,0.8)' }}>
-                    Margen {mg}% → <strong style={{ color: '#a9dfbf', fontSize: 15 }}>${pvp.toFixed(4)}/kg</strong> precio de venta
+                return (
+                  <div style={{ marginTop: 10, borderTop: '1px solid rgba(255,255,255,0.2)', paddingTop: 10 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', flex: 1 }}>Margen de ganancia</span>
+                      <input
+                        type="number" min="0" max="99" step="1"
+                        value={mgVal}
+                        disabled={!modoEdicion}
+                        onChange={e => {
+                          const v = e.target.value;
+                          if (bifB) updateBloque(bifB.id, { margen_padre: parseFloat(v) || 0 });
+                          setMargenPadre(v);
+                        }}
+                        style={{ width: 60, padding: '5px 8px', borderRadius: 6, border: '1.5px solid rgba(255,255,255,0.4)', fontSize: 14, fontWeight: 'bold', textAlign: 'center', background: modoEdicion ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.08)', color: 'white' }}
+                      />
+                      <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)' }}>%</span>
+                    </div>
+                    {pvp > 0 && (
+                      <div style={{ marginTop: 6, fontSize: 13, color: 'rgba(255,255,255,0.8)' }}>
+                        Precio de venta → <strong style={{ color: '#a9dfbf', fontSize: 16 }}>${pvp.toFixed(4)}/kg</strong>
+                      </div>
+                    )}
                   </div>
-                ) : null;
+                );
               })()}
             </div>
           )}
