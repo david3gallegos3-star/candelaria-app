@@ -50,10 +50,9 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
   const [pctPuntas,      setPctPuntas]      = useState('');
   const [pctDesecho,     setPctDesecho]     = useState('');
 
-  // Pruebas
-  const [pruebaGramos,  setPruebaGramos]  = useState('');
-  const [pruebaEmpSel,  setPruebaEmpSel]  = useState('');
-  const [pruebaEtiSel,  setPruebaEtiSel]  = useState('');
+  // Pruebas — múltiples filas
+  const [pruebaFilas,       setPruebaFilas]       = useState([{ id: '1', kg: '', emp_id: '', eti_id: '' }]);
+  const [pruebasModoEdit,   setPruebasModoEdit]   = useState(false);
 
   // Formulaciones salmuera
   const [formulaciones,         setFormulaciones]         = useState([]);
@@ -75,8 +74,10 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
   const [margenHijo,        setMargenHijo]        = useState('15');
 
   // ── Flujo dinámico de bloques ──────────────────────────────
-  const [bloques,          setBloques]          = useState(null); // null = flujo clásico
-  const [bloqueExpandido,  setBloqueExpandido]  = useState(null);
+  const [bloques,              setBloques]              = useState(null); // null = flujo clásico padre
+  const [bloqueExpandido,      setBloqueExpandido]      = useState(null);
+  const [bloquesHijo,          setBloquesHijo]          = useState(null); // null = deshuese clásico
+  const [bloqueExpandidoHijo,  setBloqueExpandidoHijo]  = useState(null);
 
   // Compat legacy (no se usan en UI pero se mantienen por si hay config guardada antigua)
   const [pctRub,             setPctRub]             = useState('');
@@ -323,6 +324,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
         if (c.margen_padre !== undefined) setMargenPadre(String(c.margen_padre));
         if (c.margen_hijo  !== undefined) setMargenHijo(String(c.margen_hijo));
         if (c.bloques && Array.isArray(c.bloques)) setBloques(c.bloques);
+        if (c.bloques_hijo && Array.isArray(c.bloques_hijo)) setBloquesHijo(c.bloques_hijo);
       }
 
       // Formulaciones SALMUERAS + todas las MPs + config del padre (si es hijo)
@@ -409,7 +411,20 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
         const kgSal     = parseFloat(kgSalidaMad) || 0;
         return kgSal > 0 ? (CI * kgIni) / kgSal : 0;
       })(),
-      ...(bloques !== null ? { bloques } : {}),
+      ...(bloques !== null ? (() => {
+        const mpAdic = mpAdicionalId ? mpsFormula.find(m => String(m.id) === mpAdicionalId) : null;
+        const res = calcBloques({
+          bloques,
+          kgIni:            parseFloat(kgSalBase) || 2,
+          precioCarne:      parseFloat(mpVinculada?.precio_kg || 0),
+          precioKgSalmuera,
+          costoRubFormula,
+          kgRubBase:        parseFloat(kgRubBase) || 1,
+          mpAdic,
+        });
+        return { bloques, pasos_flujo: res.pasos, c_mad_real: res.costoKgFinal };
+      })() : {}),
+      ...(bloquesHijo !== null ? { bloques_hijo: bloquesHijo } : {}),
       tipo,
       _categoria:      'CORTES',
       _updated:        new Date().toISOString(),
@@ -493,6 +508,16 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
     setPadreCfg(match?.config || null);
   }
 
+  function initBloquesHijo() {
+    const newId = () => Math.random().toString(36).slice(2, 9);
+    const bloques = [];
+    if (parseFloat(pctResSegunda) > 0) bloques.push({ id: newId(), tipo: 'merma', activo: true, merma_tipo: 2, pct_merma: parseFloat(pctResSegunda) || 10, precio_merma_kg: precioResSegunda || 0, nombre_merma: 'Res Segunda', mp_merma_id: '' });
+    if (parseFloat(pctPuntas) > 0)     bloques.push({ id: newId(), tipo: 'merma', activo: true, merma_tipo: 2, pct_merma: parseFloat(pctPuntas)     || 20, precio_merma_kg: precioPuntas    || 0, nombre_merma: 'Puntas',     mp_merma_id: '' });
+    if (parseFloat(pctDesecho) > 0)    bloques.push({ id: newId(), tipo: 'merma', activo: true, merma_tipo: 1, pct_merma: parseFloat(pctDesecho)    || 10, precio_merma_kg: 0,                   nombre_merma: 'Desecho',    mp_merma_id: '' });
+    if (bloques.length === 0) bloques.push({ id: newId(), tipo: 'merma', activo: true, merma_tipo: 1, pct_merma: 10, precio_merma_kg: 0, nombre_merma: '', mp_merma_id: '' });
+    setBloquesHijo(bloques);
+  }
+
   async function guardarHistorial() {
     setAutoGuardando(true);
     const totalGrF   = formulaSalmueraIngs.reduce((s,i) => s + i.gramos, 0);
@@ -531,6 +556,13 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
   }
 
   function restaurarVersion(v) {
+    if (v.tipo === 'prueba') {
+      const filas = (v.fundas || (v.gramos_funda ? [{ kg: v.gramos_funda, emp_id: v.emp_id || '', eti_id: v.eti_id || '' }] : []))
+        .map((f, j) => ({ id: String(Date.now() + j), kg: String(f.kg), emp_id: f.emp_id || '', eti_id: f.eti_id || '' }));
+      setPruebaFilas(filas.length > 0 ? filas : [{ id: '1', kg: '', emp_id: '', eti_id: '' }]);
+      setModalVer(false);
+      return;
+    }
     if (v.pct_inj          !== undefined) setPctInj(String(v.pct_inj));
     if (v.pct_mad          !== undefined) setPctMad(String(v.pct_mad));
     if (v.formula_salmuera)               setFormulaSalmueraNombre(v.formula_salmuera);
@@ -561,23 +593,26 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
   }
 
   async function guardarVersionPrueba() {
-    const gramos = parseFloat(pruebaGramos) || 0;
-    if (!gramos) return;
     const cBase = getCFinal();
-    const empMp = mpsEmpaque.find(m => String(m.id) === pruebaEmpSel);
-    const etiMp = mpsEtiqueta.find(m => String(m.id) === pruebaEtiSel);
-    const costoEmp = parseFloat(empMp?.precio_kg || 0);
-    const costoEti = parseFloat(etiMp?.precio_kg || 0);
+    const fundas = pruebaFilas
+      .filter(f => parseFloat(f.kg) > 0)
+      .map(f => {
+        const empMp = mpsEmpaque.find(m => String(m.id) === f.emp_id);
+        const etiMp = mpsEtiqueta.find(m => String(m.id) === f.eti_id);
+        const cEmp = parseFloat(empMp?.precio_kg || 0);
+        const cEti = parseFloat(etiMp?.precio_kg || 0);
+        const kg   = parseFloat(f.kg);
+        return { kg, emp_id: f.emp_id || null, emp_nombre: empMp ? (empMp.nombre_producto || empMp.nombre) : null, eti_id: f.eti_id || null, eti_nombre: etiMp ? (etiMp.nombre_producto || etiMp.nombre) : null, c_carne: kg * cBase, c_emp: cEmp, c_eti: cEti, c_total: kg * cBase + cEmp + cEti };
+      });
+    if (fundas.length === 0) return;
     const nuevaVer = {
       tipo: 'prueba',
-      gramos_funda: gramos,
-      emp_id: pruebaEmpSel || null,
-      emp_nombre: empMp ? (empMp.nombre_producto || empMp.nombre) : null,
-      eti_id: pruebaEtiSel || null,
-      eti_nombre: etiMp ? (etiMp.nombre_producto || etiMp.nombre) : null,
+      fundas,
       c_base: cBase,
-      c_total: gramos * cBase + costoEmp + costoEti,
       fecha: new Date().toISOString().split('T')[0],
+      // campos legacy para mostrar en versiones antiguas
+      gramos_funda: fundas[0].kg,
+      c_total: fundas[0].c_total,
     };
     const nuevasVersiones = [nuevaVer, ...versiones].slice(0, 10);
     const { data: existing } = await supabase
@@ -595,6 +630,34 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
   function computeCLimpio() {
     const cMadP  = padreCfg?.c_mad_real > 0 ? padreCfg.c_mad_real : (parseFloat(costoMadPadre) || 0);
     const kgEnt  = padreCfg?.kg_para_hijo > 0 ? padreCfg.kg_para_hijo : (parseFloat(kgEntrada) || 0);
+    const costoEntrada = kgEnt * cMadP;
+
+    // Flujo dinámico hijo
+    if (bloquesHijo !== null && Array.isArray(bloquesHijo)) {
+      const mpAdic = mpAdicionalId ? mpsFormula.find(m => String(m.id) === mpAdicionalId) : null;
+      const totalGrH   = formulaSalmueraIngs.reduce((s,i) => s + i.gramos, 0);
+      const totalCosH  = formulaSalmueraIngs.reduce((s,i) => s + i.costo,  0);
+      const pKgSalH    = totalGrH > 0 ? totalCosH / (totalGrH / 1000) : 0;
+      const res = calcBloques({
+        bloques: bloquesHijo,
+        kgIni: kgEnt,
+        precioCarne: cMadP,
+        precioKgSalmuera: pKgSalH,
+        costoRubFormula,
+        kgRubBase: parseFloat(kgRubBase) || 1,
+        mpAdic,
+      });
+      return {
+        cMadP, kgEnt, kgHijo: res.kg, costoEntrada,
+        kgResS: 0, kgPun: 0, kgDes: 0,
+        valorResS: 0, valorPun: 0,
+        cLimpio: res.costoKgFinal,
+        pasosHijo: res.pasos,
+        costoNeto: res.costoAcum,
+      };
+    }
+
+    // Flujo clásico (deshuese)
     const pctRS  = parseFloat(pctResSegunda) || 0;
     const pctPu  = parseFloat(pctPuntas)     || 0;
     const pctDe  = parseFloat(pctDesecho)    || 0;
@@ -602,11 +665,10 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
     const kgPun  = kgEnt * pctPu / 100;
     const kgDes  = kgEnt * pctDe / 100;
     const kgHijo = kgEnt - kgResS - kgPun - kgDes;
-    const costoEntrada = kgEnt * cMadP;
     const valorResS    = kgResS * precioResSegunda;
     const valorPun     = kgPun  * precioPuntas;
     const cLimpio      = kgHijo > 0 ? (costoEntrada - valorResS - valorPun) / kgHijo : 0;
-    return { kgEnt, kgResS, kgPun, kgDes, kgHijo, costoEntrada, valorResS, valorPun, cLimpio };
+    return { cMadP, kgEnt, kgResS, kgPun, kgDes, kgHijo, costoEntrada, valorResS, valorPun, cLimpio, pasosHijo: null, costoNeto: costoEntrada - valorResS - valorPun };
   }
 
   function getCFinal() {
@@ -726,15 +788,13 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
       ['PRUEBAS —', producto.nombre],
       ['Costo base/kg', cFinalActual.toFixed(4), '$/kg'],
       [],
-      ['Peso funda', pruebaGramosN * 1000 + 'g', pruebaGramosN + ' kg'],
-      ['Costo carne', pruebaCarne.toFixed(4), '$'],
-      ['Empaque', pruebaEmpMp?.nombre_producto || pruebaEmpMp?.nombre || '—', pruebaEmp > 0 ? '$' + pruebaEmp.toFixed(4) : ''],
-      ['Etiqueta', pruebaEtiMp?.nombre_producto || pruebaEtiMp?.nombre || '—', pruebaEti > 0 ? '$' + pruebaEti.toFixed(4) : ''],
-      ['COSTO TOTAL FUNDA', pruebaTotal.toFixed(4), '$'],
+      ...pruebaFilasCalc.filter(f => f.kg > 0).flatMap(f => [
+        ['Funda ' + (f.kg*1000).toFixed(0) + 'g', 'Carne: $' + f.carne.toFixed(4), 'Total: $' + f.total.toFixed(4)],
+      ]),
       [],
       ['═══ HISTORIAL DE PRUEBAS ═══'],
-      ['Fecha', 'Gramos', 'Costo/kg', 'Precio venta'],
-      ...versionesPruebas.map(v => [v.fecha, v.gramos_prueba + 'g', v.costo_base ? '$' + parseFloat(v.costo_base).toFixed(4) : '—', v.precio_venta ? '$' + parseFloat(v.precio_venta).toFixed(4) : '—']),
+      ['Fecha', 'Fundas', 'Costo base/kg'],
+      ...versionesPruebas.map(v => [v.fecha, v.fundas ? v.fundas.map(f => (f.kg*1000).toFixed(0)+'g').join(', ') : ((v.gramos_funda||0)*1000).toFixed(0)+'g', v.c_base ? '$'+parseFloat(v.c_base).toFixed(4) : '—']),
     ];
     const ws = XLSX.utils.aoa_to_sheet(rows);
     ws['!cols'] = [{ wch: 28 }, { wch: 16 }, { wch: 14 }];
@@ -775,14 +835,18 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
   }
 
   const cFinalActual   = getCFinal();
-  const pruebaGramosN  = parseFloat(pruebaGramos)  || 0;
-  const pruebaEmpMp    = mpsEmpaque.find(m => String(m.id) === pruebaEmpSel);
-  const pruebaEtiMp    = mpsEtiqueta.find(m => String(m.id) === pruebaEtiSel);
-  const pruebaEmp      = parseFloat(pruebaEmpMp?.precio_kg || 0);
-  const pruebaEti      = parseFloat(pruebaEtiMp?.precio_kg || 0);
-  const pruebaCarne    = pruebaGramosN * cFinalActual;
-  const pruebaTotal    = pruebaCarne + pruebaEmp + pruebaEti;
   const versionesPruebas = versiones.filter(v => v.tipo === 'prueba');
+  // Calcular costos por fila de prueba
+  const pruebaFilasCalc = pruebaFilas.map(f => {
+    const kg     = parseFloat(f.kg) || 0;
+    const empMp  = mpsEmpaque.find(m => String(m.id) === f.emp_id);
+    const etiMp  = mpsEtiqueta.find(m => String(m.id) === f.eti_id);
+    const cEmp   = parseFloat(empMp?.precio_kg || 0);
+    const cEti   = parseFloat(etiMp?.precio_kg || 0);
+    const carne  = kg * cFinalActual;
+    const total  = carne + cEmp + cEti;
+    return { ...f, kg, empMp, etiMp, cEmp, cEti, carne, total };
+  });
 
   // MP carne seleccionada para panel del padre en hijo
   const mpCarneSelec = mpCarneId ? mpsCarneOpts.find(m => String(m.id) === mpCarneId) || null : null;
@@ -861,12 +925,21 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
               style={{ background: '#8e44ad', color: 'white', border: 'none', borderRadius: 8, padding: '7px 14px', fontSize: 12, fontWeight: 'bold', cursor: 'pointer' }}>
               🔄 Versiones {versiones.filter(v => v.tipo === 'prueba').length > 0 && `(${versiones.filter(v => v.tipo === 'prueba').length})`}
             </button>
-            {pruebaTotal > 0 && (
-              <button onClick={guardarVersionPrueba}
+            {!pruebasModoEdit ? (
+              <button onClick={() => setPruebasModoEdit(true)}
+                style={{ background: '#f39c12', color: 'white', border: 'none', borderRadius: 8, padding: '7px 14px', fontSize: 12, fontWeight: 'bold', cursor: 'pointer' }}>
+                ✏️ Editar
+              </button>
+            ) : (<>
+              <button onClick={() => setPruebasModoEdit(false)}
+                style={{ background: '#95a5a6', color: 'white', border: 'none', borderRadius: 8, padding: '7px 14px', fontSize: 12, fontWeight: 'bold', cursor: 'pointer' }}>
+                Cancelar
+              </button>
+              <button onClick={async () => { await guardarVersionPrueba(); setPruebasModoEdit(false); }}
                 style={{ background: '#27ae60', color: 'white', border: 'none', borderRadius: 8, padding: '7px 14px', fontSize: 12, fontWeight: 'bold', cursor: 'pointer' }}>
                 💾 Guardar versión
               </button>
-            )}
+            </>)}
           </>)}
 
           {/* ── TAB PRODUCCIÓN ── */}
@@ -1405,7 +1478,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
 
           {/* ── HIJO ── */}
           {tipo === 'hijo' && (() => {
-            const { kgEnt, kgResS, kgPun, kgDes, kgHijo, costoEntrada, valorResS, valorPun, cLimpio } = computeCLimpio();
+            const { cMadP, kgEnt, kgResS, kgPun, kgDes, kgHijo, costoEntrada, valorResS, valorPun, cLimpio } = computeCLimpio();
             // Datos del padre para mostrar
             const padreMpCarne = padreCfg?.mp_carne_id
               ? mpsCarneOpts.find(m => String(m.id) === String(padreCfg.mp_carne_id)) || null
@@ -1413,53 +1486,17 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
             const padreHorasTotal = padreCfg
               ? (parseFloat(padreCfg.horas_mad||0) + parseFloat(padreCfg.minutos_mad||0)/60).toFixed(1)
               : null;
-            // ── Si el padre tiene bloques dinámicos, calcular flujo hasta bifurcación ──
-            const padreBloques = padreCfg?.bloques;
-
-            // Usar c_mad_real del padre como fuente de verdad del costo — evita
-            // recalcular desde el hijo donde no tenemos el precio de la salmuera.
+            // ── Flujo del padre desde pasos_flujo guardados ──
+            // pasos_flujo se serializa en guardarConfig cuando el padre tiene bloques.
+            // Si el padre cambia y guarda, padreCfg se refresca via polling/realtime
+            // y el hijo muestra automáticamente el flujo actualizado.
+            const pasosFlujo = padreCfg?.pasos_flujo;
             let flujoPadreBif = null;
-            if (padreBloques && Array.isArray(padreBloques) && padreCfg) {
-              const costoKgBif  = parseFloat(padreCfg.c_mad_real || 0);
-              const kgSalidaP   = parseFloat(padreCfg.kg_sal_base || 2);   // kg iniciales
-              const pctInjP     = parseFloat(padreCfg.pct_inj || 0);
-              const kgPostInjP  = kgSalidaP * (1 + pctInjP / 100);
-              const kgSalidaMadP= parseFloat(padreCfg.kg_salida_mad || 0) || kgPostInjP * (1 - parseFloat(padreCfg.pct_mad || 0) / 100);
-              const kgHijoP     = parseFloat(padreCfg.kg_para_hijo || 0);
-              const kgPadreP    = Math.max(0, kgSalidaMadP - kgHijoP);
-
-              // Construir pasos display desde los datos guardados
-              const pasosDisplay = [];
-              if (pctInjP > 0) {
-                // Costo post-inyección: back-calculado desde c_mad_real
-                const costoPostInj = costoKgBif > 0 && kgSalidaMadP > 0
-                  ? (costoKgBif * kgSalidaMadP) / kgPostInjP
-                  : null;
-                pasosDisplay.push({
-                  tipo: 'inyeccion',
-                  label: `💉 Inyección ${pctInjP}%`,
-                  kg: kgPostInjP,
-                  costoAcum: costoPostInj !== null ? costoPostInj * kgPostInjP : null,
-                });
-              }
-              if (kgSalidaMadP > 0) {
-                pasosDisplay.push({
-                  tipo: 'maduracion',
-                  label: `🧊 Maduración`,
-                  kg: kgSalidaMadP,
-                  costoAcum: costoKgBif * kgSalidaMadP,
-                });
-              }
-
+            if (Array.isArray(pasosFlujo) && pasosFlujo.length > 0) {
+              const bifPaso = pasosFlujo.find(p => p.tipo === 'bifurcacion');
               flujoPadreBif = {
-                res: { pasos: pasosDisplay },
-                bifPaso: {
-                  kgPadre:    kgPadreP,
-                  kgHijo:     kgHijoP,
-                  costoKg:    costoKgBif,
-                  costoPadre: kgPadreP * costoKgBif,
-                  costoHijo:  kgHijoP  * costoKgBif,
-                },
+                pasos:   pasosFlujo.filter(p => p.tipo !== 'bifurcacion'),
+                bifPaso: bifPaso || null,
               };
             }
 
@@ -1468,16 +1505,24 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
                 {/* ── FLUJO DINÁMICO del padre → llegada al hijo ── */}
                 {flujoPadreBif && (
                   <div style={{ background: 'linear-gradient(135deg,#1a1a2e,#2c3e50)', borderRadius: 12, padding: '14px 16px', marginBottom: 14 }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: '#f9e79f', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>
-                      🧩 Flujo del padre → llegada al hijo
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: '#f9e79f', textTransform: 'uppercase', letterSpacing: 1 }}>
+                        🧩 Flujo del padre → llegada al hijo
+                      </span>
+                      <button onClick={recargarConfigPadre}
+                        style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 6, color: 'rgba(255,255,255,0.6)', fontSize: 10, padding: '3px 8px', cursor: 'pointer' }}>
+                        🔄 Actualizar
+                      </button>
                     </div>
-                    {/* Pasos del padre */}
-                    {flujoPadreBif.res.pasos.filter(p => p.tipo !== 'bifurcacion').map((p, i) => {
+                    {/* Pasos del padre — directo desde pasos_flujo guardados */}
+                    {flujoPadreBif.pasos.map((p, i) => {
                       const costoKg = p.kg > 0 ? p.costoAcum / p.kg : 0;
+                      const COLORES = { inyeccion: '#2980b9', maduracion: '#27ae60', rub: '#8e44ad', adicional: '#f39c12', merma: '#e74c3c' };
+                      const color = COLORES[p.tipo] || '#aaa';
                       return (
-                        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 8px', marginBottom: 3, background: 'rgba(255,255,255,0.07)', borderRadius: 6, fontSize: 11 }}>
-                          <span style={{ color: 'rgba(255,255,255,0.75)' }}>{p.label}</span>
-                          <span style={{ color: 'rgba(255,255,255,0.9)', fontWeight: 600 }}>{p.kg.toFixed(3)} kg · ${costoKg.toFixed(4)}/kg</span>
+                        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px', marginBottom: 4, background: 'rgba(255,255,255,0.07)', borderRadius: 6, fontSize: 11, borderLeft: `3px solid ${color}` }}>
+                          <span style={{ color: 'rgba(255,255,255,0.85)' }}>{p.label}</span>
+                          <span style={{ color: 'rgba(255,255,255,0.95)', fontWeight: 700 }}>{p.kg.toFixed(3)} kg · ${costoKg.toFixed(4)}/kg</span>
                         </div>
                       );
                     })}
@@ -1672,165 +1717,127 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
                   </div>
                 )}
 
-                {/* Deshuese config */}
-                <div style={{ background: 'white', borderRadius: 12, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', marginBottom: 12 }}>
-                  <div style={{ background: 'linear-gradient(135deg,#8e44ad,#6c3483)', padding: '10px 16px' }}>
-                    <span style={{ color: 'white', fontWeight: 'bold', fontSize: 13 }}>🔪 Deshuese — Distribución</span>
-                  </div>
-                  <div style={{ padding: '14px 16px' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, marginBottom: 12 }}>
-                      {[
-                        ['Res Segunda', pctResSegunda, setPctResSegunda, '#27ae60', precioResSegunda],
-                        ['Puntas',      pctPuntas,     setPctPuntas,     '#e67e22', precioPuntas],
-                        ['Desecho',     pctDesecho,    setPctDesecho,    '#e74c3c', 0],
-                      ].map(([label, val, setter, color, precio]) => {
-                        const pctNum = parseFloat(val) || 0;
-                        const gramsVal = (val !== '' && pctNum > 0 && kgEnt > 0)
-                          ? +(pctNum * kgEnt * 10).toFixed(1)
-                          : '';
-                        return (
-                          <div key={label}>
-                            <label style={{ fontSize: 10, color: '#555', display: 'block', marginBottom: 4, fontWeight: 600 }}>
-                              {label} <span style={{ color: '#aaa' }}>(g)</span>
-                            </label>
-                            <input type="number" min="0" step="0.1"
-                              placeholder="0"
-                              value={gramsVal}
-                              onChange={e => {
-                                const g = e.target.value === '' ? '' : parseFloat(e.target.value);
-                                if (g === '') { setter(''); return; }
-                                setter(kgEnt > 0 ? String(+(g / (kgEnt * 10)).toFixed(4)) : '0');
-                              }}
-                              disabled={!modoEdicion}
-                              style={{ width: '100%', padding: '8px', borderRadius: 8, border: `2px solid ${color}`, fontSize: 14, fontWeight: 'bold', boxSizing: 'border-box', textAlign: 'right', background: modoEdicion ? 'white' : '#f8f9fa' }} />
-                            <div style={{ fontSize: 9, color: '#888', marginTop: 2, fontWeight: 600 }}>
-                              = {pctNum > 0 ? pctNum.toFixed(3) : '0'}%
-                            </div>
-                            {precio > 0 && <div style={{ fontSize: 9, color: '#aaa', marginTop: 1 }}>Precio: ${precio.toFixed(4)}/kg</div>}
-                          </div>
-                        );
-                      })}
+                {/* Flujo dinámico hijo / Deshuese clásico */}
+                {bloquesHijo !== null ? (
+                  <BloquesDinamicosEditor
+                    bloques={bloquesHijo}
+                    setBloques={setBloquesHijo}
+                    bloqueExpandido={bloqueExpandidoHijo}
+                    setBloqueExpandido={setBloqueExpandidoHijo}
+                    modoEdicion={modoEdicion}
+                    producto={producto}
+                    precioCarne={cMadP}
+                    precioKgSalmuera={precioKgSalmuera}
+                    costoRubFormula={costoRubFormula}
+                    kgRubBase={kgRubBase}
+                    mpAdic={mpAdicionalId ? mpsFormula.find(m => String(m.id) === mpAdicionalId) : null}
+                    deshueseConfig={null}
+                    formulaciones={formulaciones}
+                    rubFormulas={rubFormulas}
+                    mpsFormula={mpsFormula}
+                    kgSalBase={String(kgEnt)}
+                    pctSalmueraFormula={null}
+                    setFormulaSalmueraNombre={setFormulaSalmueraNombre}
+                    setPctInj={setPctInj}
+                    setKgSalBase={() => {}}
+                    setHorasMad={setHorasMad}
+                    setMinutosMad={setMinutosMad}
+                    setPctMad={setPctMad}
+                    setKgSalidaMad={setKgSalidaMad}
+                    setFormulaRubNombre={setFormulaRubNombre}
+                    setKgRubBase={setKgRubBase}
+                    setMpAdicionalId={setMpAdicionalId}
+                    setGramosAdicional={setGramosAdicional}
+                    setKgParaHijo={() => {}}
+                    setMargenPadre={setMargenHijo}
+                    setMargenHijo={setMargenHijo}
+                    margenPadre={margenHijo}
+                    margenHijo={margenHijo}
+                    tiposDisponibles={['inyeccion', 'maduracion', 'rub', 'adicional', 'merma']}
+                    labelInicial="Entrada desde padre"
+                    iconoInicial="🔀"
+                    colorInicial="#6c3483"
+                  />
+                ) : (
+                  <div style={{ background: 'white', borderRadius: 12, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', marginBottom: 12 }}>
+                    <div style={{ background: 'linear-gradient(135deg,#8e44ad,#6c3483)', padding: '10px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ color: 'white', fontWeight: 'bold', fontSize: 13 }}>🔪 Deshuese — Distribución</span>
+                      {modoEdicion && (
+                        <button onClick={initBloquesHijo}
+                          style={{ background: 'rgba(255,255,255,0.15)', color: 'rgba(255,255,255,0.9)', border: '1px solid rgba(255,255,255,0.3)', borderRadius: 7, padding: '4px 12px', fontSize: 11, cursor: 'pointer' }}>
+                          🧩 Flujo dinámico
+                        </button>
+                      )}
                     </div>
-
-                    {kgEnt > 0 && (
-                      <>
-                        {/* Desglose completo de kg */}
-                        <div style={{ background: '#f9f5ff', borderRadius: 10, padding: '12px 14px', marginBottom: 10 }}>
-                          <div style={{ fontSize: 11, fontWeight: 700, color: '#6c3483', marginBottom: 10 }}>
-                            Distribución de {kgEnt.toFixed(3)} kg entrada:
-                          </div>
+                    <div style={{ padding: '14px 16px' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, marginBottom: 12 }}>
+                        {[
+                          ['Res Segunda', pctResSegunda, setPctResSegunda, '#27ae60', precioResSegunda],
+                          ['Puntas',      pctPuntas,     setPctPuntas,     '#e67e22', precioPuntas],
+                          ['Desecho',     pctDesecho,    setPctDesecho,    '#e74c3c', 0],
+                        ].map(([label, val, setter, color, precio]) => {
+                          const pctNum = parseFloat(val) || 0;
+                          const gramsVal = (val !== '' && pctNum > 0 && kgEnt > 0) ? +(pctNum * kgEnt * 10).toFixed(1) : '';
+                          return (
+                            <div key={label}>
+                              <label style={{ fontSize: 10, color: '#555', display: 'block', marginBottom: 4, fontWeight: 600 }}>
+                                {label} <span style={{ color: '#aaa' }}>(g)</span>
+                              </label>
+                              <input type="number" min="0" step="0.1" placeholder="0" value={gramsVal}
+                                onChange={e => { const g = e.target.value === '' ? '' : parseFloat(e.target.value); if (g === '') { setter(''); return; } setter(kgEnt > 0 ? String(+(g / (kgEnt * 10)).toFixed(4)) : '0'); }}
+                                disabled={!modoEdicion}
+                                style={{ width: '100%', padding: '8px', borderRadius: 8, border: `2px solid ${color}`, fontSize: 14, fontWeight: 'bold', boxSizing: 'border-box', textAlign: 'right', background: modoEdicion ? 'white' : '#f8f9fa' }} />
+                              <div style={{ fontSize: 9, color: '#888', marginTop: 2, fontWeight: 600 }}>= {pctNum > 0 ? pctNum.toFixed(3) : '0'}%</div>
+                              {precio > 0 && <div style={{ fontSize: 9, color: '#aaa', marginTop: 1 }}>Precio: ${precio.toFixed(4)}/kg</div>}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {kgEnt > 0 && (
+                        <div style={{ background: '#f9f5ff', borderRadius: 10, padding: '12px 14px' }}>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: '#6c3483', marginBottom: 10 }}>Distribución de {kgEnt.toFixed(3)} kg entrada:</div>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                             {[
-                              { label: 'Res Segunda', kg: kgResS, color: '#27ae60', precio: precioResSegunda, credito: true },
-                              { label: 'Puntas',      kg: kgPun,  color: '#e67e22', precio: precioPuntas,     credito: true },
-                              { label: 'Desecho',     kg: kgDes,  color: '#e74c3c', precio: 0,                credito: false },
-                            ].map(({ label, kg, color, precio, credito }) => (
+                              { label: 'Res Segunda', kg: kgResS, color: '#27ae60', precio: precioResSegunda },
+                              { label: 'Puntas',      kg: kgPun,  color: '#e67e22', precio: precioPuntas },
+                              { label: 'Desecho',     kg: kgDes,  color: '#e74c3c', precio: 0 },
+                            ].map(({ label, kg, color, precio }) => (
                               <div key={label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'white', borderRadius: 8, padding: '7px 10px', border: `1px solid ${color}30` }}>
                                 <div style={{ fontSize: 12, color: '#555', minWidth: 90 }}>{label}</div>
                                 <div style={{ fontSize: 13, fontWeight: 700, color, minWidth: 70, textAlign: 'right' }}>{kg.toFixed(3)} kg</div>
-                                {precio > 0 ? (
-                                  <div style={{ fontSize: 11, color: '#27ae60', textAlign: 'right', minWidth: 130 }}>
-                                    × ${precio.toFixed(4)}/kg = <strong style={{ color: '#1a6b3c' }}>${(kg * precio).toFixed(4)}</strong>
-                                    {credito && <span style={{ fontSize: 10, color: '#27ae60', marginLeft: 4 }}>crédito</span>}
-                                  </div>
-                                ) : (
-                                  <div style={{ fontSize: 11, color: '#aaa', textAlign: 'right', minWidth: 130 }}>sin valor</div>
-                                )}
+                                {precio > 0 ? <div style={{ fontSize: 11, color: '#27ae60', textAlign: 'right', minWidth: 130 }}>× ${precio.toFixed(4)}/kg = <strong>${(kg * precio).toFixed(4)}</strong> crédito</div>
+                                            : <div style={{ fontSize: 11, color: '#aaa', textAlign: 'right', minWidth: 130 }}>sin valor</div>}
                               </div>
                             ))}
-                            {/* Producto hijo */}
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f3e8fd', borderRadius: 8, padding: '9px 10px', border: '2px solid #8e44ad' }}>
                               <div style={{ fontSize: 12, fontWeight: 700, color: '#6c3483' }}>🥩 {producto.nombre}</div>
                               <div style={{ fontSize: 15, fontWeight: 900, color: '#6c3483' }}>{kgHijo.toFixed(3)} kg</div>
-                              <div style={{ fontSize: 11, color: '#8e44ad', textAlign: 'right', minWidth: 130 }}>
-                                {((kgResS + kgPun + kgDes) / kgEnt * 100).toFixed(1)}% merma deshuese
-                              </div>
+                              <div style={{ fontSize: 11, color: '#8e44ad', textAlign: 'right', minWidth: 130 }}>{((kgResS + kgPun + kgDes) / kgEnt * 100).toFixed(1)}% merma deshuese</div>
                             </div>
                           </div>
                         </div>
-
-                        {/* Cálculo de costo detallado */}
-                        {costoEntrada > 0 && kgHijo > 0 && (
-                          <div style={{ background: '#f0f4f8', borderRadius: 10, padding: '14px 16px', marginBottom: 10 }}>
-                            <div style={{ fontSize: 11, fontWeight: 700, color: '#1a3a5c', marginBottom: 10 }}>
-                              Cálculo de costo — {producto.nombre}:
+                      )}
+                      {cLimpio > 0 && (() => {
+                        const mgN = parseFloat(margenHijo) || 0;
+                        const pvp = mgN > 0 && mgN < 100 ? cLimpio / (1 - mgN / 100) : 0;
+                        return (
+                          <div style={{ background: 'linear-gradient(135deg,#4a235a,#6c3483)', borderRadius: 10, padding: '14px 16px', marginTop: 10 }}>
+                            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', marginBottom: 2 }}>Costo final — {producto.nombre}</div>
+                            <div style={{ fontSize: 30, fontWeight: 900, color: '#f9e79f' }}>${cLimpio.toFixed(4)}/kg</div>
+                            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', marginTop: 4 }}>{kgHijo.toFixed(3)} kg finales · ${(costoEntrada - valorResS - valorPun).toFixed(4)} costo neto</div>
+                            <div style={{ marginTop: 10, borderTop: '1px solid rgba(255,255,255,0.2)', paddingTop: 10, display: 'flex', alignItems: 'center', gap: 10 }}>
+                              <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', flex: 1 }}>Margen de ganancia</span>
+                              <input type="number" min="0" max="99" step="1" value={margenHijo} onChange={e => setMargenHijo(e.target.value)} disabled={!modoEdicion}
+                                style={{ width: 60, padding: '5px 8px', borderRadius: 6, border: '1.5px solid rgba(255,255,255,0.4)', fontSize: 14, fontWeight: 'bold', textAlign: 'center', background: modoEdicion ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.08)', color: 'white' }} />
+                              <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)' }}>%</span>
                             </div>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 12 }}>
-                              {/* Costo entrada */}
-                              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 10px', background: 'white', borderRadius: 7, border: '1px solid #d5e8f5' }}>
-                                <span style={{ color: '#555' }}>Costo entrada ({kgEnt.toFixed(3)} kg × ${(costoEntrada / kgEnt).toFixed(4)}/kg)</span>
-                                <strong>${costoEntrada.toFixed(4)}</strong>
-                              </div>
-                              {/* Créditos */}
-                              {valorResS > 0 && (
-                                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 10px', background: '#f0fff4', borderRadius: 7, border: '1px solid #a9dfbf' }}>
-                                  <span style={{ color: '#1a6b3c' }}>− Crédito Res Segunda ({kgResS.toFixed(3)} kg × ${precioResSegunda.toFixed(4)}/kg)</span>
-                                  <strong style={{ color: '#1a6b3c' }}>−${valorResS.toFixed(4)}</strong>
-                                </div>
-                              )}
-                              {valorPun > 0 && (
-                                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 10px', background: '#fff8f0', borderRadius: 7, border: '1px solid #f0c080' }}>
-                                  <span style={{ color: '#7d4e00' }}>− Crédito Puntas ({kgPun.toFixed(3)} kg × ${precioPuntas.toFixed(4)}/kg)</span>
-                                  <strong style={{ color: '#7d4e00' }}>−${valorPun.toFixed(4)}</strong>
-                                </div>
-                              )}
-                              {/* Costo neto */}
-                              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 10px', background: '#eaf4fd', borderRadius: 7, border: '1px solid #aed6f1', marginTop: 2 }}>
-                                <span style={{ color: '#1a3a5c', fontWeight: 600 }}>Costo neto ({kgEnt.toFixed(3)} − {(kgResS + kgPun + kgDes).toFixed(3)} kg merma)</span>
-                                <strong style={{ color: '#1a3a5c' }}>${(costoEntrada - valorResS - valorPun).toFixed(4)}</strong>
-                              </div>
-                              {/* Dividir entre kg producto */}
-                              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 10px', background: 'white', borderRadius: 7, border: '1px solid #d5e8f5', color: '#888', fontSize: 11 }}>
-                                <span>÷ {kgHijo.toFixed(3)} kg de {producto.nombre}</span>
-                                <span>= ${cLimpio.toFixed(4)}/kg</span>
-                              </div>
-                            </div>
+                            {pvp > 0 && <div style={{ marginTop: 6, fontSize: 13, color: 'rgba(255,255,255,0.8)' }}>Precio de venta → <strong style={{ color: '#a9dfbf', fontSize: 16 }}>${pvp.toFixed(4)}/kg</strong></div>}
                           </div>
-                        )}
-
-                        {cLimpio > 0 && (
-                          <>
-                            <div style={{ background: 'linear-gradient(135deg,#6c3483,#8e44ad)', borderRadius: 10, padding: '14px 16px', marginBottom: 8 }}>
-                              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', marginBottom: 2 }}>Costo — {producto.nombre}</div>
-                              <div style={{ fontSize: 30, fontWeight: 'bold', color: '#f9e79f' }}>${cLimpio.toFixed(4)}/kg</div>
-                              {costoEntrada > 0 && (
-                                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', marginTop: 4 }}>
-                                  Entrada ${(costoEntrada/kgEnt).toFixed(4)}/kg → después de créditos y merma deshuese
-                                </div>
-                              )}
-                            </div>
-                            {/* Margen de ganancia */}
-                            {(() => {
-                              const mgN = parseFloat(margenHijo) || 0;
-                              const pvp = mgN < 100 ? cLimpio / (1 - mgN / 100) : 0;
-                              return (
-                                <div style={{ background: '#1c1c2e', borderRadius: 10, padding: '14px 16px' }}>
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-                                    <span style={{ fontSize: 12, color: '#aaa', whiteSpace: 'nowrap' }}>Margen de ganancia</span>
-                                    <input type="number" min="0" max="99" step="1"
-                                      value={margenHijo} onChange={e => setMargenHijo(e.target.value)}
-                                      disabled={!modoEdicion}
-                                      style={{ width: 70, padding: '5px 8px', borderRadius: 6, border: '1.5px solid #f39c12', fontSize: 15, fontWeight: 'bold', textAlign: 'center', background: modoEdicion ? '#2c2c3e' : '#111', color: '#f9e79f' }} />
-                                    <span style={{ fontSize: 12, color: '#aaa' }}>%</span>
-                                  </div>
-                                  {pvp > 0 && (
-                                    <div style={{ fontSize: 11, color: '#888', marginBottom: 6 }}>
-                                      Precio = ${cLimpio.toFixed(4)} ÷ (1 − {mgN}%) = ${cLimpio.toFixed(4)} ÷ {(1 - mgN/100).toFixed(2)}
-                                    </div>
-                                  )}
-                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                    <span style={{ fontSize: 13, fontWeight: 700, color: '#f39c12', textTransform: 'uppercase', letterSpacing: 1 }}>PRECIO DE VENTA/KG</span>
-                                    <span style={{ fontSize: 28, fontWeight: 900, color: '#f39c12' }}>{pvp > 0 ? `$${pvp.toFixed(4)}` : '—'}</span>
-                                  </div>
-                                </div>
-                              );
-                            })()}
-                          </>
-                        )}
-                      </>
-                    )}
+                        );
+                      })()}
+                    </div>
                   </div>
-                </div>
+                )}
 
               </>
             );
@@ -1849,123 +1856,110 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
       ══════════════════════════════════════════ */}
       {tabActivo === 'pruebas' && (
         <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
-            <div>
-              <div style={{ fontWeight: 700, color: '#1a5276', fontSize: 15 }}>Simulador — Costo por Funda</div>
-              <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>
-                Costo base: {cFinalActual > 0 ? <strong style={{ color: '#27ae60' }}>${cFinalActual.toFixed(4)}/kg</strong> : <span style={{ color: '#e74c3c' }}>sin datos — configura Costos 1 kg</span>}
-              </div>
-            </div>
-            <div style={{ display:'flex', gap:8, alignItems:'center' }}>
-            </div>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1fr 1fr 1fr', gap: 12, marginBottom: 14 }}>
-            <div>
-              <label style={{ fontSize: 11, fontWeight: 600, color: '#555', display: 'block', marginBottom: 4 }}>Peso por funda (kg)</label>
-              <input type="number" min="0" step="0.001"
-                placeholder="ej: 0.400"
-                value={pruebaGramos} onChange={e => setPruebaGramos(e.target.value)}
-                style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '2px solid #27ae60', fontSize: 14, fontWeight: 'bold', boxSizing: 'border-box' }} />
-              {pruebaGramosN > 0 && cFinalActual > 0 && (
-                <div style={{ fontSize: 10, color: '#27ae60', marginTop: 2 }}>Carne/funda: ${pruebaCarne.toFixed(4)}</div>
-              )}
-            </div>
-            <div>
-              <label style={{ fontSize: 11, fontWeight: 600, color: '#2980b9', display: 'block', marginBottom: 4 }}>Empaque / Funda</label>
-              <select value={pruebaEmpSel} onChange={e => setPruebaEmpSel(e.target.value)}
-                style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1.5px solid #2980b9', fontSize: 13, background: 'white', boxSizing: 'border-box' }}>
-                <option value="">— sin empaque —</option>
-                {mpsEmpaque.map(m => (
-                  <option key={m.id} value={String(m.id)}>{m.nombre_producto || m.nombre} — ${parseFloat(m.precio_kg || 0).toFixed(4)}/u</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label style={{ fontSize: 11, fontWeight: 600, color: '#8e44ad', display: 'block', marginBottom: 4 }}>Etiqueta</label>
-              <select value={pruebaEtiSel} onChange={e => setPruebaEtiSel(e.target.value)}
-                style={{ width: '100%', padding: '8px 10px', borderRadius: 8, border: '1.5px solid #8e44ad', fontSize: 13, background: 'white', boxSizing: 'border-box' }}>
-                <option value="">— sin etiqueta —</option>
-                {mpsEtiqueta.map(m => (
-                  <option key={m.id} value={String(m.id)}>{m.nombre_producto || m.nombre} — ${parseFloat(m.precio_kg || 0).toFixed(4)}/u</option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {pruebaGramosN > 0 && cFinalActual > 0 ? (
-            <div style={{ background: 'linear-gradient(135deg,#6c3483,#8e44ad)', borderRadius: 12, padding: '16px 18px', marginBottom: 14 }}>
-              <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)', marginBottom: 8, fontWeight: 'bold' }}>
-                COSTO — funda de {(pruebaGramosN * 1000).toFixed(0)}g
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', color: 'rgba(255,255,255,0.85)' }}>
-                  <span>🥩 Carne ({pruebaGramosN} kg × ${cFinalActual.toFixed(4)}/kg)</span>
-                  <span style={{ fontWeight: 'bold' }}>${pruebaCarne.toFixed(4)}</span>
-                </div>
-                {pruebaEmp > 0 && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', color: 'rgba(255,255,255,0.85)' }}>
-                    <span>📦 {pruebaEmpMp?.nombre_producto || pruebaEmpMp?.nombre}</span>
-                    <span style={{ fontWeight: 'bold' }}>${pruebaEmp.toFixed(4)}</span>
-                  </div>
-                )}
-                {pruebaEti > 0 && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', color: 'rgba(255,255,255,0.85)' }}>
-                    <span>🏷️ {pruebaEtiMp?.nombre_producto || pruebaEtiMp?.nombre}</span>
-                    <span style={{ fontWeight: 'bold' }}>${pruebaEti.toFixed(4)}</span>
-                  </div>
-                )}
-                <div style={{ borderTop: '1px solid rgba(255,255,255,0.3)', paddingTop: 8, marginTop: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontWeight: 'bold', fontSize: 14, color: 'white' }}>TOTAL FUNDA</span>
-                  <span style={{ fontWeight: 'bold', fontSize: 22, color: '#f9e79f' }}>${pruebaTotal.toFixed(4)}</span>
-                </div>
-              </div>
+          {/* Header */}
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontWeight: 700, color: '#1a5276', fontSize: 15 }}>Simulador — Costo por Funda</div>
+            <div style={{ fontSize: 11, color: '#888', marginTop: 2, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+              <span>Costo base: {cFinalActual > 0 ? <strong style={{ color: '#27ae60' }}>${cFinalActual.toFixed(4)}/kg</strong> : <span style={{ color: '#e74c3c' }}>sin datos — configura Costos 1 kg</span>}</span>
               {(() => {
-                const mgConf = tipo === 'padre' ? parseFloat(margenPadre) || null
-                             : tipo === 'hijo'  ? parseFloat(margenHijo)  || null
-                             : null;
-                if (mgConf !== null && mgConf > 0 && mgConf < 100) {
-                  return (
-                    <div style={{ marginTop: 12 }}>
-                      <div style={{ background: 'rgba(255,255,255,0.22)', borderRadius: 8, padding: '10px 14px', textAlign: 'center', border: '1.5px solid rgba(255,255,255,0.45)' }}>
-                        <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.8)', marginBottom: 2 }}>Margen {mgConf}% — precio de venta funda</div>
-                        <div style={{ fontSize: 22, fontWeight: 'bold', color: '#f9e79f' }}>${(pruebaTotal / (1 - mgConf / 100)).toFixed(4)}</div>
-                      </div>
-                    </div>
-                  );
-                }
-                return (
-                  <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8 }}>
-                    {[['30%', 0.70], ['35%', 0.65], ['40%', 0.60]].map(([pct, div]) => (
-                      <div key={pct} style={{ background: 'rgba(255,255,255,0.15)', borderRadius: 8, padding: '6px 10px', textAlign: 'center' }}>
-                        <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.7)' }}>Margen {pct}</div>
-                        <div style={{ fontSize: 14, fontWeight: 'bold', color: '#f9e79f' }}>${(pruebaTotal / div).toFixed(4)}</div>
-                      </div>
-                    ))}
-                  </div>
-                );
+                const mg = tipo === 'padre' ? parseFloat(margenPadre) : tipo === 'hijo' ? parseFloat(margenHijo) : 0;
+                return mg > 0 ? <span>· Margen: <strong style={{ color: '#8e44ad' }}>{mg}%</strong></span> : null;
               })()}
             </div>
-          ) : (
-            <div style={{ textAlign: 'center', padding: '30px 20px', color: '#aaa', fontSize: 13, background: 'white', borderRadius: 12, border: '1px dashed #ddd', marginBottom: 14 }}>
-              Ingresa el peso por funda para ver el costo
-            </div>
+          </div>
+
+          {/* Cabeceras columnas */}
+          <div style={{ display: 'grid', gridTemplateColumns: '130px 1fr 1fr 32px', gap: 8, marginBottom: 6, paddingLeft: 4 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase' }}>Peso (kg)</div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase' }}>Empaque / Funda</div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase' }}>Etiqueta</div>
+            <div />
+          </div>
+
+          {/* Filas */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 14 }}>
+            {pruebaFilasCalc.map((f, idx) => {
+              const mgConf = tipo === 'padre' ? parseFloat(margenPadre) || 0 : tipo === 'hijo' ? parseFloat(margenHijo) || 0 : 0;
+              const pvp = mgConf > 0 && mgConf < 100 && f.total > 0 ? f.total / (1 - mgConf / 100) : 0;
+              return (
+                <div key={f.id} style={{ background: 'white', borderRadius: 10, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', border: '1px solid #e8e8e8' }}>
+                  {/* Fila de inputs */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '130px 1fr 1fr 32px', gap: 8, padding: '10px 12px', alignItems: 'center' }}>
+                    <input type="number" min="0" step="0.001" placeholder="ej: 0.400"
+                      value={f.kg === 0 ? '' : f.kg}
+                      disabled={!pruebasModoEdit}
+                      onChange={e => setPruebaFilas(prev => prev.map(r => r.id === f.id ? { ...r, kg: e.target.value } : r))}
+                      style={{ padding: '7px 10px', borderRadius: 7, border: '2px solid #27ae60', fontSize: 14, fontWeight: 'bold', textAlign: 'center', background: pruebasModoEdit ? 'white' : '#f8f9fa', boxSizing: 'border-box' }} />
+                    <select value={f.emp_id}
+                      disabled={!pruebasModoEdit}
+                      onChange={e => setPruebaFilas(prev => prev.map(r => r.id === f.id ? { ...r, emp_id: e.target.value } : r))}
+                      style={{ padding: '7px 10px', borderRadius: 7, border: '1.5px solid #2980b9', fontSize: 12, background: pruebasModoEdit ? 'white' : '#f8f9fa', boxSizing: 'border-box' }}>
+                      <option value="">— sin empaque —</option>
+                      {mpsEmpaque.map(m => <option key={m.id} value={String(m.id)}>{m.nombre_producto || m.nombre} — ${parseFloat(m.precio_kg || 0).toFixed(4)}/u</option>)}
+                    </select>
+                    <select value={f.eti_id}
+                      disabled={!pruebasModoEdit}
+                      onChange={e => setPruebaFilas(prev => prev.map(r => r.id === f.id ? { ...r, eti_id: e.target.value } : r))}
+                      style={{ padding: '7px 10px', borderRadius: 7, border: '1.5px solid #8e44ad', fontSize: 12, background: pruebasModoEdit ? 'white' : '#f8f9fa', boxSizing: 'border-box' }}>
+                      <option value="">— sin etiqueta —</option>
+                      {mpsEtiqueta.map(m => <option key={m.id} value={String(m.id)}>{m.nombre_producto || m.nombre} — ${parseFloat(m.precio_kg || 0).toFixed(4)}/u</option>)}
+                    </select>
+                    {pruebasModoEdit && pruebaFilas.length > 1 && (
+                      <button onClick={() => setPruebaFilas(prev => prev.filter(r => r.id !== f.id))}
+                        style={{ background: '#fdf2f2', border: 'none', borderRadius: 6, color: '#e74c3c', fontSize: 14, cursor: 'pointer', padding: '4px 8px' }}>×</button>
+                    )}
+                  </div>
+                  {/* Resultado */}
+                  {f.kg > 0 && cFinalActual > 0 && (
+                    <div style={{ background: 'linear-gradient(135deg,#4a235a,#6c3483)', padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                      <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.8)' }}>
+                        <span style={{ fontWeight: 700, color: '#f9e79f', fontSize: 13 }}>{(f.kg * 1000).toFixed(0)}g</span>
+                        <span style={{ marginLeft: 8 }}>🥩 ${f.carne.toFixed(4)}{f.cEmp > 0 ? ` · 📦 $${f.cEmp.toFixed(4)}` : ''}{f.cEti > 0 ? ` · 🏷️ $${f.cEti.toFixed(4)}` : ''}</span>
+                      </div>
+                      <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.6)' }}>Total funda</div>
+                          <div style={{ fontSize: 18, fontWeight: 900, color: '#f9e79f' }}>${f.total.toFixed(4)}</div>
+                        </div>
+                        {pvp > 0 && (
+                          <div style={{ textAlign: 'right' }}>
+                            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.6)' }}>PVP ({mgConf}%)</div>
+                            <div style={{ fontSize: 18, fontWeight: 900, color: '#a9dfbf' }}>${pvp.toFixed(4)}</div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Agregar funda */}
+          {pruebasModoEdit && (
+            <button onClick={() => setPruebaFilas(prev => [...prev, { id: String(Date.now()), kg: '', emp_id: '', eti_id: '' }])}
+              style={{ width: '100%', padding: '10px', background: 'white', border: '2px dashed #8e44ad', borderRadius: 10, color: '#8e44ad', fontSize: 13, fontWeight: 600, cursor: 'pointer', marginBottom: 14 }}>
+              + Agregar funda
+            </button>
           )}
 
+          {/* Versiones guardadas */}
           {versionesPruebas.length > 0 && (
             <div>
               <div style={{ fontSize: 12, fontWeight: 700, color: '#555', marginBottom: 8 }}>📚 Versiones guardadas</div>
               {versionesPruebas.map((v, i) => (
                 <div key={i} onClick={() => {
-                  setPruebaGramos(String(v.gramos_funda));
-                  if (v.emp_id) setPruebaEmpSel(String(v.emp_id));
-                  if (v.eti_id) setPruebaEtiSel(String(v.eti_id));
+                  const filasRestored = (v.fundas || [{ kg: v.gramos_funda, emp_id: v.emp_id || '', eti_id: v.eti_id || '' }])
+                    .map((f, j) => ({ id: String(Date.now() + j), kg: String(f.kg), emp_id: f.emp_id || '', eti_id: f.eti_id || '' }));
+                  setPruebaFilas(filasRestored.length > 0 ? filasRestored : [{ id: '1', kg: '', emp_id: '', eti_id: '' }]);
                 }} style={{ background: 'white', borderRadius: 10, padding: '10px 14px', marginBottom: 8, cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
-                    <div style={{ fontWeight: 700, color: '#333', fontSize: 12 }}>{(v.gramos_funda * 1000).toFixed(0)}g por funda</div>
+                    <div style={{ fontWeight: 700, color: '#333', fontSize: 12 }}>
+                      {v.fundas ? `${v.fundas.length} funda${v.fundas.length > 1 ? 's' : ''}` : `${(v.gramos_funda * 1000).toFixed(0)}g`}
+                    </div>
                     <div style={{ fontSize: 11, color: '#888' }}>
-                      {v.fecha} · ${v.c_total?.toFixed(4) || '—'}/funda
-                      {v.emp_nombre && ` · ${v.emp_nombre}`}
+                      {v.fecha} · base ${v.c_base?.toFixed(4) || '—'}/kg
+                      {v.fundas ? ` · ${v.fundas.map(f => (f.kg*1000).toFixed(0)+'g').join(', ')}` : ''}
                     </div>
                   </div>
                   <span style={{ fontSize: 11, color: '#aaa' }}>cargar →</span>
@@ -2359,9 +2353,16 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
                         <div>
                           <div style={{ fontWeight: 700, fontSize: 13 }}>Versión {versionesFormula.length - i} — {v.fecha}</div>
                           <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>
-                            {v.tipo_corte === 'padre' || v.tipo_corte === 'independiente'
-                              ? `Inj ${v.pct_inj}% · Mad ${v.pct_mad}% · Sal: ${v.formula_salmuera || '—'}`
-                              : `Res 2a ${v.pct_res_segunda}% · Puntas ${v.pct_puntas}% · Desecho ${v.pct_desecho}%`
+                            {v.tipo === 'prueba'
+                              ? (() => {
+                                  const fundas = v.fundas || (v.gramos_funda ? [{ kg: v.gramos_funda }] : []);
+                                  return fundas.length > 0
+                                    ? `${fundas.length} funda${fundas.length > 1 ? 's' : ''}: ${fundas.map(f => (parseFloat(f.kg)*1000).toFixed(0)+'g').join(', ')} · base $${parseFloat(v.c_base||0).toFixed(4)}/kg`
+                                    : '—';
+                                })()
+                              : v.tipo_corte === 'padre' || v.tipo_corte === 'independiente'
+                                ? `Inj ${v.pct_inj || 0}% · Mad ${v.pct_mad || 0}% · Sal: ${v.formula_salmuera || '—'}`
+                                : `Res 2a ${v.pct_res_segunda || 0}% · Puntas ${v.pct_puntas || 0}% · Desecho ${v.pct_desecho || 0}%`
                             }
                           </div>
                         </div>
@@ -2382,17 +2383,29 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
                       </div>
                       {expandido && (
                         <div style={{ borderTop: '1px solid #e0e0e0', padding: '12px 16px', background: 'white', fontSize: 12, color: '#555' }}>
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 16px', lineHeight: 2 }}>
-                            {v.pct_inj   > 0 && <div>💉 Inyección: <strong>{v.pct_inj}%</strong></div>}
-                            {v.pct_mad   > 0 && <div>🧊 Merma mad: <strong>{v.pct_mad}%</strong></div>}
-                            {v.formula_salmuera && <div>🧂 Fórmula sal: <strong>{v.formula_salmuera}</strong></div>}
-                            {v.precio_kg_salmuera > 0 && <div>💧 $/kg sal: <strong>${v.precio_kg_salmuera.toFixed(4)}</strong></div>}
-                            {v.pct_rub   > 0 && <div>🌶️ Rub: <strong>{v.pct_rub}%</strong></div>}
-                            {v.costo_rub_kg > 0 && <div>💰 $/kg rub: <strong>${v.costo_rub_kg}</strong></div>}
-                            {v.pct_res_segunda > 0 && <div>🟢 Res 2a: <strong>{v.pct_res_segunda}%</strong></div>}
-                            {v.pct_puntas > 0 && <div>🟡 Puntas: <strong>{v.pct_puntas}%</strong></div>}
-                            {v.pct_desecho > 0 && <div>🔴 Desecho: <strong>{v.pct_desecho}%</strong></div>}
-                          </div>
+                          {v.tipo === 'prueba' ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                              {(v.fundas || (v.gramos_funda ? [{ kg: v.gramos_funda, emp_nombre: v.emp_nombre, eti_nombre: v.eti_nombre, c_total: v.c_total }] : [])).map((f, fi) => (
+                                <div key={fi} style={{ background: '#f9f5ff', borderRadius: 7, padding: '7px 10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                  <span style={{ fontWeight: 700, color: '#6c3483' }}>{(parseFloat(f.kg)*1000).toFixed(0)}g</span>
+                                  <span style={{ color: '#888' }}>{f.emp_nombre || '—'} · {f.eti_nombre || '—'}</span>
+                                  <span style={{ fontWeight: 700 }}>${parseFloat(f.c_total||0).toFixed(4)}/funda</span>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 16px', lineHeight: 2 }}>
+                              {v.pct_inj   > 0 && <div>💉 Inyección: <strong>{v.pct_inj}%</strong></div>}
+                              {v.pct_mad   > 0 && <div>🧊 Merma mad: <strong>{v.pct_mad}%</strong></div>}
+                              {v.formula_salmuera && <div>🧂 Fórmula sal: <strong>{v.formula_salmuera}</strong></div>}
+                              {v.precio_kg_salmuera > 0 && <div>💧 $/kg sal: <strong>${v.precio_kg_salmuera.toFixed(4)}</strong></div>}
+                              {v.pct_rub   > 0 && <div>🌶️ Rub: <strong>{v.pct_rub}%</strong></div>}
+                              {v.costo_rub_kg > 0 && <div>💰 $/kg rub: <strong>${v.costo_rub_kg}</strong></div>}
+                              {(v.pct_res_segunda||0) > 0 && <div>🟢 Res 2a: <strong>{v.pct_res_segunda}%</strong></div>}
+                              {(v.pct_puntas||0) > 0 && <div>🟡 Puntas: <strong>{v.pct_puntas}%</strong></div>}
+                              {(v.pct_desecho||0) > 0 && <div>🔴 Desecho: <strong>{v.pct_desecho}%</strong></div>}
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>

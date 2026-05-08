@@ -58,7 +58,10 @@ export function calcBloques({ bloques, kgIni, precioCarne, precioKgSalmuera, cos
         credito    = kgMerma * parseFloat(b.precio_merma_kg || 0);
         costoAcum -= credito;
       }
-      pasos.push({ tipo: 'merma', label: `✂️ Merma Tipo ${b.merma_tipo}`, kg, costoAcum, kgMerma, credito, merma_tipo: b.merma_tipo });
+      const mermaLabel = b.merma_tipo === 1
+        ? '✂️ Merma'
+        : `✂️ ${b.nombre_merma || 'Merma'}`;
+      pasos.push({ tipo: 'merma', label: mermaLabel, kg, costoAcum, kgMerma, credito, merma_tipo: b.merma_tipo });
 
     } else if (b.tipo === 'bifurcacion') {
       const kgHijo   = parseFloat(b.kg_para_hijo || 0);
@@ -109,6 +112,11 @@ export function BloquesDinamicosEditor({
   setMpAdicionalId, setGramosAdicional,
   setKgParaHijo, setMargenPadre, setMargenHijo,
   margenPadre, margenHijo,
+  // para hijo: tipos de bloque disponibles (sin bifurcacion por defecto si se pasa)
+  tiposDisponibles,
+  // etiqueta del punto de partida (para hijo: "Entrada desde padre")
+  labelInicial, iconoInicial, colorInicial,
+  // para hijo: margen usa setMargenHijo directamente (ya está en props)
 }) {
   const kgIni = parseFloat(kgSalBase) || 2;
 
@@ -148,7 +156,7 @@ export function BloquesDinamicosEditor({
       maduracion:  { tipo: 'maduracion',  activo: true, horas_mad: 72, minutos_mad: 0, pct_mad: 0, kg_salida_mad: 0 },
       rub:         { tipo: 'rub',         activo: true, formula_rub: '', kg_rub_base: 1 },
       adicional:   { tipo: 'adicional',   activo: true, mp_adicional_id: '', gramos_adicional: 0 },
-      merma:       { tipo: 'merma',       activo: true, merma_tipo: 1, pct_merma: 5, precio_merma_kg: 0 },
+      merma:       { tipo: 'merma',       activo: true, merma_tipo: 1, pct_merma: 5, precio_merma_kg: 0, nombre_merma: '', mp_merma_id: '' },
       bifurcacion: { tipo: 'bifurcacion', activo: true, kg_para_hijo: 0, margen_padre: parseFloat(margenPadre) || 15, margen_hijo: parseFloat(margenHijo) || 15, deshuese_hijo: { pct_res_segunda: 0, pct_puntas: 0, pct_desecho: 0 } },
     };
     setBloques(prev => [...prev, { id: newId(), ...templates[tipo] }]);
@@ -179,20 +187,22 @@ export function BloquesDinamicosEditor({
         )}
       </div>
 
-      {/* ── Carne inicial — siempre arriba, siempre editable ── */}
-      <div style={{ background: 'white', borderRadius: 10, padding: '12px 16px', marginBottom: 12, border: '2px solid #e67e22', display: 'flex', alignItems: 'center', gap: 14 }}>
-        <span style={{ fontSize: 18 }}>🥩</span>
-        <span style={{ fontWeight: 700, color: '#e67e22', flex: 1, fontSize: 13 }}>Carne inicial</span>
-        <input
-          type="number" min="0.1" step="0.1"
-          value={kgSalBase}
-          disabled={!modoEdicion}
-          onChange={e => setKgSalBase(e.target.value)}
-          style={{ width: 80, padding: '7px 10px', borderRadius: 7, border: '2px solid #e67e22', fontSize: 15, fontWeight: 'bold', textAlign: 'center', background: modoEdicion ? 'white' : '#fef9e7' }}
-        />
-        <span style={{ fontSize: 12, color: '#888' }}>kg</span>
-        <span style={{ fontSize: 13, fontWeight: 700, color: '#27ae60' }}>${precioCarne.toFixed(4)}/kg</span>
-      </div>
+      {/* ── Carne inicial — solo para padre/independiente, el hijo ya lo muestra arriba ── */}
+      {!labelInicial && (
+        <div style={{ background: 'white', borderRadius: 10, padding: '12px 16px', marginBottom: 12, border: '2px solid #e67e22', display: 'flex', alignItems: 'center', gap: 14 }}>
+          <span style={{ fontSize: 18 }}>🥩</span>
+          <span style={{ fontWeight: 700, color: '#e67e22', flex: 1, fontSize: 13 }}>Carne inicial</span>
+          <input
+            type="number" min="0.1" step="0.1"
+            value={kgSalBase}
+            disabled={!modoEdicion}
+            onChange={e => setKgSalBase(e.target.value)}
+            style={{ width: 80, padding: '7px 10px', borderRadius: 7, border: '2px solid #e67e22', fontSize: 15, fontWeight: 'bold', textAlign: 'center', background: modoEdicion ? 'white' : '#fef9e7' }}
+          />
+          <span style={{ fontSize: 12, color: '#888' }}>kg</span>
+          <span style={{ fontSize: 13, fontWeight: 700, color: '#27ae60' }}>${precioCarne.toFixed(4)}/kg</span>
+        </div>
+      )}
 
       {/* ── Lista de bloques ── */}
       <div style={{ marginBottom: 12 }}>
@@ -436,50 +446,129 @@ export function BloquesDinamicosEditor({
                     </div>
                     );
                   })()}
-                  )}
 
                   {/* ── MERMA ── */}
-                  {b.tipo === 'merma' && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                      <div>
-                        <label style={{ fontSize: 11, fontWeight: 600, color: meta.color, display: 'block', marginBottom: 4 }}>Tipo de merma</label>
-                        <select value={b.merma_tipo} disabled={!modoEdicion}
-                          onChange={e => updateBloque(b.id, { merma_tipo: parseInt(e.target.value) })}
-                          style={{ width: '100%', padding: '7px 10px', borderRadius: 7, border: `1.5px solid ${meta.color}`, fontSize: 13, background: modoEdicion ? 'white' : '#f8f9fa', boxSizing: 'border-box' }}>
-                          <option value={1}>Tipo 1 — Descarte total (costo se absorbe)</option>
-                          <option value={2}>Tipo 2 — Valor recuperable (genera crédito)</option>
-                          <option value={3}>Tipo 3 — Genera nuevo producto (va a inventario)</option>
-                        </select>
-                      </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: (b.merma_tipo === 2 || b.merma_tipo === 3) ? '1fr 1fr' : '1fr', gap: 10 }}>
+                  {b.tipo === 'merma' && (() => {
+                    const activeIdx = bloques.slice(0, idx).filter(b2 => b2.activo).length;
+                    const kgActual  = activeIdx === 0 ? kgIni : (resultado.pasos[activeIdx - 1]?.kg || kgIni);
+                    const pctM      = parseFloat(b.pct_merma || 0) / 100;
+                    const kgMerma   = kgActual * pctM;
+                    const precioRec = parseFloat(b.precio_merma_kg || 0);
+                    const credito   = kgMerma * precioRec;
+                    return (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                        {/* Tipo selector */}
                         <div>
-                          <label style={{ fontSize: 11, fontWeight: 600, color: meta.color, display: 'block', marginBottom: 4 }}>% merma</label>
-                          <input type="number" min="0" max="99" step="0.1" value={b.pct_merma}
-                            style={baseInputStyle({ border: `1.5px solid ${meta.color}` })} disabled={!modoEdicion}
-                            onChange={e => updateBloque(b.id, { pct_merma: parseFloat(e.target.value) || 0 })} />
+                          <label style={{ fontSize: 11, fontWeight: 600, color: meta.color, display: 'block', marginBottom: 4 }}>Tipo de merma</label>
+                          <select value={b.merma_tipo} disabled={!modoEdicion}
+                            onChange={e => updateBloque(b.id, { merma_tipo: parseInt(e.target.value) })}
+                            style={{ width: '100%', padding: '7px 10px', borderRadius: 7, border: `1.5px solid ${meta.color}`, fontSize: 13, background: modoEdicion ? 'white' : '#f8f9fa', boxSizing: 'border-box' }}>
+                            <option value={1}>Tipo 1 — Descarte total (costo se absorbe)</option>
+                            <option value={2}>Tipo 2 — Valor recuperable (genera crédito)</option>
+                            <option value={3}>Tipo 3 — Genera nuevo producto (va a inventario)</option>
+                          </select>
                         </div>
-                        {(b.merma_tipo === 2 || b.merma_tipo === 3) && (
-                          <div>
-                            <label style={{ fontSize: 11, fontWeight: 600, color: '#27ae60', display: 'block', marginBottom: 4 }}>Precio merma ($/kg)</label>
-                            <input type="number" min="0" step="0.01" value={b.precio_merma_kg}
-                              style={baseInputStyle({ border: '1.5px solid #27ae60' })} disabled={!modoEdicion}
-                              onChange={e => updateBloque(b.id, { precio_merma_kg: parseFloat(e.target.value) || 0 })} />
+
+                        {/* % merma — todos los tipos */}
+                        <div>
+                          <label style={{ fontSize: 11, fontWeight: 600, color: meta.color, display: 'block', marginBottom: 4 }}>
+                            % merma
+                            {kgActual > 0 && (
+                              <span style={{ fontWeight: 400, color: '#888', marginLeft: 8 }}>
+                                sobre {kgActual.toFixed(3)} kg en proceso
+                              </span>
+                            )}
+                          </label>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <input type="number" min="0" max="99" step="0.1" value={b.pct_merma}
+                              style={baseInputStyle({ border: `1.5px solid ${meta.color}` })} disabled={!modoEdicion}
+                              onChange={e => updateBloque(b.id, { pct_merma: parseFloat(e.target.value) || 0 })} />
+                            {kgMerma > 0 && (
+                              <div style={{ background: '#fdf2f2', border: `1.5px solid ${meta.color}`, borderRadius: 7, padding: '6px 12px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                                <div style={{ fontSize: 10, color: '#888' }}>kg merma</div>
+                                <div style={{ fontSize: 14, fontWeight: 900, color: meta.color }}>{kgMerma.toFixed(3)} kg</div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Tipo 1: solo info */}
+                        {b.merma_tipo === 1 && (
+                          <div style={{ fontSize: 11, color: '#888', background: '#f8f9fa', padding: '8px 12px', borderRadius: 6 }}>
+                            El peso baja, el costo se absorbe → sube el costo/kg del producto restante.
                           </div>
                         )}
+
+                        {/* Tipo 2: nombre libre + precio manual */}
+                        {b.merma_tipo === 2 && (
+                          <>
+                            <div>
+                              <label style={{ fontSize: 11, fontWeight: 600, color: '#27ae60', display: 'block', marginBottom: 4 }}>Nombre del subproducto</label>
+                              <input type="text" value={b.nombre_merma || ''} placeholder="ej: Grasa, Hueso, Recorte…"
+                                style={baseInputStyle({ border: '1.5px solid #27ae60', textAlign: 'left' })} disabled={!modoEdicion}
+                                onChange={e => updateBloque(b.id, { nombre_merma: e.target.value })} />
+                            </div>
+                            <div>
+                              <label style={{ fontSize: 11, fontWeight: 600, color: '#27ae60', display: 'block', marginBottom: 4 }}>Precio recuperable ($/kg)</label>
+                              <input type="number" min="0" step="0.01" value={b.precio_merma_kg}
+                                style={baseInputStyle({ border: '1.5px solid #27ae60' })} disabled={!modoEdicion}
+                                onChange={e => updateBloque(b.id, { precio_merma_kg: parseFloat(e.target.value) || 0 })} />
+                            </div>
+                            {kgMerma > 0 && precioRec > 0 && (
+                              <div style={{ background: '#eafaf1', border: '1.5px solid #27ae60', borderRadius: 8, padding: '10px 12px' }}>
+                                <div style={{ fontSize: 11, color: '#27ae60', marginBottom: 6 }}>
+                                  {kgMerma.toFixed(3)} kg × ${precioRec.toFixed(4)}/kg
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                  <span style={{ fontSize: 12, color: '#27ae60', fontWeight: 600 }}>Crédito recuperado</span>
+                                  <span style={{ fontSize: 20, fontWeight: 900, color: '#27ae60' }}>${credito.toFixed(4)}</span>
+                                </div>
+                              </div>
+                            )}
+                          </>
+                        )}
+
+                        {/* Tipo 3: seleccionar de MPs existentes */}
+                        {b.merma_tipo === 3 && (
+                          <>
+                            <div>
+                              <label style={{ fontSize: 11, fontWeight: 600, color: '#27ae60', display: 'block', marginBottom: 4 }}>Materia prima (va a inventario)</label>
+                              <select value={b.mp_merma_id || ''} disabled={!modoEdicion}
+                                onChange={e => {
+                                  const mp = (mpsFormula || []).find(m => String(m.id) === e.target.value);
+                                  updateBloque(b.id, { mp_merma_id: e.target.value, precio_merma_kg: parseFloat(mp?.precio_kg || 0), nombre_merma: mp ? (mp.nombre_producto || mp.nombre || '') : '' });
+                                }}
+                                style={{ width: '100%', padding: '7px 10px', borderRadius: 7, border: '1.5px solid #27ae60', fontSize: 13, background: modoEdicion ? 'white' : '#f8f9fa', boxSizing: 'border-box' }}>
+                                <option value="">— seleccionar materia prima —</option>
+                                {(mpsFormula || []).map(m => (
+                                  <option key={m.id} value={String(m.id)}>
+                                    {m.nombre_producto || m.nombre} — ${parseFloat(m.precio_kg || 0).toFixed(4)}/kg
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            {b.mp_merma_id && kgMerma > 0 && (
+                              <div style={{ background: '#eafaf1', border: '1.5px solid #27ae60', borderRadius: 8, padding: '10px 12px' }}>
+                                <div style={{ fontSize: 11, color: '#27ae60', marginBottom: 6 }}>
+                                  {kgMerma.toFixed(3)} kg × ${precioRec.toFixed(4)}/kg
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                                  <div style={{ background: 'white', borderRadius: 6, padding: '8px 10px', textAlign: 'center' }}>
+                                    <div style={{ fontSize: 10, color: '#888', marginBottom: 2 }}>kg a inventario</div>
+                                    <div style={{ fontSize: 16, fontWeight: 900, color: '#27ae60' }}>{kgMerma.toFixed(3)} kg</div>
+                                  </div>
+                                  <div style={{ background: 'white', borderRadius: 6, padding: '8px 10px', textAlign: 'center' }}>
+                                    <div style={{ fontSize: 10, color: '#888', marginBottom: 2 }}>valor crédito</div>
+                                    <div style={{ fontSize: 16, fontWeight: 900, color: '#27ae60' }}>${credito.toFixed(4)}</div>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </>
+                        )}
                       </div>
-                      {b.merma_tipo === 1 && (
-                        <div style={{ fontSize: 11, color: '#888', background: '#f8f9fa', padding: '6px 10px', borderRadius: 6 }}>
-                          El peso baja, el costo se absorbe → sube el costo/kg del producto restante.
-                        </div>
-                      )}
-                      {(b.merma_tipo === 2 || b.merma_tipo === 3) && b.precio_merma_kg > 0 && (
-                        <div style={{ fontSize: 11, color: '#27ae60', background: '#eafaf1', padding: '6px 10px', borderRadius: 6 }}>
-                          Genera crédito que reduce el costo neto del batch.
-                          {b.merma_tipo === 3 && ' La merma entra automáticamente al inventario como MP.'}
-                        </div>
-                      )}
-                    </div>
-                  )}
+                    );
+                  })()}
 
                   {/* ── BIFURCACIÓN ── */}
                   {b.tipo === 'bifurcacion' && (() => {
@@ -526,12 +615,14 @@ export function BloquesDinamicosEditor({
         <div style={{ marginBottom: 14 }}>
           <div style={{ fontSize: 11, color: '#888', marginBottom: 6, fontWeight: 600 }}>+ Agregar bloque:</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-            {Object.entries(BLOQUE_META).map(([tipo, meta]) => (
-              <button key={tipo} onClick={() => addBloque(tipo)}
-                style={{ padding: '5px 12px', borderRadius: 8, border: `1.5px dashed ${meta.color}60`, background: `${meta.color}08`, cursor: 'pointer', fontSize: 11, color: meta.color, fontWeight: 600 }}>
-                {meta.icon} {meta.label}
-              </button>
-            ))}
+            {Object.entries(BLOQUE_META)
+              .filter(([tipo]) => !tiposDisponibles || tiposDisponibles.includes(tipo))
+              .map(([tipo, meta]) => (
+                <button key={tipo} onClick={() => addBloque(tipo)}
+                  style={{ padding: '5px 12px', borderRadius: 8, border: `1.5px dashed ${meta.color}60`, background: `${meta.color}08`, cursor: 'pointer', fontSize: 11, color: meta.color, fontWeight: 600 }}>
+                  {meta.icon} {meta.label}
+                </button>
+              ))}
           </div>
         </div>
       )}
@@ -542,11 +633,13 @@ export function BloquesDinamicosEditor({
           <span style={{ color: 'white', fontWeight: 'bold', fontSize: 13 }}>📊 Flujo de costo — paso a paso</span>
         </div>
         <div style={{ padding: '12px 14px' }}>
-          {/* Punto de partida — solo display del costo inicial */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 10px', background: '#fef9e7', borderRadius: 7, marginBottom: 4, fontSize: 12 }}>
-            <span style={{ color: '#e67e22', fontWeight: 600 }}>🥩 {kgSalBase} kg carne</span>
-            <span style={{ fontWeight: 700, color: '#27ae60' }}>${(parseFloat(kgSalBase)||0 * precioCarne).toFixed(4)} · ${precioCarne.toFixed(4)}/kg</span>
-          </div>
+          {/* Punto de partida — solo para padre (el hijo ya muestra el flujo del padre arriba) */}
+          {!labelInicial && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 10px', background: '#fef9e7', borderRadius: 7, marginBottom: 4, fontSize: 12 }}>
+              <span style={{ color: '#e67e22', fontWeight: 600 }}>🥩 {kgSalBase} kg carne</span>
+              <span style={{ fontWeight: 700, color: '#27ae60' }}>${(parseFloat(kgSalBase) * precioCarne).toFixed(4)} · ${precioCarne.toFixed(4)}/kg</span>
+            </div>
+          )}
 
           {resultado.pasos.length === 0 && (
             <div style={{ textAlign: 'center', color: '#aaa', fontSize: 12, padding: '16px' }}>
