@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../supabase';
 import * as XLSX from 'xlsx';
-import { BloquesDinamicosEditor } from './BloquesDinamicos';
+import { BloquesDinamicosEditor, calcBloques } from './BloquesDinamicos';
 
 export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
   const [tabActivo,       setTabActivo]       = useState('costos');
@@ -1412,10 +1412,73 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
             const padreHorasTotal = padreCfg
               ? (parseFloat(padreCfg.horas_mad||0) + parseFloat(padreCfg.minutos_mad||0)/60).toFixed(1)
               : null;
+            // ── Si el padre tiene bloques dinámicos, calcular flujo hasta bifurcación ──
+            const padreBloques = padreCfg?.bloques;
+            const padrePrecioCarne  = precioCarne; // misma MP de entrada
+            const padreKgIni = parseFloat(padreCfg?.kg_sal_base || 2);
+            const padrePrecioSal = precioKgSalmuera; // misma salmuera
+
+            let flujoPadreBif = null; // resultado calcBloques del padre hasta bifurcación
+            if (padreBloques && Array.isArray(padreBloques)) {
+              // calcBloques completo del padre — la bifurcación divide los kg/costo
+              const res = calcBloques({
+                bloques: padreBloques,
+                kgIni:    padreKgIni,
+                precioCarne:       padrePrecioCarne,
+                precioKgSalmuera:  padrePrecioSal,
+                costoRubFormula:   costoRubFormula,
+                kgRubBase:         parseFloat(kgRubBase) || 1,
+                mpAdic:            mpAdicionalId ? mpsFormula.find(m => String(m.id) === mpAdicionalId) : null,
+              });
+              // el paso de bifurcación incluye kgHijo y costoHijo
+              const bifPaso = res.pasos.find(p => p.tipo === 'bifurcacion');
+              flujoPadreBif = { res, bifPaso };
+            }
+
             return (
               <>
-                {/* Info del Padre — siempre visible */}
-                <div style={{ background: '#eaf4fd', borderRadius: 12, padding: '14px 16px', marginBottom: 14, border: '2px solid #2980b9' }}>
+                {/* ── FLUJO DINÁMICO del padre → llegada al hijo ── */}
+                {flujoPadreBif && (
+                  <div style={{ background: 'linear-gradient(135deg,#1a1a2e,#2c3e50)', borderRadius: 12, padding: '14px 16px', marginBottom: 14 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: '#f9e79f', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>
+                      🧩 Flujo del padre → llegada al hijo
+                    </div>
+                    {/* Pasos del padre */}
+                    {flujoPadreBif.res.pasos.filter(p => p.tipo !== 'bifurcacion').map((p, i) => {
+                      const costoKg = p.kg > 0 ? p.costoAcum / p.kg : 0;
+                      return (
+                        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 8px', marginBottom: 3, background: 'rgba(255,255,255,0.07)', borderRadius: 6, fontSize: 11 }}>
+                          <span style={{ color: 'rgba(255,255,255,0.75)' }}>{p.label}</span>
+                          <span style={{ color: 'rgba(255,255,255,0.9)', fontWeight: 600 }}>{p.kg.toFixed(3)} kg · ${costoKg.toFixed(4)}/kg</span>
+                        </div>
+                      );
+                    })}
+                    {/* Bifurcación */}
+                    {flujoPadreBif.bifPaso && (
+                      <div style={{ marginTop: 8, padding: '10px 12px', background: 'rgba(108,52,131,0.4)', borderRadius: 8, border: '1.5px solid #9b59b6' }}>
+                        <div style={{ fontSize: 10, color: '#d7bde2', fontWeight: 700, marginBottom: 6 }}>🔀 BIFURCACIÓN</div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                          <div style={{ background: 'rgba(255,255,255,0.08)', borderRadius: 6, padding: '8px 10px', textAlign: 'center' }}>
+                            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', marginBottom: 2 }}>👑 Padre</div>
+                            <div style={{ fontWeight: 700, color: '#aed6f1', fontSize: 13 }}>{flujoPadreBif.bifPaso.kgPadre.toFixed(3)} kg</div>
+                            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)' }}>${flujoPadreBif.bifPaso.costoKg.toFixed(4)}/kg</div>
+                          </div>
+                          <div style={{ background: 'rgba(108,52,131,0.4)', borderRadius: 6, padding: '8px 10px', textAlign: 'center', border: '1.5px solid #9b59b6' }}>
+                            <div style={{ fontSize: 10, color: '#d7bde2', marginBottom: 2 }}>🔀 Hijo (tú)</div>
+                            <div style={{ fontWeight: 900, color: '#f9e79f', fontSize: 16 }}>{flujoPadreBif.bifPaso.kgHijo.toFixed(3)} kg</div>
+                            <div style={{ fontSize: 11, color: '#a9dfbf' }}>${flujoPadreBif.bifPaso.costoKg.toFixed(4)}/kg</div>
+                          </div>
+                        </div>
+                        <div style={{ marginTop: 8, fontSize: 11, color: 'rgba(255,255,255,0.5)', textAlign: 'center' }}>
+                          Costo de entrada al deshuese: <strong style={{ color: '#f9e79f' }}>${(flujoPadreBif.bifPaso.kgHijo * flujoPadreBif.bifPaso.costoKg).toFixed(4)}</strong>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Info del Padre — solo si NO hay bloques dinámicos */}
+                <div style={{ background: '#eaf4fd', borderRadius: 12, padding: '14px 16px', marginBottom: 14, border: '2px solid #2980b9', display: flujoPadreBif ? 'none' : 'block' }}>
                   <div style={{ fontSize: 10, fontWeight: 700, color: '#1a3a5c', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 }}>
                     👑 Configuración del Padre — {deshueseConfig?.corte_padre || '—'}
                   </div>
@@ -1541,31 +1604,31 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
                   )}
                 </div>
 
-                {/* Entrada al deshuese — siempre desde el Padre */}
-                {padreCfg?.kg_para_hijo > 0 ? (() => {
-                  const costoEntrada = padreCfg.c_mad_real > 0
-                    ? parseFloat(padreCfg.c_mad_real)
-                    : (padreInfo ? parseFloat(padreInfo.costo_mad_kg) : parseFloat(mpVinculada?.precio_kg || 0));
+                {/* Entrada al deshuese — desde el Padre (dinámico o clásico) */}
+                {(flujoPadreBif?.bifPaso?.kgHijo > 0 || padreCfg?.kg_para_hijo > 0) ? (() => {
+                  const kgHijoEntra = flujoPadreBif?.bifPaso
+                    ? flujoPadreBif.bifPaso.kgHijo
+                    : parseFloat(padreCfg?.kg_para_hijo || 0);
+                  const costoKgEntra = flujoPadreBif?.bifPaso
+                    ? flujoPadreBif.bifPaso.costoKg
+                    : (padreCfg?.c_mad_real > 0
+                        ? parseFloat(padreCfg.c_mad_real)
+                        : (padreInfo ? parseFloat(padreInfo.costo_mad_kg) : parseFloat(mpVinculada?.precio_kg || 0)));
                   return (
-                    <div style={{ background: '#eaf4fd', borderRadius: 10, padding: '12px 16px', marginBottom: 12, border: '2px solid #2980b9' }}>
+                    <div style={{ background: '#eaf4fd', borderRadius: 10, padding: '12px 16px', marginBottom: 12, border: `2px solid ${flujoPadreBif ? '#9b59b6' : '#2980b9'}` }}>
                       <div style={{ fontSize: 11, fontWeight: 700, color: '#1a3a5c', marginBottom: 8 }}>
                         📥 Entrada al deshuese — desde {deshueseConfig?.corte_padre || 'Padre'}
+                        {flujoPadreBif && <span style={{ marginLeft: 8, background: '#9b59b620', color: '#6c3483', fontSize: 10, padding: '1px 6px', borderRadius: 4 }}>🧩 flujo dinámico</span>}
                       </div>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                         <div style={{ background: 'white', borderRadius: 8, padding: '10px 12px' }}>
                           <div style={{ fontSize: 10, color: '#888', marginBottom: 2 }}>kg que llegan del Padre</div>
-                          <div style={{ fontSize: 22, fontWeight: 900, color: '#1a3a5c' }}>
-                            {parseFloat(padreCfg.kg_para_hijo).toFixed(3)} kg
-                          </div>
+                          <div style={{ fontSize: 22, fontWeight: 900, color: '#1a3a5c' }}>{kgHijoEntra.toFixed(3)} kg</div>
                         </div>
                         <div style={{ background: 'white', borderRadius: 8, padding: '10px 12px' }}>
                           <div style={{ fontSize: 10, color: '#888', marginBottom: 2 }}>Costo/kg entrada</div>
-                          <div style={{ fontSize: 22, fontWeight: 900, color: '#27ae60' }}>
-                            ${costoEntrada.toFixed(4)}
-                          </div>
-                          <div style={{ fontSize: 10, color: '#aaa' }}>
-                            = ${(parseFloat(padreCfg.kg_para_hijo) * costoEntrada).toFixed(4)} total
-                          </div>
+                          <div style={{ fontSize: 22, fontWeight: 900, color: '#27ae60' }}>${costoKgEntra.toFixed(4)}</div>
+                          <div style={{ fontSize: 10, color: '#aaa' }}>= ${(kgHijoEntra * costoKgEntra).toFixed(4)} total</div>
                         </div>
                       </div>
                     </div>

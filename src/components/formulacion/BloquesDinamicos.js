@@ -442,12 +442,18 @@ export function BloquesDinamicosEditor({
           <span style={{ color: 'white', fontWeight: 'bold', fontSize: 13 }}>📊 Flujo de costo — paso a paso</span>
         </div>
         <div style={{ padding: '12px 14px' }}>
-          {/* Punto de partida */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 10px', background: '#fef9e7', borderRadius: 7, marginBottom: 4, fontSize: 12 }}>
-            <span style={{ color: '#e67e22', fontWeight: 600 }}>🥩 Carne inicial ({kgIni} kg @ ${precioCarne.toFixed(4)}/kg)</span>
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ fontWeight: 700 }}>{kgIni} kg</div>
-              <div style={{ fontSize: 10, color: '#888' }}>${precioCarne.toFixed(4)}/kg</div>
+          {/* Punto de partida — kg iniciales editable */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 10px', background: '#fef9e7', borderRadius: 7, marginBottom: 4, fontSize: 12, border: '1.5px solid #f0c040' }}>
+            <span style={{ color: '#e67e22', fontWeight: 600 }}>🥩 Carne inicial</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input
+                type="number" min="0.1" step="0.1"
+                value={kgSalBase}
+                disabled={!modoEdicion}
+                onChange={e => setKgSalBase(e.target.value)}
+                style={{ width: 70, padding: '5px 8px', borderRadius: 6, border: '2px solid #e67e22', fontSize: 14, fontWeight: 'bold', textAlign: 'center', background: modoEdicion ? 'white' : '#fef9e7' }}
+              />
+              <span style={{ color: '#888' }}>kg · <strong style={{ color: '#27ae60' }}>${precioCarne.toFixed(4)}/kg</strong></span>
             </div>
           </div>
 
