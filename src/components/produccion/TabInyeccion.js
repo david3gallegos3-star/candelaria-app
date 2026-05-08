@@ -265,8 +265,15 @@ export default function TabInyeccion({ currentUser, mobile, onSalmueraChange }) 
         .eq('fecha_entrada', fecha);
       const loteId = (lotesHoy || 0) === 0 ? fechaStr : `${fechaStr}/${lotesHoy}`;
 
+      const horasMad = parseFloat(horneadoCfgInj?.horas_mad ?? null);
+      const minMad   = parseFloat(horneadoCfgInj?.minutos_mad ?? 0);
       const fechaSalidaObj = new Date(fecha + 'T12:00:00');
-      fechaSalidaObj.setDate(fechaSalidaObj.getDate() + Math.round(diasMaduracion));
+      if (!isNaN(horasMad)) {
+        const totalMs = (horasMad * 60 + minMad) * 60 * 1000;
+        fechaSalidaObj.setTime(fechaSalidaObj.getTime() + totalMs);
+      } else {
+        fechaSalidaObj.setDate(fechaSalidaObj.getDate() + Math.round(diasMaduracion));
+      }
       const fechaSalida = fechaSalidaObj.toISOString().split('T')[0];
 
       const { data: lote, error: e4 } = await supabase.from('lotes_maduracion').insert({
