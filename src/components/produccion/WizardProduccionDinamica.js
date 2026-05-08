@@ -422,30 +422,38 @@ export default function WizardProduccionDinamica({
 
   // ── Detectar fin de pasos y avanzar a siguiente fase ─────────────────
   React.useEffect(() => {
-    if (pasoIdx < pasos.length) return;
-    if (pasos.length === 0) return;
+    if (pasoIdx < pasos.length) return; // aún quedan pasos
 
     if (modo === 'momento1') {
+      if (pasos.length === 0) return;
       completarMomento1();
     } else if (modo === 'momento2') {
       if (rama === 'padre') {
+        if (pasos.length === 0) return; // padre sin pasos configurados
         const hasBifurcacion = pasos.some(p => p.tipo === 'bifurcacion');
-        if (hasBifurcacion && (bloquesHijo || []).filter(b => b.activo).length > 0) {
-          const costoKgBif = kgActual > 0 ? costoAcum / kgActual : 0;
-          setRama('hijo');
-          setKgActual(kgHijoF || 0);
-          setCostoAcum((kgHijoF || 0) * costoKgBif);
-          setPasoIdx(0);
-          setInputKg('');
+        if (hasBifurcacion) {
+          const hijoActivos = (bloquesHijo || []).filter(b => b.activo);
+          if (hijoActivos.length > 0) {
+            const costoKgBif = kgActual > 0 ? costoAcum / kgActual : 0;
+            setRama('hijo');
+            setKgActual(kgHijoF || 0);
+            setCostoAcum((kgHijoF || 0) * costoKgBif);
+            setPasoIdx(0);
+            setInputKg('');
+          } else {
+            // Sin pasos hijo → finalizar padre y crear stock hijo directamente
+            completarPadreYHijoDirectamente();
+          }
         } else {
           completarMomento2Padre();
         }
       } else if (rama === 'hijo') {
+        // rama hijo completada (puede llegar con pasos.length === 0 si no hay bloques_hijo)
         completarMomento2Hijo();
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pasoIdx, pasos.length]);
+  }, [pasoIdx, pasos.length, rama]);
 
   async function completarMomento1() {
     setGuardando(true); setError('');
@@ -507,8 +515,9 @@ export default function WizardProduccionDinamica({
         pasos: [...(bloquesRes.pasos || []), ...resultados],
         padre: { kg: kgP, costo_kg: costoKgP, stock_id: stockIdP },
       };
+      // Solo actualizar bloques_resultado — confirmarPesaje ya marcó estado:'completado'
       await supabase.from('lotes_maduracion')
-        .update({ bloques_resultado: bloquesActualizados, estado: kgHijoF ? 'activo' : 'completado' })
+        .update({ bloques_resultado: bloquesActualizados })
         .eq('id', lote?.lotesMadId);
 
       if (!kgHijoF) onComplete({ bloquesResultado: bloquesActualizados });
@@ -518,6 +527,47 @@ export default function WizardProduccionDinamica({
 
   async function completarMomento2Padre() {
     await finalizarRamaPadre(kgActual, costoAcum);
+  }
+
+  async function completarPadreYHijoDirectamente() {
+    // Bifurcación sin pasos hijo: crear stock padre + hijo en un solo paso
+    setGuardando(true); setError('');
+    try {
+      const costoKgP = kgActual > 0 ? costoAcum / kgActual : 0;
+      const costoKgH = kgHijoF > 0 ? (costoAcum / kgActual) : 0;
+      const corteNombrePadre = lote?.corteNombrePadre || '';
+      const corteNombreHijo  = lote?.corteNombreHijo  || '';
+      const formulaSal = lote?.formulaSalmuera || '';
+
+      const stockIdP = await guardarStockLote({
+        loteId: lote?.loteId, lotesMadId: lote?.lotesMadId,
+        corteNombre: corteNombrePadre, mpId: lote?.mpPadreId || null,
+        kg: kgActual, costoTotal: costoAcum, costoKg: costoKgP,
+        tipoCorte: 'padre', parentLoteId: null, formulaSalmuera: formulaSal,
+      });
+      const kgH     = kgHijoF || 0;
+      const costoH  = kgH * costoKgH;
+      const stockIdH = kgH > 0 ? await guardarStockLote({
+        loteId: (lote?.loteId || '') + '-H', lotesMadId: lote?.lotesMadId,
+        corteNombre: corteNombreHijo, mpId: null,
+        kg: kgH, costoTotal: costoH, costoKg: costoKgH,
+        tipoCorte: 'hijo', parentLoteId: lote?.loteId, formulaSalmuera: formulaSal,
+      }) : null;
+
+      const bloquesRes = lote?.bloquesResultado || {};
+      const bloquesActualizados = {
+        ...bloquesRes, momento: 'completado',
+        pasos: [...(bloquesRes.pasos || []), ...resultados],
+        padre: { kg: kgActual, costo_kg: costoKgP, stock_id: stockIdP },
+        ...(stockIdH ? { hijo: { kg: kgH, costo_kg: costoKgH, stock_id: stockIdH } } : {}),
+      };
+      await supabase.from('lotes_maduracion')
+        .update({ bloques_resultado: bloquesActualizados })
+        .eq('id', lote?.lotesMadId);
+
+      onComplete({ bloquesResultado: bloquesActualizados });
+    } catch (e) { setError('Error al guardar lote: ' + e.message); }
+    setGuardando(false);
   }
 
   async function completarMomento2Hijo() {
@@ -548,7 +598,7 @@ export default function WizardProduccionDinamica({
         hijo: { kg: kgActual, costo_kg: costoKgH, stock_id: stockIdH },
       };
       await supabase.from('lotes_maduracion')
-        .update({ bloques_resultado: bloquesActualizados, estado: 'completado' })
+        .update({ bloques_resultado: bloquesActualizados })
         .eq('id', lote?.lotesMadId);
 
       onComplete({ bloquesResultado: bloquesActualizados });
