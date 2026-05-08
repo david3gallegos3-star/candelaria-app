@@ -1414,25 +1414,52 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
               : null;
             // ── Si el padre tiene bloques dinámicos, calcular flujo hasta bifurcación ──
             const padreBloques = padreCfg?.bloques;
-            const padrePrecioCarne  = precioCarne; // misma MP de entrada
-            const padreKgIni = parseFloat(padreCfg?.kg_sal_base || 2);
-            const padrePrecioSal = precioKgSalmuera; // misma salmuera
 
-            let flujoPadreBif = null; // resultado calcBloques del padre hasta bifurcación
-            if (padreBloques && Array.isArray(padreBloques)) {
-              // calcBloques completo del padre — la bifurcación divide los kg/costo
-              const res = calcBloques({
-                bloques: padreBloques,
-                kgIni:    padreKgIni,
-                precioCarne:       padrePrecioCarne,
-                precioKgSalmuera:  padrePrecioSal,
-                costoRubFormula:   costoRubFormula,
-                kgRubBase:         parseFloat(kgRubBase) || 1,
-                mpAdic:            mpAdicionalId ? mpsFormula.find(m => String(m.id) === mpAdicionalId) : null,
-              });
-              // el paso de bifurcación incluye kgHijo y costoHijo
-              const bifPaso = res.pasos.find(p => p.tipo === 'bifurcacion');
-              flujoPadreBif = { res, bifPaso };
+            // Usar c_mad_real del padre como fuente de verdad del costo — evita
+            // recalcular desde el hijo donde no tenemos el precio de la salmuera.
+            let flujoPadreBif = null;
+            if (padreBloques && Array.isArray(padreBloques) && padreCfg) {
+              const costoKgBif  = parseFloat(padreCfg.c_mad_real || 0);
+              const kgSalidaP   = parseFloat(padreCfg.kg_sal_base || 2);   // kg iniciales
+              const pctInjP     = parseFloat(padreCfg.pct_inj || 0);
+              const kgPostInjP  = kgSalidaP * (1 + pctInjP / 100);
+              const kgSalidaMadP= parseFloat(padreCfg.kg_salida_mad || 0) || kgPostInjP * (1 - parseFloat(padreCfg.pct_mad || 0) / 100);
+              const kgHijoP     = parseFloat(padreCfg.kg_para_hijo || 0);
+              const kgPadreP    = Math.max(0, kgSalidaMadP - kgHijoP);
+
+              // Construir pasos display desde los datos guardados
+              const pasosDisplay = [];
+              if (pctInjP > 0) {
+                // Costo post-inyección: back-calculado desde c_mad_real
+                const costoPostInj = costoKgBif > 0 && kgSalidaMadP > 0
+                  ? (costoKgBif * kgSalidaMadP) / kgPostInjP
+                  : null;
+                pasosDisplay.push({
+                  tipo: 'inyeccion',
+                  label: `💉 Inyección ${pctInjP}%`,
+                  kg: kgPostInjP,
+                  costoAcum: costoPostInj !== null ? costoPostInj * kgPostInjP : null,
+                });
+              }
+              if (kgSalidaMadP > 0) {
+                pasosDisplay.push({
+                  tipo: 'maduracion',
+                  label: `🧊 Maduración`,
+                  kg: kgSalidaMadP,
+                  costoAcum: costoKgBif * kgSalidaMadP,
+                });
+              }
+
+              flujoPadreBif = {
+                res: { pasos: pasosDisplay },
+                bifPaso: {
+                  kgPadre:    kgPadreP,
+                  kgHijo:     kgHijoP,
+                  costoKg:    costoKgBif,
+                  costoPadre: kgPadreP * costoKgBif,
+                  costoHijo:  kgHijoP  * costoKgBif,
+                },
+              };
             }
 
             return (
