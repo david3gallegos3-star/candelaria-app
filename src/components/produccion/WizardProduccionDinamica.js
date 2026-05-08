@@ -12,7 +12,8 @@ function buildPasos({ modo, rama, bloques, bloquesHijo }) {
   if (modo === 'momento2') {
     if (rama === 'padre') {
       const madIdx = (bloques || []).findIndex(b => b.tipo === 'maduracion');
-      return activos(madIdx >= 0 ? bloques.slice(madIdx) : bloques);
+      // maduracion ya fue registrado en el modal de pesaje → saltar al bloque siguiente
+      return activos(madIdx >= 0 ? bloques.slice(madIdx + 1) : bloques);
     }
     if (rama === 'hijo') return activos(bloquesHijo);
   }
