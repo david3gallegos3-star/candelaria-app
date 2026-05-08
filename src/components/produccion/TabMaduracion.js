@@ -1537,7 +1537,8 @@ export default function TabMaduracion({ mobile, currentUser }) {
         <div style={{ textAlign: 'center', padding: 40, color: '#888' }}>⏳ Cargando lotes...</div>
       ) : !vistaHist ? (
         /* ── Lista activos ── */
-        lotesActivos.length === 0 ? (
+        <>
+        {lotesActivos.length === 0 ? (
           <div style={{
             textAlign: 'center', padding: 40,
             background: 'white', borderRadius: 12, color: '#aaa'
@@ -1688,7 +1689,47 @@ export default function TabMaduracion({ mobile, currentUser }) {
               </div>
             );
           })
-        )
+        )}
+        {/* Resumen flujo dinámico si existe */}
+        {historial[0]?.bloques_resultado?.pasos?.length > 0 && (
+          <div style={{ background: 'white', borderRadius: 10, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', marginTop: 10 }}>
+            <div style={{ background: 'linear-gradient(135deg,#1a1a2e,#34495e)', padding: '8px 14px' }}>
+              <span style={{ color: 'white', fontWeight: 'bold', fontSize: 12 }}>🧩 Flujo dinámico ejecutado</span>
+            </div>
+            <div style={{ padding: '10px 14px' }}>
+              {historial[0].bloques_resultado.pasos.map((p, i) => {
+                const COLORES = { inyeccion: '#2980b9', maduracion: '#27ae60', rub: '#8e44ad', adicional: '#f39c12', merma: '#e74c3c', bifurcacion: '#6c3483' };
+                const color = COLORES[p.tipo] || '#888';
+                const costoKg = p.kgSalida > 0 ? p.costoAcum / p.kgSalida : 0;
+                return (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 8px', marginBottom: 3, background: i % 2 === 0 ? '#f8f9fa' : 'white', borderRadius: 6, fontSize: 11, borderLeft: `3px solid ${color}` }}>
+                    <span style={{ color: '#333', fontWeight: 600 }}>{p.tipo}{p.merma_tipo ? ` T${p.merma_tipo}` : ''}</span>
+                    <span style={{ color: '#555' }}>{p.kgSalida?.toFixed(3)} kg · ${costoKg.toFixed(4)}/kg</span>
+                  </div>
+                );
+              })}
+              {historial[0].bloques_resultado.padre && (
+                <div style={{ marginTop: 6, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                  <div style={{ background: '#eaf4fd', borderRadius: 7, padding: '6px 10px', textAlign: 'center' }}>
+                    <div style={{ fontSize: 10, color: '#1a3a5c' }}>👑 Padre final</div>
+                    <div style={{ fontSize: 14, fontWeight: 900, color: '#1a3a5c' }}>
+                      {historial[0].bloques_resultado.padre.kg?.toFixed(3)} kg · ${historial[0].bloques_resultado.padre.costo_kg?.toFixed(4)}/kg
+                    </div>
+                  </div>
+                  {historial[0].bloques_resultado.hijo && (
+                    <div style={{ background: '#f3e8fd', borderRadius: 7, padding: '6px 10px', textAlign: 'center' }}>
+                      <div style={{ fontSize: 10, color: '#6c3483' }}>🔀 Hijo final</div>
+                      <div style={{ fontSize: 14, fontWeight: 900, color: '#6c3483' }}>
+                        {historial[0].bloques_resultado.hijo.kg?.toFixed(3)} kg · ${historial[0].bloques_resultado.hijo.costo_kg?.toFixed(4)}/kg
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+        </>
       ) : (
         /* ── Historial completados ── */
         historial.length === 0 ? (
