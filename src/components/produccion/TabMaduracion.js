@@ -391,15 +391,17 @@ export default function TabMaduracion({ mobile, currentUser }) {
       const { data: lotesMadActual } = await supabase
         .from('lotes_maduracion').select('bloques_resultado').eq('id', modalPesaje.id).maybeSingle();
       const brMomento1 = lotesMadActual?.bloques_resultado || null;
-      const cfgDinCheck = (cfgFreshRows || []).find(hc => {
-        if (!hc.config) return false;
-        const topLevel   = (hc.config.formula_salmuera || '').toLowerCase();
-        const inyBlock   = (hc.config.bloques || []).find(b => b.tipo === 'inyeccion');
-        const inyFormula = (inyBlock?.formula_salmuera || '').toLowerCase();
-        const byName     = cortesWizardNombre &&
-          hc.producto_nombre?.toLowerCase() === cortesWizardNombre.toLowerCase();
-        return (formulaSalActual && (topLevel === formulaSalActual || inyFormula === formulaSalActual)) || byName;
-      });
+      // Buscar por nombre de producto (único y exacto) — evita falsos matches por fórmula compartida
+      const cfgDinCheck = cortesWizardNombre
+        ? (cfgFreshRows || []).find(hc =>
+            (hc.producto_nombre || '').toLowerCase() === cortesWizardNombre.toLowerCase()
+          )
+        : null;
+      console.log('[WizardDin] formulaSalActual:', formulaSalActual);
+      console.log('[WizardDin] cortesWizardNombre:', cortesWizardNombre);
+      console.log('[WizardDin] esCortesPadre:', esCortesPadre);
+      console.log('[WizardDin] cfgDinCheck:', cfgDinCheck?.producto_nombre, '| bloques:', cfgDinCheck?.config?.bloques?.length ?? 'null');
+      console.log('[WizardDin] cfgFreshRows count:', (cfgFreshRows||[]).length, '| sample names:', (cfgFreshRows||[]).slice(0,5).map(h=>h.producto_nombre));
       if (esCortesPadre && cfgDinCheck?.config?.bloques?.length > 0) {
         const { data: deshCfgDin } = await supabase
           .from('deshuese_config').select('corte_hijo')
