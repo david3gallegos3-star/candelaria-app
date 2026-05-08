@@ -294,16 +294,10 @@ export function BloquesDinamicosEditor({
                         </div>
                       </div>
                       <div>
-                        <label style={{ fontSize: 11, fontWeight: 600, color: '#e74c3c', display: 'block', marginBottom: 4 }}>kg salida real (deja en 0 para usar % estimada)</label>
+                        <label style={{ fontSize: 11, fontWeight: 600, color: '#e74c3c', display: 'block', marginBottom: 4 }}>kg salida maduración</label>
                         <input type="number" min="0" step="0.001" value={b.kg_salida_mad} placeholder="ej: 1.800"
                           {...inp({ border: '1.5px solid #e74c3c', textAlign: 'left' })}
                           onChange={e => { const v = parseFloat(e.target.value) || 0; updateBloque(b.id, { kg_salida_mad: v }); setKgSalidaMad(String(v)); }} />
-                      </div>
-                      <div>
-                        <label style={{ fontSize: 11, fontWeight: 600, color: meta.color, display: 'block', marginBottom: 4 }}>% merma estimada (usado si no hay kg salida)</label>
-                        <input type="number" min="0" max="99" step="0.1" value={b.pct_mad}
-                          {...inp({ border: `1.5px solid ${meta.color}` })}
-                          onChange={e => { const v = parseFloat(e.target.value) || 0; updateBloque(b.id, { pct_mad: v }); setPctMad(String(v)); }} />
                       </div>
                     </div>
                   )}
