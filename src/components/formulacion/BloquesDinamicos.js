@@ -1,6 +1,6 @@
 // BloquesDinamicos.js — Flujo dinámico de bloques para CORTES
 // Punto de entrada: BloquesDinamicosEditor + calcBloques
-import React from 'react';
+import React, { useEffect } from 'react';
 
 // ─────────────────────────────────────────────────────────────
 // calcBloques: procesa el array de bloques en orden y devuelve
@@ -102,7 +102,7 @@ export function BloquesDinamicosEditor({
   // selectores
   formulaciones, rubFormulas, mpsFormula,
   // sync con estados clásicos (para compatibilidad al guardar)
-  kgSalBase,
+  kgSalBase, pctSalmueraFormula,
   setFormulaSalmueraNombre, setPctInj, setKgSalBase,
   setHorasMad, setMinutosMad, setPctMad, setKgSalidaMad,
   setFormulaRubNombre, setKgRubBase,
@@ -111,6 +111,16 @@ export function BloquesDinamicosEditor({
   margenPadre, margenHijo,
 }) {
   const kgIni = parseFloat(kgSalBase) || 2;
+
+  // Cuando la fórmula de salmuera carga su porcentaje, actualizar el bloque automáticamente
+  useEffect(() => {
+    if (pctSalmueraFormula == null) return;
+    setBloques(prev => prev.map(b =>
+      b.tipo === 'inyeccion' ? { ...b, pct_inj: pctSalmueraFormula } : b
+    ));
+    setPctInj(String(pctSalmueraFormula));
+  }, [pctSalmueraFormula]);
+
   const resultado = calcBloques({ bloques, kgIni, precioCarne, precioKgSalmuera, costoRubFormula, kgRubBase: parseFloat(kgRubBase) || 1, mpAdic });
 
   function moverBloque(idx, dir) {
@@ -255,11 +265,13 @@ export function BloquesDinamicosEditor({
                             {formulaciones.map(n => <option key={n} value={n}>{n}</option>)}
                           </select>
                         </div>
-                        <div>
-                          <label style={{ fontSize: 11, fontWeight: 600, color: meta.color, display: 'block', marginBottom: 4 }}>% Inyección</label>
-                          <input type="number" min="0" step="1" value={b.pct_inj}
-                            {...inp({ border: `1.5px solid ${meta.color}` })}
-                            onChange={e => { const v = parseFloat(e.target.value) || 0; updateBloque(b.id, { pct_inj: v }); setPctInj(String(v)); }} />
+                        {/* % inyección — viene automático de la fórmula de salmuera */}
+                        <div style={{ background: `${meta.color}10`, borderRadius: 7, padding: '8px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: 11, color: meta.color, fontWeight: 600 }}>% Inyección</span>
+                          {(b.pct_inj || 0) > 0
+                            ? <span style={{ fontSize: 20, fontWeight: 900, color: meta.color }}>{b.pct_inj}%</span>
+                            : <span style={{ fontSize: 11, color: '#aaa' }}>— selecciona salmuera —</span>
+                          }
                         </div>
                         {(b.pct_inj || 0) > 0 && (
                           <div style={{ fontSize: 11, color: meta.color, background: `${meta.color}10`, padding: '6px 10px', borderRadius: 6 }}>

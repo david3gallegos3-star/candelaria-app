@@ -965,6 +965,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
               setMargenHijo={setMargenHijo}
               margenPadre={margenPadre}
               margenHijo={margenHijo}
+              pctSalmueraFormula={pctSalmueraFormula}
             />
           )}
 
