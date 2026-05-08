@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../supabase';
 import * as XLSX from 'xlsx';
+import { BloquesDinamicosEditor } from './BloquesDinamicos';
 
 export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
   const [tabActivo,       setTabActivo]       = useState('costos');
@@ -72,6 +73,11 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
   const [kgParaHijo,        setKgParaHijo]        = useState('');
   const [margenPadre,       setMargenPadre]       = useState('15');
   const [margenHijo,        setMargenHijo]        = useState('15');
+
+  // ── Flujo dinámico de bloques ──────────────────────────────
+  const [bloques,          setBloques]          = useState(null); // null = flujo clásico
+  const [bloqueExpandido,  setBloqueExpandido]  = useState(null);
+
   // Compat legacy (no se usan en UI pero se mantienen por si hay config guardada antigua)
   const [pctRub,             setPctRub]             = useState('');
   const [costoRubKg,         setCostoRubKg]         = useState('');
@@ -316,6 +322,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
         if (c.kg_para_hijo)  setKgParaHijo(String(c.kg_para_hijo));
         if (c.margen_padre !== undefined) setMargenPadre(String(c.margen_padre));
         if (c.margen_hijo  !== undefined) setMargenHijo(String(c.margen_hijo));
+        if (c.bloques && Array.isArray(c.bloques)) setBloques(c.bloques);
       }
 
       // Formulaciones SALMUERAS + todas las MPs + config del padre (si es hijo)
@@ -402,6 +409,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
         const kgSal     = parseFloat(kgSalidaMad) || 0;
         return kgSal > 0 ? (CI * kgIni) / kgSal : 0;
       })(),
+      ...(bloques !== null ? { bloques } : {}),
       tipo,
       _categoria:      'CORTES',
       _updated:        new Date().toISOString(),
@@ -420,6 +428,48 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
       alert('Error al guardar: ' + e.message);
     }
     setGuardando(false);
+  }
+
+  // ── Inicializar flujo dinámico desde config clásica ───────
+  function initBloques() {
+    const newId = () => Math.random().toString(36).slice(2, 9);
+    setBloques([
+      {
+        id: newId(), tipo: 'inyeccion', activo: true,
+        formula_salmuera: formulaSalmueraNombre || '',
+        pct_inj:    parseFloat(pctInj)     || 20,
+        kg_sal_base: parseFloat(kgSalBase) || 2,
+      },
+      {
+        id: newId(), tipo: 'maduracion', activo: true,
+        horas_mad:    parseFloat(horasMad)    || 72,
+        minutos_mad:  parseFloat(minutosMad)  || 0,
+        pct_mad:      parseFloat(pctMad)      || 0,
+        kg_salida_mad: parseFloat(kgSalidaMad) || 0,
+      },
+      {
+        id: newId(), tipo: 'rub', activo: !!(formulaRubNombre),
+        formula_rub: formulaRubNombre || '',
+        kg_rub_base: parseFloat(kgRubBase) || 1,
+      },
+      {
+        id: newId(), tipo: 'adicional', activo: !!(mpAdicionalId),
+        mp_adicional_id:  mpAdicionalId || '',
+        gramos_adicional: parseFloat(gramosAdicional) || 0,
+      },
+      {
+        id: newId(), tipo: 'bifurcacion', activo: !!(deshueseConfig),
+        kg_para_hijo: parseFloat(kgParaHijo) || 0,
+        margen_padre: parseFloat(margenPadre) || 15,
+        margen_hijo:  parseFloat(margenHijo)  || 15,
+        deshuese_hijo: {
+          pct_res_segunda: parseFloat(pctResSegunda) || 0,
+          pct_puntas:      parseFloat(pctPuntas)     || 0,
+          pct_desecho:     parseFloat(pctDesecho)    || 0,
+        },
+      },
+    ]);
+    setBloqueExpandido(null);
   }
 
   async function fijarCambios() {
@@ -882,8 +932,44 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
       {tabActivo === 'costos' && (
         <div>
 
-          {/* ── PADRE / INDEPENDIENTE ── */}
-          {(tipo === 'padre' || tipo === 'independiente') && (() => {
+          {/* ── DINÁMICO — padre/independiente ── */}
+          {bloques !== null && (tipo === 'padre' || tipo === 'independiente') && (
+            <BloquesDinamicosEditor
+              bloques={bloques}              setBloques={setBloques}
+              bloqueExpandido={bloqueExpandido} setBloqueExpandido={setBloqueExpandido}
+              modoEdicion={modoEdicion}
+              producto={producto}
+              precioCarne={precioCarne}
+              precioKgSalmuera={precioKgSalmuera}
+              costoRubFormula={costoRubFormula}
+              kgRubBase={kgRubBase}
+              mpAdic={mpAdicionalId ? mpsFormula.find(m => String(m.id) === mpAdicionalId) : null}
+              deshueseConfig={deshueseConfig}
+              formulaciones={formulaciones}
+              rubFormulas={rubFormulas}
+              mpsFormula={mpsFormula}
+              kgSalBase={kgSalBase}
+              setFormulaSalmueraNombre={setFormulaSalmueraNombre}
+              setPctInj={setPctInj}
+              setKgSalBase={setKgSalBase}
+              setHorasMad={setHorasMad}
+              setMinutosMad={setMinutosMad}
+              setPctMad={setPctMad}
+              setKgSalidaMad={setKgSalidaMad}
+              setFormulaRubNombre={setFormulaRubNombre}
+              setKgRubBase={setKgRubBase}
+              setMpAdicionalId={setMpAdicionalId}
+              setGramosAdicional={setGramosAdicional}
+              setKgParaHijo={setKgParaHijo}
+              setMargenPadre={setMargenPadre}
+              setMargenHijo={setMargenHijo}
+              margenPadre={margenPadre}
+              margenHijo={margenHijo}
+            />
+          )}
+
+          {/* ── CLÁSICO — padre/independiente ── */}
+          {bloques === null && (tipo === 'padre' || tipo === 'independiente') && (() => {
             const pctInjN = parseFloat(pctInj) || 0;
             const pctMadN = parseFloat(pctMad) || 0;
             const lotesConCMad = lotesStock.filter(l => parseFloat(l.costo_mad_kg || 0) > 0);
@@ -1304,6 +1390,17 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
               </>
             );
           })()}
+
+          {/* Botón activar flujo dinámico (solo en modo clásico + edición) */}
+          {bloques === null && modoEdicion && (tipo === 'padre' || tipo === 'independiente') && (
+            <div style={{ textAlign: 'center', padding: '14px 16px', marginBottom: 12 }}>
+              <button onClick={initBloques}
+                style={{ background: 'linear-gradient(135deg,#1a1a2e,#2c3e50)', color: '#f9e79f', border: 'none', borderRadius: 10, padding: '11px 24px', fontSize: 13, fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,0.18)' }}>
+                🧩 Activar flujo dinámico
+              </button>
+              <div style={{ fontSize: 11, color: '#aaa', marginTop: 6 }}>Reorganiza las fases libremente y agrega bloques de merma personalizados</div>
+            </div>
+          )}
 
           {/* ── HIJO ── */}
           {tipo === 'hijo' && (() => {

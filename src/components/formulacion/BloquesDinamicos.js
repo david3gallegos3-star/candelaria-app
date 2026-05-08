@@ -1,0 +1,510 @@
+// BloquesDinamicos.js — Flujo dinámico de bloques para CORTES
+// Punto de entrada: BloquesDinamicosEditor + calcBloques
+import React from 'react';
+
+// ─────────────────────────────────────────────────────────────
+// calcBloques: procesa el array de bloques en orden y devuelve
+// pasos de costo acumulado + resultado final.
+// ─────────────────────────────────────────────────────────────
+export function calcBloques({ bloques, kgIni, precioCarne, precioKgSalmuera, costoRubFormula, kgRubBase, mpAdic }) {
+  let kg = kgIni;
+  let costoAcum = precioCarne * kgIni;
+  const pasos = [];
+
+  for (const b of (bloques || [])) {
+    if (!b.activo) continue;
+
+    if (b.tipo === 'inyeccion') {
+      const pct   = parseFloat(b.pct_inj || 0) / 100;
+      const kgSal = kg * pct;
+      const cSal  = kgSal * precioKgSalmuera;
+      costoAcum  += cSal;
+      kg         += kgSal;
+      pasos.push({ tipo: 'inyeccion', label: `💉 Inyección ${b.pct_inj}%`, kg, costoAcum, kgSal, cSal });
+
+    } else if (b.tipo === 'maduracion') {
+      const kgAntes  = kg;
+      const kgSalida = parseFloat(b.kg_salida_mad || 0);
+      if (kgSalida > 0 && kgSalida < kg) {
+        kg = kgSalida;
+      } else {
+        const pctM = parseFloat(b.pct_mad || 0) / 100;
+        kg = kg * (1 - pctM);
+      }
+      const mermaKg = kgAntes - kg;
+      const pctReal = kgAntes > 0 ? (mermaKg / kgAntes * 100) : 0;
+      pasos.push({ tipo: 'maduracion', label: `🧊 Maduración`, kg, costoAcum, kgAntes, mermaKg, pctReal });
+
+    } else if (b.tipo === 'rub') {
+      const kgRubN = parseFloat(b.kg_rub_base || kgRubBase || 1);
+      const cRub   = kgRubN > 0 ? (kg / kgRubN) * costoRubFormula : 0;
+      costoAcum   += cRub;
+      pasos.push({ tipo: 'rub', label: `🧂 Rub/Especias`, kg, costoAcum, cRub });
+
+    } else if (b.tipo === 'adicional') {
+      const pAdic = mpAdic ? parseFloat(mpAdic.precio_kg || 0) : 0;
+      const grN   = parseFloat(b.gramos_adicional || 0);
+      const cAdic = (grN / 1000) * pAdic * kg;
+      costoAcum  += cAdic;
+      pasos.push({ tipo: 'adicional', label: `🍋 Adicional`, kg, costoAcum, cAdic });
+
+    } else if (b.tipo === 'merma') {
+      const kgAntes  = kg;
+      const pctM     = parseFloat(b.pct_merma || 0) / 100;
+      const kgMerma  = kgAntes * pctM;
+      kg = kgAntes - kgMerma;
+      let credito = 0;
+      if (b.merma_tipo === 2 || b.merma_tipo === 3) {
+        credito    = kgMerma * parseFloat(b.precio_merma_kg || 0);
+        costoAcum -= credito;
+      }
+      pasos.push({ tipo: 'merma', label: `✂️ Merma Tipo ${b.merma_tipo}`, kg, costoAcum, kgMerma, credito, merma_tipo: b.merma_tipo });
+
+    } else if (b.tipo === 'bifurcacion') {
+      const kgHijo   = parseFloat(b.kg_para_hijo || 0);
+      const kgPadre  = Math.max(0, kg - kgHijo);
+      const costoKg  = kg > 0 ? costoAcum / kg : 0;
+      const costoPadre = kgPadre * costoKg;
+      const costoHijo  = kgHijo  * costoKg;
+      pasos.push({ tipo: 'bifurcacion', label: `🔀 Bifurcación`, kg, costoAcum, kgPadre, kgHijo, costoKg, costoPadre, costoHijo });
+      // después de bifurcación el flujo continúa solo por la rama padre
+      kg        = kgPadre;
+      costoAcum = costoPadre;
+    }
+  }
+
+  const costoKgFinal = kg > 0 ? costoAcum / kg : 0;
+  return { kg, costoAcum, costoKgFinal, pasos };
+}
+
+// ─────────────────────────────────────────────────────────────
+// Colores / iconos / etiquetas por tipo de bloque
+// ─────────────────────────────────────────────────────────────
+const BLOQUE_META = {
+  inyeccion:   { color: '#2980b9', icon: '💉', label: 'Inyección de Salmuera' },
+  maduracion:  { color: '#27ae60', icon: '🧊', label: 'Maduración' },
+  rub:         { color: '#8e44ad', icon: '🧂', label: 'Rub / Especias' },
+  adicional:   { color: '#f39c12', icon: '🍋', label: 'Adicional' },
+  merma:       { color: '#e74c3c', icon: '✂️', label: 'Merma' },
+  bifurcacion: { color: '#6c3483', icon: '🔀', label: 'Bifurcación Padre/Hijo' },
+};
+
+// ─────────────────────────────────────────────────────────────
+// BloquesDinamicosEditor — componente principal
+// ─────────────────────────────────────────────────────────────
+export function BloquesDinamicosEditor({
+  bloques, setBloques,
+  bloqueExpandido, setBloqueExpandido,
+  modoEdicion,
+  // datos del producto
+  producto, precioCarne, precioKgSalmuera, costoRubFormula,
+  kgRubBase, mpAdic, deshueseConfig,
+  // selectores
+  formulaciones, rubFormulas, mpsFormula,
+  // sync con estados clásicos (para compatibilidad al guardar)
+  kgSalBase,
+  setFormulaSalmueraNombre, setPctInj, setKgSalBase,
+  setHorasMad, setMinutosMad, setPctMad, setKgSalidaMad,
+  setFormulaRubNombre, setKgRubBase,
+  setMpAdicionalId, setGramosAdicional,
+  setKgParaHijo, setMargenPadre, setMargenHijo,
+  margenPadre, margenHijo,
+}) {
+  const kgIni = parseFloat(kgSalBase) || 2;
+  const resultado = calcBloques({ bloques, kgIni, precioCarne, precioKgSalmuera, costoRubFormula, kgRubBase: parseFloat(kgRubBase) || 1, mpAdic });
+
+  function moverBloque(idx, dir) {
+    setBloques(prev => {
+      const arr = [...prev];
+      const t = idx + dir;
+      if (t < 0 || t >= arr.length) return arr;
+      [arr[idx], arr[t]] = [arr[t], arr[idx]];
+      return arr;
+    });
+  }
+
+  function updateBloque(id, campos) {
+    setBloques(prev => prev.map(b => b.id === id ? { ...b, ...campos } : b));
+  }
+
+  function removeBloque(id) {
+    setBloques(prev => prev.filter(b => b.id !== id));
+  }
+
+  function addBloque(tipo) {
+    const newId = () => Math.random().toString(36).slice(2, 9);
+    const templates = {
+      inyeccion:   { tipo: 'inyeccion',   activo: true, formula_salmuera: '', pct_inj: 20, kg_sal_base: 2 },
+      maduracion:  { tipo: 'maduracion',  activo: true, horas_mad: 72, minutos_mad: 0, pct_mad: 0, kg_salida_mad: 0 },
+      rub:         { tipo: 'rub',         activo: true, formula_rub: '', kg_rub_base: 1 },
+      adicional:   { tipo: 'adicional',   activo: true, mp_adicional_id: '', gramos_adicional: 0 },
+      merma:       { tipo: 'merma',       activo: true, merma_tipo: 1, pct_merma: 5, precio_merma_kg: 0 },
+      bifurcacion: { tipo: 'bifurcacion', activo: true, kg_para_hijo: 0, margen_padre: parseFloat(margenPadre) || 15, margen_hijo: parseFloat(margenHijo) || 15, deshuese_hijo: { pct_res_segunda: 0, pct_puntas: 0, pct_desecho: 0 } },
+    };
+    setBloques(prev => [...prev, { id: newId(), ...templates[tipo] }]);
+  }
+
+  const inp = (extra = {}) => ({
+    style: {
+      width: '100%', padding: '7px 10px', borderRadius: 7, fontSize: 13,
+      fontWeight: 'bold', textAlign: 'center', boxSizing: 'border-box',
+      background: modoEdicion ? 'white' : '#f8f9fa', ...extra,
+    },
+    disabled: !modoEdicion,
+  });
+
+  return (
+    <>
+      {/* ── Header ── */}
+      <div style={{ background: 'linear-gradient(135deg,#1a1a2e,#2c3e50)', borderRadius: 12, padding: '12px 16px', marginBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <span style={{ color: '#f9e79f', fontWeight: 'bold', fontSize: 13 }}>🧩 Flujo dinámico</span>
+          <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 11, marginLeft: 10 }}>
+            {bloques.filter(b => b.activo).length} bloques activos · {bloques.length} total
+          </span>
+        </div>
+        {modoEdicion && (
+          <button onClick={() => setBloques(null)}
+            style={{ background: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.8)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 7, padding: '4px 12px', fontSize: 11, cursor: 'pointer' }}>
+            ← Flujo clásico
+          </button>
+        )}
+      </div>
+
+      {/* ── Lista de bloques ── */}
+      <div style={{ marginBottom: 12 }}>
+        {bloques.map((b, idx) => {
+          const meta = BLOQUE_META[b.tipo] || { color: '#888', icon: '📦', label: b.tipo };
+          const isExp = bloqueExpandido === b.id;
+
+          return (
+            <div key={b.id} style={{ background: 'white', borderRadius: 10, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.07)', marginBottom: 8, border: b.activo ? `2px solid ${meta.color}30` : '2px solid #eee', opacity: b.activo ? 1 : 0.65 }}>
+
+              {/* Bloque header */}
+              <div style={{ padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}
+                onClick={() => setBloqueExpandido(isExp ? null : b.id)}>
+
+                {/* Toggle ON/OFF */}
+                <button onClick={e => { e.stopPropagation(); if (modoEdicion) updateBloque(b.id, { activo: !b.activo }); }}
+                  style={{ background: b.activo ? meta.color : '#ccc', color: 'white', border: 'none', borderRadius: 10, padding: '2px 8px', fontSize: 10, cursor: modoEdicion ? 'pointer' : 'default', fontWeight: 'bold', minWidth: 34 }}>
+                  {b.activo ? 'ON' : 'OFF'}
+                </button>
+
+                <span style={{ fontSize: 16 }}>{meta.icon}</span>
+                <span style={{ fontWeight: 600, color: '#1a1a2e', fontSize: 13, flex: 1 }}>{meta.label}</span>
+
+                {/* Resumen rápido */}
+                {b.activo && b.tipo === 'inyeccion' && b.pct_inj > 0 && (
+                  <span style={{ fontSize: 11, color: meta.color, background: `${meta.color}15`, padding: '2px 8px', borderRadius: 6 }}>{b.pct_inj}%</span>
+                )}
+                {b.activo && b.tipo === 'maduracion' && b.horas_mad > 0 && (
+                  <span style={{ fontSize: 11, color: meta.color, background: `${meta.color}15`, padding: '2px 8px', borderRadius: 6 }}>{b.horas_mad}h</span>
+                )}
+                {b.activo && b.tipo === 'merma' && (
+                  <span style={{ fontSize: 11, color: meta.color, background: `${meta.color}15`, padding: '2px 8px', borderRadius: 6 }}>Tipo {b.merma_tipo} · {b.pct_merma}%</span>
+                )}
+
+                {/* Mover ↑↓ */}
+                {modoEdicion && (
+                  <div style={{ display: 'flex', gap: 3 }} onClick={e => e.stopPropagation()}>
+                    <button onClick={() => moverBloque(idx, -1)} disabled={idx === 0}
+                      style={{ background: '#f0f2f5', border: 'none', borderRadius: 5, padding: '3px 7px', cursor: idx === 0 ? 'default' : 'pointer', fontSize: 11, opacity: idx === 0 ? 0.3 : 1 }}>↑</button>
+                    <button onClick={() => moverBloque(idx, 1)} disabled={idx === bloques.length - 1}
+                      style={{ background: '#f0f2f5', border: 'none', borderRadius: 5, padding: '3px 7px', cursor: idx === bloques.length - 1 ? 'default' : 'pointer', fontSize: 11, opacity: idx === bloques.length - 1 ? 0.3 : 1 }}>↓</button>
+                    <button onClick={e => { e.stopPropagation(); removeBloque(b.id); }}
+                      style={{ background: '#fdf2f2', border: 'none', borderRadius: 5, padding: '3px 7px', cursor: 'pointer', fontSize: 11, color: '#e74c3c' }}>✕</button>
+                  </div>
+                )}
+
+                <span style={{ fontSize: 13, color: '#bbb' }}>{isExp ? '▲' : '▼'}</span>
+              </div>
+
+              {/* Config expandida */}
+              {isExp && (
+                <div style={{ borderTop: `2px solid ${meta.color}20`, padding: '12px 14px', background: '#fafbfc' }}>
+
+                  {/* ── INYECCIÓN ── */}
+                  {b.tipo === 'inyeccion' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      <div>
+                        <label style={{ fontSize: 11, fontWeight: 600, color: meta.color, display: 'block', marginBottom: 4 }}>Fórmula de salmuera</label>
+                        <select value={b.formula_salmuera} disabled={!modoEdicion}
+                          onChange={e => { updateBloque(b.id, { formula_salmuera: e.target.value }); setFormulaSalmueraNombre(e.target.value); }}
+                          style={{ width: '100%', padding: '7px 10px', borderRadius: 7, border: `1.5px solid ${meta.color}`, fontSize: 13, background: modoEdicion ? 'white' : '#f8f9fa', boxSizing: 'border-box' }}>
+                          <option value="">— seleccionar salmuera —</option>
+                          {formulaciones.map(n => <option key={n} value={n}>{n}</option>)}
+                        </select>
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                        <div>
+                          <label style={{ fontSize: 11, fontWeight: 600, color: meta.color, display: 'block', marginBottom: 4 }}>% Inyección</label>
+                          <input type="number" min="0" step="1" value={b.pct_inj}
+                            {...inp({ border: `1.5px solid ${meta.color}` })}
+                            onChange={e => { const v = parseFloat(e.target.value) || 0; updateBloque(b.id, { pct_inj: v }); setPctInj(String(v)); }} />
+                        </div>
+                        <div>
+                          <label style={{ fontSize: 11, fontWeight: 600, color: meta.color, display: 'block', marginBottom: 4 }}>kg iniciales</label>
+                          <input type="number" min="0.1" step="0.1" value={b.kg_sal_base || kgSalBase}
+                            {...inp({ border: `1.5px solid ${meta.color}` })}
+                            onChange={e => { const v = parseFloat(e.target.value) || 2; updateBloque(b.id, { kg_sal_base: v }); setKgSalBase(String(v)); }} />
+                        </div>
+                      </div>
+                      {precioKgSalmuera > 0 && (b.pct_inj || 0) > 0 && (() => {
+                        const kgS = parseFloat(b.kg_sal_base || kgSalBase || 2);
+                        const kgSal = kgS * (b.pct_inj / 100);
+                        return (
+                          <div style={{ fontSize: 11, color: meta.color, background: `${meta.color}10`, padding: '6px 10px', borderRadius: 6 }}>
+                            {kgS} kg × {b.pct_inj}% = {kgSal.toFixed(3)} kg salmuera · ${(kgSal * precioKgSalmuera).toFixed(4)}
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
+
+                  {/* ── MADURACIÓN ── */}
+                  {b.tipo === 'maduracion' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                        <div>
+                          <label style={{ fontSize: 11, fontWeight: 600, color: meta.color, display: 'block', marginBottom: 4 }}>Horas</label>
+                          <input type="number" min="0" step="1" value={b.horas_mad}
+                            {...inp({ border: `1.5px solid ${meta.color}` })}
+                            onChange={e => { const v = parseFloat(e.target.value) || 0; updateBloque(b.id, { horas_mad: v }); setHorasMad(String(v)); }} />
+                        </div>
+                        <div>
+                          <label style={{ fontSize: 11, fontWeight: 600, color: meta.color, display: 'block', marginBottom: 4 }}>Minutos</label>
+                          <input type="number" min="0" max="59" step="1" value={b.minutos_mad}
+                            {...inp({ border: `1.5px solid ${meta.color}` })}
+                            onChange={e => { const v = parseFloat(e.target.value) || 0; updateBloque(b.id, { minutos_mad: v }); setMinutosMad(String(v)); }} />
+                        </div>
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 11, fontWeight: 600, color: '#e74c3c', display: 'block', marginBottom: 4 }}>kg salida real (deja en 0 para usar % estimada)</label>
+                        <input type="number" min="0" step="0.001" value={b.kg_salida_mad} placeholder="ej: 1.800"
+                          {...inp({ border: '1.5px solid #e74c3c', textAlign: 'left' })}
+                          onChange={e => { const v = parseFloat(e.target.value) || 0; updateBloque(b.id, { kg_salida_mad: v }); setKgSalidaMad(String(v)); }} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 11, fontWeight: 600, color: meta.color, display: 'block', marginBottom: 4 }}>% merma estimada (usado si no hay kg salida)</label>
+                        <input type="number" min="0" max="99" step="0.1" value={b.pct_mad}
+                          {...inp({ border: `1.5px solid ${meta.color}` })}
+                          onChange={e => { const v = parseFloat(e.target.value) || 0; updateBloque(b.id, { pct_mad: v }); setPctMad(String(v)); }} />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ── RUB ── */}
+                  {b.tipo === 'rub' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      <div>
+                        <label style={{ fontSize: 11, fontWeight: 600, color: meta.color, display: 'block', marginBottom: 4 }}>Fórmula de rub</label>
+                        <select value={b.formula_rub} disabled={!modoEdicion}
+                          onChange={e => { updateBloque(b.id, { formula_rub: e.target.value }); setFormulaRubNombre(e.target.value); }}
+                          style={{ width: '100%', padding: '7px 10px', borderRadius: 7, border: `1.5px solid ${meta.color}`, fontSize: 13, background: modoEdicion ? 'white' : '#f8f9fa', boxSizing: 'border-box' }}>
+                          <option value="">— sin rub —</option>
+                          {rubFormulas.map(n => <option key={n} value={n}>{n}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 11, fontWeight: 600, color: meta.color, display: 'block', marginBottom: 4 }}>Fórmula para N kg de carne</label>
+                        <input type="number" min="0.1" step="0.1" value={b.kg_rub_base}
+                          {...inp({ border: `1.5px solid ${meta.color}` })}
+                          onChange={e => { const v = parseFloat(e.target.value) || 1; updateBloque(b.id, { kg_rub_base: v }); setKgRubBase(String(v)); }} />
+                      </div>
+                      {costoRubFormula > 0 && (
+                        <div style={{ fontSize: 11, color: meta.color, background: `${meta.color}10`, padding: '6px 10px', borderRadius: 6 }}>
+                          ${costoRubFormula.toFixed(4)} fórmula ÷ {b.kg_rub_base} kg = ${(b.kg_rub_base > 0 ? costoRubFormula / b.kg_rub_base : 0).toFixed(4)}/kg
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* ── ADICIONAL ── */}
+                  {b.tipo === 'adicional' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      <div>
+                        <label style={{ fontSize: 11, fontWeight: 600, color: meta.color, display: 'block', marginBottom: 4 }}>Materia prima adicional</label>
+                        <select value={b.mp_adicional_id} disabled={!modoEdicion}
+                          onChange={e => { updateBloque(b.id, { mp_adicional_id: e.target.value }); setMpAdicionalId(e.target.value); }}
+                          style={{ width: '100%', padding: '7px 10px', borderRadius: 7, border: `1.5px solid ${meta.color}`, fontSize: 13, background: modoEdicion ? 'white' : '#f8f9fa', boxSizing: 'border-box' }}>
+                          <option value="">— sin adicional —</option>
+                          {(mpsFormula || []).filter(m => {
+                            const cat = (m.categoria || '').toUpperCase();
+                            return !cat.includes('EMPAQUE') && !cat.includes('ETIQUETA') && !cat.includes('SALMUERA') && !cat.includes('FUNDA');
+                          }).map(m => <option key={m.id} value={String(m.id)}>{m.nombre_producto || m.nombre} — ${parseFloat(m.precio_kg || 0).toFixed(4)}/kg</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 11, fontWeight: 600, color: meta.color, display: 'block', marginBottom: 4 }}>Gramos por kg en proceso</label>
+                        <input type="number" min="0" step="1" value={b.gramos_adicional}
+                          {...inp({ border: `1.5px solid ${meta.color}` })}
+                          onChange={e => { const v = parseFloat(e.target.value) || 0; updateBloque(b.id, { gramos_adicional: v }); setGramosAdicional(String(v)); }} />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ── MERMA ── */}
+                  {b.tipo === 'merma' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      <div>
+                        <label style={{ fontSize: 11, fontWeight: 600, color: meta.color, display: 'block', marginBottom: 4 }}>Tipo de merma</label>
+                        <select value={b.merma_tipo} disabled={!modoEdicion}
+                          onChange={e => updateBloque(b.id, { merma_tipo: parseInt(e.target.value) })}
+                          style={{ width: '100%', padding: '7px 10px', borderRadius: 7, border: `1.5px solid ${meta.color}`, fontSize: 13, background: modoEdicion ? 'white' : '#f8f9fa', boxSizing: 'border-box' }}>
+                          <option value={1}>Tipo 1 — Descarte total (costo se absorbe)</option>
+                          <option value={2}>Tipo 2 — Valor recuperable (genera crédito)</option>
+                          <option value={3}>Tipo 3 — Genera nuevo producto (va a inventario)</option>
+                        </select>
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: (b.merma_tipo === 2 || b.merma_tipo === 3) ? '1fr 1fr' : '1fr', gap: 10 }}>
+                        <div>
+                          <label style={{ fontSize: 11, fontWeight: 600, color: meta.color, display: 'block', marginBottom: 4 }}>% merma</label>
+                          <input type="number" min="0" max="99" step="0.1" value={b.pct_merma}
+                            {...inp({ border: `1.5px solid ${meta.color}` })}
+                            onChange={e => updateBloque(b.id, { pct_merma: parseFloat(e.target.value) || 0 })} />
+                        </div>
+                        {(b.merma_tipo === 2 || b.merma_tipo === 3) && (
+                          <div>
+                            <label style={{ fontSize: 11, fontWeight: 600, color: '#27ae60', display: 'block', marginBottom: 4 }}>Precio merma ($/kg)</label>
+                            <input type="number" min="0" step="0.01" value={b.precio_merma_kg}
+                              {...inp({ border: '1.5px solid #27ae60' })}
+                              onChange={e => updateBloque(b.id, { precio_merma_kg: parseFloat(e.target.value) || 0 })} />
+                          </div>
+                        )}
+                      </div>
+                      {b.merma_tipo === 1 && (
+                        <div style={{ fontSize: 11, color: '#888', background: '#f8f9fa', padding: '6px 10px', borderRadius: 6 }}>
+                          El peso baja, el costo se absorbe → sube el costo/kg del producto restante.
+                        </div>
+                      )}
+                      {(b.merma_tipo === 2 || b.merma_tipo === 3) && b.precio_merma_kg > 0 && (
+                        <div style={{ fontSize: 11, color: '#27ae60', background: '#eafaf1', padding: '6px 10px', borderRadius: 6 }}>
+                          Genera crédito que reduce el costo neto del batch.
+                          {b.merma_tipo === 3 && ' La merma entra automáticamente al inventario como MP.'}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* ── BIFURCACIÓN ── */}
+                  {b.tipo === 'bifurcacion' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      <div>
+                        <label style={{ fontSize: 11, fontWeight: 600, color: meta.color, display: 'block', marginBottom: 4 }}>
+                          kg que van al Hijo ({deshueseConfig?.corte_hijo || 'producto hijo'})
+                        </label>
+                        <input type="number" min="0" step="0.001" value={b.kg_para_hijo} placeholder="ej: 1.000"
+                          {...inp({ border: `1.5px solid ${meta.color}`, textAlign: 'left' })}
+                          onChange={e => { const v = parseFloat(e.target.value) || 0; updateBloque(b.id, { kg_para_hijo: v }); setKgParaHijo(String(v)); }} />
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                        <div>
+                          <label style={{ fontSize: 11, fontWeight: 600, color: '#1a3a5c', display: 'block', marginBottom: 4 }}>Margen Padre %</label>
+                          <input type="number" min="0" max="99" step="1" value={b.margen_padre ?? margenPadre}
+                            {...inp({ border: '1.5px solid #1a3a5c' })}
+                            onChange={e => { const v = parseFloat(e.target.value) || 0; updateBloque(b.id, { margen_padre: v }); setMargenPadre(String(v)); }} />
+                        </div>
+                        <div>
+                          <label style={{ fontSize: 11, fontWeight: 600, color: '#6c3483', display: 'block', marginBottom: 4 }}>Margen Hijo %</label>
+                          <input type="number" min="0" max="99" step="1" value={b.margen_hijo ?? margenHijo}
+                            {...inp({ border: '1.5px solid #6c3483' })}
+                            onChange={e => { const v = parseFloat(e.target.value) || 0; updateBloque(b.id, { margen_hijo: v }); setMargenHijo(String(v)); }} />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* ── Agregar bloque ── */}
+      {modoEdicion && (
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 11, color: '#888', marginBottom: 6, fontWeight: 600 }}>+ Agregar bloque:</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {Object.entries(BLOQUE_META).map(([tipo, meta]) => (
+              <button key={tipo} onClick={() => addBloque(tipo)}
+                style={{ padding: '5px 12px', borderRadius: 8, border: `1.5px dashed ${meta.color}60`, background: `${meta.color}08`, cursor: 'pointer', fontSize: 11, color: meta.color, fontWeight: 600 }}>
+                {meta.icon} {meta.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Resultado paso a paso ── */}
+      <div style={{ background: 'white', borderRadius: 12, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', marginBottom: 12 }}>
+        <div style={{ background: 'linear-gradient(135deg,#1a1a2e,#34495e)', padding: '10px 16px' }}>
+          <span style={{ color: 'white', fontWeight: 'bold', fontSize: 13 }}>📊 Flujo de costo — paso a paso</span>
+        </div>
+        <div style={{ padding: '12px 14px' }}>
+          {/* Punto de partida */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 10px', background: '#fef9e7', borderRadius: 7, marginBottom: 4, fontSize: 12 }}>
+            <span style={{ color: '#e67e22', fontWeight: 600 }}>🥩 Carne inicial ({kgIni} kg @ ${precioCarne.toFixed(4)}/kg)</span>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontWeight: 700 }}>{kgIni} kg</div>
+              <div style={{ fontSize: 10, color: '#888' }}>${precioCarne.toFixed(4)}/kg</div>
+            </div>
+          </div>
+
+          {resultado.pasos.length === 0 && (
+            <div style={{ textAlign: 'center', color: '#aaa', fontSize: 12, padding: '16px' }}>
+              Activa al menos un bloque para ver el cálculo paso a paso
+            </div>
+          )}
+
+          {resultado.pasos.map((p, i) => {
+            const costoKg = p.kg > 0 ? p.costoAcum / p.kg : 0;
+            let detalle = '';
+            if (p.tipo === 'inyeccion')   detalle = `+${p.kgSal.toFixed(3)} kg salmuera · +$${p.cSal.toFixed(4)}`;
+            if (p.tipo === 'maduracion')  detalle = `−${p.mermaKg.toFixed(3)} kg merma (${p.pctReal.toFixed(1)}%)`;
+            if (p.tipo === 'rub')         detalle = `+$${p.cRub.toFixed(4)} costo rub`;
+            if (p.tipo === 'adicional')   detalle = `+$${p.cAdic.toFixed(4)} costo adicional`;
+            if (p.tipo === 'merma')       detalle = `−${p.kgMerma.toFixed(3)} kg${p.credito > 0 ? ` · −$${p.credito.toFixed(4)} crédito` : ''}`;
+            if (p.tipo === 'bifurcacion') detalle = `Padre ${p.kgPadre.toFixed(3)} kg · Hijo ${p.kgHijo.toFixed(3)} kg`;
+
+            return (
+              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 10px', marginBottom: 4, background: i % 2 === 0 ? '#f8f9fa' : 'white', borderRadius: 7, fontSize: 12, borderLeft: `3px solid ${BLOQUE_META[p.tipo]?.color || '#888'}` }}>
+                <div>
+                  <div style={{ fontWeight: 600, color: '#1a1a2e' }}>{p.label}</div>
+                  <div style={{ fontSize: 10, color: '#888', marginTop: 1 }}>{detalle}</div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontWeight: 700, color: '#1a1a2e' }}>{p.kg.toFixed(3)} kg</div>
+                  <div style={{ fontSize: 10, color: '#555' }}>${costoKg.toFixed(4)}/kg</div>
+                </div>
+              </div>
+            );
+          })}
+
+          {/* Resultado final */}
+          {resultado.pasos.length > 0 && (
+            <div style={{ background: 'linear-gradient(135deg,#1a3a5c,#2980b9)', borderRadius: 10, padding: '14px 16px', marginTop: 10 }}>
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', marginBottom: 2 }}>Costo final — {producto.nombre}</div>
+              <div style={{ fontSize: 30, fontWeight: 900, color: '#f9e79f' }}>${resultado.costoKgFinal.toFixed(4)}/kg</div>
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', marginTop: 4 }}>
+                {resultado.kg.toFixed(3)} kg finales · ${resultado.costoAcum.toFixed(4)} costo total
+              </div>
+              {/* Margen y PVP */}
+              {(() => {
+                const bifB = bloques.find(b => b.tipo === 'bifurcacion' && b.activo);
+                const mg   = parseFloat(bifB ? (bifB.margen_padre ?? margenPadre) : margenPadre) || 0;
+                const pvp  = mg > 0 && mg < 100 && resultado.costoKgFinal > 0
+                  ? resultado.costoKgFinal / (1 - mg / 100) : 0;
+                return pvp > 0 ? (
+                  <div style={{ marginTop: 8, borderTop: '1px solid rgba(255,255,255,0.2)', paddingTop: 8, fontSize: 12, color: 'rgba(255,255,255,0.8)' }}>
+                    Margen {mg}% → <strong style={{ color: '#a9dfbf', fontSize: 15 }}>${pvp.toFixed(4)}/kg</strong> precio de venta
+                  </div>
+                ) : null;
+              })()}
+            </div>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
