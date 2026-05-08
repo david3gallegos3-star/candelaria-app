@@ -4,6 +4,7 @@
 // ============================================
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../supabase';
+import { useRealtime } from '../../hooks/useRealtime';
 
 const ESTADO_COLOR = {
   autorizada: { bg: '#e8f5e9', color: '#27ae60', label: '✅ Autorizada' },
@@ -25,6 +26,7 @@ export default function TabFacturas({ mobile }) {
   const [msgExito,    setMsgExito]    = useState('');
 
   useEffect(() => { cargarFacturas(); }, []);
+  useRealtime(['facturas', 'facturas_detalle'], cargarFacturas);
 
   // ── Cargar facturas ───────────────────────────────────────
   async function cargarFacturas() {

@@ -4,6 +4,7 @@
 // ============================================
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../supabase';
+import { useRealtime } from '../../hooks/useRealtime';
 
 const CARGO_OPTIONS = [
   'Operario de producción', 'Bodeguero', 'Vendedor', 'Contador/a',
@@ -40,6 +41,7 @@ export default function TabEmpleados({ mobile }) {
   }, [soloActivos]);
 
   useEffect(() => { cargar(); }, [cargar]);
+  useRealtime(['empleados'], cargar);
 
   const filtrados = empleados.filter(e =>
     e.nombre.toLowerCase().includes(busqueda.toLowerCase()) ||

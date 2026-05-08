@@ -4,6 +4,7 @@
 // ============================================
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../supabase';
+import { useRealtime } from '../../hooks/useRealtime';
 
 export default function TabClientes({
   mobile, esAdmin,
@@ -25,6 +26,7 @@ export default function TabClientes({
   useEffect(() => {
     cargarEliminados();
   }, []);
+  useRealtime(['clientes'], cargarEliminados);
 
   async function cargarEliminados() {
     const { data } = await supabase

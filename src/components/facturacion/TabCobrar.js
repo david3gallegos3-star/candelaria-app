@@ -4,6 +4,7 @@
 // ============================================
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../supabase';
+import { useRealtime } from '../../hooks/useRealtime';
 
 const ESTADO_COLOR = {
   pendiente: { bg: '#fef9e7', color: '#f39c12', label: '⏳ Pendiente' },
@@ -32,6 +33,7 @@ export default function TabCobrar({ mobile, currentUser }) {
   const [msgExito,     setMsgExito]     = useState('');
 
   useEffect(() => { cargarCuentas(); }, []);
+  useRealtime(['cuentas_cobrar', 'cobros'], cargarCuentas);
 
   // ── Cargar cuentas ────────────────────────────────────────
   async function cargarCuentas() {

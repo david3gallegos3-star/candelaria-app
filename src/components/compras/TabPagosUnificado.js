@@ -5,6 +5,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import * as XLSX from 'xlsx';
 import { supabase } from '../../supabase';
+import { useRealtime } from '../../hooks/useRealtime';
 
 const FORMA_SRI  = { efectivo: '01', transferencia: '20', cheque: '20', credito: '19', tarjeta: '19' };
 const FORMA_EMOJI = { transferencia: '🏦', efectivo: '💵', cheque: '📝', tarjeta: '💳', credito: '📅' };
@@ -120,6 +121,7 @@ export default function TabPagosUnificado({ mobile }) {
   }, []);
 
   useEffect(() => { cargar(); }, [cargar]);
+  useRealtime(['compras', 'cuentas_pagar', 'pagos_compras'], cargar);
 
   // ── Filtrado ──────────────────────────────────────────────
   const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');

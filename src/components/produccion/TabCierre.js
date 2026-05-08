@@ -4,6 +4,7 @@
 // ============================================
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../supabase';
+import { useRealtime } from '../../hooks/useRealtime';
 
 export default function TabCierre({ mobile, userRol, currentUser, produccionDiaria }) {
 
@@ -29,6 +30,7 @@ export default function TabCierre({ mobile, userRol, currentUser, produccionDiar
   // }
 
   useEffect(() => { cargarDatos(); cargarLotesInyeccion(); }, [fecha]);
+  useRealtime(['produccion_diaria', 'produccion_inyeccion', 'materias_primas'], () => { cargarDatos(); cargarLotesInyeccion(); });
 
   useEffect(() => {
     supabase.from('materias_primas')

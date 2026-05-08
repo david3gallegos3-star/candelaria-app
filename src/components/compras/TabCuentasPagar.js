@@ -4,6 +4,7 @@
 // ============================================
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../supabase';
+import { useRealtime } from '../../hooks/useRealtime';
 
 function diasRestantes(fechaVenc) {
   if (!fechaVenc) return null;
@@ -68,6 +69,7 @@ export default function TabCuentasPagar({ mobile }) {
   }, []);
 
   useEffect(() => { cargar(); }, [cargar]);
+  useRealtime(['cuentas_pagar', 'pagos_compras', 'compras'], cargar);
 
   // Filtrado
   const hoy = new Date(); hoy.setHours(0,0,0,0);

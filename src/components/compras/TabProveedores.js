@@ -4,6 +4,7 @@
 // ============================================
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../supabase';
+import { useRealtime } from '../../hooks/useRealtime';
 
 const TIPO_OPTIONS = ['Nacional', 'Extranjero'];
 const EMPTY_FORM = {
@@ -43,6 +44,7 @@ export default function TabProveedores({ mobile }) {
   }, []);
 
   useEffect(() => { cargar(); }, [cargar]);
+  useRealtime(['proveedores'], cargar);
 
   const filtrados = proveedores.filter(p =>
     p.nombre.toLowerCase().includes(busqueda.toLowerCase()) ||

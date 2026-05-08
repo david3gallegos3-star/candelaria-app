@@ -4,6 +4,7 @@
 // ============================================
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../supabase';
+import { useRealtime } from '../../hooks/useRealtime';
 
 const MESES = [
   'Enero','Febrero','Marzo','Abril','Mayo','Junio',
@@ -226,6 +227,7 @@ export default function TabNomina({ mobile }) {
   }, [periodoStr]);
 
   useEffect(() => { cargar(); }, [cargar]);
+  useRealtime(['nomina_roles', 'empleados', 'nomina_movimientos'], cargar);
 
   // ── Helpers movimientos ──────────────────────────────────
   const movsEmp    = empId => movimientos.filter(m => m.empleado_id === empId);

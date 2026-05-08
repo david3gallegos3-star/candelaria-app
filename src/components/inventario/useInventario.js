@@ -5,6 +5,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../supabase';
 import { crearNotificacion, registrarAuditoria } from '../../utils/helpers';
+import { useRealtime } from '../../hooks/useRealtime';
 
 export function useInventario({ userRol, currentUser }) {
 
@@ -97,6 +98,7 @@ export function useInventario({ userRol, currentUser }) {
 
   // ── Carga inicial ─────────────────────────────────────────
   useEffect(() => { cargarTodo(); }, []);
+  useRealtime(['materias_primas', 'inventario_mp', 'mermas', 'inventario_movimientos'], cargarTodo);
 
   async function cargarTodo() {
     setLoading(true);

@@ -3,6 +3,7 @@
 // ============================================
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../supabase';
+import { useRealtime } from '../../hooks/useRealtime';
 
 const hoy = () => {
   const d = new Date();
@@ -70,6 +71,7 @@ export default function TabDespacho({ mobile, currentUser }) {
   }, [fecha]);
 
   useEffect(() => { cargar(); }, [cargar]);
+  useRealtime(['stock_lotes_inyectados', 'despacho_cortes', 'despacho_cierre_dia'], cargar);
 
   function abrirNuevo() {
     setEditando(null); setCorteSelec(''); setLoteSelecId('');

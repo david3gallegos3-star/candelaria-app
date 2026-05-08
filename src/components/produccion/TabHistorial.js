@@ -2,8 +2,9 @@
 // TabHistorial.js
 // Historial de producción agrupado por fecha
 // ============================================
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../supabase';
+import { useRealtime } from '../../hooks/useRealtime';
 
 export default function TabHistorial({
   historialAgrupado,
@@ -36,7 +37,7 @@ export default function TabHistorial({
   const [notaEdit,          setNotaEdit]          = useState('');
   const [guardandoReg,      setGuardandoReg]      = useState(false);
 
-  useEffect(() => {
+  const cargar = useCallback(() => {
     setCargando(true);
     Promise.all([
       supabase.from('produccion_inyeccion')
@@ -58,6 +59,9 @@ export default function TabHistorial({
       setCargando(false);
     });
   }, []);
+
+  useEffect(() => { cargar(); }, [cargar]);
+  useRealtime(['produccion_inyeccion', 'despacho_cierre_dia', 'despacho_cortes', 'produccion_horneado_lotes'], cargar);
 
   // ── Revertir lote horneado — revierte TODO lo del ciclo ──
   async function revertirHorneado(lote) {

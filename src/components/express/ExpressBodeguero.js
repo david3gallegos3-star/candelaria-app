@@ -5,6 +5,7 @@
 // ============================================
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../supabase';
+import { useRealtime } from '../../hooks/useRealtime';
 
 export default function ExpressBodeguero({ userRol, currentUser, onLogout }) {
   const [materias,   setMaterias]   = useState([]);
@@ -18,6 +19,7 @@ export default function ExpressBodeguero({ userRol, currentUser, onLogout }) {
   const [busqueda,   setBusqueda]   = useState('');
 
   useEffect(() => { cargar(); }, []);
+  useRealtime(['materias_primas', 'inventario_mp'], cargar);
 
   async function cargar() {
     setCargando(true);

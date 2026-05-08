@@ -5,6 +5,7 @@
 // ============================================
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../supabase';
+import { useRealtime } from '../../hooks/useRealtime';
 
 const FORMAS_COBRO = [
   { value: 'efectivo',      label: '💵 Efectivo'     },
@@ -54,6 +55,7 @@ export default function ExpressRepartidor({ currentUser, onLogout }) {
   }, []);
 
   useEffect(() => { cargar(); }, [cargar]);
+  useRealtime(['cobros', 'cuentas_cobrar'], cargar);
 
   async function cobrar() {
     setError('');

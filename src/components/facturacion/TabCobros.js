@@ -4,6 +4,7 @@
 // ============================================
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../supabase';
+import { useRealtime } from '../../hooks/useRealtime';
 
 const FORMA_ICONO = {
   efectivo:      '💵',
@@ -21,6 +22,7 @@ export default function TabCobros({ mobile }) {
   const [filtroHasta,  setFiltroHasta]  = useState('');
 
   useEffect(() => { cargarCobros(); }, []);
+  useRealtime(['cobros'], cargarCobros);
 
   async function cargarCobros() {
     setCargando(true);

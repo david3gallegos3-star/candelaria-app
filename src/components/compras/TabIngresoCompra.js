@@ -5,6 +5,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../supabase';
 import { registrarAuditoria, crearNotificacion } from '../../utils/helpers';
+import { useRealtime } from '../../hooks/useRealtime';
 
 const itemVacio = () => ({
   materia_prima_id: '', mp_nombre: '',
@@ -49,6 +50,7 @@ export default function TabIngresoCompra({ mobile, currentUser, userRol }) {
   const [error,        setError]        = useState('');
 
   useEffect(() => { cargarDatos(); }, []);
+  useRealtime(['proveedores', 'materias_primas', 'inventario_mp'], cargarDatos);
 
   // ── Cargar proveedores y MP con stock ─────────────────────
   async function cargarDatos() {

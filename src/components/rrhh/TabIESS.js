@@ -5,6 +5,7 @@
 // ============================================
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../supabase';
+import { useRealtime } from '../../hooks/useRealtime';
 
 const MESES = [
   'Enero','Febrero','Marzo','Abril','Mayo','Junio',
@@ -31,6 +32,7 @@ export default function TabIESS({ mobile }) {
   }, [mes, anio]);
 
   useEffect(() => { cargar(); }, [cargar]);
+  useRealtime(['nomina_roles'], cargar);
 
   // Totales
   const totIessEmp = planilla.reduce((s, n) => s + (n.iess_empleado || 0), 0);

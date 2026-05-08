@@ -4,6 +4,7 @@
 // ============================================
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../supabase';
+import { useRealtime } from '../../hooks/useRealtime';
 
 function diasRestantes(fecha) {
   if (!fecha) return null;
@@ -171,6 +172,7 @@ export default function TabAlertas({ mobile }) {
   }, []);
 
   useEffect(() => { cargar(); }, [cargar]);
+  useRealtime(['cuentas_pagar', 'facturas', 'inventario_mp'], cargar);
 
   if (cargando) return (
     <div style={{ textAlign: 'center', padding: '60px', color: '#888' }}>

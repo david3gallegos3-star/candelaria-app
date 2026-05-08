@@ -5,6 +5,7 @@
 // ============================================
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../supabase';
+import { useRealtime } from '../../hooks/useRealtime';
 
 const TIPOS_NOTIF = [
   'Notificación sanitaria obligatoria (NSO)',
@@ -42,6 +43,7 @@ export default function TabARCSA({ mobile }) {
   }, []);
 
   useEffect(() => { cargar(); }, [cargar]);
+  useRealtime(['arcsa_registros'], cargar);
 
   function diasVenc(fechaV) {
     if (!fechaV) return null;

@@ -3,6 +3,7 @@
 // ============================================
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../supabase';
+import { useRealtime } from '../../hooks/useRealtime';
 
 export default function TabInyeccion({ currentUser, mobile, onSalmueraChange }) {
   const [formulasSalmuera,    setFormulasSalmuera]    = useState([]);
@@ -38,6 +39,7 @@ export default function TabInyeccion({ currentUser, mobile, onSalmueraChange }) 
   }, []);
 
   useEffect(() => { cargarInicial(); }, [cargarInicial]);
+  useRealtime(['productos', 'materias_primas', 'inventario_mp', 'formulaciones', 'config_productos', 'vista_horneado_config', 'produccion_inyeccion', 'produccion_inyeccion_cortes', 'lotes_maduracion'], cargarInicial);
 
   useEffect(() => {
     if (!formulaSelec) {

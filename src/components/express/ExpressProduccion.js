@@ -5,6 +5,7 @@
 // ============================================
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../supabase';
+import { useRealtime } from '../../hooks/useRealtime';
 
 const hoy = new Date().toISOString().split('T')[0];
 
@@ -22,6 +23,7 @@ export default function ExpressProduccion({ userRol, currentUser, onLogout }) {
   const [lotesListos,   setLotesListos]   = useState([]);
 
   useEffect(() => { cargar(); }, []);
+  useRealtime(['productos', 'produccion_diaria', 'lotes_maduracion'], cargar);
 
   async function cargar() {
     setCargando(true);

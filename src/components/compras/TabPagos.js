@@ -5,6 +5,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import * as XLSX from 'xlsx';
 import { supabase } from '../../supabase';
+import { useRealtime } from '../../hooks/useRealtime';
 
 const FORMAS = ['Todas', 'transferencia', 'efectivo', 'cheque', 'tarjeta'];
 
@@ -152,6 +153,7 @@ export default function TabPagos({ mobile }) {
   }, [desde, hasta, formaFiltro]);
 
   useEffect(() => { cargar(); }, [cargar]);
+  useRealtime(['pagos_compras', 'compras', 'proveedores'], cargar);
 
   function abrirEditar(p) {
     setEditForm({

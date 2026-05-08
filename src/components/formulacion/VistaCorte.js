@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../../supabase';
 import * as XLSX from 'xlsx';
 import { BloquesDinamicosEditor, calcBloques } from './BloquesDinamicos';
+import { useRealtime } from '../../hooks/useRealtime';
 
 export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
   const [tabActivo,       setTabActivo]       = useState('costos');
@@ -101,6 +102,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
   const [companionSplit, setCompanionSplit] = useState({ hijoLotes: [], padreLotes: [] });
 
   useEffect(() => { setConfigExiste(false); cargarTodo(); }, [producto.nombre, producto.mp_vinculado_id]);
+  useRealtime(['formulaciones', 'config_productos', 'deshuese_config', 'materias_primas', 'stock_lotes_inyectados', 'lotes_maduracion', 'produccion_inyeccion_cortes', 'vista_horneado_config', 'cierre_sierra_diario'], cargarTodo);
 
   useEffect(() => {
     if (!formulaSalmueraNombre || mpsFormula.length === 0) {
@@ -224,18 +226,18 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
       {
         const madIds = [...new Set(allLotes.map(l => l.lote_maduracion_id).filter(Boolean))];
         const padreLoteIds = allLotes.filter(l => l.tipo_corte === 'padre').map(l => l.lote_id).filter(Boolean);
-        const hijoParentIds = allLotes.filter(l => l.tipo_corte === 'hijo').map(l => l.parent_lote_id).filter(Boolean);
+        const hijoMadIds  = allLotes.filter(l => l.tipo_corte === 'hijo').map(l => l.lote_maduracion_id).filter(Boolean);
         const [{ data: madRows }, { data: hijoRows }, { data: padreRows }] = await Promise.all([
           madIds.length > 0
             ? supabase.from('lotes_maduracion')
-                .select('id, produccion_inyeccion(kg_carne_total, porcentaje_inyeccion, produccion_inyeccion_cortes(corte_nombre, kg_carne_cruda, kg_salmuera_asignada))')
+                .select('id, bloques_resultado, produccion_inyeccion(kg_carne_total, porcentaje_inyeccion, produccion_inyeccion_cortes(corte_nombre, kg_carne_cruda, kg_salmuera_asignada))')
                 .in('id', madIds)
             : Promise.resolve({ data: [] }),
           padreLoteIds.length > 0
             ? supabase.from('stock_lotes_inyectados').select('*').in('parent_lote_id', padreLoteIds)
             : Promise.resolve({ data: [] }),
-          hijoParentIds.length > 0
-            ? supabase.from('stock_lotes_inyectados').select('*').in('lote_id', hijoParentIds)
+          hijoMadIds.length > 0
+            ? supabase.from('stock_lotes_inyectados').select('*').in('lote_maduracion_id', hijoMadIds).eq('tipo_corte', 'padre')
             : Promise.resolve({ data: [] }),
         ]);
         const madMap = {};
@@ -1983,7 +1985,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
             </div>
           ) : (
             <div>
-              {lotesStock.map((l, idx) => {
+              {lotesStock.slice(0, 1).map((l, idx) => {
                 const esPadre = l.tipo_corte === 'padre';
                 const esHijo  = l.tipo_corte === 'hijo';
                 const madInfo = lotsDetail[l.lote_maduracion_id];
@@ -1996,12 +1998,18 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
                   : parseFloat(madInfo?.produccion_inyeccion?.porcentaje_inyeccion || 0);
                 const kgPostInj = kgCarne + kgSalAbs;
                 const hijoL    = companionSplit.hijoLotes.find(h => h.parent_lote_id === l.lote_id);
-                const padreL   = companionSplit.padreLotes.find(p => p.lote_id === l.parent_lote_id);
+                const padreL   = companionSplit.padreLotes.find(p => p.lote_maduracion_id === l.lote_maduracion_id);
+                const kgPreBif = (() => {
+                  const bifStep = (madInfo?.bloques_resultado?.pasos || []).find(p => p.tipo === 'bifurcacion');
+                  return bifStep ? parseFloat(bifStep.kgEntrada || 0) : 0;
+                })();
                 const kgPostMad = esPadre && hijoL
                   ? parseFloat(l.kg_inicial||0) + parseFloat(hijoL.kg_inyectado||0)
                   : esHijo && padreL
                     ? parseFloat(padreL.kg_inicial||0) + parseFloat(l.kg_inyectado||0)
-                    : parseFloat(l.kg_inyectado||0);
+                    : esHijo && kgPreBif > 0
+                      ? kgPreBif
+                      : parseFloat(l.kg_inyectado||0);
                 const kgDisp = parseFloat(l.kg_disponible || l.kg_inicial || 0);
                 const cMad   = parseFloat(l.costo_mad_kg || 0);
                 const hdrBg  = esPadre
@@ -2084,6 +2092,62 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
                         </div>
                       )}
 
+                      {/* Desglose paso a paso — padre */}
+                      {esPadre && (() => {
+                        const bloquesRes = madInfo?.bloques_resultado;
+                        if (!bloquesRes?.pasos) return null;
+                        const bifIdx = bloquesRes.pasos.findIndex(p => p.tipo === 'bifurcacion');
+                        const padrePasos = bifIdx >= 0
+                          ? bloquesRes.pasos.slice(0, bifIdx + 1)
+                          : bloquesRes.pasos;
+                        if (padrePasos.length === 0) return null;
+                        return (
+                          <div style={{ marginBottom: 12 }}>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>
+                              Flujo de costo — paso a paso
+                            </div>
+                            {padrePasos.map((p, i) => {
+                              const prevCostoAcum = i === 0 ? null : (padrePasos[i - 1]?.costoAcum ?? null);
+                              const costoKg = (p.tipo === 'bifurcacion')
+                                ? (p.costoKg ?? 0)
+                                : (p.kgSalida > 0 ? p.costoAcum / p.kgSalida : 0);
+                              const COLORS = { inyeccion: '#2980b9', maduracion: '#27ae60', rub: '#8e44ad', adicional: '#f39c12', merma: '#e74c3c', bifurcacion: '#6c3483' };
+                              const color = COLORS[p.tipo] || '#555';
+                              const LABELS = { inyeccion: 'Inyección', maduracion: 'Maduración', rub: 'Rub/Especias', adicional: 'Adicional', bifurcacion: 'Bifurcación' };
+                              const label = p.tipo === 'merma' ? (p.nombre_merma || 'Merma') : (LABELS[p.tipo] || p.tipo);
+                              const delta = prevCostoAcum !== null ? p.costoAcum - prevCostoAcum : null;
+                              const kgDisplay = p.tipo === 'bifurcacion' ? p.kgPadre : p.kgSalida;
+                              return (
+                                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 10px', marginBottom: 3, background: '#fafafa', borderRadius: 6, fontSize: 11, borderLeft: `3px solid ${color}` }}>
+                                  <div>
+                                    <span style={{ fontWeight: 600, color }}>{label}</span>
+                                    {p.tipo === 'inyeccion' && p.kgSalmuera > 0 && (
+                                      <span style={{ color: '#888', marginLeft: 6 }}>+{parseFloat(p.kgSalmuera).toFixed(3)} kg salmuera</span>
+                                    )}
+                                    {p.tipo === 'merma' && p.kgMermaReal > 0 && (
+                                      <span style={{ color: '#888', marginLeft: 6 }}>−{parseFloat(p.kgMermaReal).toFixed(3)} kg</span>
+                                    )}
+                                    {p.tipo === 'bifurcacion' && (
+                                      <span style={{ color: '#888', marginLeft: 6 }}>hijo → {parseFloat(p.kgHijo||0).toFixed(3)} kg</span>
+                                    )}
+                                    {delta !== null && delta < -0.00005 && (
+                                      <span style={{ color: '#27ae60', marginLeft: 6 }}>· −${Math.abs(delta).toFixed(4)} crédito</span>
+                                    )}
+                                    {delta !== null && delta > 0.00005 && (
+                                      <span style={{ color, marginLeft: 6 }}>· +${delta.toFixed(4)}</span>
+                                    )}
+                                  </div>
+                                  <div style={{ textAlign: 'right', fontWeight: 700, color: '#444', whiteSpace: 'nowrap' }}>
+                                    {parseFloat(kgDisplay || 0).toFixed(3)} kg
+                                    <span style={{ fontWeight: 400, color: '#888', marginLeft: 6 }}>${costoKg.toFixed(4)}/kg</span>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
+
                       {/* Separación — vista hijo */}
                       {esHijo && (
                         <div style={{ background: '#faf0ff', borderRadius: 8, padding: '10px 12px', marginBottom: 12 }}>
@@ -2113,6 +2177,56 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
                           </div>
                         </div>
                       )}
+
+                      {/* Desglose paso a paso (flujo dinámico) */}
+                      {(() => {
+                        const bloquesRes = madInfo?.bloques_resultado;
+                        if (!bloquesRes?.pasos) return null;
+                        const bifIdx = bloquesRes.pasos.findIndex(p => p.tipo === 'bifurcacion');
+                        const hijoSteps = bifIdx >= 0 ? bloquesRes.pasos.slice(bifIdx + 1) : [];
+                        if (hijoSteps.length === 0) return null;
+                        return (
+                          <div style={{ marginBottom: 10 }}>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>
+                              Flujo de costo — paso a paso
+                            </div>
+                            {hijoSteps.map((p, i) => {
+                              const prevCosto = i === 0
+                                ? (bloquesRes.pasos[bifIdx]?.costoHijo ?? bloquesRes.pasos[bifIdx]?.costoAcum ?? 0)
+                                : (hijoSteps[i - 1]?.costoAcum ?? 0);
+                              const costoKg = p.kgSalida > 0 ? p.costoAcum / p.kgSalida : 0;
+                              const delta = p.costoAcum - prevCosto; // negativo = crédito, positivo = costo añadido
+                              const COLORS = { merma: '#e74c3c', rub: '#8e44ad', adicional: '#f39c12' };
+                              const color = COLORS[p.tipo] || '#555';
+                              const label = p.tipo === 'merma'
+                                ? (p.nombre_merma || 'Merma')
+                                : p.tipo === 'rub' ? 'Rub/Especias'
+                                : p.tipo === 'adicional' ? 'Adicional'
+                                : p.tipo;
+                              return (
+                                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 10px', marginBottom: 3, background: '#fafafa', borderRadius: 6, fontSize: 11, borderLeft: `3px solid ${color}` }}>
+                                  <div>
+                                    <span style={{ fontWeight: 600, color }}>{label}</span>
+                                    {p.tipo === 'merma' && p.kgMermaReal > 0 && (
+                                      <span style={{ color: '#888', marginLeft: 6 }}>−{parseFloat(p.kgMermaReal).toFixed(3)} kg</span>
+                                    )}
+                                    {delta < -0.00005 && (
+                                      <span style={{ color: '#27ae60', marginLeft: 6 }}>· −${Math.abs(delta).toFixed(4)} crédito</span>
+                                    )}
+                                    {delta > 0.00005 && (
+                                      <span style={{ color, marginLeft: 6 }}>· +${delta.toFixed(4)}</span>
+                                    )}
+                                  </div>
+                                  <div style={{ textAlign: 'right', fontWeight: 700, color: '#444', whiteSpace: 'nowrap' }}>
+                                    {parseFloat(p.kgSalida || 0).toFixed(3)} kg
+                                    <span style={{ fontWeight: 400, color: '#888', marginLeft: 6 }}>${costoKg.toFixed(4)}/kg</span>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
 
                       {/* Stock disponible */}
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 8 }}>

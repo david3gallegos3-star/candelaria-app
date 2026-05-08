@@ -4,6 +4,7 @@
 // ============================================
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../supabase';
+import { useRealtime } from '../../hooks/useRealtime';
 
 const CONSUMIDOR_FINAL = {
   id: null, nombre: 'CONSUMIDOR FINAL',
@@ -41,6 +42,7 @@ export default function TabNuevaVenta({ mobile, currentUser }) {
   const [error,          setError]          = useState('');
 
   useEffect(() => { cargarDatos(); }, []);
+  useRealtime(['clientes', 'config_productos', 'cuentas_cobrar', 'facturas', 'precios_clientes', 'productos'], cargarDatos);
 
   // ── Cargar datos iniciales ────────────────────────────────
   async function cargarDatos() {

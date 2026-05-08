@@ -4,6 +4,7 @@
 // ============================================
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../supabase';
+import { useRealtime } from '../../hooks/useRealtime';
 
 function KPICard({ emoji, label, valor, color, sub, mobile }) {
   return (
@@ -92,6 +93,7 @@ export default function TabKPIs({ mobile }) {
   }, []);
 
   useEffect(() => { cargar(); }, [cargar]);
+  useRealtime(['facturas', 'cuentas_cobrar', 'produccion_diaria', 'compras', 'cuentas_pagar', 'nomina_roles', 'empleados'], cargar);
 
   if (cargando) return (
     <div style={{ textAlign: 'center', padding: '60px', color: '#888' }}>

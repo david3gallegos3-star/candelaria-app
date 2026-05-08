@@ -4,6 +4,7 @@
 // ============================================
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../supabase';
+import { useRealtime } from '../../hooks/useRealtime';
 
 export default function TabCajaChica({ mobile, currentUser }) {
   const hoy = new Date().toISOString().split('T')[0];
@@ -29,6 +30,7 @@ export default function TabCajaChica({ mobile, currentUser }) {
   function fEntrega() { return { cantidad:'', recibe:'' }; }
 
   useEffect(() => { cargarDia(); }, [fecha]);
+  useRealtime(['caja_chica', 'caja_entregas', 'caja_gastos', 'cobros', 'compras'], cargarDia);
   useEffect(() => { if (vista === 'mes') cargarMes(); }, [vista, mesSel]);
 
   async function cargarDia() {

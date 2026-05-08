@@ -4,6 +4,7 @@
 // ============================================
 import { useState, useEffect } from 'react';
 import { supabase } from '../../supabase';
+import { useRealtime } from '../../hooks/useRealtime';
 
 export function useClientes({ userRol, currentUser }) {
 
@@ -53,6 +54,7 @@ export function useClientes({ userRol, currentUser }) {
 
   // ── Carga inicial ─────────────────────────────────────────
   useEffect(() => { cargarTodo(); }, []);
+  useRealtime(['clientes', 'precios_clientes', 'productos', 'config_productos'], cargarTodo);
 
   async function cargarTodo() {
     setLoading(true);

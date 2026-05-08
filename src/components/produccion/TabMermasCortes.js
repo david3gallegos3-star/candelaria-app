@@ -2,33 +2,32 @@
 // TabMermasCortes.js
 // Historial de mermas para productos Cortes
 // ============================================
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../supabase';
+import { useRealtime } from '../../hooks/useRealtime';
 
 export default function TabMermasCortes({ mobile }) {
   const [registros, setRegistros] = useState([]);
   const [cargando,  setCargando]  = useState(true);
 
-  useEffect(() => {
-    async function cargar() {
-      setCargando(true);
-      const { data } = await supabase
-        .from('produccion_inyeccion_cortes')
-        .select('*, produccion_inyeccion ( fecha, formula_salmuera, estado )')
-        .eq('produccion_inyeccion.estado', 'cerrado')
-        .order('created_at', { ascending: false })
-        .limit(100);
-
-      // Filtrar solo los que tienen datos de merma y estado cerrado
-      const filtrados = (data || []).filter(r =>
-        r.produccion_inyeccion?.estado === 'cerrado' &&
-        parseFloat(r.kg_carne_limpia) > 0
-      );
-      setRegistros(filtrados);
-      setCargando(false);
-    }
-    cargar();
+  const cargar = useCallback(async () => {
+    setCargando(true);
+    const { data } = await supabase
+      .from('produccion_inyeccion_cortes')
+      .select('*, produccion_inyeccion ( fecha, formula_salmuera, estado )')
+      .eq('produccion_inyeccion.estado', 'cerrado')
+      .order('created_at', { ascending: false })
+      .limit(100);
+    const filtrados = (data || []).filter(r =>
+      r.produccion_inyeccion?.estado === 'cerrado' &&
+      parseFloat(r.kg_carne_limpia) > 0
+    );
+    setRegistros(filtrados);
+    setCargando(false);
   }, []);
+
+  useEffect(() => { cargar(); }, [cargar]);
+  useRealtime(['produccion_inyeccion_cortes', 'produccion_inyeccion'], cargar);
 
   // Calcular merma por registro
   const conMerma = registros.map(r => {

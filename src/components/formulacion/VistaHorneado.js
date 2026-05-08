@@ -6,6 +6,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../supabase';
 import * as XLSX from 'xlsx';
+import { useRealtime } from '../../hooks/useRealtime';
 
 const TABS = [
   { k: 'costos',     label: '💰 Costos 1 kg' },
@@ -110,6 +111,7 @@ export default function VistaHorneado({ producto, mobile, onVolver }) {
   }, [producto.nombre]);
 
   useEffect(() => { cargar(); }, [cargar]);
+  useRealtime(['materias_primas', 'productos', 'produccion_horneado_lotes', 'vista_horneado_config', 'config_productos', 'formulaciones', 'cierre_sierra_diario'], cargar);
 
   // ── Cargar costo salmuera ──────────────────────────────────
   useEffect(() => {

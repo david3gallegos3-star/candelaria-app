@@ -4,6 +4,7 @@
 // ============================================
 import { useState, useEffect } from 'react';
 import { supabase } from '../../supabase';
+import { useRealtime } from '../../hooks/useRealtime';
 
 const TIPOS = [
   'cambio_precio', 'cambio_nombre', 'entrada_inventario',
@@ -41,6 +42,7 @@ export function useAuditoria({ userRol }) {
 
   // ── Carga inicial ─────────────────────────────────────────
   useEffect(() => { buscar(); }, []);
+  useRealtime(['auditoria'], buscar);
 
   async function buscar() {
     setCargando(true);

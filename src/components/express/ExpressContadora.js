@@ -5,6 +5,7 @@
 // ============================================
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../supabase';
+import { useRealtime } from '../../hooks/useRealtime';
 
 const FORMAS_PAGO = [
   { value: 'transferencia', label: '🏦 Transferencia' },
@@ -134,6 +135,7 @@ export default function ExpressContadora({ currentUser, onLogout }) {
   }, []); // eslint-disable-line
 
   useEffect(() => { cargar(); }, [cargar]);
+  useRealtime(['cobros', 'compras', 'cuentas_cobrar', 'cuentas_pagar', 'facturas', 'pagos_compras'], cargar);
 
   async function pagarCuenta() {
     setError('');

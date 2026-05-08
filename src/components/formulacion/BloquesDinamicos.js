@@ -10,9 +10,12 @@ export function calcBloques({ bloques, kgIni, precioCarne, precioKgSalmuera, cos
   let kg = kgIni;
   let costoAcum = precioCarne * kgIni;
   const pasos = [];
+  let mermaGrupoBase = null; // base para mermas consecutivas (todas desde el mismo peso)
 
   for (const b of (bloques || [])) {
     if (!b.activo) continue;
+
+    if (b.tipo !== 'merma') mermaGrupoBase = null; // romper grupo al encontrar bloque no-merma
 
     if (b.tipo === 'inyeccion') {
       const pct   = parseFloat(b.pct_inj || 0) / 100;
@@ -49,9 +52,10 @@ export function calcBloques({ bloques, kgIni, precioCarne, precioKgSalmuera, cos
       pasos.push({ tipo: 'adicional', label: `🍋 Adicional`, kg, costoAcum, cAdic });
 
     } else if (b.tipo === 'merma') {
+      if (mermaGrupoBase === null) mermaGrupoBase = kg; // primer merma del grupo → guardar base
       const kgAntes  = kg;
       const pctM     = parseFloat(b.pct_merma || 0) / 100;
-      const kgMerma  = kgAntes * pctM;
+      const kgMerma  = Math.min(mermaGrupoBase * pctM, kg); // % sobre base del grupo
       kg = kgAntes - kgMerma;
       let credito = 0;
       if (b.merma_tipo === 2 || b.merma_tipo === 3) {
@@ -217,9 +221,9 @@ export function BloquesDinamicosEditor({
               <div style={{ padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}
                 onClick={() => setBloqueExpandido(isExp ? null : b.id)}>
 
-                {/* Toggle ON/OFF */}
-                <button onClick={e => { e.stopPropagation(); if (modoEdicion) updateBloque(b.id, { activo: !b.activo }); }}
-                  style={{ background: b.activo ? meta.color : '#ccc', color: 'white', border: 'none', borderRadius: 10, padding: '2px 8px', fontSize: 10, cursor: modoEdicion ? 'pointer' : 'default', fontWeight: 'bold', minWidth: 34 }}>
+                {/* Toggle ON/OFF — bifurcación siempre ON, no se puede apagar */}
+                <button onClick={e => { e.stopPropagation(); if (modoEdicion && b.tipo !== 'bifurcacion') updateBloque(b.id, { activo: !b.activo }); }}
+                  style={{ background: b.activo ? meta.color : '#ccc', color: 'white', border: 'none', borderRadius: 10, padding: '2px 8px', fontSize: 10, cursor: (modoEdicion && b.tipo !== 'bifurcacion') ? 'pointer' : 'default', fontWeight: 'bold', minWidth: 34 }}>
                   {b.activo ? 'ON' : 'OFF'}
                 </button>
 
@@ -237,8 +241,8 @@ export function BloquesDinamicosEditor({
                   <span style={{ fontSize: 11, color: meta.color, background: `${meta.color}15`, padding: '2px 8px', borderRadius: 6 }}>Tipo {b.merma_tipo} · {b.pct_merma}%</span>
                 )}
 
-                {/* Mover ↑↓ */}
-                {modoEdicion && (
+                {/* Mover ↑↓ — bifurcación siempre al final, sin mover ni eliminar */}
+                {modoEdicion && b.tipo !== 'bifurcacion' && (
                   <div style={{ display: 'flex', gap: 3 }} onClick={e => e.stopPropagation()}>
                     <button onClick={() => moverBloque(idx, -1)} disabled={idx === 0}
                       style={{ background: '#f0f2f5', border: 'none', borderRadius: 5, padding: '3px 7px', cursor: idx === 0 ? 'default' : 'pointer', fontSize: 11, opacity: idx === 0 ? 0.3 : 1 }}>↑</button>
@@ -449,8 +453,14 @@ export function BloquesDinamicosEditor({
 
                   {/* ── MERMA ── */}
                   {b.tipo === 'merma' && (() => {
-                    const activeIdx = bloques.slice(0, idx).filter(b2 => b2.activo).length;
-                    const kgActual  = activeIdx === 0 ? kgIni : (resultado.pasos[activeIdx - 1]?.kg || kgIni);
+                    const activeBlocksBefore = bloques.slice(0, idx).filter(b2 => b2.activo);
+                    const activeIdx = activeBlocksBefore.length;
+                    // Buscar el inicio del grupo de mermas consecutivas (mismo base que calcBloques)
+                    let grupoStartIdx = activeIdx;
+                    for (let j = activeBlocksBefore.length - 1; j >= 0; j--) {
+                      if (activeBlocksBefore[j].tipo === 'merma') { grupoStartIdx = j; } else break;
+                    }
+                    const kgActual  = grupoStartIdx === 0 ? kgIni : (resultado.pasos[grupoStartIdx - 1]?.kg || kgIni);
                     const pctM      = parseFloat(b.pct_merma || 0) / 100;
                     const kgMerma   = kgActual * pctM;
                     const precioRec = parseFloat(b.precio_merma_kg || 0);
@@ -617,6 +627,7 @@ export function BloquesDinamicosEditor({
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {Object.entries(BLOQUE_META)
               .filter(([tipo]) => !tiposDisponibles || tiposDisponibles.includes(tipo))
+              .filter(([tipo]) => tipo !== 'bifurcacion' || !bloques.some(b => b.tipo === 'bifurcacion'))
               .map(([tipo, meta]) => (
                 <button key={tipo} onClick={() => addBloque(tipo)}
                   style={{ padding: '5px 12px', borderRadius: 8, border: `1.5px dashed ${meta.color}60`, background: `${meta.color}08`, cursor: 'pointer', fontSize: 11, color: meta.color, fontWeight: 600 }}>

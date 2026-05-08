@@ -4,6 +4,7 @@
 // ============================================
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../supabase';
+import { useRealtime } from '../../hooks/useRealtime';
 
 const hoy = new Date().toISOString().slice(0, 10);
 const PARAMETROS = [
@@ -45,6 +46,7 @@ export default function TabCalidad({ mobile }) {
   }, []);
 
   useEffect(() => { cargar(); }, [cargar]);
+  useRealtime(['controles_calidad', 'lotes_produccion'], cargar);
 
   async function guardar() {
     if (!form.lote_id)             { setError('Selecciona un lote.'); return; }

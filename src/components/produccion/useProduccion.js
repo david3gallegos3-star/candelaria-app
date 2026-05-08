@@ -6,6 +6,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../../supabase';
 import { crearNotificacion, registrarAuditoria } from '../../utils/helpers';
+import { useRealtime } from '../../hooks/useRealtime';
 
 export function useProduccion({ userRol, currentUser }) {
 
@@ -46,6 +47,7 @@ export function useProduccion({ userRol, currentUser }) {
 
   // ── Carga inicial ─────────────────────────────────────────
   useEffect(() => { cargarTodo(); }, []);
+  useRealtime(['productos', 'produccion_diaria', 'inventario_mp', 'materias_primas', 'formulaciones', 'config_productos', 'cif_items', 'inventario_movimientos'], cargarTodo);
 
   async function cargarTodo() {
     setLoading(true);

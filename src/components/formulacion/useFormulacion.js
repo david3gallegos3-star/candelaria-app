@@ -5,6 +5,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../supabase';
 import { crearNotificacion } from '../../utils/helpers';
+import { useRealtime } from '../../hooks/useRealtime';
 import * as XLSX from 'xlsx';
 import { norm, isMobile } from './FormulacionInputs';
 
@@ -71,20 +72,10 @@ export function useFormulacion({ producto, userRol, currentUser }) {
     };
   }, [producto]);
 
-  useEffect(() => {
-    const channel = supabase
-      .channel('materias-primas-changes')
-      .on('postgres_changes', {
-        event:'*', schema:'public', table:'materias_primas'
-      }, () => {
-        supabase.from('materias_primas').select('*').order('nombre')
-          .then(({ data }) => {
-            if (data) { setMateriasPrimas(data); mpRef.current = data; }
-          });
-      })
-      .subscribe();
-    return () => supabase.removeChannel(channel);
-  }, [producto]);
+  useRealtime(['materias_primas', 'formulaciones', 'config_productos', 'cif_items', 'costos_mod_cif'], () => {
+    cargarDatos();
+    cargarCIF();
+  });
 
   // ── CIF ───────────────────────────────────────────────────
   async function cargarCIF() {

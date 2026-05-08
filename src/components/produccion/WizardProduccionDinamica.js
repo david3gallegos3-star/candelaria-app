@@ -55,17 +55,30 @@ export default function WizardProduccionDinamica({
   const [kgHijoF,      setKgHijoF]      = useState(null);
   const [stockIdPadre, setStockIdPadre] = useState(null);
   const [inputKg,      setInputKg]      = useState('');
-  const [guardando,       setGuardando]       = useState(false);
-  const [error,           setError]           = useState('');
-  const [rubIngredientes, setRubIngredientes] = useState(null); // null=cargando, []=sin fórmula, [...]= cargado
-  const [pendingHijo,     setPendingHijo]     = useState(null); // { kgHijo, costoKg, stockIdPadre } — esperando confirmación hijo
+  const [guardando,        setGuardando]        = useState(false);
+  const [error,            setError]            = useState('');
+  const [rubIngredientes,  setRubIngredientes]  = useState(null);
+  const [pendingHijo,      setPendingHijo]      = useState(null);
+  const [inputsHijo,       setInputsHijo]       = useState({});
+  const [hijoMermasDone,   setHijoMermasDone]   = useState(false);
 
   const pasos = useMemo(
     () => buildPasos({ modo, rama, bloques, bloquesHijo }),
     [modo, rama, bloques, bloquesHijo]
   );
 
-  const pasoActual = pasos[pasoIdx] || null;
+  const mermasHijo = useMemo(
+    () => rama === 'hijo' ? pasos.filter(b => b.tipo === 'merma') : [],
+    [pasos, rama]
+  );
+  const otrosHijo = useMemo(
+    () => rama === 'hijo' ? pasos.filter(b => b.tipo !== 'merma') : [],
+    [pasos, rama]
+  );
+
+  const pasoActual = rama === 'hijo' && hijoMermasDone
+    ? (otrosHijo[pasoIdx] || null)
+    : (pasos[pasoIdx] || null);
 
   // Cargar ingredientes cuando llegamos al paso Rub
   useEffect(() => {
@@ -103,9 +116,12 @@ export default function WizardProduccionDinamica({
       ? pasosPadre
       : [...pasosPadre, ...pasosHijoInd];
 
-    const globalIdx = (modo === 'momento2' && rama === 'hijo')
-      ? pasosPadre.length + pasoIdx
-      : pasoIdx;
+    const enHijoMermas = modo === 'momento2' && rama === 'hijo' && !hijoMermasDone && mermasHijo.length > 0;
+    const globalIdx = enHijoMermas
+      ? pasosPadre.length
+      : modo === 'momento2' && rama === 'hijo'
+        ? pasosPadre.length + mermasHijo.length + pasoIdx
+        : pasoIdx;
 
     return (
       <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 16, padding: '10px 0', borderBottom: '1px solid #e8e8e8' }}>
@@ -199,7 +215,7 @@ export default function WizardProduccionDinamica({
     });
   }
 
-  async function guardarStockLote({ loteId, lotesMadId, corteNombre, mpId, kg, costoTotal, costoKg, tipoCorte, parentLoteId, formulaSalmuera }) {
+  async function guardarStockLote({ loteId, lotesMadId, corteNombre, mpId, kg, kgInyectado, costoTotal, costoKg, tipoCorte, parentLoteId, formulaSalmuera }) {
     const hoy = new Date().toISOString().split('T')[0];
     let mpFinalId = mpId;
     if (!mpFinalId) {
@@ -237,7 +253,7 @@ export default function WizardProduccionDinamica({
     const { data: stockRow } = await supabase.from('stock_lotes_inyectados').insert({
       lote_id: loteId, lote_maduracion_id: lotesMadId,
       corte_nombre: corteNombre, materia_prima_id: mpFinalId,
-      kg_inicial: kg, kg_disponible: kg, kg_inyectado: kg,
+      kg_inicial: kg, kg_disponible: kg, kg_inyectado: kgInyectado || kg,
       costo_total: costoTotal, costo_iny_kg: costoKg, costo_mad_kg: costoKg,
       tipo_corte: tipoCorte, formula_salmuera: formulaSalmuera || '',
       fecha_entrada: hoy,
@@ -421,40 +437,98 @@ export default function WizardProduccionDinamica({
     setPasoIdx(prev => prev + 1);
   }
 
+  async function confirmarMermasHijo() {
+    for (let i = 0; i < mermasHijo.length; i++) {
+      const b = mermasHijo[i];
+      const key = b.id || i;
+      if (b.merma_tipo === 2 || b.merma_tipo === 3) {
+        const val = parseFloat(inputsHijo[key] || 0);
+        if (val <= 0) { setError(`Ingresa kg reales para "${b.nombre_merma || 'Merma'}"`); return; }
+      }
+    }
+    setGuardando(true); setError('');
+    try {
+      const loteRef = lote?.lote_id || 'NUEVO';
+      const kgBase = kgActual; // base para % de todas las mermas (misma que el flujo clásico)
+      let kgCurrent = kgBase;
+      let costoCurrent = costoAcum;
+      const localResults = [];
+      for (let i = 0; i < mermasHijo.length; i++) {
+        const b = mermasHijo[i];
+        const key = b.id || i;
+        let kgSalida = kgCurrent;
+        let nuevoCosto = costoCurrent;
+        if (b.merma_tipo === 1) {
+          const kgRealT1 = parseFloat(inputsHijo[key] || 0);
+          const kgMermaT1 = kgRealT1 > 0 ? kgRealT1 : kgBase * (parseFloat(b.pct_merma) || 0) / 100;
+          kgSalida = kgCurrent - kgMermaT1;
+        } else if (b.merma_tipo === 2) {
+          const kgReal = parseFloat(inputsHijo[key] || 0);
+          kgSalida  = kgCurrent - kgReal;
+          nuevoCosto = costoCurrent - kgReal * (parseFloat(b.precio_merma_kg) || 0);
+        } else if (b.merma_tipo === 3) {
+          const kgReal = parseFloat(inputsHijo[key] || 0);
+          kgSalida  = kgCurrent - kgReal;
+          nuevoCosto = costoCurrent - kgReal * (parseFloat(b.precio_merma_kg) || 0);
+          const mpMerma = b.mp_merma_id ? mpsFormula.find(m => String(m.id) === String(b.mp_merma_id)) : null;
+          if (b.mp_merma_id) {
+            await ingresarMpAInventario(b.mp_merma_id, mpMerma?.nombre_producto || mpMerma?.nombre || b.nombre_merma || 'Merma', kgReal, loteRef);
+          }
+        }
+        localResults.push({
+          tipo: b.tipo, merma_tipo: b.merma_tipo, nombre_merma: b.nombre_merma,
+          kgEntrada: kgCurrent, kgSalida, costoAcum: nuevoCosto,
+          kgMermaReal: kgCurrent - kgSalida,
+        });
+        kgCurrent  = kgSalida;
+        costoCurrent = nuevoCosto;
+      }
+      setResultados(prev => [...prev, ...localResults]);
+      setKgActual(kgCurrent);
+      setCostoAcum(costoCurrent);
+      setInputsHijo({});
+      setHijoMermasDone(true);
+      setPasoIdx(0);
+    } catch (e) { setError(e.message); }
+    setGuardando(false);
+  }
+
   // ── Detectar fin de pasos y avanzar a siguiente fase ─────────────────
   React.useEffect(() => {
-    if (pasoIdx < pasos.length) return; // aún quedan pasos
-
     if (modo === 'momento1') {
+      if (pasoIdx < pasos.length) return;
       if (pasos.length === 0) return;
       completarMomento1();
     } else if (modo === 'momento2') {
       if (rama === 'padre') {
-        if (pasos.length === 0) return; // padre sin pasos configurados
+        if (pasoIdx < pasos.length) return;
+        if (pasos.length === 0) return;
         const hasBifurcacion = pasos.some(p => p.tipo === 'bifurcacion');
         if (hasBifurcacion) {
           const hijoActivos = (bloquesHijo || []).filter(b => b.activo);
           if (hijoActivos.length > 0) {
             const costoKgBif = kgActual > 0 ? costoAcum / kgActual : 0;
+            const hijoMermasCount = hijoActivos.filter(b => b.tipo === 'merma').length;
             setRama('hijo');
             setKgActual(kgHijoF || 0);
             setCostoAcum((kgHijoF || 0) * costoKgBif);
             setPasoIdx(0);
             setInputKg('');
+            if (hijoMermasCount === 0) setHijoMermasDone(true);
           } else {
-            // Sin pasos hijo → finalizar padre y crear stock hijo directamente
             completarPadreYHijoDirectamente();
           }
         } else {
           completarMomento2Padre();
         }
       } else if (rama === 'hijo') {
-        // rama hijo completada (puede llegar con pasos.length === 0 si no hay bloques_hijo)
-        completarMomento2Hijo();
+        if (!hijoMermasDone) return; // esperando pantalla de mermas
+        if (pasoIdx < otrosHijo.length) return; // aún quedan otros pasos
+        completarHijo();
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pasoIdx, pasos.length, rama]);
+  }, [pasoIdx, pasos.length, rama, hijoMermasDone, otrosHijo.length]);
 
   async function completarMomento1() {
     setGuardando(true); setError('');
@@ -582,24 +656,37 @@ export default function WizardProduccionDinamica({
     setGuardando(false);
   }
 
-  async function completarMomento2Hijo() {
+  async function completarHijo() {
     setGuardando(true); setError('');
     try {
-      const costoKgH = kgActual > 0 ? costoAcum / kgActual : 0;
-      const corteNombreHijo = lote?.corteNombreHijo || '';
-      const formulaSal = lote?.formulaSalmuera || '';
+      const corteNombrePadre = lote?.corteNombrePadre || cfg?.producto_nombre || '';
+      const corteNombreHijo  = lote?.corteNombreHijo || '';
+      const formulaSal       = lote?.formulaSalmuera || '';
 
+      // Guardar padre usando datos de bifurcación
+      const bifResult = resultados.find(r => r.tipo === 'bifurcacion');
+      const kgP    = bifResult?.kgPadre || kgPadreF || 0;
+      const costoP = bifResult?.costoPadre || 0;
+      const costoKgP = kgP > 0 ? costoP / kgP : 0;
+      let stockIdP = null;
+      if (kgP > 0) {
+        stockIdP = await guardarStockLote({
+          loteId: lote?.loteId, lotesMadId: lote?.lotesMadId,
+          corteNombre: corteNombrePadre, mpId: lote?.mpPadreId || null,
+          kg: kgP, costoTotal: costoP, costoKg: costoKgP,
+          tipoCorte: 'padre', parentLoteId: null, formulaSalmuera: formulaSal,
+        });
+        setStockIdPadre(stockIdP);
+      }
+
+      // Guardar hijo (kgActual/costoAcum reflejan todos sus pasos completados)
+      const costoKgH = kgActual > 0 ? costoAcum / kgActual : 0;
       const stockIdH = await guardarStockLote({
-        loteId:          (lote?.loteId || '') + '-H',
-        lotesMadId:      lote?.lotesMadId,
-        corteNombre:     corteNombreHijo,
-        mpId:            null,
-        kg:              kgActual,
-        costoTotal:      costoAcum,
-        costoKg:         costoKgH,
-        tipoCorte:       'hijo',
-        parentLoteId:    lote?.loteId,
-        formulaSalmuera: formulaSal,
+        loteId: (lote?.loteId || '') + '-H', lotesMadId: lote?.lotesMadId,
+        corteNombre: corteNombreHijo, mpId: null,
+        kg: kgActual, kgInyectado: kgHijoF || kgActual,
+        costoTotal: costoAcum, costoKg: costoKgH,
+        tipoCorte: 'hijo', parentLoteId: lote?.loteId, formulaSalmuera: formulaSal,
       });
 
       const bloquesRes = lote?.bloquesResultado || {};
@@ -607,15 +694,84 @@ export default function WizardProduccionDinamica({
         ...bloquesRes,
         momento: 'completado',
         pasos: [...(bloquesRes.pasos || []), ...resultados],
-        hijo: { kg: kgActual, costo_kg: costoKgH, stock_id: stockIdH },
+        padre: { kg: kgP, costo_kg: costoKgP, stock_id: stockIdP },
+        hijo:  { kg: kgActual, costo_kg: costoKgH, stock_id: stockIdH },
       };
       await supabase.from('lotes_maduracion')
         .update({ bloques_resultado: bloquesActualizados })
         .eq('id', lote?.lotesMadId);
 
       onComplete({ bloquesResultado: bloquesActualizados });
-    } catch (e) { setError('Error al guardar hijo: ' + e.message); }
+    } catch (e) { setError('Error al guardar: ' + e.message); }
     setGuardando(false);
+  }
+
+  function renderHijoMermas() {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ background: '#fdf2f2', borderRadius: 10, padding: '10px 14px', border: '1.5px solid #e74c3c' }}>
+          <div style={{ fontWeight: 700, color: '#e74c3c', fontSize: 13 }}>
+            ✂️ Mermas — Rama Hijo ({mermasHijo.length} bloque{mermasHijo.length !== 1 ? 's' : ''})
+          </div>
+          <div style={{ fontSize: 11, color: '#555', marginTop: 2 }}>
+            Entrada: <strong>{kgActual.toFixed(3)} kg</strong>
+          </div>
+        </div>
+
+        {mermasHijo.map((b, i) => {
+          const key = b.id || i;
+          const val = parseFloat(inputsHijo[key] || 0);
+          const inputNeeded = b.merma_tipo === 2 || b.merma_tipo === 3;
+          const pct = parseFloat(b.pct_merma || 0);
+          const kgEstT1 = kgActual * (pct / 100);
+          const mpMerma = b.mp_merma_id ? mpsFormula.find(m => String(m.id) === String(b.mp_merma_id)) : null;
+          const credito = inputNeeded && val > 0 ? val * parseFloat(b.precio_merma_kg || 0) : 0;
+          return (
+            <div key={key} style={{ background: '#fdf8f8', borderRadius: 8, padding: '10px 14px', border: '1px solid #f1c0c0' }}>
+              <div style={{ fontWeight: 600, fontSize: 12, color: '#c0392b', marginBottom: 6 }}>
+                {b.nombre_merma || `Merma ${i + 1}`}
+                <span style={{ marginLeft: 6, fontWeight: 400, fontSize: 11, color: '#888' }}>Tipo {b.merma_tipo}</span>
+                {b.merma_tipo === 1 && (
+                  <span style={{ marginLeft: 6, fontWeight: 400, fontSize: 11, color: '#888' }}>
+                    — {pct}% = {kgEstT1.toFixed(3)} kg (automático)
+                  </span>
+                )}
+              </div>
+              <div>
+                <label style={{ fontSize: 10, fontWeight: 700, color: '#c0392b', display: 'block', marginBottom: 3 }}>
+                  {b.merma_tipo === 1 && `kg desechados (estimado: ${kgEstT1.toFixed(3)} kg)`}
+                  {b.merma_tipo === 2 && 'kg reales obtenidos'}
+                  {b.merma_tipo === 3 && <>kg obtenidos (irán a inventario){mpMerma && <span style={{ marginLeft: 4, fontWeight: 400 }}>→ {mpMerma.nombre_producto || mpMerma.nombre}</span>}</>}
+                </label>
+                <input
+                  type="number" min="0" step="0.001"
+                  placeholder={b.merma_tipo === 1 ? kgEstT1.toFixed(3) : '0.000'}
+                  value={inputsHijo[key] || ''}
+                  onChange={e => setInputsHijo(prev => ({ ...prev, [key]: e.target.value }))}
+                  style={{ width: '100%', padding: '8px', borderRadius: 7, border: '1.5px solid #e74c3c', fontSize: 14, fontWeight: 'bold', textAlign: 'center', boxSizing: 'border-box' }}
+                />
+                {b.merma_tipo === 1 && (
+                  <div style={{ marginTop: 3, fontSize: 10, color: '#888' }}>Costo se absorbe (sin crédito)</div>
+                )}
+                {credito > 0 && (
+                  <div style={{ marginTop: 4, fontSize: 11, color: '#27ae60', fontWeight: 600 }}>
+                    Crédito: ${credito.toFixed(4)}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+
+        <button
+          onClick={confirmarMermasHijo}
+          disabled={guardando}
+          style={{ width: '100%', padding: '12px', background: guardando ? '#aaa' : '#e74c3c', color: 'white', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 'bold', cursor: guardando ? 'default' : 'pointer', marginTop: 4 }}
+        >
+          {guardando ? 'Procesando...' : `✓ Confirmar ${mermasHijo.length} merma${mermasHijo.length !== 1 ? 's' : ''}`}
+        </button>
+      </div>
+    );
   }
 
   function renderPaso(b) {
@@ -940,9 +1096,14 @@ export default function WizardProduccionDinamica({
               {guardando ? 'Registrando...' : '✅ Confirmar y registrar Hijo'}
             </button>
           </div>
-        ) : pasoActual ? renderPaso(pasoActual) : (
-          <div style={{ textAlign: 'center', color: '#aaa', padding: 24 }}>Sin pasos activos</div>
-        )}
+        ) : (rama === 'hijo' && !hijoMermasDone && mermasHijo.length > 0)
+          ? renderHijoMermas()
+          : pasoActual
+            ? renderPaso(pasoActual)
+            : (
+              <div style={{ textAlign: 'center', color: '#aaa', padding: 24 }}>Sin pasos activos</div>
+            )
+        }
 
       </div>
     </div>

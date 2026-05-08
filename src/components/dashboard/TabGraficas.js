@@ -4,6 +4,7 @@
 // ============================================
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../supabase';
+import { useRealtime } from '../../hooks/useRealtime';
 
 const MESES_CORTO = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
 
@@ -161,6 +162,7 @@ export default function TabGraficas({ mobile }) {
   }, []);
 
   useEffect(() => { cargar(); }, [cargar]);
+  useRealtime(['compras', 'facturas', 'produccion_diaria'], cargar);
 
   if (cargando) return (
     <div style={{ textAlign: 'center', padding: '60px', color: '#888' }}>

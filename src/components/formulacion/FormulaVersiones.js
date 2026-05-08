@@ -4,6 +4,7 @@
 // ============================================
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../supabase';
+import { useRealtime } from '../../hooks/useRealtime';
 
 export default function FormulaVersiones({ producto, mobile, onRevertida, onCerrar }) {
 
@@ -19,6 +20,7 @@ export default function FormulaVersiones({ producto, mobile, onRevertida, onCerr
   const [cargandoVista, setCargandoVista] = useState(false);
 
   useEffect(() => { cargarHistorial(); }, [producto.id]);
+  useRealtime(['historial_general'], cargarHistorial);
 
   // ── Cargar fechas del historial ───────────────────────────────────────────
   async function cargarHistorial() {

@@ -5,6 +5,7 @@
 // ============================================
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../supabase';
+import { useRealtime } from '../../hooks/useRealtime';
 
 const MESES = [
   'Ene','Feb','Mar','Abr','May','Jun',
@@ -57,6 +58,7 @@ export default function TabReportesRRHH({ mobile }) {
   }, [anio]);
 
   useEffect(() => { cargar(); }, [cargar]);
+  useRealtime(['empleados', 'nomina_roles'], cargar);
 
   // Totales anuales
   const totAnual = resumen.reduce((acc, m) => ({

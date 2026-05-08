@@ -5,6 +5,7 @@
 // ============================================
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../supabase';
+import { useRealtime } from '../../hooks/useRealtime';
 
 const hoy  = new Date().toISOString().slice(0, 10);
 const mes1 = hoy.slice(0, 7) + '-01';
@@ -46,6 +47,7 @@ export default function TabLotes({ mobile }) {
   }, [desde, hasta]);
 
   useEffect(() => { cargar(); }, [cargar]);
+  useRealtime(['lotes_produccion', 'produccion_diaria'], cargar);
 
   async function abrirModal() {
     // Cargar producciones sin lote asignado
