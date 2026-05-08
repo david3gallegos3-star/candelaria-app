@@ -406,16 +406,29 @@ export default function TabMaduracion({ mobile, currentUser }) {
         const { data: deshCfgDin } = await supabase
           .from('deshuese_config').select('corte_hijo')
           .ilike('corte_padre', cortesWizardNombre).maybeSingle();
+
+        // Bloques hijo: primero padre.bloques_hijo, luego config propia del hijo
+        let bloquesHijoWizard = cfgDinCheck?.config?.bloques_hijo || [];
+        const corteHijoNombre = deshCfgDin?.corte_hijo || '';
+        if (bloquesHijoWizard.length === 0 && corteHijoNombre) {
+          const hijoRow = (cfgFreshRows || []).find(hc =>
+            (hc.producto_nombre || '').toLowerCase() === corteHijoNombre.toLowerCase()
+          );
+          if (hijoRow?.config?.bloques?.length > 0) {
+            bloquesHijoWizard = hijoRow.config.bloques;
+          }
+        }
+
         setWizardDinamico({
           modo:        'momento2',
           bloques:     cfgDinCheck?.config?.bloques || [],
-          bloquesHijo: cfgDinCheck?.config?.bloques_hijo || [],
+          bloquesHijo: bloquesHijoWizard,
           cfg:         cfgDinCheck?.config || {},
           lote: {
             loteId:           loteIdGuardado,
             lotesMadId:       modalPesaje.id,
             corteNombrePadre: cortesWizardNombre,
-            corteNombreHijo:  deshCfgDin?.corte_hijo || '',
+            corteNombreHijo:  corteHijoNombre,
             mpPadreId:        cortesWizardMpPadreId,
             formulaSalmuera:  formulaSalActual,
             bloquesResultado: brMomento1,
