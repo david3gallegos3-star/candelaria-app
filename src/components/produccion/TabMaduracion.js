@@ -269,9 +269,18 @@ export default function TabMaduracion({ mobile, currentUser }) {
     setError('');
 
     const formulaSalActual = (modalPesaje.produccion_inyeccion?.formula_salmuera || '').toLowerCase();
-    const cfgCortesEntry   = horneadoCfgs.find(hc =>
-      formulaSalActual && formulaSalActual === (hc.config?.formula_salmuera || '').toLowerCase()
-    );
+
+    // Fetch fresco — evita config cacheado en horneadoCfgs (guardado después del mount)
+    const { data: cfgFreshRows } = await supabase
+      .from('vista_horneado_config').select('producto_nombre,config').limit(50);
+
+    const cfgCortesEntry = (cfgFreshRows || []).find(hc => {
+      if (!hc.config || !formulaSalActual) return false;
+      const topLevel  = (hc.config.formula_salmuera || '').toLowerCase();
+      const inyBlock  = (hc.config.bloques || []).find(b => b.tipo === 'inyeccion');
+      const inyFormula = (inyBlock?.formula_salmuera || '').toLowerCase();
+      return topLevel === formulaSalActual || inyFormula === formulaSalActual;
+    });
     const esCortesPadre = cfgCortesEntry &&
       (cfgCortesEntry.config?._categoria || '').replace(/[ÓÒ]/g, 'O').toUpperCase().includes('CORTES') &&
       cfgCortesEntry.config?.tipo === 'padre';
@@ -378,22 +387,28 @@ export default function TabMaduracion({ mobile, currentUser }) {
       setModalPesaje(null);
       await cargar();
 
-      // ── Si el lote tiene bloques_resultado → Wizard dinámico Momento 2 ──
-      const { data: lotesMadActual } = await supabase.from('lotes_maduracion')
-        .select('bloques_resultado').eq('id', modalPesaje.id).maybeSingle();
-      const brMomento1 = lotesMadActual?.bloques_resultado;
-      if (brMomento1?.momento === 'momento1_completado' && esCortesPadre) {
+      // ── Si el producto tiene bloques dinámicos → Wizard dinámico Momento 2 ──
+      const { data: lotesMadActual } = await supabase
+        .from('lotes_maduracion').select('bloques_resultado').eq('id', modalPesaje.id).maybeSingle();
+      const brMomento1 = lotesMadActual?.bloques_resultado || null;
+      const cfgDinCheck = (cfgFreshRows || []).find(hc => {
+        if (!hc.config) return false;
+        const topLevel   = (hc.config.formula_salmuera || '').toLowerCase();
+        const inyBlock   = (hc.config.bloques || []).find(b => b.tipo === 'inyeccion');
+        const inyFormula = (inyBlock?.formula_salmuera || '').toLowerCase();
+        const byName     = cortesWizardNombre &&
+          hc.producto_nombre?.toLowerCase() === cortesWizardNombre.toLowerCase();
+        return (formulaSalActual && (topLevel === formulaSalActual || inyFormula === formulaSalActual)) || byName;
+      });
+      if (esCortesPadre && cfgDinCheck?.config?.bloques?.length > 0) {
         const { data: deshCfgDin } = await supabase
           .from('deshuese_config').select('corte_hijo')
           .ilike('corte_padre', cortesWizardNombre).maybeSingle();
-        const cfgDin = horneadoCfgs.find(hc =>
-          (hc.config?.formula_salmuera || '').toLowerCase() === formulaSalActual
-        );
         setWizardDinamico({
           modo:        'momento2',
-          bloques:     cfgDin?.config?.bloques || [],
-          bloquesHijo: cfgDin?.config?.bloques_hijo || [],
-          cfg:         cfgDin?.config || {},
+          bloques:     cfgDinCheck?.config?.bloques || [],
+          bloquesHijo: cfgDinCheck?.config?.bloques_hijo || [],
+          cfg:         cfgDinCheck?.config || {},
           lote: {
             loteId:           loteIdGuardado,
             lotesMadId:       modalPesaje.id,
