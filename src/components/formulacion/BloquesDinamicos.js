@@ -391,7 +391,14 @@ export function BloquesDinamicosEditor({
                   })()}
 
                   {/* ── ADICIONAL ── */}
-                  {b.tipo === 'adicional' && (
+                  {b.tipo === 'adicional' && (() => {
+                    const activeIdx  = bloques.slice(0, idx).filter(b2 => b2.activo).length;
+                    const kgActual   = activeIdx === 0 ? kgIni : (resultado.pasos[activeIdx - 1]?.kg || kgIni);
+                    const mpSel      = b.mp_adicional_id ? (mpsFormula || []).find(m => String(m.id) === String(b.mp_adicional_id)) : null;
+                    const precioMp   = parseFloat(mpSel?.precio_kg || 0);
+                    const grN        = parseFloat(b.gramos_adicional || 0);
+                    const costoTotal = (grN / 1000) * precioMp * kgActual;
+                    return (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                       <div>
                         <label style={{ fontSize: 11, fontWeight: 600, color: meta.color, display: 'block', marginBottom: 4 }}>Materia prima adicional</label>
@@ -411,7 +418,26 @@ export function BloquesDinamicosEditor({
                           {...inp({ border: `1.5px solid ${meta.color}` })}
                           onChange={e => { const v = parseFloat(e.target.value) || 0; updateBloque(b.id, { gramos_adicional: v }); setGramosAdicional(String(v)); }} />
                       </div>
+                      {mpSel && grN > 0 && (
+                        <div style={{ background: `${meta.color}10`, borderRadius: 8, padding: '10px 12px' }}>
+                          <div style={{ fontSize: 11, color: meta.color, marginBottom: 6 }}>
+                            {grN}g/kg × ${precioMp.toFixed(4)}/kg = ${(grN / 1000 * precioMp).toFixed(4)}/kg proceso
+                          </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                            <div style={{ background: 'white', borderRadius: 6, padding: '8px 10px', textAlign: 'center' }}>
+                              <div style={{ fontSize: 10, color: '#888', marginBottom: 2 }}>kg en proceso ahora</div>
+                              <div style={{ fontSize: 16, fontWeight: 900, color: meta.color }}>{kgActual.toFixed(3)} kg</div>
+                            </div>
+                            <div style={{ background: 'white', borderRadius: 6, padding: '8px 10px', textAlign: 'center' }}>
+                              <div style={{ fontSize: 10, color: '#888', marginBottom: 2 }}>costo total adicional</div>
+                              <div style={{ fontSize: 16, fontWeight: 900, color: meta.color }}>${costoTotal.toFixed(4)}</div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
+                    );
+                  })()}
                   )}
 
                   {/* ── MERMA ── */}
