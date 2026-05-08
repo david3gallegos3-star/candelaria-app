@@ -58,6 +58,7 @@ export default function WizardProduccionDinamica({
   const [guardando,       setGuardando]       = useState(false);
   const [error,           setError]           = useState('');
   const [rubIngredientes, setRubIngredientes] = useState(null); // null=cargando, []=sin fórmula, [...]= cargado
+  const [pendingHijo,     setPendingHijo]     = useState(null); // { kgHijo, costoKg, stockIdPadre } — esperando confirmación hijo
 
   const pasos = useMemo(
     () => buildPasos({ modo, rama, bloques, bloquesHijo }),
@@ -530,13 +531,11 @@ export default function WizardProduccionDinamica({
   }
 
   async function completarPadreYHijoDirectamente() {
-    // Bifurcación sin pasos hijo: crear stock padre + hijo en un solo paso
+    // Bifurcación sin pasos hijo: crear padre stock, luego pedir confirmación hijo
     setGuardando(true); setError('');
     try {
       const costoKgP = kgActual > 0 ? costoAcum / kgActual : 0;
-      const costoKgH = kgHijoF > 0 ? (costoAcum / kgActual) : 0;
       const corteNombrePadre = lote?.corteNombrePadre || '';
-      const corteNombreHijo  = lote?.corteNombreHijo  || '';
       const formulaSal = lote?.formulaSalmuera || '';
 
       const stockIdP = await guardarStockLote({
@@ -545,12 +544,25 @@ export default function WizardProduccionDinamica({
         kg: kgActual, costoTotal: costoAcum, costoKg: costoKgP,
         tipoCorte: 'padre', parentLoteId: null, formulaSalmuera: formulaSal,
       });
-      const kgH     = kgHijoF || 0;
-      const costoH  = kgH * costoKgH;
-      const stockIdH = kgH > 0 ? await guardarStockLote({
+      setStockIdPadre(stockIdP);
+      setPendingHijo({ kgHijo: kgHijoF || 0, costoKg: costoKgP, stockIdPadre: stockIdP });
+    } catch (e) { setError('Error al guardar padre: ' + e.message); }
+    setGuardando(false);
+  }
+
+  async function confirmarHijoPendiente() {
+    if (!pendingHijo) return;
+    setGuardando(true); setError('');
+    try {
+      const { kgHijo, costoKg } = pendingHijo;
+      const costoH = kgHijo * costoKg;
+      const corteNombreHijo = lote?.corteNombreHijo || '';
+      const formulaSal = lote?.formulaSalmuera || '';
+
+      const stockIdH = kgHijo > 0 ? await guardarStockLote({
         loteId: (lote?.loteId || '') + '-H', lotesMadId: lote?.lotesMadId,
         corteNombre: corteNombreHijo, mpId: null,
-        kg: kgH, costoTotal: costoH, costoKg: costoKgH,
+        kg: kgHijo, costoTotal: costoH, costoKg,
         tipoCorte: 'hijo', parentLoteId: lote?.loteId, formulaSalmuera: formulaSal,
       }) : null;
 
@@ -558,15 +570,15 @@ export default function WizardProduccionDinamica({
       const bloquesActualizados = {
         ...bloquesRes, momento: 'completado',
         pasos: [...(bloquesRes.pasos || []), ...resultados],
-        padre: { kg: kgActual, costo_kg: costoKgP, stock_id: stockIdP },
-        ...(stockIdH ? { hijo: { kg: kgH, costo_kg: costoKgH, stock_id: stockIdH } } : {}),
+        padre: { kg: kgActual, costo_kg: costoKg, stock_id: pendingHijo.stockIdPadre },
+        ...(stockIdH ? { hijo: { kg: kgHijo, costo_kg: costoKg, stock_id: stockIdH } } : {}),
       };
       await supabase.from('lotes_maduracion')
         .update({ bloques_resultado: bloquesActualizados })
         .eq('id', lote?.lotesMadId);
 
       onComplete({ bloquesResultado: bloquesActualizados });
-    } catch (e) { setError('Error al guardar lote: ' + e.message); }
+    } catch (e) { setError('Error al guardar hijo: ' + e.message); }
     setGuardando(false);
   }
 
@@ -885,7 +897,10 @@ export default function WizardProduccionDinamica({
               {modo === 'momento1' ? '🏭 Registrar Producción' : '⚖️ Pesaje — Continuar flujo'}
             </div>
             <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>
-              {rama === 'hijo' ? '🔀 Rama Hijo' : '👑 Rama Padre'} · {kgActual.toFixed(3)} kg · ${costoAcum > 0 && kgActual > 0 ? (costoAcum / kgActual).toFixed(4) : '—'}/kg
+              {pendingHijo
+                ? `🔀 Hijo pendiente · ${pendingHijo.kgHijo.toFixed(3)} kg · $${pendingHijo.costoKg.toFixed(4)}/kg`
+                : `${rama === 'hijo' ? '🔀 Rama Hijo' : '👑 Rama Padre'} · ${kgActual.toFixed(3)} kg · $${costoAcum > 0 && kgActual > 0 ? (costoAcum / kgActual).toFixed(4) : '—'}/kg`
+              }
             </div>
           </div>
           <button onClick={onCancel} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: '#888' }}>✕</button>
@@ -899,7 +914,33 @@ export default function WizardProduccionDinamica({
           </div>
         )}
 
-        {pasoActual ? renderPaso(pasoActual) : (
+        {pendingHijo ? (
+          /* ── Confirmación hijo pendiente (sin bloques_hijo configurados) ── */
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ background: '#f3e8fd', borderRadius: 12, padding: 16, border: '2px solid #6c3483' }}>
+              <div style={{ fontWeight: 700, color: '#6c3483', fontSize: 13, marginBottom: 10 }}>
+                🔀 Confirmar Hijo — {lote?.corteNombreHijo || 'Hijo'}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <div style={{ background: 'white', borderRadius: 8, padding: 12, textAlign: 'center' }}>
+                  <div style={{ fontSize: 10, color: '#888', marginBottom: 2 }}>KG Hijo</div>
+                  <div style={{ fontSize: 22, fontWeight: 900, color: '#6c3483' }}>{pendingHijo.kgHijo.toFixed(3)} kg</div>
+                </div>
+                <div style={{ background: 'white', borderRadius: 8, padding: 12, textAlign: 'center' }}>
+                  <div style={{ fontSize: 10, color: '#888', marginBottom: 2 }}>Costo/kg</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: '#6c3483' }}>${pendingHijo.costoKg.toFixed(4)}</div>
+                </div>
+              </div>
+              <div style={{ marginTop: 10, fontSize: 11, color: '#888', textAlign: 'center' }}>
+                Total: ${(pendingHijo.kgHijo * pendingHijo.costoKg).toFixed(4)}
+              </div>
+            </div>
+            <button onClick={confirmarHijoPendiente} disabled={guardando}
+              style={{ width: '100%', padding: '14px', background: guardando ? '#aaa' : 'linear-gradient(135deg,#6c3483,#8e44ad)', color: 'white', border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 'bold', cursor: guardando ? 'default' : 'pointer' }}>
+              {guardando ? 'Registrando...' : '✅ Confirmar y registrar Hijo'}
+            </button>
+          </div>
+        ) : pasoActual ? renderPaso(pasoActual) : (
           <div style={{ textAlign: 'center', color: '#aaa', padding: 24 }}>Sin pasos activos</div>
         )}
 
