@@ -373,6 +373,142 @@ export default function WizardProduccionDinamica({
     setPasoIdx(prev => prev + 1);
   }
 
+  // ── Detectar fin de pasos y avanzar a siguiente fase ─────────────────
+  React.useEffect(() => {
+    if (pasoIdx < pasos.length) return;
+    if (pasos.length === 0) return;
+
+    if (modo === 'momento1') {
+      completarMomento1();
+    } else if (modo === 'momento2') {
+      if (rama === 'padre') {
+        const hasBifurcacion = pasos.some(p => p.tipo === 'bifurcacion');
+        if (hasBifurcacion && (bloquesHijo || []).filter(b => b.activo).length > 0) {
+          const costoKgBif = kgActual > 0 ? costoAcum / kgActual : 0;
+          setRama('hijo');
+          setKgActual(kgHijoF || 0);
+          setCostoAcum((kgHijoF || 0) * costoKgBif);
+          setPasoIdx(0);
+          setInputKg('');
+        } else {
+          completarMomento2Padre();
+        }
+      } else if (rama === 'hijo') {
+        completarMomento2Hijo();
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pasoIdx, pasos.length]);
+
+  async function completarMomento1() {
+    setGuardando(true); setError('');
+    try {
+      const hoy = new Date().toISOString().split('T')[0];
+      const bloquesMad = (bloques || []).find(b => b.tipo === 'maduracion');
+      const horas = parseFloat(bloquesMad?.horas_mad || cfg?.horas_mad || 72);
+      const fechaSalida = new Date(Date.now() + horas * 3600000).toISOString().split('T')[0];
+      const formulaSal = resultados.find(r => r.tipo === 'inyeccion')?.formulaSalmuera || cfg?.formula_salmuera || '';
+
+      const bloquesResultado = {
+        momento: 'momento1_completado',
+        pasos: resultados,
+        kgPostMomento1: kgActual,
+        costoAcumMomento1: costoAcum,
+      };
+
+      const loteId = `L${Date.now()}`;
+      const { data: loteRow, error: loteErr } = await supabase.from('lotes_maduracion').insert({
+        lote_id: loteId,
+        estado: 'activo',
+        fecha_entrada: hoy,
+        fecha_salida: fechaSalida,
+        kg_inicial: parseFloat(kgInicial),
+        bloques_resultado: bloquesResultado,
+        ...(formulaSal ? { formula_salmuera: formulaSal } : {}),
+      }).select('id,lote_id').single();
+      if (loteErr) throw loteErr;
+
+      onComplete({ loteId: loteRow.lote_id, lotesMadId: loteRow.id, bloquesResultado });
+    } catch (e) { setError('Error al guardar: ' + e.message); setGuardando(false); }
+  }
+
+  async function finalizarRamaPadre(kgP, costoP) {
+    setGuardando(true); setError('');
+    try {
+      const costoKgP = kgP > 0 ? costoP / kgP : 0;
+      const corteNombrePadre = lote?.corteNombrePadre || cfg?.producto_nombre || '';
+      const formulaSal = resultados.find(r => r.tipo === 'inyeccion')?.formulaSalmuera || lote?.formulaSalmuera || '';
+
+      const stockIdP = await guardarStockLote({
+        loteId:          lote?.loteId,
+        lotesMadId:      lote?.lotesMadId,
+        corteNombre:     corteNombrePadre,
+        mpId:            lote?.mpPadreId || null,
+        kg:              kgP,
+        costoTotal:      costoP,
+        costoKg:         costoKgP,
+        tipoCorte:       'padre',
+        parentLoteId:    null,
+        formulaSalmuera: formulaSal,
+      });
+      setStockIdPadre(stockIdP);
+
+      const bloquesRes = lote?.bloquesResultado || {};
+      const bloquesActualizados = {
+        ...bloquesRes,
+        momento: kgHijoF ? 'padre_completado' : 'completado',
+        pasos: [...(bloquesRes.pasos || []), ...resultados],
+        padre: { kg: kgP, costo_kg: costoKgP, stock_id: stockIdP },
+      };
+      await supabase.from('lotes_maduracion')
+        .update({ bloques_resultado: bloquesActualizados, estado: kgHijoF ? 'activo' : 'completado' })
+        .eq('id', lote?.lotesMadId);
+
+      if (!kgHijoF) onComplete({ bloquesResultado: bloquesActualizados });
+    } catch (e) { setError('Error al guardar padre: ' + e.message); }
+    setGuardando(false);
+  }
+
+  async function completarMomento2Padre() {
+    await finalizarRamaPadre(kgActual, costoAcum);
+  }
+
+  async function completarMomento2Hijo() {
+    setGuardando(true); setError('');
+    try {
+      const costoKgH = kgActual > 0 ? costoAcum / kgActual : 0;
+      const corteNombreHijo = lote?.corteNombreHijo || '';
+      const formulaSal = lote?.formulaSalmuera || '';
+
+      const stockIdH = await guardarStockLote({
+        loteId:          (lote?.loteId || '') + '-H',
+        lotesMadId:      lote?.lotesMadId,
+        corteNombre:     corteNombreHijo,
+        mpId:            null,
+        kg:              kgActual,
+        costoTotal:      costoAcum,
+        costoKg:         costoKgH,
+        tipoCorte:       'hijo',
+        parentLoteId:    lote?.loteId,
+        formulaSalmuera: formulaSal,
+      });
+
+      const bloquesRes = lote?.bloquesResultado || {};
+      const bloquesActualizados = {
+        ...bloquesRes,
+        momento: 'completado',
+        pasos: [...(bloquesRes.pasos || []), ...resultados],
+        hijo: { kg: kgActual, costo_kg: costoKgH, stock_id: stockIdH },
+      };
+      await supabase.from('lotes_maduracion')
+        .update({ bloques_resultado: bloquesActualizados, estado: 'completado' })
+        .eq('id', lote?.lotesMadId);
+
+      onComplete({ bloquesResultado: bloquesActualizados });
+    } catch (e) { setError('Error al guardar hijo: ' + e.message); }
+    setGuardando(false);
+  }
+
   function renderPaso(b) {
     const costoKgActual = kgActual > 0 ? costoAcum / kgActual : 0;
 
