@@ -341,30 +341,54 @@ export function BloquesDinamicosEditor({
                   )}
 
                   {/* ── RUB ── */}
-                  {b.tipo === 'rub' && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                      <div>
-                        <label style={{ fontSize: 11, fontWeight: 600, color: meta.color, display: 'block', marginBottom: 4 }}>Fórmula de rub</label>
-                        <select value={b.formula_rub} disabled={!modoEdicion}
-                          onChange={e => { updateBloque(b.id, { formula_rub: e.target.value }); setFormulaRubNombre(e.target.value); }}
-                          style={{ width: '100%', padding: '7px 10px', borderRadius: 7, border: `1.5px solid ${meta.color}`, fontSize: 13, background: modoEdicion ? 'white' : '#f8f9fa', boxSizing: 'border-box' }}>
-                          <option value="">— sin rub —</option>
-                          {rubFormulas.map(n => <option key={n} value={n}>{n}</option>)}
-                        </select>
-                      </div>
-                      <div>
-                        <label style={{ fontSize: 11, fontWeight: 600, color: meta.color, display: 'block', marginBottom: 4 }}>Fórmula para N kg de carne</label>
-                        <input type="number" min="0.1" step="0.1" value={b.kg_rub_base}
-                          {...inp({ border: `1.5px solid ${meta.color}` })}
-                          onChange={e => { const v = parseFloat(e.target.value) || 1; updateBloque(b.id, { kg_rub_base: v }); setKgRubBase(String(v)); }} />
-                      </div>
-                      {costoRubFormula > 0 && (
-                        <div style={{ fontSize: 11, color: meta.color, background: `${meta.color}10`, padding: '6px 10px', borderRadius: 6 }}>
-                          ${costoRubFormula.toFixed(4)} fórmula ÷ {b.kg_rub_base} kg = ${(b.kg_rub_base > 0 ? costoRubFormula / b.kg_rub_base : 0).toFixed(4)}/kg
+                  {b.tipo === 'rub' && (() => {
+                    const activeIdx  = bloques.slice(0, idx).filter(b2 => b2.activo).length;
+                    const kgActual   = activeIdx === 0 ? kgIni : (resultado.pasos[activeIdx - 1]?.kg || kgIni);
+                    const kgBase     = parseFloat(b.kg_rub_base) || 1;
+                    const costoKgRub = kgBase > 0 ? costoRubFormula / kgBase : 0;
+                    const costoTotal = costoKgRub * kgActual;
+                    return (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                        <div>
+                          <label style={{ fontSize: 11, fontWeight: 600, color: meta.color, display: 'block', marginBottom: 4 }}>Fórmula de rub</label>
+                          <select value={b.formula_rub} disabled={!modoEdicion}
+                            onChange={e => { updateBloque(b.id, { formula_rub: e.target.value }); setFormulaRubNombre(e.target.value); }}
+                            style={{ width: '100%', padding: '7px 10px', borderRadius: 7, border: `1.5px solid ${meta.color}`, fontSize: 13, background: modoEdicion ? 'white' : '#f8f9fa', boxSizing: 'border-box' }}>
+                            <option value="">— sin rub —</option>
+                            {rubFormulas.map(n => <option key={n} value={n}>{n}</option>)}
+                          </select>
                         </div>
-                      )}
-                    </div>
-                  )}
+                        <div>
+                          <label style={{ fontSize: 11, fontWeight: 600, color: meta.color, display: 'block', marginBottom: 4 }}>
+                            Fórmula base para
+                            <span style={{ fontWeight: 400, color: '#aaa', marginLeft: 6 }}>
+                              (la fórmula está calculada para cuántos kg)
+                            </span>
+                          </label>
+                          <input type="number" min="0.1" step="0.1" value={b.kg_rub_base}
+                            {...inp({ border: `1.5px solid ${meta.color}` })}
+                            onChange={e => { const v = parseFloat(e.target.value) || 1; updateBloque(b.id, { kg_rub_base: v }); setKgRubBase(String(v)); }} />
+                        </div>
+                        {costoRubFormula > 0 && (
+                          <div style={{ background: `${meta.color}10`, borderRadius: 8, padding: '10px 12px' }}>
+                            <div style={{ fontSize: 11, color: meta.color, marginBottom: 6 }}>
+                              ${costoRubFormula.toFixed(4)} fórmula ÷ {kgBase} kg base = ${costoKgRub.toFixed(4)}/kg
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                              <div style={{ background: 'white', borderRadius: 6, padding: '8px 10px', textAlign: 'center' }}>
+                                <div style={{ fontSize: 10, color: '#888', marginBottom: 2 }}>kg en proceso ahora</div>
+                                <div style={{ fontSize: 16, fontWeight: 900, color: meta.color }}>{kgActual.toFixed(3)} kg</div>
+                              </div>
+                              <div style={{ background: 'white', borderRadius: 6, padding: '8px 10px', textAlign: 'center' }}>
+                                <div style={{ fontSize: 10, color: '#888', marginBottom: 2 }}>costo total rub</div>
+                                <div style={{ fontSize: 16, fontWeight: 900, color: meta.color }}>${costoTotal.toFixed(4)}</div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   {/* ── ADICIONAL ── */}
                   {b.tipo === 'adicional' && (
