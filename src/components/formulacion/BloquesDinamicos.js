@@ -239,42 +239,37 @@ export function BloquesDinamicosEditor({
                 <div style={{ borderTop: `2px solid ${meta.color}20`, padding: '12px 14px', background: '#fafbfc' }}>
 
                   {/* ── INYECCIÓN ── */}
-                  {b.tipo === 'inyeccion' && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                      <div>
-                        <label style={{ fontSize: 11, fontWeight: 600, color: meta.color, display: 'block', marginBottom: 4 }}>Fórmula de salmuera</label>
-                        <select value={b.formula_salmuera} disabled={!modoEdicion}
-                          onChange={e => { updateBloque(b.id, { formula_salmuera: e.target.value }); setFormulaSalmueraNombre(e.target.value); }}
-                          style={{ width: '100%', padding: '7px 10px', borderRadius: 7, border: `1.5px solid ${meta.color}`, fontSize: 13, background: modoEdicion ? 'white' : '#f8f9fa', boxSizing: 'border-box' }}>
-                          <option value="">— seleccionar salmuera —</option>
-                          {formulaciones.map(n => <option key={n} value={n}>{n}</option>)}
-                        </select>
-                      </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  {b.tipo === 'inyeccion' && (() => {
+                    // kg que llegan a este bloque (del paso anterior en el flujo)
+                    const activeIdx = bloques.slice(0, idx).filter(b2 => b2.activo).length;
+                    const kgAntes   = activeIdx === 0 ? kgIni : (resultado.pasos[activeIdx - 1]?.kg || kgIni);
+                    const kgSal     = kgAntes * ((b.pct_inj || 0) / 100);
+                    return (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                        <div>
+                          <label style={{ fontSize: 11, fontWeight: 600, color: meta.color, display: 'block', marginBottom: 4 }}>Fórmula de salmuera</label>
+                          <select value={b.formula_salmuera} disabled={!modoEdicion}
+                            onChange={e => { updateBloque(b.id, { formula_salmuera: e.target.value }); setFormulaSalmueraNombre(e.target.value); }}
+                            style={{ width: '100%', padding: '7px 10px', borderRadius: 7, border: `1.5px solid ${meta.color}`, fontSize: 13, background: modoEdicion ? 'white' : '#f8f9fa', boxSizing: 'border-box' }}>
+                            <option value="">— seleccionar salmuera —</option>
+                            {formulaciones.map(n => <option key={n} value={n}>{n}</option>)}
+                          </select>
+                        </div>
                         <div>
                           <label style={{ fontSize: 11, fontWeight: 600, color: meta.color, display: 'block', marginBottom: 4 }}>% Inyección</label>
                           <input type="number" min="0" step="1" value={b.pct_inj}
                             {...inp({ border: `1.5px solid ${meta.color}` })}
                             onChange={e => { const v = parseFloat(e.target.value) || 0; updateBloque(b.id, { pct_inj: v }); setPctInj(String(v)); }} />
                         </div>
-                        <div>
-                          <label style={{ fontSize: 11, fontWeight: 600, color: meta.color, display: 'block', marginBottom: 4 }}>kg iniciales</label>
-                          <input type="number" min="0.1" step="0.1" value={b.kg_sal_base || kgSalBase}
-                            {...inp({ border: `1.5px solid ${meta.color}` })}
-                            onChange={e => { const v = parseFloat(e.target.value) || 2; updateBloque(b.id, { kg_sal_base: v }); setKgSalBase(String(v)); }} />
-                        </div>
-                      </div>
-                      {precioKgSalmuera > 0 && (b.pct_inj || 0) > 0 && (() => {
-                        const kgS = parseFloat(b.kg_sal_base || kgSalBase || 2);
-                        const kgSal = kgS * (b.pct_inj / 100);
-                        return (
+                        {(b.pct_inj || 0) > 0 && (
                           <div style={{ fontSize: 11, color: meta.color, background: `${meta.color}10`, padding: '6px 10px', borderRadius: 6 }}>
-                            {kgS} kg × {b.pct_inj}% = {kgSal.toFixed(3)} kg salmuera · ${(kgSal * precioKgSalmuera).toFixed(4)}
+                            {kgAntes.toFixed(3)} kg × {b.pct_inj}% = <strong>{kgSal.toFixed(3)} kg salmuera</strong>
+                            {precioKgSalmuera > 0 && ` · $${(kgSal * precioKgSalmuera).toFixed(4)}`}
                           </div>
-                        );
-                      })()}
-                    </div>
-                  )}
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   {/* ── MADURACIÓN ── */}
                   {b.tipo === 'maduracion' && (
