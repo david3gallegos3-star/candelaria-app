@@ -5,6 +5,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../supabase';
 import { crearNotificacion } from '../../utils/helpers';
+import WizardProduccionDinamica from './WizardProduccionDinamica';
 
 function diasParaSalida(fechaSalida) {
   const hoy  = new Date(); hoy.setHours(0,0,0,0);
@@ -86,6 +87,9 @@ export default function TabMaduracion({ mobile, currentUser }) {
   const [mpsParaCortes,     setMpsParaCortes]     = useState([]);
   const [hijoCfgDeshuese,   setHijoCfgDeshuese]   = useState(null);
 
+  // ── Wizard dinámico CORTES ──
+  const [wizardDinamico, setWizardDinamico] = useState(null);
+
   function setDsh(corte, field, val) {
     setDshData(prev => ({ ...prev, [corte]: { ...prev[corte], [field]: val } }));
   }
@@ -95,6 +99,24 @@ export default function TabMaduracion({ mobile, currentUser }) {
   const [editKgs,        setEditKgs]        = useState({});    // {idx: kg}
   const [guardandoEdit,  setGuardandoEdit]  = useState(false);
   const [errorEdit,      setErrorEdit]      = useState('');
+
+  function abrirWizardMomento1(corteNombre, kgIni) {
+    const cfg = horneadoCfgs.find(hc =>
+      (hc.config?._categoria || '').replace(/[ÓÒ]/g,'O').toUpperCase().includes('CORTES') &&
+      hc.producto_nombre?.toLowerCase() === corteNombre.toLowerCase()
+    );
+    if (!cfg?.config?.bloques) return false;
+    setWizardDinamico({
+      modo:        'momento1',
+      bloques:     cfg.config.bloques,
+      bloquesHijo: cfg.config.bloques_hijo || [],
+      cfg:         cfg.config,
+      lote:        null,
+      kgInicial:   kgIni,
+      precioCarne: 0,
+    });
+    return true;
+  }
 
   const cargar = useCallback(async () => {
     setCargando(true);
@@ -2689,6 +2711,23 @@ export default function TabMaduracion({ mobile, currentUser }) {
           </div>
         );
       })()}
+
+      {/* ── Wizard dinámico CORTES ── */}
+      {wizardDinamico && (
+        <WizardProduccionDinamica
+          modo={wizardDinamico.modo}
+          bloques={wizardDinamico.bloques}
+          bloquesHijo={wizardDinamico.bloquesHijo}
+          cfg={wizardDinamico.cfg}
+          lote={wizardDinamico.lote}
+          kgInicial={wizardDinamico.kgInicial}
+          precioCarne={wizardDinamico.precioCarne}
+          currentUser={currentUser}
+          mpsFormula={wizardDinamico.mpsFormula || []}
+          onComplete={() => { setWizardDinamico(null); cargar(); }}
+          onCancel={() => setWizardDinamico(null)}
+        />
+      )}
 
     </div>
   );
