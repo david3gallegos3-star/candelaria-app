@@ -378,6 +378,39 @@ export default function TabMaduracion({ mobile, currentUser }) {
       setModalPesaje(null);
       await cargar();
 
+      // ── Si el lote tiene bloques_resultado → Wizard dinámico Momento 2 ──
+      const { data: lotesMadActual } = await supabase.from('lotes_maduracion')
+        .select('bloques_resultado').eq('id', modalPesaje.id).maybeSingle();
+      const brMomento1 = lotesMadActual?.bloques_resultado;
+      if (brMomento1?.momento === 'momento1_completado' && esCortesPadre) {
+        const { data: deshCfgDin } = await supabase
+          .from('deshuese_config').select('corte_hijo')
+          .ilike('corte_padre', cortesWizardNombre).maybeSingle();
+        const cfgDin = horneadoCfgs.find(hc =>
+          (hc.config?.formula_salmuera || '').toLowerCase() === formulaSalActual
+        );
+        setWizardDinamico({
+          modo:        'momento2',
+          bloques:     cfgDin?.config?.bloques || [],
+          bloquesHijo: cfgDin?.config?.bloques_hijo || [],
+          cfg:         cfgDin?.config || {},
+          lote: {
+            loteId:           loteIdGuardado,
+            lotesMadId:       modalPesaje.id,
+            corteNombrePadre: cortesWizardNombre,
+            corteNombreHijo:  deshCfgDin?.corte_hijo || '',
+            mpPadreId:        cortesWizardMpPadreId,
+            formulaSalmuera:  formulaSalActual,
+            bloquesResultado: brMomento1,
+          },
+          kgInicial:   cortesWizardKgMad,
+          precioCarne: cortesWizardKgMad > 0 ? cortesWizardCosto / cortesWizardKgMad : 0,
+          mpsFormula:  mpsParaCortes,
+        });
+        setGuardando(false);
+        return;
+      }
+
       // ── Si es CORTES Padre, abrir wizard de separación ──
       if (esCortesPadre && cortesWizardMpPadreId) {
         const { data: deshCfg } = await supabase
