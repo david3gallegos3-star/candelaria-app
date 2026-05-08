@@ -293,12 +293,38 @@ export function BloquesDinamicosEditor({
                             onChange={e => { const v = parseFloat(e.target.value) || 0; updateBloque(b.id, { minutos_mad: v }); setMinutosMad(String(v)); }} />
                         </div>
                       </div>
-                      <div>
-                        <label style={{ fontSize: 11, fontWeight: 600, color: '#e74c3c', display: 'block', marginBottom: 4 }}>kg salida maduración</label>
-                        <input type="number" min="0" step="0.001" value={b.kg_salida_mad} placeholder="ej: 1.800"
-                          {...inp({ border: '1.5px solid #e74c3c', textAlign: 'left' })}
-                          onChange={e => { const v = parseFloat(e.target.value) || 0; updateBloque(b.id, { kg_salida_mad: v }); setKgSalidaMad(String(v)); }} />
-                      </div>
+                      {(() => {
+                        // kg que entran a este bloque de maduración
+                        const activeIdx  = bloques.slice(0, idx).filter(b2 => b2.activo).length;
+                        const kgEntrada  = activeIdx === 0 ? kgIni : (resultado.pasos[activeIdx - 1]?.kg || kgIni);
+                        const kgSalidaB  = parseFloat(b.kg_salida_mad || 0);
+                        const mermaKg    = kgSalidaB > 0 ? kgEntrada - kgSalidaB : 0;
+                        const pctMerma   = kgEntrada > 0 && kgSalidaB > 0 ? (mermaKg / kgEntrada * 100) : null;
+                        return (
+                          <div>
+                            <label style={{ fontSize: 11, fontWeight: 600, color: '#e74c3c', display: 'block', marginBottom: 4 }}>
+                              kg salida maduración
+                              {kgEntrada > 0 && (
+                                <span style={{ fontWeight: 400, color: '#888', marginLeft: 8 }}>
+                                  entrada: {kgEntrada.toFixed(3)} kg
+                                </span>
+                              )}
+                            </label>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                              <input type="number" min="0" step="0.001" value={b.kg_salida_mad} placeholder="ej: 1.800"
+                                {...inp({ border: '1.5px solid #e74c3c', textAlign: 'left', flex: 1 })}
+                                onChange={e => { const v = parseFloat(e.target.value) || 0; updateBloque(b.id, { kg_salida_mad: v }); setKgSalidaMad(String(v)); }} />
+                              {pctMerma !== null && (
+                                <div style={{ background: '#fdf2f2', border: '1.5px solid #e74c3c', borderRadius: 7, padding: '6px 12px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                                  <div style={{ fontSize: 10, color: '#888' }}>merma</div>
+                                  <div style={{ fontSize: 14, fontWeight: 900, color: '#e74c3c' }}>{pctMerma.toFixed(1)}%</div>
+                                  <div style={{ fontSize: 10, color: '#aaa' }}>−{mermaKg.toFixed(3)} kg</div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
                   )}
 
