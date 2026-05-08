@@ -458,32 +458,37 @@ export function BloquesDinamicosEditor({
                   )}
 
                   {/* ── BIFURCACIÓN ── */}
-                  {b.tipo === 'bifurcacion' && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                      <div>
-                        <label style={{ fontSize: 11, fontWeight: 600, color: meta.color, display: 'block', marginBottom: 4 }}>
-                          kg que van al Hijo ({deshueseConfig?.corte_hijo || 'producto hijo'})
-                        </label>
-                        <input type="number" min="0" step="0.001" value={b.kg_para_hijo} placeholder="ej: 1.000"
-                          {...inp({ border: `1.5px solid ${meta.color}`, textAlign: 'left' })}
-                          onChange={e => { const v = parseFloat(e.target.value) || 0; updateBloque(b.id, { kg_para_hijo: v }); setKgParaHijo(String(v)); }} />
-                      </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  {b.tipo === 'bifurcacion' && (() => {
+                    const activeIdx = bloques.slice(0, idx).filter(b2 => b2.activo).length;
+                    const kgAntes   = activeIdx === 0 ? kgIni : (resultado.pasos[activeIdx - 1]?.kg || kgIni);
+                    const kgHijoV   = parseFloat(b.kg_para_hijo || 0);
+                    const kgPadreV  = Math.max(0, kgAntes - kgHijoV);
+                    return (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                         <div>
-                          <label style={{ fontSize: 11, fontWeight: 600, color: '#1a3a5c', display: 'block', marginBottom: 4 }}>Margen Padre %</label>
-                          <input type="number" min="0" max="99" step="1" value={b.margen_padre ?? margenPadre}
-                            {...inp({ border: '1.5px solid #1a3a5c' })}
-                            onChange={e => { const v = parseFloat(e.target.value) || 0; updateBloque(b.id, { margen_padre: v }); setMargenPadre(String(v)); }} />
+                          <label style={{ fontSize: 11, fontWeight: 600, color: meta.color, display: 'block', marginBottom: 4 }}>
+                            kg que van al Hijo ({deshueseConfig?.corte_hijo || 'producto hijo'})
+                            <span style={{ fontWeight: 400, color: '#aaa', marginLeft: 8 }}>disponibles: {kgAntes.toFixed(3)} kg</span>
+                          </label>
+                          <input type="number" min="0" step="0.001" value={b.kg_para_hijo} placeholder="ej: 1.000"
+                            {...inp({ border: `1.5px solid ${meta.color}`, textAlign: 'left' })}
+                            onChange={e => { const v = parseFloat(e.target.value) || 0; updateBloque(b.id, { kg_para_hijo: v }); setKgParaHijo(String(v)); }} />
                         </div>
-                        <div>
-                          <label style={{ fontSize: 11, fontWeight: 600, color: '#6c3483', display: 'block', marginBottom: 4 }}>Margen Hijo %</label>
-                          <input type="number" min="0" max="99" step="1" value={b.margen_hijo ?? margenHijo}
-                            {...inp({ border: '1.5px solid #6c3483' })}
-                            onChange={e => { const v = parseFloat(e.target.value) || 0; updateBloque(b.id, { margen_hijo: v }); setMargenHijo(String(v)); }} />
-                        </div>
+                        {kgHijoV > 0 && (
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                            <div style={{ background: '#eaf4fd', borderRadius: 7, padding: '8px 12px', textAlign: 'center' }}>
+                              <div style={{ fontSize: 10, color: '#1a3a5c', marginBottom: 2 }}>👑 Padre</div>
+                              <div style={{ fontSize: 18, fontWeight: 900, color: '#1a3a5c' }}>{kgPadreV.toFixed(3)} kg</div>
+                            </div>
+                            <div style={{ background: '#f3e8fd', borderRadius: 7, padding: '8px 12px', textAlign: 'center' }}>
+                              <div style={{ fontSize: 10, color: '#6c3483', marginBottom: 2 }}>🔀 Hijo</div>
+                              <div style={{ fontSize: 18, fontWeight: 900, color: '#6c3483' }}>{kgHijoV.toFixed(3)} kg</div>
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  )}
+                    );
+                  })()}
 
                 </div>
               )}
