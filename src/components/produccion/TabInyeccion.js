@@ -31,25 +31,35 @@ export default function TabInyeccion({ currentUser }) {
     ]);
 
     // Excluir tipo 'hijo' (no se producen directamente)
-    // Deduplicar por producto_nombre: preferir el que tiene más bloques activos
+    // Deduplicar case-insensitive: preferir el que tiene más bloques activos
     const sinHijos = (cfgs || []).filter(c => c.config?.tipo !== 'hijo');
     const porNombre = {};
     for (const c of sinHijos) {
-      const key = c.producto_nombre;
+      const key = c.producto_nombre.toLowerCase();
       if (!porNombre[key]) { porNombre[key] = c; continue; }
       const existente = (porNombre[key].config?.bloques || []).filter(b => b.activo).length;
       const nuevo     = (c.config?.bloques || []).filter(b => b.activo).length;
       if (nuevo > existente) porNombre[key] = c;
     }
     // Añadir nombre del hijo desde deshuese_config
+    // Usa matching parcial: "New York" encuentra "New York Steak" y viceversa
     const deshMap = {};
     for (const d of (deshData || [])) {
       if (d.corte_padre) deshMap[d.corte_padre.toLowerCase()] = d.corte_hijo;
     }
-    const prods = Object.values(porNombre).map(c => ({
-      ...c,
-      _hijoNombre: deshMap[c.producto_nombre.toLowerCase()] || null,
-    }));
+    const prods = Object.values(porNombre).map(c => {
+      const nombre = c.producto_nombre.toLowerCase();
+      let hijoNombre = deshMap[nombre] || null;
+      if (!hijoNombre) {
+        for (const [padre, hijo] of Object.entries(deshMap)) {
+          if (padre.includes(nombre) || nombre.includes(padre)) {
+            hijoNombre = hijo;
+            break;
+          }
+        }
+      }
+      return { ...c, _hijoNombre: hijoNombre };
+    });
 
     setProductos(prods);
     setMps(mpsData || []);
