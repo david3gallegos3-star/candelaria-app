@@ -10,8 +10,6 @@ function buildPasos({ modo, rama, bloques, bloquesHijo, esBano }) {
   if (modo === 'momento1') {
     const madIdx = (bloques || []).findIndex(b => b.tipo === 'maduracion');
     const preMad = activos(madIdx >= 0 ? bloques.slice(0, madIdx) : bloques);
-    // Para esBano, inyeccion y merma ya están capturadas en el formulario
-    if (esBano) return preMad.filter(b => b.tipo !== 'inyeccion' && b.tipo !== 'merma');
     return preMad;
   }
   if (modo === 'momento2') {
@@ -52,6 +50,7 @@ export default function WizardProduccionDinamica({
   currentUser,
   mpsFormula,
   esBano,
+  savedLoteId,
   onComplete,
   onCancel,
 }) {
@@ -67,6 +66,7 @@ export default function WizardProduccionDinamica({
   const [guardando,        setGuardando]        = useState(false);
   const [error,            setError]            = useState('');
   const [rubIngredientes,  setRubIngredientes]  = useState(null);
+  const [inyIngredientes,  setInyIngredientes]  = useState(null);
   const [pendingHijo,      setPendingHijo]      = useState(null);
   const [inputsHijo,       setInputsHijo]       = useState({});
   const [hijoMermasDone,   setHijoMermasDone]   = useState(false);
@@ -107,6 +107,28 @@ export default function WizardProduccionDinamica({
       setRubIngredientes(filas.map(f => ({
         ...f,
         precio_kg: parseFloat((mps || []).find(m => m.id === f.materia_prima_id)?.precio_kg || 0),
+      })));
+    })();
+  }, [pasoActual?.id, pasoActual?.tipo]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Cargar ingredientes cuando llegamos al paso Inyección
+  useEffect(() => {
+    if (pasoActual?.tipo !== 'inyeccion') return;
+    const formulaSal = pasoActual.formula_salmuera || cfg?.formula_salmuera || '';
+    if (!formulaSal) { setInyIngredientes([]); return; }
+    setInyIngredientes(null);
+    (async () => {
+      const { data: filas } = await supabase.from('formulaciones')
+        .select('ingrediente_nombre,gramos,materia_prima_id')
+        .eq('producto_nombre', formulaSal);
+      if (!filas?.length) { setInyIngredientes([]); return; }
+      const ids = filas.map(f => f.materia_prima_id).filter(Boolean);
+      const { data: mpsData } = ids.length
+        ? await supabase.from('materias_primas').select('id,precio_kg').in('id', ids)
+        : { data: [] };
+      setInyIngredientes(filas.map(f => ({
+        ...f,
+        precio_kg: parseFloat((mpsData || []).find(m => m.id === f.materia_prima_id)?.precio_kg || 0),
       })));
     })();
   }, [pasoActual?.id, pasoActual?.tipo]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -176,14 +198,16 @@ export default function WizardProduccionDinamica({
       if (inv) {
         await supabase.from('inventario_mp')
           .update({ stock_kg: Math.max(0, (inv.stock_kg || 0) - kgUsar) }).eq('id', inv.id);
+        await supabase.from('inventario_movimientos').insert({
+          materia_prima_id: f.materia_prima_id,
+          nombre_mp: f.ingrediente_nombre || '',
+          tipo: 'salida', kg: kgUsar,
+          motivo: `Flujo dinámico — ${formulaNombre} — Lote ${loteIdRef}`,
+          usuario_nombre: currentUser?.email || 'produccion',
+          user_id: currentUser?.id || null,
+          fecha: hoy,
+        });
       }
-      await supabase.from('inventario_movimientos').insert({
-        materia_prima_id: f.materia_prima_id,
-        nombre_mp: f.ingrediente_nombre || '',
-        tipo: 'salida', kg: kgUsar,
-        motivo: `Flujo dinámico CORTES — ${formulaNombre} — Lote ${loteIdRef}`,
-        usuario_nombre: currentUser?.email || '', user_id: currentUser?.id || null, fecha: hoy,
-      });
     }
   }
 
@@ -195,13 +219,16 @@ export default function WizardProduccionDinamica({
     if (inv) {
       await supabase.from('inventario_mp')
         .update({ stock_kg: Math.max(0, (inv.stock_kg || 0) - kgUsar) }).eq('id', inv.id);
+      const { error: eM } = await supabase.from('inventario_movimientos').insert({
+        materia_prima_id: mpId, nombre_mp: nombreMp || '',
+        tipo: 'salida', kg: kgUsar,
+        motivo: `Flujo dinámico — Adicional — Lote ${loteIdRef}`,
+        usuario_nombre: currentUser?.email || 'produccion',
+        user_id: currentUser?.id || null,
+        fecha: hoy,
+      });
+      if (eM) console.warn('mov insert:', eM.message, eM.details);
     }
-    await supabase.from('inventario_movimientos').insert({
-      materia_prima_id: mpId, nombre_mp: nombreMp || '',
-      tipo: 'salida', kg: kgUsar,
-      motivo: `Flujo dinámico CORTES — Adicional — Lote ${loteIdRef}`,
-      usuario_nombre: currentUser?.email || '', user_id: currentUser?.id || null, fecha: hoy,
-    });
   }
 
   async function ingresarMpAInventario(mpId, nombreMp, kgEntrada, loteIdRef) {
@@ -276,7 +303,7 @@ export default function WizardProduccionDinamica({
   async function confirmarMerma(b) {
     setGuardando(true); setError('');
     try {
-      const loteRef = lote?.lote_id || 'NUEVO';
+      const loteRef = savedLoteId || lote?.lote_id || 'NUEVO';
       let kgSalida = kgActual;
       let nuevoCosto = costoAcum;
       let kgRealInput = parseFloat(inputKg) || 0;
@@ -312,7 +339,7 @@ export default function WizardProduccionDinamica({
   async function confirmarInyeccion(b) {
     setGuardando(true); setError('');
     try {
-      const loteRef = lote?.lote_id || 'NUEVO';
+      const loteRef = savedLoteId || lote?.lote_id || 'NUEVO';
       const pct = parseFloat(b.pct_inj || cfg?.pct_inj || 0) / 100;
       const kgSalmuera = kgActual * pct;
       const formulaSal = b.formula_salmuera || cfg?.formula_salmuera || '';
@@ -555,6 +582,9 @@ export default function WizardProduccionDinamica({
   async function completarMomento1() {
     setGuardando(true); setError('');
     try {
+      // Para esBano: los registros ya fueron guardados antes de abrir el wizard
+      if (savedLoteId) { onComplete({ loteId: savedLoteId }); return; }
+
       const hoy = new Date().toISOString().split('T')[0];
       const bloquesMad = (bloques || []).find(b => b.tipo === 'maduracion');
       const horas = parseFloat(bloquesMad?.horas_mad || cfg?.horas_mad || 72);
@@ -847,24 +877,90 @@ export default function WizardProduccionDinamica({
     }
 
     if (b.tipo === 'inyeccion') {
-      const kgSalmuera = kgActual * (parseFloat(b.pct_inj || cfg?.pct_inj || 0) / 100);
+      const pctInj = parseFloat(b.pct_inj || cfg?.pct_inj || 0);
+      const kgSalmuera = kgActual * (pctInj / 100);
+      const formulaSal = b.formula_salmuera || cfg?.formula_salmuera || '';
+      const filasSal = inyIngredientes || [];
+      const cargandoSal = inyIngredientes === null && !!formulaSal;
+      const totalGrSal = filasSal.reduce((s, f) => s + parseFloat(f.gramos || 0), 0);
+
+      function imprimirSalmuera() {
+        const w = window.open('', '_blank');
+        w.document.write(`<html><head><title>Salmuera — ${formulaSal}</title>
+          <style>body{font-family:Arial;padding:20px}table{width:100%;border-collapse:collapse}
+          th,td{border:1px solid #ddd;padding:8px;text-align:left}th{background:#2980b9;color:white}
+          .total{font-weight:bold;background:#eaf4fd}.nota{color:#888;font-size:12px}</style></head><body>
+          <h2>💉 ${formulaSal}</h2>
+          <p><strong>Carne:</strong> ${kgActual.toFixed(3)} kg &nbsp;|&nbsp;
+             <strong>Salmuera:</strong> ${kgSalmuera.toFixed(3)} kg &nbsp;|&nbsp;
+             <strong>Fecha:</strong> ${new Date().toLocaleDateString()}</p>
+          <table><tr><th>Ingrediente</th><th>Base (${totalGrSal.toFixed(1)}g)</th><th>Para ${kgSalmuera.toFixed(3)}kg</th></tr>
+          ${filasSal.map(f => { const gr = parseFloat(f.gramos||0); const kgI = totalGrSal > 0 ? (gr/totalGrSal)*kgSalmuera : 0; return `<tr><td>${f.ingrediente_nombre}</td><td>${gr.toFixed(1)} g</td><td><strong>${(kgI*1000).toFixed(1)} g</strong></td></tr>`; }).join('')}
+          <tr class="total"><td>TOTAL</td><td>${totalGrSal.toFixed(1)} g</td><td>${(kgSalmuera*1000).toFixed(1)} g</td></tr>
+          </table><script>window.print();</script></body></html>`);
+        w.document.close();
+      }
+
       return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={{ background: '#eaf4fd', borderRadius: 10, padding: '12px 16px', border: '1.5px solid #2980b9' }}>
-            <div style={{ fontWeight: 700, color: '#2980b9', fontSize: 14, marginBottom: 8 }}>{esBano ? '🛁 Baño de Salmuera' : '💉 Inyección de Salmuera'}</div>
-            <div style={{ fontSize: 12, color: '#555' }}>
-              <div>Carne actual: <strong>{kgActual.toFixed(3)} kg</strong></div>
-              <div style={{ marginTop: 4 }}>% {esBano ? 'baño' : 'inyección'}: <strong>{b.pct_inj || cfg?.pct_inj || 0}%</strong></div>
-              <div style={{ marginTop: 4 }}>Salmuera {esBano ? '(baño)' : 'a inyectar'}: <strong style={{ color: '#2980b9' }}>{kgSalmuera.toFixed(3)} kg</strong></div>
-              <div style={{ marginTop: 4, fontWeight: 700 }}>→ {esBano ? kgActual.toFixed(3) : (kgActual + kgSalmuera).toFixed(3)} kg {esBano ? '(sin cambio de peso)' : 'después de inyección'}</div>
-              {(b.formula_salmuera || cfg?.formula_salmuera) && (
-                <div style={{ marginTop: 4, color: '#888' }}>Fórmula: {b.formula_salmuera || cfg?.formula_salmuera}</div>
+          <div style={{ background: '#eaf4fd', borderRadius: 12, padding: 16, border: '2px solid #2980b9' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <div style={{ fontWeight: 700, color: '#2980b9', fontSize: 12 }}>
+                {esBano ? '🛁 Baño de Salmuera' : '💉 Inyección de Salmuera'} — {formulaSal || '—'}
+              </div>
+              {filasSal.length > 0 && (
+                <button onClick={imprimirSalmuera} style={{
+                  background: '#2980b9', color: 'white', border: 'none', borderRadius: 6,
+                  padding: '5px 12px', fontSize: 11, cursor: 'pointer', fontWeight: 700
+                }}>🖨️ Imprimir</button>
               )}
             </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: '2px 12px', fontSize: 12, marginBottom: 8 }}>
+              <span style={{ color: '#555' }}>Carne:</span>
+              <span style={{ fontWeight: 700 }}>{kgActual.toFixed(3)} kg</span>
+              <span />
+              <span style={{ color: '#555' }}>% {esBano ? 'baño' : 'inyección'}:</span>
+              <span style={{ fontWeight: 700 }}>{pctInj}%</span>
+              <span />
+              <span style={{ color: '#555' }}>Salmuera:</span>
+              <span style={{ fontWeight: 700, color: '#2980b9' }}>{kgSalmuera.toFixed(3)} kg</span>
+              <span />
+              <span style={{ color: '#555' }}>→ Resultado:</span>
+              <span style={{ fontWeight: 700 }}>{esBano ? kgActual.toFixed(3) : (kgActual + kgSalmuera).toFixed(3)} kg</span>
+              <span style={{ fontSize: 10, color: '#888' }}>{esBano ? '(sin cambio)' : ''}</span>
+            </div>
+
+            {/* Ingredientes de salmuera */}
+            {cargandoSal && <div style={{ fontSize: 12, color: '#aaa', padding: '8px 0' }}>Cargando ingredientes...</div>}
+            {!cargandoSal && filasSal.length > 0 && (
+              <>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: '4px 12px', fontSize: 10, fontWeight: 700, color: '#1a5276', borderTop: '1.5px solid #aed6f1', borderBottom: '1.5px solid #aed6f1', padding: '4px 0', marginBottom: 4 }}>
+                  <span>INGREDIENTE</span>
+                  <span style={{ textAlign: 'right' }}>BASE ({totalGrSal.toFixed(0)}g)</span>
+                  <span style={{ textAlign: 'right' }}>PARA {kgSalmuera.toFixed(3)}kg</span>
+                </div>
+                {filasSal.map((f, i) => {
+                  const gr = parseFloat(f.gramos || 0);
+                  const kgI = totalGrSal > 0 ? (gr / totalGrSal) * kgSalmuera : 0;
+                  return (
+                    <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: '2px 12px', fontSize: 12, padding: '3px 0', borderBottom: '1px solid #d6eaf8' }}>
+                      <span style={{ color: '#333' }}>{f.ingrediente_nombre}</span>
+                      <span style={{ textAlign: 'right', color: '#888' }}>{gr.toFixed(1)} g</span>
+                      <span style={{ textAlign: 'right', fontWeight: 700, color: '#1a5276' }}>{(kgI * 1000).toFixed(1)} g</span>
+                    </div>
+                  );
+                })}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: '2px 12px', fontSize: 12, padding: '6px 0 0', fontWeight: 700, borderTop: '1.5px solid #aed6f1', marginTop: 2 }}>
+                  <span style={{ color: '#2980b9' }}>TOTAL</span>
+                  <span style={{ textAlign: 'right', color: '#888' }}>{totalGrSal.toFixed(1)} g</span>
+                  <span style={{ textAlign: 'right', color: '#2980b9' }}>{(kgSalmuera * 1000).toFixed(1)} g</span>
+                </div>
+              </>
+            )}
           </div>
           <button onClick={() => confirmarInyeccion(b)} disabled={guardando}
-            style={{ width: '100%', padding: '12px', background: guardando ? '#aaa' : '#2980b9', color: 'white', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 'bold', cursor: guardando ? 'default' : 'pointer' }}>
-            {guardando ? 'Procesando...' : '💉 Confirmar inyección'}
+            style={{ width: '100%', padding: '12px', background: guardando ? '#aaa' : 'linear-gradient(135deg,#2980b9,#1a5276)', color: 'white', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 'bold', cursor: guardando ? 'default' : 'pointer' }}>
+            {guardando ? 'Procesando...' : esBano ? '🛁 Confirmar baño' : '💉 Confirmar inyección'}
           </button>
         </div>
       );
