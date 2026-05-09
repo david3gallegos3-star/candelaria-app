@@ -28,9 +28,8 @@ export default function TabInyeccion({ currentUser }) {
         .select('id,nombre,nombre_producto,precio_kg,categoria')
         .eq('eliminado', false).eq('estado', 'ACTIVO'),
     ]);
-    // Solo productos que tienen bloques configurados
-    const prods = (cfgs || []).filter(c => (c.config?.bloques || []).length > 0);
-    setProductos(prods);
+    // Todos los productos de vista_horneado_config (con o sin bloques)
+    setProductos(cfgs || []);
     setMps(mpsData || []);
     inicializado.current = true;
     setCargando(false);
@@ -65,23 +64,31 @@ export default function TabInyeccion({ currentUser }) {
       return;
     }
     const precio = parseFloat(precioCarne) || 0;
+    const cfg = productoSelec.config || {};
+    const bloques = (cfg.bloques || []).filter(b => b.activo);
     setGuardando(true);
     setError('');
     try {
       const saved = await guardarPreSave(kg, precio);
       if (!saved) return;
-      const cfg = productoSelec.config;
-      setWizard({
-        bloques:          cfg.bloques || [],
-        bloquesHijo:      cfg.bloques_hijo || [],
-        cfg,
-        kgInicial:        kg,
-        precioCarne:      precio,
-        esBano:           detectarEsBano(cfg),
-        prodNombre:       productoSelec.producto_nombre,
-        savedLoteId:      saved.loteId,
-        savedFechaSalida: saved.fechaSalida,
-      });
+      if (bloques.length > 0) {
+        setWizard({
+          bloques:          cfg.bloques || [],
+          bloquesHijo:      cfg.bloques_hijo || [],
+          cfg,
+          kgInicial:        kg,
+          precioCarne:      precio,
+          esBano:           detectarEsBano(cfg),
+          prodNombre:       productoSelec.producto_nombre,
+          savedLoteId:      saved.loteId,
+          savedFechaSalida: saved.fechaSalida,
+        });
+      } else {
+        // Sin bloques → flujo directo, ya está guardado
+        limpiarFormulario();
+        setExito(`✅ Producción registrada — lote ${saved.loteId} en maduración hasta ${saved.fechaSalida}`);
+        setTimeout(() => setExito(''), 10000);
+      }
     } catch (e) {
       setError('Error al guardar: ' + e.message);
     } finally {
@@ -217,7 +224,7 @@ export default function TabInyeccion({ currentUser }) {
           🥩 ¿Qué vamos a producir?
         </h4>
         {productos.length === 0 ? (
-          <div style={{ color: '#e74c3c', fontSize: 13 }}>⚠️ No hay productos configurados con pasos en Costos 1kg.</div>
+          <div style={{ color: '#e74c3c', fontSize: 13 }}>⚠️ No hay productos en vista_horneado_config.</div>
         ) : (
           <select
             value={productoSelec ? JSON.stringify({ nombre: productoSelec.producto_nombre }) : ''}
@@ -229,11 +236,17 @@ export default function TabInyeccion({ currentUser }) {
             }}
             style={{ width: '100%', padding: '11px 12px', borderRadius: 8, border: '1.5px solid #1a3a5c', fontSize: 14, color: productoSelec ? '#1a3a5c' : '#999', background: 'white', outline: 'none', cursor: 'pointer' }}>
             <option value="">— Selecciona un producto —</option>
-            {productos.map((p, i) => (
-              <option key={i} value={JSON.stringify({ nombre: p.producto_nombre })}>
-                {p.producto_nombre}
-              </option>
-            ))}
+            {productos.map((p, i) => {
+              const cfg = p.config || {};
+              const tieneBif = (cfg.bloques || []).some(b => b.tipo === 'bifurcacion' && b.activo);
+              const esPadre  = cfg.tipo === 'padre';
+              const sufijo   = tieneBif || esPadre ? ' (Padre/Hijo)' : '';
+              return (
+                <option key={i} value={JSON.stringify({ nombre: p.producto_nombre })}>
+                  {p.producto_nombre}{sufijo}
+                </option>
+              );
+            })}
           </select>
         )}
 
@@ -242,11 +255,16 @@ export default function TabInyeccion({ currentUser }) {
             <div>
               <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.6)' }}>Producto seleccionado</div>
               <div style={{ fontSize: 14, fontWeight: 'bold', color: 'white' }}>{productoSelec.producto_nombre}</div>
-              {productoSelec.config?._categoria && (
-                <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', marginTop: 2 }}>
-                  {productoSelec.config._categoria} · {(productoSelec.config.bloques || []).filter(b => b.activo).length} pasos configurados
-                </div>
-              )}
+              {(() => {
+                const cfg = productoSelec.config || {};
+                const pasos = (cfg.bloques || []).filter(b => b.activo).length;
+                const tieneBif = (cfg.bloques || []).some(b => b.tipo === 'bifurcacion' && b.activo);
+                return (
+                  <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', marginTop: 2 }}>
+                    {cfg._categoria || ''}{pasos > 0 ? ` · ${pasos} pasos` : ''}{tieneBif ? ' · Padre/Hijo' : ''}
+                  </div>
+                );
+              })()}
             </div>
             <button onClick={limpiarFormulario} style={{ background: 'none', border: '1px solid rgba(255,255,255,0.3)', borderRadius: 6, color: 'rgba(255,255,255,0.7)', cursor: 'pointer', fontSize: 12, padding: '4px 10px' }}>
               Cambiar
