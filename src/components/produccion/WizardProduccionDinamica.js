@@ -2,18 +2,25 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { supabase } from '../../supabase';
 
+const PRE_MAD_TIPOS = new Set(['inyeccion', 'rub', 'adicional']);
+
 // Construye la lista de pasos activos para el momento/rama indicado
-function buildPasos({ modo, rama, bloques, bloquesHijo }) {
+function buildPasos({ modo, rama, bloques, bloquesHijo, esBano }) {
   const activos = (arr) => (arr || []).filter(b => b.activo);
   if (modo === 'momento1') {
     const madIdx = (bloques || []).findIndex(b => b.tipo === 'maduracion');
-    return activos(madIdx >= 0 ? bloques.slice(0, madIdx) : bloques);
+    const preMad = activos(madIdx >= 0 ? bloques.slice(0, madIdx) : bloques);
+    // Para esBano, inyeccion y merma ya están capturadas en el formulario
+    if (esBano) return preMad.filter(b => b.tipo !== 'inyeccion' && b.tipo !== 'merma');
+    return preMad;
   }
   if (modo === 'momento2') {
     if (rama === 'padre') {
       const madIdx = (bloques || []).findIndex(b => b.tipo === 'maduracion');
-      // maduracion ya fue registrado en el modal de pesaje → saltar al bloque siguiente
-      return activos(madIdx >= 0 ? bloques.slice(madIdx + 1) : bloques);
+      if (madIdx >= 0) return activos(bloques.slice(madIdx + 1));
+      // Sin bloque maduracion: esBano sólo muestra post-horno; CORTES muestra todo
+      if (esBano) return activos((bloques || []).filter(b => !PRE_MAD_TIPOS.has(b.tipo) && b.tipo !== 'maduracion'));
+      return activos(bloques);
     }
     if (rama === 'hijo') return activos(bloquesHijo);
   }
@@ -27,6 +34,7 @@ function labelPaso(b) {
     maduracion:  '🧊 Maduración',
     rub:         '🧂 Rub',
     adicional:   '🍋 Adicional',
+    horneado:    '🔥 Horneado',
     bifurcacion: '🔀 Bifurcación',
   };
   if (b.tipo === 'merma') return `✂️ ${b.nombre_merma || 'Merma'} T${b.merma_tipo}`;
@@ -43,6 +51,7 @@ export default function WizardProduccionDinamica({
   precioCarne,
   currentUser,
   mpsFormula,
+  esBano,
   onComplete,
   onCancel,
 }) {
@@ -63,8 +72,8 @@ export default function WizardProduccionDinamica({
   const [hijoMermasDone,   setHijoMermasDone]   = useState(false);
 
   const pasos = useMemo(
-    () => buildPasos({ modo, rama, bloques, bloquesHijo }),
-    [modo, rama, bloques, bloquesHijo]
+    () => buildPasos({ modo, rama, bloques, bloquesHijo, esBano }),
+    [modo, rama, bloques, bloquesHijo, esBano]
   );
 
   const mermasHijo = useMemo(
@@ -103,12 +112,12 @@ export default function WizardProduccionDinamica({
   }, [pasoActual?.id, pasoActual?.tipo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const pasosPadre = useMemo(
-    () => buildPasos({ modo, rama: 'padre', bloques, bloquesHijo }),
-    [modo, bloques, bloquesHijo]
+    () => buildPasos({ modo, rama: 'padre', bloques, bloquesHijo, esBano }),
+    [modo, bloques, bloquesHijo, esBano]
   );
   const pasosHijoInd = useMemo(
-    () => buildPasos({ modo: 'momento2', rama: 'hijo', bloques, bloquesHijo }),
-    [modo, bloques, bloquesHijo]
+    () => buildPasos({ modo: 'momento2', rama: 'hijo', bloques, bloquesHijo, esBano }),
+    [modo, bloques, bloquesHijo, esBano]
   );
 
   function renderProgress() {
@@ -322,9 +331,9 @@ export default function WizardProduccionDinamica({
         }
         await descontarIngredientesFormula(formulaSal, kgSalmuera, loteRef);
       }
-      const kgSalida = kgActual + kgSalmuera;
+      const kgSalida = esBano ? kgActual : kgActual + kgSalmuera;
       const nuevoCosto = costoAcum + costoSalmuera;
-      const res = { tipo: 'inyeccion', kgEntrada: kgActual, kgSalida, costoAcum: nuevoCosto, kgSalmuera, costoSalmuera, formulaSalmuera: formulaSal };
+      const res = { tipo: 'inyeccion', kgEntrada: kgActual, kgSalida, costoAcum: nuevoCosto, kgSalmuera, costoSalmuera, formulaSalmuera: formulaSal, esBano: !!esBano };
       setResultados(prev => [...prev, res]);
       setKgActual(kgSalida);
       setCostoAcum(nuevoCosto);
@@ -416,6 +425,19 @@ export default function WizardProduccionDinamica({
     const pctMermaReal = kgActual > 0 ? (kgMermaReal / kgActual * 100) : 0;
     const pctMermaEsp  = parseFloat(cfg?.pct_mad || 0);
     const res = { tipo: 'maduracion', kgEntrada: kgActual, kgSalida: kgReal, costoAcum, kgMermaReal, pctMermaReal, pctMermaEsp };
+    setResultados(prev => [...prev, res]);
+    setKgActual(kgReal);
+    setInputKg('');
+    setPasoIdx(prev => prev + 1);
+  }
+
+  function confirmarHorneado(b) {
+    const kgReal = parseFloat(inputKg) || 0;
+    if (kgReal <= 0) { setError('Ingresa los kg listo para rebanar (post-horno)'); return; }
+    const kgMermaReal = kgActual - kgReal;
+    const pctMermaReal = kgActual > 0 ? (kgMermaReal / kgActual * 100) : 0;
+    const pctMermaEsp  = parseFloat(b.pct_merma_horneado || 0);
+    const res = { tipo: 'horneado', kgEntrada: kgActual, kgSalida: kgReal, costoAcum, kgMermaReal, pctMermaReal, pctMermaEsp };
     setResultados(prev => [...prev, res]);
     setKgActual(kgReal);
     setInputKg('');
@@ -554,7 +576,6 @@ export default function WizardProduccionDinamica({
         fecha_salida: fechaSalida,
         kg_inicial: parseFloat(kgInicial),
         bloques_resultado: bloquesResultado,
-        ...(formulaSal ? { formula_salmuera: formulaSal } : {}),
       }).select('id,lote_id').single();
       if (loteErr) throw loteErr;
 
@@ -830,12 +851,12 @@ export default function WizardProduccionDinamica({
       return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div style={{ background: '#eaf4fd', borderRadius: 10, padding: '12px 16px', border: '1.5px solid #2980b9' }}>
-            <div style={{ fontWeight: 700, color: '#2980b9', fontSize: 14, marginBottom: 8 }}>💉 Inyección de Salmuera</div>
+            <div style={{ fontWeight: 700, color: '#2980b9', fontSize: 14, marginBottom: 8 }}>{esBano ? '🛁 Baño de Salmuera' : '💉 Inyección de Salmuera'}</div>
             <div style={{ fontSize: 12, color: '#555' }}>
               <div>Carne actual: <strong>{kgActual.toFixed(3)} kg</strong></div>
-              <div style={{ marginTop: 4 }}>% inyección: <strong>{b.pct_inj || cfg?.pct_inj || 0}%</strong></div>
-              <div style={{ marginTop: 4 }}>Salmuera a inyectar: <strong style={{ color: '#2980b9' }}>{kgSalmuera.toFixed(3)} kg</strong></div>
-              <div style={{ marginTop: 4, fontWeight: 700 }}>→ {(kgActual + kgSalmuera).toFixed(3)} kg después de inyección</div>
+              <div style={{ marginTop: 4 }}>% {esBano ? 'baño' : 'inyección'}: <strong>{b.pct_inj || cfg?.pct_inj || 0}%</strong></div>
+              <div style={{ marginTop: 4 }}>Salmuera {esBano ? '(baño)' : 'a inyectar'}: <strong style={{ color: '#2980b9' }}>{kgSalmuera.toFixed(3)} kg</strong></div>
+              <div style={{ marginTop: 4, fontWeight: 700 }}>→ {esBano ? kgActual.toFixed(3) : (kgActual + kgSalmuera).toFixed(3)} kg {esBano ? '(sin cambio de peso)' : 'después de inyección'}</div>
               {(b.formula_salmuera || cfg?.formula_salmuera) && (
                 <div style={{ marginTop: 4, color: '#888' }}>Fórmula: {b.formula_salmuera || cfg?.formula_salmuera}</div>
               )}
@@ -877,6 +898,43 @@ export default function WizardProduccionDinamica({
           <button onClick={confirmarMaduracion} disabled={guardando || !inputKg}
             style={{ width: '100%', padding: '12px', background: !inputKg ? '#ccc' : '#27ae60', color: 'white', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 'bold', cursor: !inputKg ? 'default' : 'pointer' }}>
             ✓ Confirmar pesaje
+          </button>
+        </div>
+      );
+    }
+
+    if (b.tipo === 'horneado') {
+      const costoKgActual = kgActual > 0 ? costoAcum / kgActual : 0;
+      const kgInputN  = parseFloat(inputKg) || 0;
+      const pctEsp    = parseFloat(b.pct_merma_horneado || 0);
+      const kgEsp     = kgActual * (1 - pctEsp / 100);
+      const mermaReal = kgInputN > 0 ? ((kgActual - kgInputN) / kgActual * 100) : null;
+      const diffColor = mermaReal !== null ? (Math.abs(mermaReal - pctEsp) <= 3 ? '#27ae60' : '#e74c3c') : '#888';
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ background: '#fef3e2', borderRadius: 10, padding: '12px 16px', border: '1.5px solid #e67e22' }}>
+            <div style={{ fontWeight: 700, color: '#e67e22', fontSize: 14, marginBottom: 8 }}>🔥 Pesaje — Post Horneado</div>
+            <div style={{ fontSize: 12, color: '#555' }}>
+              <div>Entrada: <strong>{kgActual.toFixed(3)} kg</strong> · ${costoKgActual.toFixed(4)}/kg</div>
+              <div style={{ marginTop: 4 }}>Merma esperada: <strong>{pctEsp}%</strong> → esperado {kgEsp.toFixed(3)} kg listo para rebanar</div>
+            </div>
+          </div>
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 700, color: '#e67e22', display: 'block', marginBottom: 4 }}>
+              Kg listo para rebanar (post-horno + reposo) *
+            </label>
+            <input type="number" min="0" step="0.001" placeholder={`máx ${kgActual.toFixed(3)}`}
+              value={inputKg} onChange={e => setInputKg(e.target.value)}
+              style={{ width: '100%', padding: '10px', borderRadius: 8, border: '2px solid #e67e22', fontSize: 15, fontWeight: 'bold', textAlign: 'center', boxSizing: 'border-box' }} />
+            {mermaReal !== null && (
+              <div style={{ marginTop: 6, fontSize: 12, color: diffColor, fontWeight: 600 }}>
+                Merma real: {mermaReal.toFixed(1)}% {Math.abs(mermaReal - pctEsp) <= 3 ? '✓ dentro de lo esperado' : '⚠️ diferencia con lo esperado'}
+              </div>
+            )}
+          </div>
+          <button onClick={() => confirmarHorneado(b)} disabled={guardando || !inputKg}
+            style={{ width: '100%', padding: '12px', background: !inputKg ? '#ccc' : '#e67e22', color: 'white', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 'bold', cursor: !inputKg ? 'default' : 'pointer' }}>
+            🔥 Confirmar Horneado
           </button>
         </div>
       );

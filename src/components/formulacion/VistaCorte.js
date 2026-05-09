@@ -5,7 +5,7 @@ import * as XLSX from 'xlsx';
 import { BloquesDinamicosEditor, calcBloques } from './BloquesDinamicos';
 import { useRealtime } from '../../hooks/useRealtime';
 
-export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
+export default function VistaCorte({ producto, mobile, onAbrirInyeccion, esBano = false }) {
   const [tabActivo,       setTabActivo]       = useState('costos');
   const [cargando,        setCargando]        = useState(true);
 
@@ -103,6 +103,29 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
 
   useEffect(() => { setConfigExiste(false); cargarTodo(); }, [producto.nombre, producto.mp_vinculado_id]);
   useRealtime(['formulaciones', 'config_productos', 'deshuese_config', 'materias_primas', 'stock_lotes_inyectados', 'lotes_maduracion', 'produccion_inyeccion_cortes', 'vista_horneado_config', 'cierre_sierra_diario'], cargarTodo);
+
+  // Para productos esBano: activar flujo dinámico automáticamente (sin bifurcacion, con horneado)
+  useEffect(() => {
+    if (cargando || !esBano) return;
+    const newId = () => Math.random().toString(36).slice(2, 9);
+    if (bloques === null) {
+      // Sin config previa: crear desde cero
+      setBloques([
+        { id: newId(), tipo: 'inyeccion',  activo: true, formula_salmuera: formulaSalmueraNombre || '', pct_inj: parseFloat(pctInj) || 20, kg_sal_base: parseFloat(kgSalBase) || 2 },
+        { id: newId(), tipo: 'maduracion', activo: true, horas_mad: parseFloat(horasMad) || 72, minutos_mad: parseFloat(minutosMad) || 0, pct_mad: parseFloat(pctMad) || 0, kg_salida_mad: parseFloat(kgSalidaMad) || 0 },
+        { id: newId(), tipo: 'rub',        activo: !!(formulaRubNombre), formula_rub: formulaRubNombre || '', kg_rub_base: parseFloat(kgRubBase) || 1 },
+        { id: newId(), tipo: 'adicional',  activo: !!(mpAdicionalId), mp_adicional_id: mpAdicionalId || '', gramos_adicional: parseFloat(gramosAdicional) || 0 },
+        { id: newId(), tipo: 'horneado',   activo: true, pct_merma_horneado: 30 },
+      ]);
+      setBloqueExpandido(null);
+    } else if (!bloques.some(b => b.tipo === 'horneado')) {
+      // Config existente sin bloque horneado: agregarlo al final (sin bifurcacion)
+      setBloques(prev => [
+        ...prev.filter(b => b.tipo !== 'bifurcacion'),
+        { id: newId(), tipo: 'horneado', activo: true, pct_merma_horneado: 30 },
+      ]);
+    }
+  }, [cargando, esBano, bloques]);
 
   useEffect(() => {
     if (!formulaSalmueraNombre || mpsFormula.length === 0) {
@@ -428,7 +451,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
       })() : {}),
       ...(bloquesHijo !== null ? { bloques_hijo: bloquesHijo } : {}),
       tipo,
-      _categoria:      'CORTES',
+      _categoria:      esBano ? (producto?.categoria || 'INMERSION') : 'CORTES',
       _updated:        new Date().toISOString(),
     };
     try {
@@ -867,7 +890,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
     ['pruebas',   '🧪 Pruebas'],
     ['produccion','📦 Producción'],
     ['historial', '📋 Historial'],
-    ['cierre',    '🪚 Cierre Sierra'],
+    ...(!esBano ? [['cierre', '🪚 Cierre Sierra']] : []),
   ];
 
   return (
@@ -1041,6 +1064,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
               margenPadre={margenPadre}
               margenHijo={margenHijo}
               pctSalmueraFormula={pctSalmueraFormula}
+              tiposExcluidos={esBano ? ['bifurcacion'] : undefined}
             />
           )}
 
@@ -1977,13 +2001,30 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
       ══════════════════════════════════════════ */}
       {tabActivo === 'produccion' && (
         <div>
-          {lotesStock.length === 0 ? (
+          {lotesStock.length === 0 && historialInj.length > 0 && (
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase', marginBottom: 6 }}>En maduración</div>
+              {historialInj.map((h, i) => (
+                <div key={i} style={{ background: 'white', borderRadius: 10, padding: '10px 14px', marginBottom: 6, boxShadow: '0 1px 3px rgba(0,0,0,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <span style={{ fontWeight: 700, color: '#1a1a2e', marginRight: 8 }}>{h.produccion_inyeccion?.fecha || '—'}</span>
+                    <span style={{ fontSize: 11, color: '#888' }}>{h.produccion_inyeccion?.formula_salmuera || ''}</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontWeight: 'bold', color: '#555' }}>{parseFloat(h.kg_carne_cruda || 0).toFixed(3)} kg carne</span>
+                    <span style={{ fontSize: 11, background: '#fff3cd', color: '#856404', borderRadius: 6, padding: '2px 7px' }}>🧊 madurando</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {lotesStock.length === 0 && historialInj.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '40px 20px', color: '#aaa', background: 'white', borderRadius: 12 }}>
               {tipo === 'hijo'
                 ? 'Sin lotes registrados. El lote del hijo se crea al completar la separación en Producción › Maduración.'
                 : 'Sin lotes madurados registrados'}
             </div>
-          ) : (
+          ) : lotesStock.length > 0 ? (
             <div>
               {lotesStock.slice(0, 1).map((l, idx) => {
                 const esPadre = l.tipo_corte === 'padre';
@@ -2398,11 +2439,29 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
       ══════════════════════════════════════════ */}
       {tabActivo === 'historial' && (
         <div>
-          {lotesStock.length === 0 ? (
+          {/* Inyecciones en maduración (aún sin stock completado) */}
+          {historialInj.length > 0 && lotesStock.length === 0 && (
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase', marginBottom: 6 }}>En maduración</div>
+              {historialInj.map((h, i) => (
+                <div key={i} style={{ background: 'white', borderRadius: 10, padding: '10px 14px', marginBottom: 6, boxShadow: '0 1px 3px rgba(0,0,0,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <span style={{ fontWeight: 700, color: '#1a1a2e', marginRight: 8 }}>{h.produccion_inyeccion?.fecha || '—'}</span>
+                    <span style={{ fontSize: 11, color: '#888' }}>{h.produccion_inyeccion?.formula_salmuera || ''}</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontWeight: 'bold', color: '#555' }}>{parseFloat(h.kg_carne_cruda || 0).toFixed(3)} kg carne</span>
+                    <span style={{ fontSize: 11, background: '#fff3cd', color: '#856404', borderRadius: 6, padding: '2px 7px' }}>🧊 madurando</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {lotesStock.length === 0 && historialInj.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '40px 20px', color: '#aaa', background: 'white', borderRadius: 12 }}>
               Sin historial de producción
             </div>
-          ) : (
+          ) : lotesStock.length > 0 ? (
             lotesStock.map((l, i) => {
               const kgInj  = parseFloat(l.kg_inyectado  || 0);
               const kgMad  = parseFloat(l.kg_inicial     || 0);
@@ -2439,7 +2498,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion }) {
                 </details>
               );
             })
-          )}
+          ) : null}
         </div>
       )}
 

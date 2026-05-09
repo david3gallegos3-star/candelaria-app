@@ -1,9 +1,10 @@
 // ============================================
 // TabInyeccion.js — Inyección de salmuera
 // ============================================
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../../supabase';
 import { useRealtime } from '../../hooks/useRealtime';
+import WizardProduccionDinamica from './WizardProduccionDinamica';
 
 export default function TabInyeccion({ currentUser, mobile, onSalmueraChange }) {
   const [formulasSalmuera,    setFormulasSalmuera]    = useState([]);
@@ -13,6 +14,7 @@ export default function TabInyeccion({ currentUser, mobile, onSalmueraChange }) 
   const [mps,                 setMps]                 = useState([]);
   const [inventario,          setInventario]          = useState([]);
   const [cargando,            setCargando]            = useState(true);
+  const inicializado = useRef(false);
   const [guardando,           setGuardando]           = useState(false);
   const [error,               setError]               = useState('');
   const [exito,               setExito]               = useState('');
@@ -21,12 +23,14 @@ export default function TabInyeccion({ currentUser, mobile, onSalmueraChange }) 
   const [porcentajeSalmuera,  setPorcentajeSalmuera]  = useState(20);
   const [diasMaduracion,      setDiasMaduracion]      = useState(5);
   const [horneadoCfgInj,      setHorneadoCfgInj]      = useState(null);
+  const [horneadoCfgProdNombre, setHorneadoCfgProdNombre] = useState(null);
   const [esInmersionInj,      setEsInmersionInj]      = useState(false);
+  const [wizardM1,            setWizardM1]            = useState(null);
   const [kgSubprodIny,        setKgSubprodIny]        = useState({});   // { tipo: kg } para sub-productos inyección
   const [spInyMp,             setSpInyMp]             = useState(null); // info MP para mp_existente
 
   const cargarInicial = useCallback(async () => {
-    setCargando(true);
+    if (!inicializado.current) setCargando(true);
     const [{ data: fs }, { data: mp }, { data: inv }] = await Promise.all([
       supabase.from('productos').select('id,nombre,categoria').eq('categoria', 'SALMUERAS').eq('eliminado', false).order('nombre'),
       supabase.from('materias_primas').select('id,nombre,nombre_producto,precio_kg,categoria').eq('eliminado', false).order('nombre'),
@@ -36,6 +40,7 @@ export default function TabInyeccion({ currentUser, mobile, onSalmueraChange }) 
     setMps(mp || []);
     setInventario(inv || []);
     setCargando(false);
+    inicializado.current = true;
   }, []);
 
   useEffect(() => { cargarInicial(); }, [cargarInicial]);
@@ -63,6 +68,7 @@ export default function TabInyeccion({ currentUser, mobile, onSalmueraChange }) 
       );
       const cfgH = match?.config || null;
       setHorneadoCfgInj(cfgH);
+      setHorneadoCfgProdNombre(match?.producto_nombre || null);
       const catH = (cfgH?._categoria || '').replace(/[ÓÒ]/g,'O').toUpperCase();
       setEsInmersionInj(catH.includes('INMERSION'));
       setKgSubprodIny('');
@@ -82,6 +88,7 @@ export default function TabInyeccion({ currentUser, mobile, onSalmueraChange }) 
   }, [formulaSelec]);
 
   // Cálculos
+  const tieneBloquesDin = !!(horneadoCfgInj?.bloques && horneadoCfgInj.bloques.length > 0);
   const kgCarneTotal    = filasCort.reduce((s, f) => s + (parseFloat(f.kg) || 0), 0);
   const totalGramosForm = ingredientesFormula.reduce((s, f) => s + (parseFloat(f.gramos) || 0), 0);
   const spInyRaw = horneadoCfgInj?.subproductos?.inyeccion;
@@ -389,7 +396,6 @@ export default function TabInyeccion({ currentUser, mobile, onSalmueraChange }) 
       setFormulaSelec(null); setFilasCort([]); setNotas(''); setKgSubprodIny({});
       setExito('✅ Producción registrada — lote en maduración hasta ' + fechaSalida);
       setTimeout(() => setExito(''), 8000);
-      await cargarInicial();
     } catch (e) { setError('Error al guardar: ' + e.message); }
     setGuardando(false);
   }
@@ -568,13 +574,74 @@ export default function TabInyeccion({ currentUser, mobile, onSalmueraChange }) 
         </div>
 
         {/* Columna derecha: botón guardar */}
-        <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
-          <button onClick={guardarProduccion} disabled={guardando || !formulaSelec || kgCarneTotal <= 0}
+        <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+          <button
+            disabled={guardando || !formulaSelec || kgCarneTotal <= 0}
+            onClick={() => {
+              const catCfg  = (horneadoCfgInj?._categoria || '').replace(/[ÓÒÔ]/g,'O').toUpperCase();
+              const tipoCfg = (horneadoCfgInj?.tipo || '').toLowerCase();
+              const esBano  = (catCfg.includes('INMERSION') || catCfg.includes('MARINAD'))
+                              && tipoCfg !== 'padre' && tipoCfg !== 'hijo';
+              if (tieneBloquesDin && esBano) {
+                const bloques   = horneadoCfgInj.bloques || [];
+                const madIdx    = bloques.findIndex(b => b.tipo === 'maduracion');
+                const preMad    = (madIdx >= 0 ? bloques.slice(0, madIdx) : bloques).filter(b => b.activo);
+                const pasosDin  = preMad.filter(b => b.tipo !== 'inyeccion' && b.tipo !== 'merma');
+                if (pasosDin.length > 0) {
+                  const precioCarne = cortesConCosto.length > 0
+                    ? cortesConCosto.reduce((s, c) => s + c.costoKg * (parseFloat(c.kg) || 0), 0) / (kgCarneTotal || 1)
+                    : 0;
+                  setWizardM1({
+                    bloques,
+                    bloquesHijo: horneadoCfgInj.bloques_hijo || [],
+                    cfg:         horneadoCfgInj,
+                    kgInicial:   kgCarneTotal,
+                    precioCarne,
+                    esBano,
+                    prodNombre:  horneadoCfgProdNombre,
+                  });
+                } else {
+                  guardarProduccion();
+                }
+              } else {
+                guardarProduccion();
+              }
+            }}
             style={{ padding:'16px', background: guardando || !formulaSelec || kgCarneTotal <= 0 ? '#95a5a6' : 'linear-gradient(135deg,#27ae60,#1e8449)', color:'white', border:'none', borderRadius:12, fontSize:16, fontWeight:'bold', cursor: guardando || !formulaSelec || kgCarneTotal <= 0 ? 'default' : 'pointer' }}>
             {guardando ? '⏳ Registrando...' : '💉 Registrar Producción'}
           </button>
         </div>
       </div>
+
+      {/* ── Wizard Momento 1 ── */}
+      {wizardM1 && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.55)', zIndex:9000, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
+          <div style={{ background:'white', borderRadius:16, width:'100%', maxWidth:480, maxHeight:'90vh', overflowY:'auto', padding:20 }}>
+            <div style={{ fontWeight:700, fontSize:15, color:'#1a1a2e', marginBottom:14 }}>
+              🧩 Flujo dinámico — {wizardM1.prodNombre || 'Producción'} · {(wizardM1.kgInicial || 0).toFixed(3)} kg
+            </div>
+            <WizardProduccionDinamica
+              modo="momento1"
+              bloques={wizardM1.bloques}
+              bloquesHijo={wizardM1.bloquesHijo}
+              cfg={wizardM1.cfg}
+              lote={null}
+              kgInicial={wizardM1.kgInicial}
+              precioCarne={wizardM1.precioCarne}
+              currentUser={currentUser}
+              mpsFormula={mps}
+              esBano={wizardM1.esBano}
+              onComplete={({ loteId }) => {
+                setWizardM1(null);
+                setExito(`Lote ${loteId} registrado con flujo dinámico ✓`);
+                setFilasCort([]);
+                setFormulaSelec(null);
+              }}
+              onCancel={() => setWizardM1(null)}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -101,11 +101,17 @@ export default function TabMaduracion({ mobile, currentUser }) {
   const [guardandoEdit,  setGuardandoEdit]  = useState(false);
   const [errorEdit,      setErrorEdit]      = useState('');
 
+  function esCatBano(cat) {
+    const c = (cat || '').replace(/[ÓÒÔ]/g,'O').toUpperCase();
+    return c.includes('INMERSION') || c.includes('MARINAD');
+  }
+
   function abrirWizardMomento1(corteNombre, kgIni) {
-    const cfg = horneadoCfgs.find(hc =>
-      (hc.config?._categoria || '').replace(/[ÓÒ]/g,'O').toUpperCase().includes('CORTES') &&
-      hc.producto_nombre?.toLowerCase() === corteNombre.toLowerCase()
-    );
+    const cfg = horneadoCfgs.find(hc => {
+      const cat = (hc.config?._categoria || '').replace(/[ÓÒ]/g,'O').toUpperCase();
+      const esValido = cat.includes('CORTES') || cat.includes('INMERSION') || cat.includes('MARINAD');
+      return esValido && hc.producto_nombre?.toLowerCase() === corteNombre.toLowerCase();
+    });
     if (!cfg?.config?.bloques) return false;
     setWizardDinamico({
       modo:        'momento1',
@@ -115,6 +121,7 @@ export default function TabMaduracion({ mobile, currentUser }) {
       lote:        null,
       kgInicial:   kgIni,
       precioCarne: 0,
+      esBano:      esCatBano(cfg.config?._categoria),
     });
     return true;
   }
@@ -287,6 +294,14 @@ export default function TabMaduracion({ mobile, currentUser }) {
       (cfgCortesEntry.config?._categoria || '').replace(/[ÓÒ]/g, 'O').toUpperCase().includes('CORTES') &&
       cfgCortesEntry.config?.tipo === 'padre';
 
+    const esBanoCat = esCatBano(cfgCortesEntry?.config?._categoria);
+    const bloquesEsBano = cfgCortesEntry?.config?.bloques || [];
+    const madIdxEsBano  = bloquesEsBano.findIndex(b => b.tipo === 'maduracion');
+    const postMadEsBano = madIdxEsBano >= 0
+      ? bloquesEsBano.slice(madIdxEsBano + 1)
+      : bloquesEsBano.filter(b => !['inyeccion','rub','adicional','maduracion'].includes(b.tipo));
+    const esEsBanoConHorneado = esBanoCat && postMadEsBano.some(b => b.activo && b.tipo === 'horneado');
+
     try {
       const deshueseEntries = [];
       const hoy = new Date().toISOString().split('T')[0];
@@ -295,6 +310,11 @@ export default function TabMaduracion({ mobile, currentUser }) {
       let cortesWizardKgMad     = 0;
       let cortesWizardCosto     = 0;
       let cortesWizardNombre    = '';
+
+      let banoWizardMpId    = null;
+      let banoWizardKgMad   = 0;
+      let banoWizardCosto   = 0;
+      let banoWizardNombre  = '';
 
       for (const p of picortes) {
         const kgMad      = parseFloat(pesajes[p.corte_nombre]);
@@ -330,7 +350,13 @@ export default function TabMaduracion({ mobile, currentUser }) {
         }
 
         if (mpId) {
-          if (!esCortesPadre) {
+          if (esEsBanoConHorneado) {
+            // ── BANO CON HORNEADO: diferir stock al wizard momento2 ──
+            banoWizardMpId   = mpId;
+            banoWizardKgMad  = kgMad;
+            banoWizardCosto  = costoTotal;
+            banoWizardNombre = p.corte_nombre;
+          } else if (!esCortesPadre) {
             // ── FLUJO NORMAL: actualizar inventario y stock ──
             const { data: inv } = await supabase.from('inventario_mp')
               .select('id, stock_kg').eq('materia_prima_id', mpId).maybeSingle();
@@ -437,6 +463,32 @@ export default function TabMaduracion({ mobile, currentUser }) {
           kgInicial:   cortesWizardKgMad,
           precioCarne: cortesWizardKgMad > 0 ? cortesWizardCosto / cortesWizardKgMad : 0,
           mpsFormula:  mpsParaCortes,
+          esBano:      esCatBano(cfgDinCheck?.config?._categoria),
+        });
+        setGuardando(false);
+        return;
+      }
+
+      // ── Si es BANO con horneado → Wizard dinámico Momento 2 ──
+      if (esEsBanoConHorneado && banoWizardMpId) {
+        setWizardDinamico({
+          modo:        'momento2',
+          bloques:     cfgCortesEntry.config.bloques,
+          bloquesHijo: [],
+          cfg:         cfgCortesEntry.config,
+          lote: {
+            loteId:           loteIdGuardado,
+            lotesMadId:       modalPesaje.id,
+            corteNombrePadre: banoWizardNombre,
+            corteNombreHijo:  '',
+            mpPadreId:        banoWizardMpId,
+            formulaSalmuera:  formulaSalActual,
+            bloquesResultado: brMomento1,
+          },
+          kgInicial:   banoWizardKgMad,
+          precioCarne: banoWizardKgMad > 0 ? banoWizardCosto / banoWizardKgMad : 0,
+          mpsFormula:  [],
+          esBano:      true,
         });
         setGuardando(false);
         return;
@@ -2807,6 +2859,7 @@ export default function TabMaduracion({ mobile, currentUser }) {
           precioCarne={wizardDinamico.precioCarne}
           currentUser={currentUser}
           mpsFormula={wizardDinamico.mpsFormula || []}
+          esBano={wizardDinamico.esBano || false}
           onComplete={() => { setWizardDinamico(null); cargar(); }}
           onCancel={() => setWizardDinamico(null)}
         />
