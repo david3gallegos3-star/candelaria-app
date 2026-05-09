@@ -22,14 +22,36 @@ export default function TabInyeccion({ currentUser }) {
 
   const cargarInicial = useCallback(async () => {
     if (!inicializado.current) setCargando(true);
-    const [{ data: cfgs }, { data: mpsData }] = await Promise.all([
+    const [{ data: cfgs }, { data: mpsData }, { data: deshData }] = await Promise.all([
       supabase.from('vista_horneado_config').select('producto_nombre,config'),
       supabase.from('materias_primas')
         .select('id,nombre,nombre_producto,precio_kg,categoria')
         .eq('eliminado', false).eq('estado', 'ACTIVO'),
+      supabase.from('deshuese_config').select('corte_padre,corte_hijo'),
     ]);
-    // Todos los productos de vista_horneado_config (con o sin bloques)
-    setProductos(cfgs || []);
+
+    // Excluir tipo 'hijo' (no se producen directamente)
+    // Deduplicar por producto_nombre: preferir el que tiene más bloques activos
+    const sinHijos = (cfgs || []).filter(c => c.config?.tipo !== 'hijo');
+    const porNombre = {};
+    for (const c of sinHijos) {
+      const key = c.producto_nombre;
+      if (!porNombre[key]) { porNombre[key] = c; continue; }
+      const existente = (porNombre[key].config?.bloques || []).filter(b => b.activo).length;
+      const nuevo     = (c.config?.bloques || []).filter(b => b.activo).length;
+      if (nuevo > existente) porNombre[key] = c;
+    }
+    // Añadir nombre del hijo desde deshuese_config
+    const deshMap = {};
+    for (const d of (deshData || [])) {
+      if (d.corte_padre) deshMap[d.corte_padre.toLowerCase()] = d.corte_hijo;
+    }
+    const prods = Object.values(porNombre).map(c => ({
+      ...c,
+      _hijoNombre: deshMap[c.producto_nombre.toLowerCase()] || null,
+    }));
+
+    setProductos(prods);
     setMps(mpsData || []);
     inicializado.current = true;
     setCargando(false);
@@ -240,7 +262,10 @@ export default function TabInyeccion({ currentUser }) {
               const cfg = p.config || {};
               const tieneBif = (cfg.bloques || []).some(b => b.tipo === 'bifurcacion' && b.activo);
               const esPadre  = cfg.tipo === 'padre';
-              const sufijo   = tieneBif || esPadre ? ' (Padre/Hijo)' : '';
+              const hijoNombre = p._hijoNombre;
+              const sufijo = (tieneBif || esPadre) && hijoNombre
+                ? ` / ${hijoNombre}`
+                : '';
               return (
                 <option key={i} value={JSON.stringify({ nombre: p.producto_nombre })}>
                   {p.producto_nombre}{sufijo}
@@ -258,10 +283,11 @@ export default function TabInyeccion({ currentUser }) {
               {(() => {
                 const cfg = productoSelec.config || {};
                 const pasos = (cfg.bloques || []).filter(b => b.activo).length;
-                const tieneBif = (cfg.bloques || []).some(b => b.tipo === 'bifurcacion' && b.activo);
+                const hijoNombre = productoSelec._hijoNombre;
                 return (
                   <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.5)', marginTop: 2 }}>
-                    {cfg._categoria || ''}{pasos > 0 ? ` · ${pasos} pasos` : ''}{tieneBif ? ' · Padre/Hijo' : ''}
+                    {cfg._categoria || ''}{pasos > 0 ? ` · ${pasos} pasos` : ''}
+                    {hijoNombre ? ` · Hijo: ${hijoNombre}` : ''}
                   </div>
                 );
               })()}
