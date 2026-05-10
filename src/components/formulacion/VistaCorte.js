@@ -250,13 +250,15 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion, esBano 
       setDeshueseConfig(cfgEntry || null);
 
       // 2. MP vinculada
+      let mpLocal = null;
       if (producto.mp_vinculado_id) {
         const { data: mp } = await supabase.from('materias_primas').select('*').eq('id', producto.mp_vinculado_id).single();
-        setMpVinculada(mp || null);
+        mpLocal = mp || null;
       } else {
         const { data: mps } = await supabase.from('materias_primas').select('*').ilike('nombre_producto', `%${producto.nombre}%`).limit(1);
-        setMpVinculada((mps || [])[0] || null);
+        mpLocal = (mps || [])[0] || null;
       }
+      setMpVinculada(mpLocal);
 
       // 3. Lotes stock
       const { data: lotes } = await supabase
@@ -266,6 +268,20 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion, esBano 
         .order('id', { ascending: false })
         .limit(30);
       let allLotes = lotes || [];
+
+      // Fallback MP: si no encontró por nombre del producto, buscar por nombre de la MP vinculada
+      if (allLotes.length === 0 && mpLocal) {
+        const mpNombre = mpLocal.nombre_producto || mpLocal.nombre || '';
+        if (mpNombre && mpNombre.toLowerCase() !== producto.nombre.toLowerCase()) {
+          const { data: mpFallback } = await supabase
+            .from('stock_lotes_inyectados').select('*')
+            .ilike('corte_nombre', `%${mpNombre}%`)
+            .order('fecha_entrada', { ascending: false })
+            .order('id', { ascending: false })
+            .limit(30);
+          allLotes = mpFallback || [];
+        }
+      }
 
       // Fallback hijo: si no encontró nada y es hijo, buscar via parent_lote_id del padre
       if (allLotes.length === 0 && !esPadre && cfgEntry?.corte_padre) {
@@ -292,7 +308,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion, esBano 
         const [{ data: madRows }, { data: hijoRows }, { data: padreRows }] = await Promise.all([
           madIds.length > 0
             ? supabase.from('lotes_maduracion')
-                .select('id, bloques_resultado, produccion_inyeccion(kg_carne_total, porcentaje_inyeccion, produccion_inyeccion_cortes(corte_nombre, kg_carne_cruda, kg_salmuera_asignada))')
+                .select('id, bloques_resultado, produccion_inyeccion(kg_carne_total, porcentaje_inyeccion, produccion_inyeccion_cortes(corte_nombre, kg_carne_cruda, kg_carne_limpia, kg_salmuera_asignada, costo_carne, costo_salmuera_asignado))')
                 .in('id', madIds)
             : Promise.resolve({ data: [] }),
           padreLoteIds.length > 0
@@ -485,6 +501,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion, esBano 
           costoRubFormula,
           kgRubBase:        parseFloat(kgRubBase) || 1,
           mpAdic,
+          esBano,
         });
         return { bloques, pasos_flujo: res.pasos, c_mad_real: res.costoKgFinal };
       })() : {}),
@@ -1083,6 +1100,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion, esBano 
               bloques={bloques}              setBloques={setBloques}
               bloqueExpandido={bloqueExpandido} setBloqueExpandido={setBloqueExpandido}
               modoEdicion={modoEdicion}
+              esBano={esBano}
               producto={producto}
               precioCarne={precioCarne}
               precioKgSalmuera={precioKgSalmuera}
@@ -2117,7 +2135,9 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion, esBano 
                 const pctInjN  = kgCarne > 0 && kgSalAbs > 0
                   ? Math.round(kgSalAbs / kgCarne * 100)
                   : parseFloat(madInfo?.produccion_inyeccion?.porcentaje_inyeccion || 0);
-                const kgPostInj = kgCarne + kgSalAbs;
+                const kgPostInj = esBano
+                  ? parseFloat(miCorte?.kg_carne_limpia || miCorte?.kg_carne_cruda || kgCarne)
+                  : kgCarne + kgSalAbs;
                 const hijoL    = companionSplit.hijoLotes.find(h => h.parent_lote_id === l.lote_id);
                 const padreL   = companionSplit.padreLotes.find(p => p.lote_maduracion_id === l.lote_maduracion_id);
                 const kgPreBif = (() => {
@@ -2131,18 +2151,26 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion, esBano 
                     : esHijo && kgPreBif > 0
                       ? kgPreBif
                       : parseFloat(l.kg_inyectado||0);
+                // Para esBano: mostrar el peso post-pesaje (antes del horneado), no el peso final
+                const kgPostPesaje = (() => {
+                  if (!esBano) return kgPostMad;
+                  const hornPaso = (madInfo?.bloques_resultado?.pasos || []).find(p => p.tipo === 'horneado');
+                  return hornPaso ? parseFloat(hornPaso.kgEntrada || 0) : kgPostMad;
+                })();
                 const kgDisp = parseFloat(l.kg_disponible || l.kg_inicial || 0);
                 const cMad   = parseFloat(l.costo_mad_kg || 0);
-                const hdrBg  = esPadre
-                  ? 'linear-gradient(135deg,#1a3a5c,#2980b9)'
-                  : esHijo
-                    ? 'linear-gradient(135deg,#6c3483,#9b59b6)'
-                    : 'linear-gradient(135deg,#1a6b3c,#27ae60)';
+                const hdrBg  = esBano
+                  ? 'linear-gradient(135deg,#1a6b3c,#27ae60)'
+                  : esPadre
+                    ? 'linear-gradient(135deg,#1a3a5c,#2980b9)'
+                    : esHijo
+                      ? 'linear-gradient(135deg,#6c3483,#9b59b6)'
+                      : 'linear-gradient(135deg,#1a6b3c,#27ae60)';
                 return (
                   <div key={l.id || idx} style={{ background: 'white', borderRadius: 12, overflow: 'hidden', boxShadow: '0 2px 8px rgba(0,0,0,0.08)', marginBottom: 12 }}>
                     <div style={{ background: hdrBg, padding: '10px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <span style={{ color: 'white', fontWeight: 'bold', fontSize: 13 }}>
-                        📦 {esPadre ? 'Padre' : esHijo ? 'Hijo' : 'Lote'} — {l.lote_id}
+                        📦 {esBano ? 'Lote' : esPadre ? 'Padre' : esHijo ? 'Hijo' : 'Lote'} — {l.lote_id}
                       </span>
                       <span style={{ color: 'rgba(255,255,255,0.8)', fontSize: 12 }}>{l.fecha_entrada}</span>
                     </div>
@@ -2168,13 +2196,13 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion, esBano 
                       )}
 
                       {/* Post-maduración y merma (solo si hay datos y no es independiente sin datos) */}
-                      {(esPadre || esHijo) && kgPostMad > 0 && (
+                      {(esBano || esPadre || esHijo) && kgPostPesaje > 0 && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, fontSize: 12 }}>
                           <span style={{ color: '#888' }}>↓ Maduración →</span>
-                          <span style={{ fontWeight: 700, color: '#555' }}>{kgPostMad.toFixed(3)} kg</span>
-                          {kgPostInj > 0 && kgPostMad < kgPostInj && (
+                          <span style={{ fontWeight: 700, color: '#555' }}>{kgPostPesaje.toFixed(3)} kg</span>
+                          {kgPostInj > 0 && kgPostPesaje < kgPostInj && (
                             <span style={{ color: '#e74c3c', fontSize: 11 }}>
-                              (merma {((kgPostInj - kgPostMad) / kgPostInj * 100).toFixed(1)}%)
+                              (merma {((kgPostInj - kgPostPesaje) / kgPostInj * 100).toFixed(1)}%)
                             </span>
                           )}
                         </div>
@@ -2213,8 +2241,71 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion, esBano 
                         </div>
                       )}
 
-                      {/* Desglose paso a paso — padre */}
-                      {esPadre && (() => {
+                      {/* Desglose paso a paso — esBano (reconstruido desde datos reales) */}
+                      {esBano && (() => {
+                        const kgIni      = parseFloat(miCorte?.kg_carne_cruda || 0);
+                        const kgLimpia   = parseFloat(miCorte?.kg_carne_limpia || kgIni);
+                        const kgSal      = parseFloat(miCorte?.kg_salmuera_asignada || 0);
+                        const costoCarne = parseFloat(miCorte?.costo_carne || 0);
+                        const costoSal   = parseFloat(miCorte?.costo_salmuera_asignado || 0);
+                        const hornPaso   = (madInfo?.bloques_resultado?.pasos || []).find(p => p.tipo === 'horneado');
+                        const kgMad      = hornPaso ? parseFloat(hornPaso.kgEntrada || 0) : kgPostPesaje;
+                        const kgFinal    = hornPaso ? parseFloat(hornPaso.kgSalida || 0) : kgDisp;
+                        const costoFinal = hornPaso ? parseFloat(hornPaso.costoAcum || 0) : cMad * kgFinal;
+                        if (kgIni === 0) return null;
+
+                        // Calcular crédito de merma hacia atrás: costoCarne + costoSal - costoFinal
+                        const mermaCredit = costoFinal > 0 ? Math.max(0, costoCarne + costoSal - costoFinal) : 0;
+
+                        const COLORS = { merma:'#e74c3c', inyeccion:'#2980b9', maduracion:'#27ae60', horneado:'#e67e22' };
+                        const pasos = [];
+                        let cAcum = costoCarne;
+
+                        // Merma previa (si hubo diferencia entre cruda y limpia)
+                        if (kgLimpia < kgIni) {
+                          const kgM = kgIni - kgLimpia;
+                          cAcum -= mermaCredit; // aplicar crédito de merma
+                          pasos.push({ tipo:'merma', label:'Merma', kgSalida: kgLimpia, costoAcum: cAcum, info: `-${kgM.toFixed(3)} kg · -$${mermaCredit.toFixed(4)} crédito` });
+                        }
+                        // Inyección
+                        cAcum += costoSal;
+                        pasos.push({ tipo:'inyeccion', label:'Inyección 100%', kgSalida: kgLimpia, costoAcum: cAcum, info: `+${kgSal.toFixed(3)} kg salmuera · +$${costoSal.toFixed(4)}` });
+                        // Maduración
+                        if (kgMad > 0 && kgMad < kgLimpia) {
+                          const mermaM = ((kgLimpia - kgMad) / kgLimpia * 100).toFixed(1);
+                          pasos.push({ tipo:'maduracion', label:'Maduración', kgSalida: kgMad, costoAcum: cAcum, info: `-${(kgLimpia-kgMad).toFixed(3)} kg merma (${mermaM}%)` });
+                        }
+                        // Horneado
+                        if (kgFinal > 0) {
+                          const mermaH = kgMad > 0 ? ((kgMad - kgFinal) / kgMad * 100).toFixed(1) : '?';
+                          pasos.push({ tipo:'horneado', label:'Merma Horneado', kgSalida: kgFinal, costoAcum: costoFinal, info: `-${(kgMad-kgFinal).toFixed(3)} kg merma (${mermaH}%)` });
+                        }
+
+                        return (
+                          <div style={{ marginBottom: 12 }}>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>Flujo de costo — paso a paso</div>
+                            {pasos.map((p, i) => {
+                              const costoKg = p.kgSalida > 0 ? p.costoAcum / p.kgSalida : 0;
+                              const color = COLORS[p.tipo] || '#555';
+                              return (
+                                <div key={i} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'5px 10px', marginBottom:3, background:'#fafafa', borderRadius:6, fontSize:11, borderLeft:`3px solid ${color}` }}>
+                                  <div>
+                                    <span style={{ fontWeight:600, color }}>{p.label}</span>
+                                    {p.info && <span style={{ color:'#888', marginLeft:6 }}>{p.info}</span>}
+                                  </div>
+                                  <div style={{ textAlign:'right' }}>
+                                    <span style={{ fontWeight:700 }}>{p.kgSalida.toFixed(3)} kg</span>
+                                    <span style={{ color:'#888', marginLeft:8 }}>${costoKg.toFixed(4)}/kg</span>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
+
+                      {/* Desglose paso a paso — padre (no mostrar si esBano, ya tiene su propio bloque) */}
+                      {esPadre && !esBano && (() => {
                         const bloquesRes = madInfo?.bloques_resultado;
                         if (!bloquesRes?.pasos) return null;
                         const bifIdx = bloquesRes.pasos.findIndex(p => p.tipo === 'bifurcacion');

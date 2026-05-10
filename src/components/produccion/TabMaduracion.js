@@ -26,6 +26,14 @@ function esInmersionLote(lote, cfgs) {
   return (cfg?.config?._categoria || '').replace(/[ÓÒ]/g, 'O').toUpperCase().includes('INMERSION');
 }
 
+function tieneMaduracionActiva(lote, cfgs) {
+  const formulaSal = (lote.produccion_inyeccion?.formula_salmuera || '').toLowerCase();
+  if (!formulaSal) return false;
+  const cfg = cfgs.find(hc => (hc.config?.formula_salmuera || '').toLowerCase() === formulaSal);
+  const bloques = cfg?.config?.bloques || [];
+  return bloques.some(b => b.tipo === 'maduracion' && b.activo !== false);
+}
+
 function esCortesPadreLote(lote, cfgs) {
   const formulaSal = (lote.produccion_inyeccion?.formula_salmuera || '').toLowerCase();
   if (!formulaSal) return false;
@@ -67,6 +75,7 @@ export default function TabMaduracion({ mobile, currentUser }) {
   const [horneadoCfgs,   setHorneadoCfgs]   = useState([]); // configs de vista_horneado_config
 
   // ── Modal Sub-productos post-pesaje ──
+  const [wizardRetomar,  setWizardRetomar]  = useState(null); // params para re-lanzar wizard
   const [modalSpPost,    setModalSpPost]    = useState(null); // {subproductos, loteId, totalKgMad, pendingFlow, horneadoData, deshueseData}
   const [spPostKgs,      setSpPostKgs]      = useState({});   // {fase: kg}
   const [guardSpPost,    setGuardSpPost]    = useState(false);
@@ -271,6 +280,32 @@ export default function TabMaduracion({ mobile, currentUser }) {
     setModalPesaje(lote);
   }
 
+  function abrirWizardRetomar(lote) {
+    const formulaSal = (lote.produccion_inyeccion?.formula_salmuera || '').toLowerCase();
+    const cfg = horneadoCfgs.find(hc =>
+      (hc.config?.formula_salmuera || '').toLowerCase() === formulaSal
+    );
+    if (!cfg) return;
+    const picortes = lote.produccion_inyeccion?.produccion_inyeccion_cortes || [];
+    const primerCorte = picortes[0];
+    const kgInicial = parseFloat(lote.kg_inicial || lote.produccion_inyeccion?.kg_carne_total || 0);
+    const precioCarne = primerCorte
+      ? parseFloat(primerCorte.precio_kg_carne || (primerCorte.costo_carne / (primerCorte.kg_carne_cruda || 1)) || 0)
+      : 0;
+    const esInm = esInmersionLote(lote, horneadoCfgs);
+    setWizardRetomar({
+      bloques:          cfg.config?.bloques || [],
+      bloquesHijo:      cfg.config?.bloques_hijo || [],
+      cfg:              cfg.config || {},
+      kgInicial,
+      precioCarne,
+      esBano:           esInm,
+      prodNombre:       primerCorte?.corte_nombre || cfg.producto_nombre || '',
+      savedLoteId:      lote.lote_id,
+      savedFechaSalida: lote.fecha_salida,
+    });
+  }
+
   async function confirmarPesaje() {
     const picortes = modalPesaje.produccion_inyeccion?.produccion_inyeccion_cortes || [];
     for (const p of picortes) {
@@ -321,11 +356,17 @@ export default function TabMaduracion({ mobile, currentUser }) {
       let banoWizardCosto   = 0;
       let banoWizardNombre  = '';
 
+      const esInmPesaje = esInmersionLote(modalPesaje, horneadoCfgs);
+
       for (const p of picortes) {
         const kgMad      = parseFloat(pesajes[p.corte_nombre]);
         const kgCarneReal = parseFloat(p.kg_carne_limpia || p.kg_carne_cruda || 0);
-        const kgInj      = kgCarneReal + parseFloat(p.kg_salmuera_asignada || 0);
-        const costoTotal = parseFloat(p.costo_carne || 0) + parseFloat(p.costo_salmuera_asignado || 0);
+        const kgInj      = esInmPesaje ? kgCarneReal : kgCarneReal + parseFloat(p.kg_salmuera_asignada || 0);
+        // Si el wizard momento1 ya calculó el costo con crédito de merma, usarlo
+        const inyPasoM1  = (modalPesaje.bloques_resultado?.pasos || []).find(paso => paso.tipo === 'inyeccion');
+        const costoTotal = inyPasoM1
+          ? parseFloat(inyPasoM1.costoAcum || 0)
+          : parseFloat(p.costo_carne || 0) + parseFloat(p.costo_salmuera_asignado || 0);
         const costoInyKg = kgInj > 0 ? costoTotal / kgInj : 0;
         const costoMadKg = kgMad > 0 ? costoTotal / kgMad : 0;
 
@@ -1669,8 +1710,11 @@ export default function TabMaduracion({ mobile, currentUser }) {
             const dias      = diasParaSalida(lote.fecha_salida);
             const listo     = dias <= 0;
             const picortes  = lote.produccion_inyeccion?.produccion_inyeccion_cortes || [];
-            const esInm     = esInmersionLote(lote, horneadoCfgs);
-            const totalCarne = picortes.reduce((s, p) => s + parseFloat(p.kg_carne_cruda || 0), 0);
+            const esInm        = esInmersionLote(lote, horneadoCfgs);
+            const tieneMadActiva = tieneMaduracionActiva(lote, horneadoCfgs);
+            const totalCarne = picortes.reduce((s, p) => s + (esInm
+              ? parseFloat(p.kg_carne_limpia || p.kg_carne_cruda || 0)
+              : parseFloat(p.kg_carne_cruda || 0)), 0);
             const totalSal   = picortes.reduce((s, p) => s + parseFloat(p.kg_salmuera_asignada || 0), 0);
             const totalInj   = esInm ? totalCarne : totalCarne + totalSal;
             const expandido  = !!expandidos[lote.id];
@@ -1732,7 +1776,9 @@ export default function TabMaduracion({ mobile, currentUser }) {
                           <div style={{ textAlign: 'right' }}>TOTAL INYECT.</div>
                         </div>
                         {picortes.map((p, idx) => {
-                          const kgCarne = parseFloat(p.kg_carne_cruda       || 0);
+                          const kgCarne = esInm
+                            ? parseFloat(p.kg_carne_limpia || p.kg_carne_cruda || 0)
+                            : parseFloat(p.kg_carne_cruda || 0);
                           const kgSal   = parseFloat(p.kg_salmuera_asignada || 0);
                           const kgInj   = esInm ? kgCarne : kgCarne + kgSal;
                           const pctSal  = kgCarne > 0 ? ((kgSal / kgCarne) * 100).toFixed(1) : '0.0';
@@ -1784,8 +1830,24 @@ export default function TabMaduracion({ mobile, currentUser }) {
                         padding: '8px 14px', cursor: 'pointer', fontSize: 12, fontWeight: 'bold', color: '#856404'
                       }}>🧪 Prueba</button>
                     )}
+                    {/* Retomar wizard si momento1 nunca completó */}
+                    {!listo && lote.bloques_resultado === null && (
+                      <button onClick={() => abrirWizardRetomar(lote)} style={{
+                        background: 'linear-gradient(135deg,#e67e22,#d35400)',
+                        color: 'white', border: 'none', borderRadius: 8,
+                        padding: '8px 14px', cursor: 'pointer',
+                        fontSize: 12, fontWeight: 'bold', whiteSpace: 'nowrap'
+                      }}>▶ Retomar producción</button>
+                    )}
                     {listo && (
-                      esInm ? (
+                      tieneMadActiva ? (
+                        <button onClick={() => abrirPesaje(lote)} style={{
+                          background: 'linear-gradient(135deg,#e74c3c,#c0392b)',
+                          color: 'white', border: 'none', borderRadius: 8,
+                          padding: '8px 14px', cursor: 'pointer',
+                          fontSize: 12, fontWeight: 'bold', whiteSpace: 'nowrap'
+                        }}>⚖️ Registrar pesaje</button>
+                      ) : esInm ? (
                         <button onClick={() => completarInmersion(lote)} disabled={guardando} style={{
                           background: 'linear-gradient(135deg,#27ae60,#1e8449)',
                           color: 'white', border: 'none', borderRadius: 8,
@@ -2574,9 +2636,11 @@ export default function TabMaduracion({ mobile, currentUser }) {
                 <div style={{ textAlign: 'right' }}>DIFERENCIA</div>
               </div>
 
-              {(modalPesaje.produccion_inyeccion?.produccion_inyeccion_cortes || []).map(p => {
+              {(() => { const esInmModal = esInmersionLote(modalPesaje, horneadoCfgs); return (
+              (modalPesaje.produccion_inyeccion?.produccion_inyeccion_cortes || []).map(p => {
                 const kgCarneReal = parseFloat(p.kg_carne_limpia || p.kg_carne_cruda || 0);
-                const kgInj  = kgCarneReal + parseFloat(p.kg_salmuera_asignada || 0);
+                const kgSalModal  = parseFloat(p.kg_salmuera_asignada || 0);
+                const kgInj  = esInmModal ? kgCarneReal : kgCarneReal + kgSalModal;
                 const kgHoy  = parseFloat(pesajes[p.corte_nombre] || 0);
                 const diff   = kgHoy > 0 ? kgInj - kgHoy : null;
                 return (
@@ -2588,7 +2652,9 @@ export default function TabMaduracion({ mobile, currentUser }) {
                     <div style={{ fontWeight: 'bold', fontSize: 13, color: '#1a1a2e' }}>
                       🥩 {p.corte_nombre}
                       <div style={{ fontSize: 10, color: '#888', fontWeight: 'normal' }}>
-                        {kgCarneReal.toFixed(3)} carne + {parseFloat(p.kg_salmuera_asignada||0).toFixed(3)} sal
+                        {esInmModal
+                          ? `${kgCarneReal.toFixed(3)} carne (baño: ${kgSalModal.toFixed(3)} sal)`
+                          : `${kgCarneReal.toFixed(3)} carne + ${kgSalModal.toFixed(3)} sal`}
                       </div>
                     </div>
                     <div style={{ textAlign: 'right', fontSize: 13, color: '#2980b9', fontWeight: 'bold' }}>
@@ -2611,7 +2677,7 @@ export default function TabMaduracion({ mobile, currentUser }) {
                     </div>
                   </div>
                 );
-              })}
+              }))})()}
             </div>
 
             {/* Resumen merma */}
@@ -2626,7 +2692,10 @@ export default function TabMaduracion({ mobile, currentUser }) {
                 {(modalPesaje.produccion_inyeccion?.produccion_inyeccion_cortes || []).map(p => {
                   const kgMad = parseFloat(pesajes[p.corte_nombre] || 0);
                   if (!kgMad) return null;
-                  const kgInj  = parseFloat(p.kg_carne_cruda || 0) + parseFloat(p.kg_salmuera_asignada || 0);
+                  const kgCarneR = parseFloat(p.kg_carne_limpia || p.kg_carne_cruda || 0);
+                  const kgInj  = esInmersionLote(modalPesaje, horneadoCfgs)
+                    ? kgCarneR
+                    : kgCarneR + parseFloat(p.kg_salmuera_asignada || 0);
                   const merma  = kgInj - kgMad;
                   const pctM   = kgInj > 0 ? (merma / kgInj * 100).toFixed(1) : '0.0';
                   return (
@@ -2894,6 +2963,25 @@ export default function TabMaduracion({ mobile, currentUser }) {
           </div>
         );
       })()}
+
+      {/* ── Wizard retomar producción incompleta ── */}
+      {wizardRetomar && (
+        <WizardProduccionDinamica
+          modo="momento1"
+          bloques={wizardRetomar.bloques}
+          bloquesHijo={wizardRetomar.bloquesHijo}
+          cfg={wizardRetomar.cfg}
+          kgInicial={wizardRetomar.kgInicial}
+          precioCarne={wizardRetomar.precioCarne}
+          currentUser={currentUser}
+          mpsFormula={[]}
+          esBano={wizardRetomar.esBano}
+          savedLoteId={wizardRetomar.savedLoteId}
+          savedFechaSalida={wizardRetomar.savedFechaSalida}
+          onComplete={() => { setWizardRetomar(null); cargar(); }}
+          onCancel={() => setWizardRetomar(null)}
+        />
+      )}
 
       {/* ── Wizard dinámico CORTES ── */}
       {wizardDinamico && (

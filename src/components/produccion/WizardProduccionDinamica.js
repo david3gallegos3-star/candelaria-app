@@ -677,8 +677,14 @@ export default function WizardProduccionDinamica({
   async function completarMomento1() {
     setGuardando(true); setError('');
     try {
-      // Para esBano: los registros ya fueron guardados antes de abrir el wizard
-      if (savedLoteId) { onComplete({ loteId: savedLoteId }); return; }
+      // Para todos los casos con savedLoteId: marcar momento1 como completado
+      if (savedLoteId) {
+        await supabase.from('lotes_maduracion')
+          .update({ bloques_resultado: { momento1: true, pasos: resultados } })
+          .eq('lote_id', savedLoteId);
+        onComplete({ loteId: savedLoteId });
+        return;
+      }
 
       const hoy = new Date().toISOString().split('T')[0];
       const bloquesMad = (bloques || []).find(b => b.tipo === 'maduracion');

@@ -6,7 +6,7 @@ import React, { useEffect, useRef, useState } from 'react';
 // calcBloques: procesa el array de bloques en orden y devuelve
 // pasos de costo acumulado + resultado final.
 // ─────────────────────────────────────────────────────────────
-export function calcBloques({ bloques, kgIni, precioCarne, precioKgSalmuera, costoRubFormula, kgRubBase, mpAdic }) {
+export function calcBloques({ bloques, kgIni, precioCarne, precioKgSalmuera, costoRubFormula, kgRubBase, mpAdic, esBano = false }) {
   let kg = kgIni;
   let costoAcum = precioCarne * kgIni;
   const pasos = [];
@@ -22,7 +22,7 @@ export function calcBloques({ bloques, kgIni, precioCarne, precioKgSalmuera, cos
       const kgSal = kg * pct;
       const cSal  = kgSal * precioKgSalmuera;
       costoAcum  += cSal;
-      kg         += kgSal;
+      if (!esBano) kg += kgSal; // INMERSIÓN: el baño no aumenta el peso del producto
       pasos.push({ tipo: 'inyeccion', label: `💉 Inyección ${b.pct_inj}%`, kg, costoAcum, kgSal, cSal });
 
     } else if (b.tipo === 'maduracion') {
@@ -124,6 +124,7 @@ export function BloquesDinamicosEditor({
   setKgParaHijo, setMargenPadre, setMargenHijo,
   margenPadre, margenHijo,
   // para hijo: tipos de bloque disponibles (sin bifurcacion por defecto si se pasa)
+  esBano = false,
   tiposDisponibles,
   // tipos a excluir siempre (ej. ['bifurcacion'] para inmersión/marinados)
   tiposExcluidos,
@@ -142,7 +143,7 @@ export function BloquesDinamicosEditor({
     setPctInj(String(pctSalmueraFormula));
   }, [pctSalmueraFormula]);
 
-  const resultado = calcBloques({ bloques, kgIni, precioCarne, precioKgSalmuera, costoRubFormula, kgRubBase: parseFloat(kgRubBase) || 1, mpAdic });
+  const resultado = calcBloques({ bloques, kgIni, precioCarne, precioKgSalmuera, costoRubFormula, kgRubBase: parseFloat(kgRubBase) || 1, mpAdic, esBano });
 
   const dragIdx    = useRef(null);
   const [dragOver, setDragOver] = useState(null);
@@ -344,7 +345,10 @@ export function BloquesDinamicosEditor({
                               {precioKgSalmuera > 0 && ` · $${(kgSal * precioKgSalmuera).toFixed(4)}`}
                             </div>
                             <div style={{ marginTop: 4, fontWeight: 700, color: meta.color }}>
-                              → <strong style={{ fontSize: 13 }}>{(kgAntes + kgSal).toFixed(3)} kg</strong> total después de inyección
+                              {esBano
+                                ? <>→ <strong style={{ fontSize: 13 }}>{kgAntes.toFixed(3)} kg</strong> (peso no cambia — solo costo)</>
+                                : <>→ <strong style={{ fontSize: 13 }}>{(kgAntes + kgSal).toFixed(3)} kg</strong> total después de inyección</>
+                              }
                             </div>
                           </div>
                         )}
@@ -387,9 +391,10 @@ export function BloquesDinamicosEditor({
                               )}
                             </label>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                              <input type="number" min="0" step="0.001" value={b.kg_salida_mad} placeholder="ej: 1.800"
+                              <input type="text" inputMode="decimal" value={b.kg_salida_mad || ''} placeholder="ej: 1.800"
                                 style={baseInputStyle({ border: '1.5px solid #e74c3c', textAlign: 'left' })} disabled={!modoEdicion}
-                                onChange={e => { const v = parseFloat(e.target.value) || 0; updateBloque(b.id, { kg_salida_mad: v }); setKgSalidaMad(String(v)); }} />
+                                onChange={e => { const raw = e.target.value.replace(',', '.'); updateBloque(b.id, { kg_salida_mad: raw }); setKgSalidaMad(raw); }}
+                                onBlur={e => { const v = parseFloat(e.target.value.replace(',', '.')) || 0; updateBloque(b.id, { kg_salida_mad: v }); setKgSalidaMad(String(v)); }} />
                               {pctMerma !== null && (
                                 <div style={{ background: '#fdf2f2', border: '1.5px solid #e74c3c', borderRadius: 7, padding: '6px 12px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                                   <div style={{ fontSize: 10, color: '#888' }}>merma</div>
