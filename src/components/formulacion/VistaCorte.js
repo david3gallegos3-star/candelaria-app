@@ -2248,14 +2248,17 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion, esBano 
                         const kgSal      = parseFloat(miCorte?.kg_salmuera_asignada || 0);
                         const costoCarne = parseFloat(miCorte?.costo_carne || 0);
                         const costoSal   = parseFloat(miCorte?.costo_salmuera_asignado || 0);
-                        const hornPaso   = (madInfo?.bloques_resultado?.pasos || []).find(p => p.tipo === 'horneado');
+                        const pasosWiz   = madInfo?.bloques_resultado?.pasos || [];
+                        const hornPaso   = pasosWiz.find(p => p.tipo === 'horneado');
+                        const mermaPasoW = pasosWiz.find(p => p.tipo === 'merma');
                         const kgMad      = hornPaso ? parseFloat(hornPaso.kgEntrada || 0) : kgPostPesaje;
                         const kgFinal    = hornPaso ? parseFloat(hornPaso.kgSalida || 0) : kgDisp;
-                        const costoFinal = hornPaso ? parseFloat(hornPaso.costoAcum || 0) : cMad * kgFinal;
                         if (kgIni === 0) return null;
 
-                        // Calcular crédito de merma hacia atrás: costoCarne + costoSal - costoFinal
-                        const mermaCredit = costoFinal > 0 ? Math.max(0, costoCarne + costoSal - costoFinal) : 0;
+                        // Leer crédito directamente del paso merma del wizard (evita back-calculation incorrecta)
+                        const mermaCredit = mermaPasoW
+                          ? Math.max(0, costoCarne - parseFloat(mermaPasoW.costoAcum || 0))
+                          : 0;
 
                         const COLORS = { merma:'#e74c3c', inyeccion:'#2980b9', maduracion:'#27ae60', horneado:'#e67e22' };
                         const pasos = [];
@@ -2264,7 +2267,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion, esBano 
                         // Merma previa (si hubo diferencia entre cruda y limpia)
                         if (kgLimpia < kgIni) {
                           const kgM = kgIni - kgLimpia;
-                          cAcum -= mermaCredit; // aplicar crédito de merma
+                          cAcum -= mermaCredit;
                           pasos.push({ tipo:'merma', label:'Merma', kgSalida: kgLimpia, costoAcum: cAcum, info: `-${kgM.toFixed(3)} kg · -$${mermaCredit.toFixed(4)} crédito` });
                         }
                         // Inyección
@@ -2275,10 +2278,10 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion, esBano 
                           const mermaM = ((kgLimpia - kgMad) / kgLimpia * 100).toFixed(1);
                           pasos.push({ tipo:'maduracion', label:'Maduración', kgSalida: kgMad, costoAcum: cAcum, info: `-${(kgLimpia-kgMad).toFixed(3)} kg merma (${mermaM}%)` });
                         }
-                        // Horneado
+                        // Horneado: usar cAcum propio (hornPaso.costoAcum puede estar incorrecto en lotes viejos)
                         if (kgFinal > 0) {
                           const mermaH = kgMad > 0 ? ((kgMad - kgFinal) / kgMad * 100).toFixed(1) : '?';
-                          pasos.push({ tipo:'horneado', label:'Merma Horneado', kgSalida: kgFinal, costoAcum: costoFinal, info: `-${(kgMad-kgFinal).toFixed(3)} kg merma (${mermaH}%)` });
+                          pasos.push({ tipo:'horneado', label:'Merma Horneado', kgSalida: kgFinal, costoAcum: cAcum, info: `-${(kgMad-kgFinal).toFixed(3)} kg merma (${mermaH}%)` });
                         }
 
                         return (
