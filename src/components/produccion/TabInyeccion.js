@@ -120,7 +120,7 @@ const fromHijo = (hijoRow?.config?.bloques_hijo || []).filter(esActivo).length >
 
   function detectarEsBano(cfg) {
     const cat = (cfg._categoria || '').toUpperCase().replace(/[ÓÒÔÖ]/g, 'O');
-    return cat.includes('INMERSION') || cat.includes('MARINAD');
+    return cat.includes('INMERSION') || cat.includes('MARINAD') || cat.includes('AHUMAD');
   }
 
   async function iniciarProduccion() {
