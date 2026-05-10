@@ -367,7 +367,7 @@ function App() {
         nombre: nuevoNombre.trim(),
         categoria: catSel,
         estado: 'ACTIVO',
-        ...(esCorte && nuevoMpVinculado ? { mp_vinculado_id: nuevoMpVinculado.id } : {}),
+        ...(nuevoMpVinculado ? { mp_vinculado_id: nuevoMpVinculado.id } : {}),
       }])
       .select().single();
     if (error) return alert('Error: ' + error.message);

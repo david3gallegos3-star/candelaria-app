@@ -70,6 +70,8 @@ export default function WizardProduccionDinamica({
   const [pendingHijo,      setPendingHijo]      = useState(null);
   const [inputsHijo,       setInputsHijo]       = useState({});
   const [hijoMermasDone,   setHijoMermasDone]   = useState(false);
+  const [inputsPadre,      setInputsPadre]      = useState({});
+  const [padreMermasDone,  setPadreMermasDone]  = useState(false);
 
   const pasos = useMemo(
     () => buildPasos({ modo, rama, bloques, bloquesHijo, esBano }),
@@ -84,10 +86,20 @@ export default function WizardProduccionDinamica({
     () => rama === 'hijo' ? pasos.filter(b => b.tipo !== 'merma') : [],
     [pasos, rama]
   );
+  const mermasPadre = useMemo(
+    () => (modo === 'momento2' && rama === 'padre') ? pasos.filter(b => b.tipo === 'merma') : [],
+    [modo, pasos, rama]
+  );
+  const otrosPadre = useMemo(
+    () => (modo === 'momento2' && rama === 'padre') ? pasos.filter(b => b.tipo !== 'merma') : [],
+    [modo, pasos, rama]
+  );
 
-  const pasoActual = rama === 'hijo' && hijoMermasDone
+  const pasoActual = (rama === 'hijo' && hijoMermasDone)
     ? (otrosHijo[pasoIdx] || null)
-    : (pasos[pasoIdx] || null);
+    : (modo === 'momento2' && rama === 'padre' && padreMermasDone)
+      ? (otrosPadre[pasoIdx] || null)
+      : (pasos[pasoIdx] || null);
 
   // Cargar ingredientes cuando llegamos al paso Rub
   useEffect(() => {
@@ -147,12 +159,17 @@ export default function WizardProduccionDinamica({
       ? pasosPadre
       : [...pasosPadre, ...pasosHijoInd];
 
-    const enHijoMermas = modo === 'momento2' && rama === 'hijo' && !hijoMermasDone && mermasHijo.length > 0;
+    const enHijoMermas  = modo === 'momento2' && rama === 'hijo' && !hijoMermasDone && mermasHijo.length > 0;
+    const enPadreMermas = modo === 'momento2' && rama === 'padre' && !padreMermasDone && mermasPadre.length > 0;
     const globalIdx = enHijoMermas
       ? pasosPadre.length
       : modo === 'momento2' && rama === 'hijo'
         ? pasosPadre.length + mermasHijo.length + pasoIdx
-        : pasoIdx;
+        : enPadreMermas
+          ? 0
+          : (padreMermasDone && mermasPadre.length > 0)
+            ? mermasPadre.length + pasoIdx
+            : pasoIdx;
 
     return (
       <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 16, padding: '10px 0', borderBottom: '1px solid #e8e8e8' }}>
@@ -309,7 +326,8 @@ export default function WizardProduccionDinamica({
       let kgRealInput = parseFloat(inputKg) || 0;
 
       if (b.merma_tipo === 1) {
-        kgSalida = kgActual * (1 - (parseFloat(b.pct_merma) || 0) / 100);
+        const kgMermaReal = kgRealInput > 0 ? kgRealInput : kgActual * (parseFloat(b.pct_merma) || 0) / 100;
+        kgSalida = kgActual - kgMermaReal;
       } else if (b.merma_tipo === 2) {
         if (kgRealInput <= 0) { setError('Ingresa los kg reales obtenidos'); setGuardando(false); return; }
         kgSalida  = kgActual - kgRealInput;
@@ -361,6 +379,25 @@ export default function WizardProduccionDinamica({
       const kgSalida = esBano ? kgActual : kgActual + kgSalmuera;
       const nuevoCosto = costoAcum + costoSalmuera;
       const res = { tipo: 'inyeccion', kgEntrada: kgActual, kgSalida, costoAcum: nuevoCosto, kgSalmuera, costoSalmuera, formulaSalmuera: formulaSal, esBano: !!esBano };
+
+      // Actualizar el lote con los kg reales post-merma
+      if (savedLoteId) {
+        const { data: loteRow } = await supabase.from('lotes_maduracion')
+          .select('produccion_id').eq('lote_id', savedLoteId).maybeSingle();
+        if (loteRow?.produccion_id) {
+          await supabase.from('produccion_inyeccion').update({
+            kg_salmuera_requerida: kgSalmuera,
+            costo_salmuera_total:  costoSalmuera,
+            costo_total:           nuevoCosto,
+          }).eq('id', loteRow.produccion_id);
+          await supabase.from('produccion_inyeccion_cortes').update({
+            kg_carne_limpia:         kgActual,
+            kg_salmuera_asignada:    kgSalmuera,
+            costo_salmuera_asignado: costoSalmuera,
+          }).eq('produccion_id', loteRow.produccion_id);
+        }
+      }
+
       setResultados(prev => [...prev, res]);
       setKgActual(kgSalida);
       setCostoAcum(nuevoCosto);
@@ -542,6 +579,62 @@ export default function WizardProduccionDinamica({
     setGuardando(false);
   }
 
+  async function confirmarMermasPadre() {
+    for (let i = 0; i < mermasPadre.length; i++) {
+      const b = mermasPadre[i];
+      const key = b.id || i;
+      if (b.merma_tipo === 2 || b.merma_tipo === 3) {
+        const val = parseFloat(inputsPadre[key] || 0);
+        if (val <= 0) { setError(`Ingresa kg reales para "${b.nombre_merma || 'Merma'}"`); return; }
+      }
+    }
+    setGuardando(true); setError('');
+    try {
+      const loteRef = lote?.loteId || 'NUEVO';
+      const kgBase = kgActual;
+      let kgCurrent = kgBase;
+      let costoCurrent = costoAcum;
+      const localResults = [];
+      for (let i = 0; i < mermasPadre.length; i++) {
+        const b = mermasPadre[i];
+        const key = b.id || i;
+        let kgSalida = kgCurrent;
+        let nuevoCosto = costoCurrent;
+        if (b.merma_tipo === 1) {
+          const kgRealT1 = parseFloat(inputsPadre[key] || 0);
+          const kgMermaT1 = kgRealT1 > 0 ? kgRealT1 : kgBase * (parseFloat(b.pct_merma) || 0) / 100;
+          kgSalida = kgCurrent - kgMermaT1;
+        } else if (b.merma_tipo === 2) {
+          const kgReal = parseFloat(inputsPadre[key] || 0);
+          kgSalida     = kgCurrent - kgReal;
+          nuevoCosto   = costoCurrent - kgReal * (parseFloat(b.precio_merma_kg) || 0);
+        } else if (b.merma_tipo === 3) {
+          const kgReal = parseFloat(inputsPadre[key] || 0);
+          kgSalida     = kgCurrent - kgReal;
+          nuevoCosto   = costoCurrent - kgReal * (parseFloat(b.precio_merma_kg) || 0);
+          const mpMerma = b.mp_merma_id ? mpsFormula.find(m => String(m.id) === String(b.mp_merma_id)) : null;
+          if (b.mp_merma_id) {
+            await ingresarMpAInventario(b.mp_merma_id, mpMerma?.nombre_producto || mpMerma?.nombre || b.nombre_merma || 'Merma', kgReal, loteRef);
+          }
+        }
+        localResults.push({
+          tipo: b.tipo, merma_tipo: b.merma_tipo, nombre_merma: b.nombre_merma,
+          kgEntrada: kgCurrent, kgSalida, costoAcum: nuevoCosto,
+          kgMermaReal: kgCurrent - kgSalida,
+        });
+        kgCurrent    = kgSalida;
+        costoCurrent = nuevoCosto;
+      }
+      setResultados(prev => [...prev, ...localResults]);
+      setKgActual(kgCurrent);
+      setCostoAcum(costoCurrent);
+      setInputsPadre({});
+      setPadreMermasDone(true);
+      setPasoIdx(0);
+    } catch (e) { setError(e.message); }
+    setGuardando(false);
+  }
+
   // ── Detectar fin de pasos y avanzar a siguiente fase ─────────────────
   React.useEffect(() => {
     if (modo === 'momento1') {
@@ -550,8 +643,10 @@ export default function WizardProduccionDinamica({
       completarMomento1();
     } else if (modo === 'momento2') {
       if (rama === 'padre') {
-        if (pasoIdx < pasos.length) return;
-        if (pasos.length === 0) return;
+        if (mermasPadre.length > 0 && !padreMermasDone) return; // esperando ventana de mermas
+        const stepsLeft = mermasPadre.length > 0 ? otrosPadre : pasos;
+        if (pasoIdx < stepsLeft.length) return;
+        if (stepsLeft.length === 0 && mermasPadre.length === 0) return;
         const hasBifurcacion = pasos.some(p => p.tipo === 'bifurcacion');
         if (hasBifurcacion) {
           const hijoActivos = (bloquesHijo || []).filter(b => b.activo);
@@ -577,7 +672,7 @@ export default function WizardProduccionDinamica({
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pasoIdx, pasos.length, rama, hijoMermasDone, otrosHijo.length]);
+  }, [pasoIdx, pasos.length, rama, hijoMermasDone, otrosHijo.length, padreMermasDone, mermasPadre.length, otrosPadre.length]);
 
   async function completarMomento1() {
     setGuardando(true); setError('');
@@ -825,13 +920,80 @@ export default function WizardProduccionDinamica({
     );
   }
 
+  function renderPadreMermas() {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ background: '#fdf2f2', borderRadius: 10, padding: '10px 14px', border: '1.5px solid #e74c3c' }}>
+          <div style={{ fontWeight: 700, color: '#e74c3c', fontSize: 13 }}>
+            ✂️ Mermas post-maduración ({mermasPadre.length} bloque{mermasPadre.length !== 1 ? 's' : ''})
+          </div>
+          <div style={{ fontSize: 11, color: '#555', marginTop: 2 }}>
+            Entrada: <strong>{kgActual.toFixed(3)} kg</strong>
+          </div>
+        </div>
+
+        {mermasPadre.map((b, i) => {
+          const key = b.id || i;
+          const val = parseFloat(inputsPadre[key] || 0);
+          const pct = parseFloat(b.pct_merma || 0);
+          const kgEstT1 = kgActual * (pct / 100);
+          const mpMerma = b.mp_merma_id ? mpsFormula.find(m => String(m.id) === String(b.mp_merma_id)) : null;
+          const credito = (b.merma_tipo === 2 || b.merma_tipo === 3) && val > 0 ? val * parseFloat(b.precio_merma_kg || 0) : 0;
+          return (
+            <div key={key} style={{ background: '#fdf8f8', borderRadius: 8, padding: '10px 14px', border: '1px solid #f1c0c0' }}>
+              <div style={{ fontWeight: 600, fontSize: 12, color: '#c0392b', marginBottom: 6 }}>
+                {b.nombre_merma || `Merma ${i + 1}`}
+                <span style={{ marginLeft: 6, fontWeight: 400, fontSize: 11, color: '#888' }}>Tipo {b.merma_tipo}</span>
+                {b.merma_tipo === 1 && (
+                  <span style={{ marginLeft: 6, fontWeight: 400, fontSize: 11, color: '#888' }}>
+                    — {pct}% = {kgEstT1.toFixed(3)} kg (automático)
+                  </span>
+                )}
+              </div>
+              <div>
+                <label style={{ fontSize: 10, fontWeight: 700, color: '#c0392b', display: 'block', marginBottom: 3 }}>
+                  {b.merma_tipo === 1 && `kg merma real (estimado: ${kgEstT1.toFixed(3)} kg)`}
+                  {b.merma_tipo === 2 && 'kg reales obtenidos'}
+                  {b.merma_tipo === 3 && <>kg obtenidos (irán a inventario){mpMerma && <span style={{ marginLeft: 4, fontWeight: 400 }}>→ {mpMerma.nombre_producto || mpMerma.nombre}</span>}</>}
+                </label>
+                <input
+                  type="number" min="0" step="0.001"
+                  placeholder={b.merma_tipo === 1 ? kgEstT1.toFixed(3) : '0.000'}
+                  value={inputsPadre[key] || ''}
+                  onChange={e => setInputsPadre(prev => ({ ...prev, [key]: e.target.value }))}
+                  style={{ width: '100%', padding: '8px', borderRadius: 7, border: '1.5px solid #e74c3c', fontSize: 14, fontWeight: 'bold', textAlign: 'center', boxSizing: 'border-box' }}
+                />
+                {b.merma_tipo === 1 && (
+                  <div style={{ marginTop: 3, fontSize: 10, color: '#888' }}>Costo se absorbe (sin crédito)</div>
+                )}
+                {credito > 0 && (
+                  <div style={{ marginTop: 4, fontSize: 11, color: '#27ae60', fontWeight: 600 }}>
+                    Crédito: ${credito.toFixed(4)}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+
+        <button
+          onClick={confirmarMermasPadre}
+          disabled={guardando}
+          style={{ width: '100%', padding: '12px', background: guardando ? '#aaa' : '#e74c3c', color: 'white', border: 'none', borderRadius: 10, fontSize: 14, fontWeight: 'bold', cursor: guardando ? 'default' : 'pointer', marginTop: 4 }}
+        >
+          {guardando ? 'Procesando...' : `✓ Confirmar ${mermasPadre.length} merma${mermasPadre.length !== 1 ? 's' : ''}`}
+        </button>
+      </div>
+    );
+  }
+
   function renderPaso(b) {
     const costoKgActual = kgActual > 0 ? costoAcum / kgActual : 0;
 
     if (b.tipo === 'merma') {
       const pct = parseFloat(b.pct_merma || 0);
       const kgEstimado = kgActual * (pct / 100);
-      const inputNeeded = b.merma_tipo === 2 || b.merma_tipo === 3;
+      const inputNeeded = true; // todos los tipos requieren kg reales del operario
       const kgInputN = parseFloat(inputKg) || 0;
       const credito = inputNeeded && kgInputN > 0 ? kgInputN * parseFloat(b.precio_merma_kg || 0) : 0;
       const mpMerma = b.mp_merma_id ? mpsFormula.find(m => String(m.id) === String(b.mp_merma_id)) : null;
@@ -843,8 +1005,18 @@ export default function WizardProduccionDinamica({
             </div>
             <div style={{ fontSize: 12, color: '#555' }}>
               <div>Entrada: <strong>{kgActual.toFixed(3)} kg</strong> · ${costoKgActual.toFixed(4)}/kg</div>
-              {b.merma_tipo === 1 && <div style={{ marginTop: 4 }}>Estimado: <strong style={{ color: '#e74c3c' }}>{kgEstimado.toFixed(3)} kg merma</strong> → quedan {(kgActual - kgEstimado).toFixed(3)} kg</div>}
-              {b.merma_tipo === 1 && <div style={{ marginTop: 4, color: '#888' }}>El costo se absorbe → sube el costo/kg del producto restante.</div>}
+              {b.merma_tipo === 1 && (() => {
+                const kgMerma = kgInputN > 0 ? kgInputN : kgEstimado;
+                const kgQuedan = kgActual - kgMerma;
+                const esReal = kgInputN > 0;
+                return (
+                  <div style={{ marginTop: 4 }}>
+                    <strong style={{ color: '#e74c3c' }}>{kgMerma.toFixed(3)} kg merma</strong>
+                    {' '}→ quedan <strong>{kgQuedan.toFixed(3)} kg</strong>
+                    {!esReal && <span style={{ color: '#aaa', fontSize: 10, marginLeft: 6 }}>(estimado)</span>}
+                  </div>
+                );
+              })()}
               {(b.merma_tipo === 2 || b.merma_tipo === 3) && (
                 <div style={{ marginTop: 4 }}>
                   {b.merma_tipo === 3 && mpMerma && <div>Destino: <strong>{mpMerma.nombre_producto || mpMerma.nombre}</strong> · ${parseFloat(mpMerma.precio_kg||0).toFixed(4)}/kg</div>}
@@ -856,9 +1028,11 @@ export default function WizardProduccionDinamica({
           {inputNeeded && (
             <div>
               <label style={{ fontSize: 11, fontWeight: 700, color: '#e74c3c', display: 'block', marginBottom: 4 }}>
-                {b.merma_tipo === 3 ? 'kg obtenidos (irán a inventario)' : 'kg reales obtenidos'}
+                {b.merma_tipo === 1 && `kg merma real (estimado: ${kgEstimado.toFixed(3)} kg)`}
+                {b.merma_tipo === 3 ? 'kg obtenidos (irán a inventario)' : b.merma_tipo !== 1 ? 'kg reales obtenidos' : ''}
               </label>
-              <input type="number" min="0" step="0.001" placeholder="0.000"
+              <input type="number" min="0" step="0.001"
+                placeholder={b.merma_tipo === 1 ? kgEstimado.toFixed(3) : '0.000'}
                 value={inputKg} onChange={e => setInputKg(e.target.value)}
                 style={{ width: '100%', padding: '10px', borderRadius: 8, border: '2px solid #e74c3c', fontSize: 15, fontWeight: 'bold', textAlign: 'center', boxSizing: 'border-box' }} />
               {credito > 0 && (
@@ -1252,8 +1426,10 @@ export default function WizardProduccionDinamica({
           </div>
         ) : (rama === 'hijo' && !hijoMermasDone && mermasHijo.length > 0)
           ? renderHijoMermas()
-          : pasoActual
-            ? renderPaso(pasoActual)
+          : (modo === 'momento2' && rama === 'padre' && !padreMermasDone && mermasPadre.length > 0)
+            ? renderPadreMermas()
+            : pasoActual
+              ? renderPaso(pasoActual)
             : (
               <div style={{ textAlign: 'center', color: '#aaa', padding: 24 }}>Sin pasos activos</div>
             )

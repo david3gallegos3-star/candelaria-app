@@ -23,8 +23,9 @@ function Formulacion({ producto, onVolver, onVolverMenu, onAbrirMaterias, userRo
   const f = useFormulacion({ producto, userRol, currentUser });
   const esFormulador = userRol?.rol === 'formulador';
   const esCorte      = producto?.categoria === 'Cortes' || producto?.categoria === 'CORTES';
-  const esHorneado   = producto?.categoria === 'AHUMADOS - HORNEADOS' || producto?.categoria === 'AHUMADOS-HORNEADOS'
-                    || producto?.categoria === 'INMERSIÓN' || producto?.categoria === 'INMERSION';
+  const catUp        = (producto?.categoria || '').replace(/[ÓÒÔ]/g,'O').toUpperCase();
+  const esBano       = catUp.includes('INMERSION') || catUp.includes('MARINAD');
+  const esHorneado   = producto?.categoria === 'AHUMADOS - HORNEADOS' || producto?.categoria === 'AHUMADOS-HORNEADOS';
   const [versionesAbierto, setVersionesAbierto] = useState(false);
   const [tabVersiones,     setTabVersiones]     = useState('versiones');
   const [scanAbierto,      setScanAbierto]      = useState(false);
@@ -63,20 +64,20 @@ function Formulacion({ producto, onVolver, onVolverMenu, onAbrirMaterias, userRo
     <VistaHorneado producto={producto} mobile={f.mobile} onVolver={onVolver} />
   );
 
-  // ── Vista corte (categoría Cortes) ───────────────────────
-  if (esCorte) return (
+  // ── Vista corte (categoría Cortes / Inmersión / Marinados) ──
+  if (esCorte || esBano) return (
     <div style={{ minHeight:'100vh', background:'#f0f2f5', fontFamily:'"Segoe UI", system-ui, sans-serif' }}>
-      <div style={{ background:'linear-gradient(135deg,#6c3483,#4a2c7a)', padding:'14px 20px', position:'sticky', top:0, zIndex:50 }}>
+      <div style={{ background: esBano ? 'linear-gradient(135deg,#1a6b8a,#0d4f6b)' : 'linear-gradient(135deg,#6c3483,#4a2c7a)', padding:'14px 20px', position:'sticky', top:0, zIndex:50 }}>
         <div style={{ display:'flex', alignItems:'center', gap:12 }}>
           <button onClick={onVolver} style={{ background:'rgba(255,255,255,0.15)', color:'white', border:'none', borderRadius:8, padding:'7px 12px', cursor:'pointer', fontSize:13 }}>← Volver</button>
           <div>
-            <div style={{ color:'white', fontWeight:'bold', fontSize:17 }}>🥩 {producto.nombre}</div>
-            <div style={{ color:'rgba(255,255,255,0.65)', fontSize:11 }}>Corte de carne — historial de costos</div>
+            <div style={{ color:'white', fontWeight:'bold', fontSize:17 }}>{esBano ? '🛁' : '🥩'} {producto.nombre}</div>
+            <div style={{ color:'rgba(255,255,255,0.65)', fontSize:11 }}>{esBano ? (catUp.includes('MARINAD') ? 'Marinado — historial de costos' : 'Inmersión — historial de costos') : 'Corte de carne — historial de costos'}</div>
           </div>
         </div>
       </div>
       <div style={{ padding: f.mobile ? '10px' : '16px 24px' }}>
-        <VistaCorte producto={producto} mobile={f.mobile} />
+        <VistaCorte producto={producto} mobile={f.mobile} esBano={esBano} />
       </div>
     </div>
   );

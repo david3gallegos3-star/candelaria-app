@@ -13,6 +13,7 @@ export default function TabInyeccion({ currentUser }) {
   const [precioCarne,  setPrecioCarne]  = useState('');
   const [notas,        setNotas]        = useState('');
   const [mps,          setMps]          = useState([]);
+  const [prodsDb,      setProdsDb]      = useState([]); // productos con mp_vinculado_id
   const [cargando,     setCargando]     = useState(true);
   const [guardando,    setGuardando]    = useState(false);
   const [error,        setError]        = useState('');
@@ -22,47 +23,71 @@ export default function TabInyeccion({ currentUser }) {
 
   const cargarInicial = useCallback(async () => {
     if (!inicializado.current) setCargando(true);
-    const [{ data: cfgs }, { data: mpsData }, { data: deshData }] = await Promise.all([
+    const [{ data: cfgs }, { data: mpsData }, { data: deshData }, { data: prodsData }] = await Promise.all([
       supabase.from('vista_horneado_config').select('producto_nombre,config'),
       supabase.from('materias_primas')
-        .select('id,nombre,nombre_producto,precio_kg,categoria')
+        .select('id,nombre,nombre_producto,precio_kg,categoria,proveedor')
         .eq('eliminado', false).eq('estado', 'ACTIVO'),
       supabase.from('deshuese_config').select('corte_padre,corte_hijo'),
+      supabase.from('productos').select('nombre,mp_vinculado_id').eq('estado', 'ACTIVO'),
     ]);
 
-    // Excluir tipo 'hijo' (no se producen directamente)
-    // Deduplicar case-insensitive: preferir el que tiene más bloques activos
+    // Excluir tipo 'hijo' (no se producen directamente) para la lista de selección
     const sinHijos = (cfgs || []).filter(c => c.config?.tipo !== 'hijo');
     const porNombre = {};
     for (const c of sinHijos) {
-      const key = c.producto_nombre.toLowerCase();
+      const key = (c.producto_nombre || '').toLowerCase();
       if (!porNombre[key]) { porNombre[key] = c; continue; }
       const existente = (porNombre[key].config?.bloques || []).filter(b => b.activo).length;
       const nuevo     = (c.config?.bloques || []).filter(b => b.activo).length;
       if (nuevo > existente) porNombre[key] = c;
     }
-    // Añadir nombre del hijo desde deshuese_config
-    // Usa matching parcial: "New York" encuentra "New York Steak" y viceversa
+    // Mapa completo (incluye hijos) para lookup de bloques del hijo
+    const todosPorNombre = {};
+    for (const c of (cfgs || [])) {
+      todosPorNombre[(c.producto_nombre || '').toLowerCase()] = c;
+    }
+    // Añadir nombre del hijo desde deshuese_config (case-insensitive)
     const deshMap = {};
     for (const d of (deshData || [])) {
       if (d.corte_padre) deshMap[d.corte_padre.toLowerCase()] = d.corte_hijo;
     }
+    const esActivo = b => b.activo !== false;
     const prods = Object.values(porNombre).map(c => {
-      const nombre = c.producto_nombre.toLowerCase();
+      const nombre = (c.producto_nombre || '').toLowerCase();
       let hijoNombre = deshMap[nombre] || null;
       if (!hijoNombre) {
         for (const [padre, hijo] of Object.entries(deshMap)) {
-          if (padre.includes(nombre) || nombre.includes(padre)) {
+          if (nombre.includes(padre) || padre.includes(nombre)) {
             hijoNombre = hijo;
             break;
           }
         }
       }
-      return { ...c, _hijoNombre: hijoNombre };
+      // Pre-calcular bloques del hijo para display
+      let _bloquesHijo = (c.config?.bloques_hijo || []).filter(esActivo);
+      if (_bloquesHijo.length === 0 && hijoNombre) {
+        const hijoLow = hijoNombre.toLowerCase();
+        // 1. Búsqueda exacta en mapa completo
+        let hijoRow = todosPorNombre[hijoLow];
+        // 2. Fallback: búsqueda flexible en cfgs (cubre variaciones de nombre)
+        if (!hijoRow) {
+          hijoRow = (cfgs || []).find(hc => {
+            const pn = (hc.producto_nombre || '').toLowerCase();
+            return pn === hijoLow || pn.includes(hijoLow) || hijoLow.includes(pn);
+          });
+        }
+const fromHijo = (hijoRow?.config?.bloques_hijo || []).filter(esActivo).length > 0
+          ? (hijoRow.config.bloques_hijo || []).filter(esActivo)
+          : (hijoRow?.config?.bloques || []).filter(esActivo);
+        _bloquesHijo = fromHijo;
+      }
+      return { ...c, _hijoNombre: hijoNombre, _bloquesHijo };
     });
 
     setProductos(prods);
     setMps(mpsData || []);
+    setProdsDb(prodsData || []);
     inicializado.current = true;
     setCargando(false);
   }, []);
@@ -71,15 +96,24 @@ export default function TabInyeccion({ currentUser }) {
 
   function seleccionarProducto(prod) {
     setProductoSelec(prod);
-    const mpId = prod.config?.mp_carne_id;
-    if (mpId) {
-      const mp = (mps || []).find(m => String(m.id) === String(mpId));
-      setMpCarne(mp || null);
-      setPrecioCarne(mp?.precio_kg != null ? String(mp.precio_kg) : '');
-    } else {
-      setMpCarne(null);
-      setPrecioCarne('');
+    // 1. Intentar por mp_carne_id del config de producción
+    const mpIdConfig = prod.config?.mp_carne_id;
+    let mp = mpIdConfig ? (mps || []).find(m => String(m.id) === String(mpIdConfig)) : null;
+    // 2. Intentar por mp_vinculado_id del registro de producto
+    if (!mp) {
+      const prodDb = (prodsDb || []).find(p => p.nombre?.toLowerCase() === prod.producto_nombre.toLowerCase());
+      if (prodDb?.mp_vinculado_id) {
+        mp = (mps || []).find(m => String(m.id) === String(prodDb.mp_vinculado_id)) || null;
+      }
     }
+    // 3. Fallback por nombre_producto en materias_primas
+    if (!mp) {
+      mp = (mps || []).find(m =>
+        (m.nombre_producto || '').toLowerCase() === prod.producto_nombre.toLowerCase()
+      ) || null;
+    }
+    setMpCarne(mp || null);
+    setPrecioCarne(mp?.precio_kg != null ? String(parseFloat(mp.precio_kg).toFixed(2)) : '');
     setKgCarne('');
     setError('');
   }
@@ -270,12 +304,8 @@ export default function TabInyeccion({ currentUser }) {
             <option value="">— Selecciona un producto —</option>
             {productos.map((p, i) => {
               const cfg = p.config || {};
-              const tieneBif = (cfg.bloques || []).some(b => b.tipo === 'bifurcacion' && b.activo);
-              const esPadre  = cfg.tipo === 'padre';
               const hijoNombre = p._hijoNombre;
-              const sufijo = (tieneBif || esPadre) && hijoNombre
-                ? ` / ${hijoNombre}`
-                : '';
+              const sufijo = hijoNombre ? ` / ${hijoNombre}` : '';
               return (
                 <option key={i} value={JSON.stringify({ nombre: p.producto_nombre })}>
                   {p.producto_nombre}{sufijo}
@@ -319,7 +349,7 @@ export default function TabInyeccion({ currentUser }) {
           {mpCarne ? (
             <div style={{ background: '#f8f0ff', border: '1.5px solid #d7bde2', borderRadius: 8, padding: '10px 12px', marginBottom: 12 }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: '#6c3483' }}>
-                🥩 {mpCarne.nombre_producto || mpCarne.nombre}
+                🥩 {mpCarne.nombre}{mpCarne.proveedor ? ` (${mpCarne.proveedor})` : ''}
               </div>
               <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>
                 Precio referencia: ${parseFloat(mpCarne.precio_kg || 0).toFixed(2)}/kg
@@ -359,15 +389,29 @@ export default function TabInyeccion({ currentUser }) {
             const pasos = (productoSelec.config?.bloques || []).filter(b => b.activo);
             if (!pasos.length) return null;
             const ICONS = { merma: '✂️', inyeccion: '💉', maduracion: '🧊', rub: '🧂', adicional: '🍋', bifurcacion: '🔀', horneado: '🔥' };
+            const hijoNombre = productoSelec._hijoNombre || '';
+            const bloquesHijo = productoSelec._bloquesHijo || [];
+            const hasBifurcacion = pasos.some(b => b.tipo === 'bifurcacion');
             return (
               <div style={{ marginTop: 12, padding: '10px 12px', background: '#f8f9fa', borderRadius: 8 }}>
                 <div style={{ fontSize: 11, color: '#888', marginBottom: 6 }}>Pasos configurados:</div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, alignItems: 'center' }}>
                   {pasos.map((b, i) => (
                     <span key={i} style={{ background: '#1a3a5c', color: 'white', fontSize: 10, fontWeight: 600, padding: '3px 8px', borderRadius: 12 }}>
                       {ICONS[b.tipo] || '●'} {b.tipo === 'merma' ? (b.nombre_merma || `Merma T${b.merma_tipo}`) : b.tipo}
                     </span>
                   ))}
+                  {hasBifurcacion && bloquesHijo.length > 0 && (
+                    <>
+                      <span style={{ fontSize: 11, color: '#aaa', margin: '0 2px' }}>→</span>
+                      <span style={{ fontSize: 10, color: '#6c3483', fontWeight: 700 }}>{hijoNombre}:</span>
+                      {bloquesHijo.map((b, i) => (
+                        <span key={`h${i}`} style={{ background: '#6c3483', color: 'white', fontSize: 10, fontWeight: 600, padding: '3px 8px', borderRadius: 12 }}>
+                          {ICONS[b.tipo] || '●'} {b.tipo === 'merma' ? (b.nombre_merma || `Merma T${b.merma_tipo}`) : b.tipo}
+                        </span>
+                      ))}
+                    </>
+                  )}
                 </div>
               </div>
             );

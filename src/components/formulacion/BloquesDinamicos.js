@@ -1,6 +1,6 @@
 // BloquesDinamicos.js — Flujo dinámico de bloques para CORTES
 // Punto de entrada: BloquesDinamicosEditor + calcBloques
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
 // ─────────────────────────────────────────────────────────────
 // calcBloques: procesa el array de bloques en orden y devuelve
@@ -74,9 +74,15 @@ export function calcBloques({ bloques, kgIni, precioCarne, precioKgSalmuera, cos
       const costoPadre = kgPadre * costoKg;
       const costoHijo  = kgHijo  * costoKg;
       pasos.push({ tipo: 'bifurcacion', label: `🔀 Bifurcación`, kg, costoAcum, kgPadre, kgHijo, costoKg, costoPadre, costoHijo });
-      // después de bifurcación el flujo continúa solo por la rama padre
       kg        = kgPadre;
       costoAcum = costoPadre;
+
+    } else if (b.tipo === 'horneado') {
+      const kgAntes = kg;
+      const pctM    = parseFloat(b.pct_merma_horneado || 0) / 100;
+      kg = kg * (1 - pctM);
+      const mermaKg = kgAntes - kg;
+      pasos.push({ tipo: 'horneado', label: `🔥 Merma Horneado`, kg, costoAcum, kgAntes, mermaKg, pctReal: pctM * 100 });
     }
   }
 
@@ -93,6 +99,7 @@ const BLOQUE_META = {
   rub:         { color: '#8e44ad', icon: '🧂', label: 'Rub / Especias' },
   adicional:   { color: '#f39c12', icon: '🍋', label: 'Adicional' },
   merma:       { color: '#e74c3c', icon: '✂️', label: 'Merma' },
+  horneado:    { color: '#e67e22', icon: '🔥', label: 'Merma Horneado' },
   bifurcacion: { color: '#6c3483', icon: '🔀', label: 'Bifurcación Padre/Hijo' },
 };
 
@@ -118,6 +125,8 @@ export function BloquesDinamicosEditor({
   margenPadre, margenHijo,
   // para hijo: tipos de bloque disponibles (sin bifurcacion por defecto si se pasa)
   tiposDisponibles,
+  // tipos a excluir siempre (ej. ['bifurcacion'] para inmersión/marinados)
+  tiposExcluidos,
   // etiqueta del punto de partida (para hijo: "Entrada desde padre")
   labelInicial, iconoInicial, colorInicial,
   // para hijo: margen usa setMargenHijo directamente (ya está en props)
@@ -135,14 +144,41 @@ export function BloquesDinamicosEditor({
 
   const resultado = calcBloques({ bloques, kgIni, precioCarne, precioKgSalmuera, costoRubFormula, kgRubBase: parseFloat(kgRubBase) || 1, mpAdic });
 
-  function moverBloque(idx, dir) {
+  const dragIdx    = useRef(null);
+  const [dragOver, setDragOver] = useState(null);
+
+  // Buscador de MP para merma tipo 2
+  const [mermaBusq,    setMermaBusq]    = useState({});  // { [blockId]: texto }
+  const [mermaAbierto, setMermaAbierto] = useState(null); // blockId con dropdown abierto
+
+  function handleDragStart(e, idx) {
+    dragIdx.current = idx;
+    e.dataTransfer.effectAllowed = 'move';
+  }
+
+  function handleDragOver(e, idx) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (dragOver !== idx) setDragOver(idx);
+  }
+
+  function handleDrop(e, idx) {
+    e.preventDefault();
+    const from = dragIdx.current;
+    if (from === null || from === idx) { setDragOver(null); return; }
     setBloques(prev => {
       const arr = [...prev];
-      const t = idx + dir;
-      if (t < 0 || t >= arr.length) return arr;
-      [arr[idx], arr[t]] = [arr[t], arr[idx]];
+      const [item] = arr.splice(from, 1);
+      arr.splice(idx, 0, item);
       return arr;
     });
+    dragIdx.current = null;
+    setDragOver(null);
+  }
+
+  function handleDragEnd() {
+    dragIdx.current = null;
+    setDragOver(null);
   }
 
   function updateBloque(id, campos) {
@@ -161,6 +197,7 @@ export function BloquesDinamicosEditor({
       rub:         { tipo: 'rub',         activo: true, formula_rub: '', kg_rub_base: 1 },
       adicional:   { tipo: 'adicional',   activo: true, mp_adicional_id: '', gramos_adicional: 0 },
       merma:       { tipo: 'merma',       activo: true, merma_tipo: 1, pct_merma: 5, precio_merma_kg: 0, nombre_merma: '', mp_merma_id: '' },
+      horneado:    { tipo: 'horneado',    activo: true, pct_merma_horneado: 30 },
       bifurcacion: { tipo: 'bifurcacion', activo: true, kg_para_hijo: 0, margen_padre: parseFloat(margenPadre) || 15, margen_hijo: parseFloat(margenHijo) || 15, deshuese_hijo: { pct_res_segunda: 0, pct_puntas: 0, pct_desecho: 0 } },
     };
     setBloques(prev => [...prev, { id: newId(), ...templates[tipo] }]);
@@ -183,12 +220,6 @@ export function BloquesDinamicosEditor({
             {bloques.filter(b => b.activo).length} bloques activos · {bloques.length} total
           </span>
         </div>
-        {modoEdicion && (
-          <button onClick={() => setBloques(null)}
-            style={{ background: 'rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.8)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 7, padding: '4px 12px', fontSize: 11, cursor: 'pointer' }}>
-            ← Flujo clásico
-          </button>
-        )}
       </div>
 
       {/* ── Carne inicial — solo para padre/independiente, el hijo ya lo muestra arriba ── */}
@@ -211,15 +242,39 @@ export function BloquesDinamicosEditor({
       {/* ── Lista de bloques ── */}
       <div style={{ marginBottom: 12 }}>
         {bloques.map((b, idx) => {
+          if (tiposExcluidos && tiposExcluidos.includes(b.tipo)) return null;
           const meta = BLOQUE_META[b.tipo] || { color: '#888', icon: '📦', label: b.tipo };
           const isExp = bloqueExpandido === b.id;
 
           return (
-            <div key={b.id} style={{ background: 'white', borderRadius: 10, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.07)', marginBottom: 8, border: b.activo ? `2px solid ${meta.color}30` : '2px solid #eee', opacity: b.activo ? 1 : 0.65 }}>
+            <div key={b.id}
+              draggable={modoEdicion && b.tipo !== 'bifurcacion'}
+              onDragStart={e => handleDragStart(e, idx)}
+              onDragOver={e => handleDragOver(e, idx)}
+              onDrop={e => handleDrop(e, idx)}
+              onDragEnd={handleDragEnd}
+              style={{
+                background: 'white', borderRadius: 10, overflow: 'hidden',
+                boxShadow: '0 1px 4px rgba(0,0,0,0.07)', marginBottom: 8,
+                border: dragOver === idx
+                  ? '2px solid #2980b9'
+                  : b.activo ? `2px solid ${meta.color}30` : '2px solid #eee',
+                opacity: dragIdx.current === idx ? 0.4 : b.activo ? 1 : 0.65,
+                transition: 'border 0.1s, opacity 0.1s',
+              }}>
 
               {/* Bloque header */}
               <div style={{ padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}
                 onClick={() => setBloqueExpandido(isExp ? null : b.id)}>
+
+                {/* Handle drag — solo en modo edición */}
+                {modoEdicion && b.tipo !== 'bifurcacion' && (
+                  <span
+                    onMouseDown={e => e.stopPropagation()}
+                    style={{ cursor: 'grab', color: '#bbb', fontSize: 17, lineHeight: 1, userSelect: 'none', flexShrink: 0 }}
+                    title="Arrastrar para reordenar"
+                  >⠿</span>
+                )}
 
                 {/* Toggle ON/OFF — bifurcación siempre ON, no se puede apagar */}
                 <button onClick={e => { e.stopPropagation(); if (modoEdicion && b.tipo !== 'bifurcacion') updateBloque(b.id, { activo: !b.activo }); }}
@@ -240,17 +295,14 @@ export function BloquesDinamicosEditor({
                 {b.activo && b.tipo === 'merma' && (
                   <span style={{ fontSize: 11, color: meta.color, background: `${meta.color}15`, padding: '2px 8px', borderRadius: 6 }}>Tipo {b.merma_tipo} · {b.pct_merma}%</span>
                 )}
+                {b.activo && b.tipo === 'horneado' && b.pct_merma_horneado > 0 && (
+                  <span style={{ fontSize: 11, color: meta.color, background: `${meta.color}15`, padding: '2px 8px', borderRadius: 6 }}>{b.pct_merma_horneado}%</span>
+                )}
 
-                {/* Mover ↑↓ — bifurcación siempre al final, sin mover ni eliminar */}
-                {modoEdicion && b.tipo !== 'bifurcacion' && (
-                  <div style={{ display: 'flex', gap: 3 }} onClick={e => e.stopPropagation()}>
-                    <button onClick={() => moverBloque(idx, -1)} disabled={idx === 0}
-                      style={{ background: '#f0f2f5', border: 'none', borderRadius: 5, padding: '3px 7px', cursor: idx === 0 ? 'default' : 'pointer', fontSize: 11, opacity: idx === 0 ? 0.3 : 1 }}>↑</button>
-                    <button onClick={() => moverBloque(idx, 1)} disabled={idx === bloques.length - 1}
-                      style={{ background: '#f0f2f5', border: 'none', borderRadius: 5, padding: '3px 7px', cursor: idx === bloques.length - 1 ? 'default' : 'pointer', fontSize: 11, opacity: idx === bloques.length - 1 ? 0.3 : 1 }}>↓</button>
-                    <button onClick={e => { e.stopPropagation(); removeBloque(b.id); }}
-                      style={{ background: '#fdf2f2', border: 'none', borderRadius: 5, padding: '3px 7px', cursor: 'pointer', fontSize: 11, color: '#e74c3c' }}>✕</button>
-                  </div>
+                {/* Eliminar — solo en modo edición */}
+                {modoEdicion && b.tipo !== 'bifurcacion' && b.tipo !== 'maduracion' && b.tipo !== 'inyeccion' && (
+                  <button onClick={e => { e.stopPropagation(); removeBloque(b.id); }}
+                    style={{ background: '#fdf2f2', border: 'none', borderRadius: 5, padding: '3px 8px', cursor: 'pointer', fontSize: 11, color: '#e74c3c' }}>✕</button>
                 )}
 
                 <span style={{ fontSize: 13, color: '#bbb' }}>{isExp ? '▲' : '▼'}</span>
@@ -509,14 +561,56 @@ export function BloquesDinamicosEditor({
                           </div>
                         )}
 
-                        {/* Tipo 2: nombre libre + precio manual */}
+                        {/* Tipo 2: buscar en MP + precio auto-llenado */}
                         {b.merma_tipo === 2 && (
                           <>
-                            <div>
-                              <label style={{ fontSize: 11, fontWeight: 600, color: '#27ae60', display: 'block', marginBottom: 4 }}>Nombre del subproducto</label>
-                              <input type="text" value={b.nombre_merma || ''} placeholder="ej: Grasa, Hueso, Recorte…"
-                                style={baseInputStyle({ border: '1.5px solid #27ae60', textAlign: 'left' })} disabled={!modoEdicion}
-                                onChange={e => updateBloque(b.id, { nombre_merma: e.target.value })} />
+                            <div style={{ position: 'relative' }}>
+                              <label style={{ fontSize: 11, fontWeight: 600, color: '#27ae60', display: 'block', marginBottom: 4 }}>Subproducto (buscar en MP)</label>
+                              <input
+                                type="text"
+                                value={mermaAbierto === b.id ? (mermaBusq[b.id] ?? b.nombre_merma ?? '') : (b.nombre_merma || '')}
+                                placeholder="Buscar materia prima…"
+                                disabled={!modoEdicion}
+                                style={baseInputStyle({ border: '1.5px solid #27ae60', textAlign: 'left' })}
+                                onChange={e => {
+                                  setMermaBusq(prev => ({ ...prev, [b.id]: e.target.value }));
+                                  setMermaAbierto(b.id);
+                                }}
+                                onFocus={() => {
+                                  setMermaBusq(prev => ({ ...prev, [b.id]: b.nombre_merma || '' }));
+                                  setMermaAbierto(b.id);
+                                }}
+                                onBlur={() => setTimeout(() => setMermaAbierto(null), 150)}
+                              />
+                              {mermaAbierto === b.id && modoEdicion && (() => {
+                                const q = (mermaBusq[b.id] || '').toLowerCase();
+                                const filtradas = (mpsFormula || []).filter(m => {
+                                  const n = (m.nombre_producto || m.nombre || '').toLowerCase();
+                                  return !q || n.includes(q);
+                                }).slice(0, 20);
+                                return filtradas.length === 0 ? null : (
+                                  <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 99, background: 'white', border: '1.5px solid #27ae60', borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.12)', maxHeight: 200, overflowY: 'auto' }}>
+                                    {filtradas.map(m => {
+                                      const nombre = m.nombre_producto || m.nombre || '';
+                                      const precio = parseFloat(m.precio_kg || 0);
+                                      return (
+                                        <div key={m.id}
+                                          onMouseDown={() => {
+                                            updateBloque(b.id, { nombre_merma: nombre, precio_merma_kg: precio });
+                                            setMermaAbierto(null);
+                                            setMermaBusq(prev => ({ ...prev, [b.id]: '' }));
+                                          }}
+                                          style={{ padding: '8px 12px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', fontSize: 12, borderBottom: '1px solid #f0f0f0' }}
+                                          onMouseEnter={e => e.currentTarget.style.background = '#eafaf1'}
+                                          onMouseLeave={e => e.currentTarget.style.background = 'white'}>
+                                          <span style={{ fontWeight: 600, color: '#1a1a2e' }}>{nombre}</span>
+                                          <span style={{ color: '#27ae60', fontWeight: 700 }}>${precio.toFixed(4)}/kg</span>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                );
+                              })()}
                             </div>
                             <div>
                               <label style={{ fontSize: 11, fontWeight: 600, color: '#27ae60', display: 'block', marginBottom: 4 }}>Precio recuperable ($/kg)</label>
@@ -580,6 +674,51 @@ export function BloquesDinamicosEditor({
                     );
                   })()}
 
+                  {/* ── HORNEADO ── */}
+                  {b.tipo === 'horneado' && (() => {
+                    const activeIdx = bloques.slice(0, idx).filter(b2 => b2.activo).length;
+                    const kgAntes   = activeIdx === 0 ? kgIni : (resultado.pasos[activeIdx - 1]?.kg || kgIni);
+                    const pctM      = parseFloat(b.pct_merma_horneado || 0) / 100;
+                    const kgMerma   = kgAntes * pctM;
+                    const kgSalida  = kgAntes - kgMerma;
+                    return (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                        <div>
+                          <label style={{ fontSize: 11, fontWeight: 600, color: meta.color, display: 'block', marginBottom: 4 }}>
+                            % merma post-horno
+                            {kgAntes > 0 && (
+                              <span style={{ fontWeight: 400, color: '#888', marginLeft: 8 }}>
+                                sobre {kgAntes.toFixed(3)} kg en proceso
+                              </span>
+                            )}
+                          </label>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <input type="number" min="0" max="99" step="0.1" value={b.pct_merma_horneado}
+                              style={baseInputStyle({ border: `1.5px solid ${meta.color}` })} disabled={!modoEdicion}
+                              onChange={e => updateBloque(b.id, { pct_merma_horneado: parseFloat(e.target.value) || 0 })} />
+                            <span style={{ fontSize: 13, fontWeight: 700, color: meta.color }}>%</span>
+                            {kgMerma > 0 && (
+                              <div style={{ background: '#fef3e2', border: `1.5px solid ${meta.color}`, borderRadius: 7, padding: '6px 12px', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                                <div style={{ fontSize: 10, color: '#888' }}>kg merma</div>
+                                <div style={{ fontSize: 14, fontWeight: 900, color: meta.color }}>{kgMerma.toFixed(3)} kg</div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        {kgMerma > 0 && (
+                          <div style={{ background: '#fef3e2', border: `1.5px solid ${meta.color}`, borderRadius: 8, padding: '10px 12px' }}>
+                            <div style={{ fontSize: 11, color: meta.color, marginBottom: 4 }}>
+                              {kgAntes.toFixed(3)} kg → pierde {kgMerma.toFixed(3)} kg → quedan <strong>{kgSalida.toFixed(3)} kg</strong>
+                            </div>
+                            <div style={{ fontSize: 10, color: '#888' }}>
+                              El costo se absorbe → sube el costo/kg del producto restante.
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
+
                   {/* ── BIFURCACIÓN ── */}
                   {b.tipo === 'bifurcacion' && (() => {
                     const activeIdx = bloques.slice(0, idx).filter(b2 => b2.activo).length;
@@ -627,7 +766,10 @@ export function BloquesDinamicosEditor({
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {Object.entries(BLOQUE_META)
               .filter(([tipo]) => !tiposDisponibles || tiposDisponibles.includes(tipo))
+              .filter(([tipo]) => !tiposExcluidos || !tiposExcluidos.includes(tipo))
               .filter(([tipo]) => tipo !== 'bifurcacion' || !bloques.some(b => b.tipo === 'bifurcacion'))
+              .filter(([tipo]) => tipo !== 'maduracion' || !bloques.some(b => b.tipo === 'maduracion'))
+              .filter(([tipo]) => tipo !== 'inyeccion' || !bloques.some(b => b.tipo === 'inyeccion'))
               .map(([tipo, meta]) => (
                 <button key={tipo} onClick={() => addBloque(tipo)}
                   style={{ padding: '5px 12px', borderRadius: 8, border: `1.5px dashed ${meta.color}60`, background: `${meta.color}08`, cursor: 'pointer', fontSize: 11, color: meta.color, fontWeight: 600 }}>
@@ -666,6 +808,7 @@ export function BloquesDinamicosEditor({
             if (p.tipo === 'rub')         detalle = `+$${p.cRub.toFixed(4)} costo rub`;
             if (p.tipo === 'adicional')   detalle = `+$${p.cAdic.toFixed(4)} costo adicional`;
             if (p.tipo === 'merma')       detalle = `−${p.kgMerma.toFixed(3)} kg${p.credito > 0 ? ` · −$${p.credito.toFixed(4)} crédito` : ''}`;
+            if (p.tipo === 'horneado')    detalle = `−${p.mermaKg.toFixed(3)} kg merma (${p.pctReal.toFixed(1)}%)`;
             if (p.tipo === 'bifurcacion') detalle = `Padre ${p.kgPadre.toFixed(3)} kg · Hijo ${p.kgHijo.toFixed(3)} kg`;
 
             return (

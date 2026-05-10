@@ -144,7 +144,6 @@ export default function MenuFormulas({
           if (!hijosDe[corte_padre]) hijosDe[corte_padre] = [];
           if (!hijosDe[corte_padre].includes(corte_hijo)) hijosDe[corte_padre].push(corte_hijo);
         });
-        console.log('[hijosDelPadre]', hijosDe, '[padreDeHijo]', pdDe);
         setPadreDeHijo(pdDe);
         setHijosDelPadre(hijosDe);
       });

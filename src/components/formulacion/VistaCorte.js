@@ -101,8 +101,22 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion, esBano 
   const [lotsDetail,    setLotsDetail]    = useState({});
   const [companionSplit, setCompanionSplit] = useState({ hijoLotes: [], padreLotes: [] });
 
+  // Edición de MP vinculada
+  const [editMpSearch,   setEditMpSearch]   = useState('');
+  const [editMpOpts,     setEditMpOpts]     = useState([]);
+  const [editMpSelected, setEditMpSelected] = useState(null);
+
   useEffect(() => { setConfigExiste(false); cargarTodo(); }, [producto.nombre, producto.mp_vinculado_id]);
   useRealtime(['formulaciones', 'config_productos', 'deshuese_config', 'materias_primas', 'stock_lotes_inyectados', 'lotes_maduracion', 'produccion_inyeccion_cortes', 'vista_horneado_config', 'cierre_sierra_diario'], cargarTodo);
+
+  useEffect(() => {
+    if (!modoEdicion) { setEditMpSearch(''); setEditMpSelected(null); return; }
+    setEditMpSelected(mpVinculada || null);
+    supabase.from('materias_primas')
+      .select('id,nombre,nombre_producto,precio_kg,categoria')
+      .eq('eliminado', false).order('nombre')
+      .then(({ data }) => setEditMpOpts(data || []));
+  }, [modoEdicion]);
 
   // Para productos esBano: activar flujo dinámico automáticamente (sin bifurcacion, con horneado)
   useEffect(() => {
@@ -126,6 +140,28 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion, esBano 
       ]);
     }
   }, [cargando, esBano, bloques]);
+
+  // Para CORTES hijo sin config previa: iniciar bloquesHijo automáticamente
+  useEffect(() => {
+    if (cargando || esBano || tipo !== 'hijo') return;
+    if (bloquesHijo !== null) return;
+    initBloquesHijo();
+  }, [cargando, esBano, tipo, bloquesHijo]);
+
+  // Para CORTES nuevos (sin config previa): iniciar directamente en flujo dinámico
+  useEffect(() => {
+    if (cargando || esBano || tipo === 'hijo') return;
+    if (bloques !== null) return;
+    const newId = () => Math.random().toString(36).slice(2, 9);
+    setBloques([
+      { id: newId(), tipo: 'inyeccion',  activo: true, formula_salmuera: formulaSalmueraNombre || '', pct_inj: parseFloat(pctInj) || 20, kg_sal_base: parseFloat(kgSalBase) || 2 },
+      { id: newId(), tipo: 'maduracion', activo: true, horas_mad: parseFloat(horasMad) || 72, minutos_mad: parseFloat(minutosMad) || 0, pct_mad: parseFloat(pctMad) || 0, kg_salida_mad: parseFloat(kgSalidaMad) || 0 },
+      { id: newId(), tipo: 'rub',        activo: !!(formulaRubNombre), formula_rub: formulaRubNombre || '', kg_rub_base: parseFloat(kgRubBase) || 1 },
+      { id: newId(), tipo: 'adicional',  activo: !!(mpAdicionalId), mp_adicional_id: mpAdicionalId || '', gramos_adicional: parseFloat(gramosAdicional) || 0 },
+      { id: newId(), tipo: 'bifurcacion', activo: !!(deshueseConfig), kg_para_hijo: parseFloat(kgParaHijo) || 0, margen_padre: parseFloat(margenPadre) || 15, margen_hijo: parseFloat(margenHijo) || 15, deshuese_hijo: { pct_res_segunda: parseFloat(pctResSegunda) || 0, pct_puntas: parseFloat(pctPuntas) || 0, pct_desecho: parseFloat(pctDesecho) || 0 } },
+    ]);
+    setBloqueExpandido(null);
+  }, [cargando, esBano, tipo, bloques]);
 
   useEffect(() => {
     if (!formulaSalmueraNombre || mpsFormula.length === 0) {
@@ -226,7 +262,9 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion, esBano 
       const { data: lotes } = await supabase
         .from('stock_lotes_inyectados').select('*')
         .ilike('corte_nombre', `%${producto.nombre}%`)
-        .order('fecha_entrada', { ascending: false }).limit(30);
+        .order('fecha_entrada', { ascending: false })
+        .order('id', { ascending: false })
+        .limit(30);
       let allLotes = lotes || [];
 
       // Fallback hijo: si no encontró nada y es hijo, buscar via parent_lote_id del padre
@@ -239,7 +277,8 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion, esBano 
           const { data: hijoFallback } = await supabase
             .from('stock_lotes_inyectados').select('*')
             .in('parent_lote_id', padreLotesQ.map(l => l.lote_id))
-            .order('fecha_entrada', { ascending: false });
+            .order('fecha_entrada', { ascending: false })
+            .order('id', { ascending: false });
           allLotes = hijoFallback || [];
         }
       }
@@ -513,6 +552,14 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion, esBano 
   }
 
   async function fijarCambios() {
+    const mpOldId = mpVinculada?.id ?? null;
+    const mpNewId = editMpSelected?.id ?? null;
+    if (mpNewId !== mpOldId) {
+      await supabase.from('productos')
+        .update({ mp_vinculado_id: mpNewId })
+        .eq('id', producto.id);
+      setMpVinculada(editMpSelected || null);
+    }
     await guardarConfig();
     setModoEdicion(false);
   }
@@ -1113,16 +1160,49 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion, esBano 
                     <span style={{ color: 'white', fontWeight: 'bold', fontSize: 13 }}>🥩 Fase 1 — Materia Prima</span>
                   </div>
                   <div style={{ padding: '14px 16px' }}>
-                    <div style={{ background: '#fef9e7', borderRadius: 8, padding: '10px 14px', marginBottom: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ background: '#fef9e7', borderRadius: 8, padding: '10px 14px', marginBottom: modoEdicion ? 6 : 14, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div>
-                        <div style={{ fontSize: 10, color: '#e67e22', fontWeight: 700, marginBottom: 2 }}>Carne vinculada</div>
-                        <div style={{ fontSize: 15, fontWeight: 800, color: '#1a1a2e' }}>{mpVinculada ? (mpVinculada.nombre_producto || mpVinculada.nombre) : '—'}</div>
+                        <div style={{ fontSize: 10, color: '#e67e22', fontWeight: 700, marginBottom: 2 }}>Materia prima vinculada</div>
+                        <div style={{ fontSize: 15, fontWeight: 800, color: '#1a1a2e' }}>
+                          {(modoEdicion ? editMpSelected : mpVinculada)
+                            ? ((modoEdicion ? editMpSelected : mpVinculada).nombre_producto || (modoEdicion ? editMpSelected : mpVinculada).nombre)
+                            : <span style={{ color: '#e74c3c' }}>— sin vincular —</span>}
+                        </div>
                       </div>
                       <div style={{ textAlign: 'right' }}>
                         <div style={{ fontSize: 11, color: '#888' }}>Precio actual</div>
                         <div style={{ fontSize: 18, fontWeight: 'bold', color: '#27ae60' }}>${precioCarne.toFixed(4)}/kg</div>
                       </div>
                     </div>
+                    {modoEdicion && (
+                      <div style={{ marginBottom: 14 }}>
+                        <input
+                          placeholder="🔍 Buscar y cambiar materia prima..."
+                          value={editMpSearch}
+                          onChange={e => setEditMpSearch(e.target.value)}
+                          style={{ width: '100%', padding: '7px 10px', borderRadius: 8, border: '1.5px solid #e67e22', fontSize: 12, boxSizing: 'border-box', outline: 'none' }}
+                        />
+                        {editMpSearch && (
+                          <div style={{ maxHeight: 160, overflowY: 'auto', border: '1px solid #e0e0e0', borderRadius: 8, marginTop: 2 }}>
+                            {editMpOpts
+                              .filter(m => {
+                                const txt = editMpSearch.toLowerCase();
+                                return (m.nombre || '').toLowerCase().includes(txt) || (m.nombre_producto || '').toLowerCase().includes(txt);
+                              })
+                              .slice(0, 30)
+                              .map(mp => (
+                                <div key={mp.id}
+                                  onClick={() => { setEditMpSelected({ id: mp.id, nombre: mp.nombre, nombre_producto: mp.nombre_producto, precio_kg: mp.precio_kg }); setEditMpSearch(''); }}
+                                  style={{ padding: '7px 12px', cursor: 'pointer', borderBottom: '1px solid #f5f5f5', fontSize: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                  <span>{mp.nombre_producto || mp.nombre}</span>
+                                  <span style={{ color: '#888', fontSize: 11 }}>${parseFloat(mp.precio_kg || 0).toFixed(2)}/kg · {mp.categoria}</span>
+                                </div>
+                              ))
+                            }
+                          </div>
+                        )}
+                      </div>
+                    )}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <label style={{ fontSize: 12, color: '#e67e22', fontWeight: 700, whiteSpace: 'nowrap' }}>kg iniciales de carne:</label>
                       <input type="number" min="0.1" step="0.1"
@@ -1779,7 +1859,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion, esBano 
                     setMargenHijo={setMargenHijo}
                     margenPadre={margenHijo}
                     margenHijo={margenHijo}
-                    tiposDisponibles={['inyeccion', 'maduracion', 'rub', 'adicional', 'merma']}
+                    tiposDisponibles={['rub', 'adicional', 'merma']}
                     labelInicial="Entrada desde padre"
                     iconoInicial="🔀"
                     colorInicial="#6c3483"
@@ -2269,6 +2349,48 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion, esBano 
                         );
                       })()}
 
+                      {/* Desglose paso a paso — independiente (esBano / INMERSIÓN) */}
+                      {!esPadre && !esHijo && (() => {
+                        const bloquesRes = madInfo?.bloques_resultado;
+                        if (!bloquesRes?.pasos?.length) return null;
+                        const COLORS = { inyeccion: '#2980b9', maduracion: '#27ae60', rub: '#8e44ad', adicional: '#f39c12', merma: '#e74c3c', horneado: '#c0392b' };
+                        const LABELS = { inyeccion: 'Inyección', maduracion: 'Maduración', rub: 'Rub/Especias', adicional: 'Adicional', horneado: 'Horneado' };
+                        return (
+                          <div style={{ marginBottom: 12 }}>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>
+                              Flujo de costo — paso a paso
+                            </div>
+                            {bloquesRes.pasos.map((p, i) => {
+                              const prev = i === 0 ? null : (bloquesRes.pasos[i - 1]?.costoAcum ?? null);
+                              const costoKg = p.kgSalida > 0 ? p.costoAcum / p.kgSalida : 0;
+                              const color = COLORS[p.tipo] || '#555';
+                              const label = p.tipo === 'merma' ? (p.nombre_merma || 'Merma') : (LABELS[p.tipo] || p.tipo);
+                              const delta = prev !== null ? p.costoAcum - prev : null;
+                              return (
+                                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 10px', marginBottom: 3, background: '#fafafa', borderRadius: 6, fontSize: 11, borderLeft: `3px solid ${color}` }}>
+                                  <div>
+                                    <span style={{ fontWeight: 600, color }}>{label}</span>
+                                    {p.tipo === 'horneado' && p.kgMermaReal > 0 && (
+                                      <span style={{ color: '#888', marginLeft: 6 }}>−{parseFloat(p.kgMermaReal).toFixed(3)} kg merma</span>
+                                    )}
+                                    {delta !== null && delta < -0.00005 && (
+                                      <span style={{ color: '#27ae60', marginLeft: 6 }}>· −${Math.abs(delta).toFixed(4)} crédito</span>
+                                    )}
+                                    {delta !== null && delta > 0.00005 && (
+                                      <span style={{ color, marginLeft: 6 }}>· +${delta.toFixed(4)}</span>
+                                    )}
+                                  </div>
+                                  <div style={{ textAlign: 'right', fontWeight: 700, color: '#444', whiteSpace: 'nowrap' }}>
+                                    {parseFloat(p.kgSalida || 0).toFixed(3)} kg
+                                    <span style={{ fontWeight: 400, color: '#888', marginLeft: 6 }}>${costoKg.toFixed(4)}/kg</span>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })()}
+
                       {/* Stock disponible */}
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 8 }}>
                         <div style={{ background: '#f0fff4', borderRadius: 8, padding: '10px 12px' }}>
@@ -2290,7 +2412,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion, esBano 
                 );
               })}
             </div>
-          )}
+          ) : null}
         </div>
       )}
 

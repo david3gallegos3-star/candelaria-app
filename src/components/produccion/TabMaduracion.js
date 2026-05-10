@@ -8,6 +8,11 @@ import { crearNotificacion } from '../../utils/helpers';
 import WizardProduccionDinamica from './WizardProduccionDinamica';
 import { useRealtime } from '../../hooks/useRealtime';
 
+function isHornCat(hc) {
+  const cat = (hc.config?._categoria || '').normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase();
+  return cat.includes('AHUMADOS') || cat.includes('HORNEADOS') || cat.includes('MARINAD') || cat.includes('INMERSION');
+}
+
 function diasParaSalida(fechaSalida) {
   const hoy  = new Date(); hoy.setHours(0,0,0,0);
   const sal  = new Date(fechaSalida + 'T00:00:00');
@@ -132,14 +137,14 @@ export default function TabMaduracion({ mobile, currentUser }) {
       supabase.from('lotes_maduracion')
         .select(`*, lotes_maduracion_cortes(*),
           produccion_inyeccion ( formula_salmuera, porcentaje_inyeccion, kg_carne_total, kg_salmuera_requerida,
-            produccion_inyeccion_cortes ( corte_nombre, materia_prima_id, kg_carne_cruda, kg_salmuera_asignada, costo_carne, costo_salmuera_asignado, costo_final_kg )
+            produccion_inyeccion_cortes ( corte_nombre, materia_prima_id, kg_carne_cruda, kg_carne_limpia, kg_salmuera_asignada, costo_carne, costo_salmuera_asignado, costo_final_kg )
           )`)
         .neq('estado', 'completado')
         .order('fecha_entrada', { ascending: true }),
       supabase.from('lotes_maduracion')
         .select(`*, lotes_maduracion_cortes(*),
           produccion_inyeccion ( formula_salmuera, porcentaje_inyeccion, kg_carne_total, kg_salmuera_requerida,
-            produccion_inyeccion_cortes ( corte_nombre, materia_prima_id, kg_carne_cruda, kg_salmuera_asignada, costo_carne, costo_salmuera_asignado, costo_final_kg )
+            produccion_inyeccion_cortes ( corte_nombre, materia_prima_id, kg_carne_cruda, kg_carne_limpia, kg_salmuera_asignada, costo_carne, costo_salmuera_asignado, costo_final_kg )
           )`)
         .eq('estado', 'completado')
         .order('fecha_entrada', { ascending: false })
@@ -318,7 +323,8 @@ export default function TabMaduracion({ mobile, currentUser }) {
 
       for (const p of picortes) {
         const kgMad      = parseFloat(pesajes[p.corte_nombre]);
-        const kgInj      = parseFloat(p.kg_carne_cruda || 0) + parseFloat(p.kg_salmuera_asignada || 0);
+        const kgCarneReal = parseFloat(p.kg_carne_limpia || p.kg_carne_cruda || 0);
+        const kgInj      = kgCarneReal + parseFloat(p.kg_salmuera_asignada || 0);
         const costoTotal = parseFloat(p.costo_carne || 0) + parseFloat(p.costo_salmuera_asignado || 0);
         const costoInyKg = kgInj > 0 ? costoTotal / kgInj : 0;
         const costoMadKg = kgMad > 0 ? costoTotal / kgMad : 0;
@@ -419,16 +425,16 @@ export default function TabMaduracion({ mobile, currentUser }) {
       const { data: lotesMadActual } = await supabase
         .from('lotes_maduracion').select('bloques_resultado').eq('id', modalPesaje.id).maybeSingle();
       const brMomento1 = lotesMadActual?.bloques_resultado || null;
-      // Buscar por nombre de producto (único y exacto) — evita falsos matches por fórmula compartida
       const cfgDinCheck = cortesWizardNombre
-        ? (cfgFreshRows || []).find(hc =>
+        ? ((cfgFreshRows || []).find(hc =>
             (hc.producto_nombre || '').toLowerCase() === cortesWizardNombre.toLowerCase()
-          )
-        : null;
+          ) || cfgCortesEntry)
+        : cfgCortesEntry;
       if (esCortesPadre && cfgDinCheck?.config?.bloques?.length > 0) {
+        const padreNombreBusqueda = cfgDinCheck?.producto_nombre || cortesWizardNombre;
         const { data: deshCfgDin } = await supabase
           .from('deshuese_config').select('corte_hijo')
-          .ilike('corte_padre', cortesWizardNombre).maybeSingle();
+          .ilike('corte_padre', padreNombreBusqueda).maybeSingle();
 
         // Bloques hijo: primero padre.bloques_hijo, luego config propia del hijo
         let bloquesHijoWizard = cfgDinCheck?.config?.bloques_hijo || [];
@@ -528,9 +534,9 @@ export default function TabMaduracion({ mobile, currentUser }) {
       // Detectar config del producto horneado — genérico para cualquier AHUMADOS-HORNEADOS
       const formulaSal     = (modalPesaje.produccion_inyeccion?.formula_salmuera || '').toLowerCase();
       const cfgHornEntry   = horneadoCfgs.find(hc =>
-        formulaSal && formulaSal === (hc.config?.formula_salmuera || '').toLowerCase()
+        isHornCat(hc) && formulaSal && formulaSal === (hc.config?.formula_salmuera || '').toLowerCase()
       ) || horneadoCfgs.find(hc =>
-        formulaSal && (hc.config?.formula_salmuera || '').toLowerCase() &&
+        isHornCat(hc) && formulaSal && (hc.config?.formula_salmuera || '').toLowerCase() &&
         formulaSal.includes((hc.config?.formula_salmuera || '').toLowerCase())
       );
       const esHorneado     = !!cfgHornEntry;
@@ -581,7 +587,9 @@ export default function TabMaduracion({ mobile, currentUser }) {
         setPaso1Listo(false); setPaso2Listo(false);
         setImprevisto({ activo: false, kgDaniado: '', motivo: '' });
         setSpWizardKgs({});
-        setHorneadoPaso(1);
+        { const hasMos = parseFloat(cfgHorn.gramos_mostaza || 0) > 0 && !!cfgHorn.mp_mostaza_id;
+          const hasRb  = !!cfgHorn.formula_rub && rubF.length > 0;
+          setHorneadoPaso(hasMos ? 1 : hasRb ? 2 : 3); }
         // Calcular crédito de sub-productos de inyección para el C_FINAL correcto
         const spInyReal  = modalPesaje.sp_inyeccion_real || {};
         const inyRawCfg  = cfgHorn.subproductos?.inyeccion || {};
@@ -742,9 +750,9 @@ export default function TabMaduracion({ mobile, currentUser }) {
 
       const formulaSal   = (lote.produccion_inyeccion?.formula_salmuera || '').toLowerCase();
       const cfgHornEntry = horneadoCfgs.find(hc =>
-        formulaSal && formulaSal === (hc.config?.formula_salmuera || '').toLowerCase()
+        isHornCat(hc) && formulaSal && formulaSal === (hc.config?.formula_salmuera || '').toLowerCase()
       ) || horneadoCfgs.find(hc =>
-        formulaSal && (hc.config?.formula_salmuera || '').toLowerCase() &&
+        isHornCat(hc) && formulaSal && (hc.config?.formula_salmuera || '').toLowerCase() &&
         formulaSal.includes((hc.config?.formula_salmuera || '').toLowerCase())
       );
       const esHorneado         = !!cfgHornEntry;
@@ -791,7 +799,9 @@ export default function TabMaduracion({ mobile, currentUser }) {
         setPaso1Listo(false); setPaso2Listo(false);
         setImprevisto({ activo: false, kgDaniado: '', motivo: '' });
         setSpWizardKgs({});
-        setHorneadoPaso(1);
+        { const hasMos = parseFloat(cfgHorn.gramos_mostaza || 0) > 0 && !!cfgHorn.mp_mostaza_id;
+          const hasRb  = !!cfgHorn.formula_rub && rubF.length > 0;
+          setHorneadoPaso(hasMos ? 1 : hasRb ? 2 : 3); }
 
         const spInyReal = lote.sp_inyeccion_real || {};
         const inyRawCfg = cfgHorn.subproductos?.inyeccion || {};
@@ -1097,6 +1107,8 @@ export default function TabMaduracion({ mobile, currentUser }) {
         nombre_mp: mpMostaza.nombre,
         tipo: 'salida', kg: kgMos,
         motivo: `Mostaza ${modalHorneado.productoNombre || modalHorneado.loteId} — Lote ${modalHorneado.loteId} (${kgCarne.toFixed(3)} kg carne)`,
+        usuario_nombre: currentUser?.email || 'produccion',
+        user_id: currentUser?.id || null,
         fecha: hoy,
       });
       setPaso1Listo(true);
@@ -1148,6 +1160,8 @@ export default function TabMaduracion({ mobile, currentUser }) {
           nombre_mp: f.ingrediente_nombre,
           tipo: 'salida', kg: kgUsar,
           motivo: `Rub ${modalHorneado.productoNombre || modalHorneado.loteId} — Lote ${modalHorneado.loteId} (${kgCarne.toFixed(3)} kg carne)`,
+          usuario_nombre: currentUser?.email || 'produccion',
+          user_id: currentUser?.id || null,
           fecha: hoy,
         });
       }
@@ -1181,6 +1195,8 @@ export default function TabMaduracion({ mobile, currentUser }) {
           nombre_mp: f.ingrediente_nombre,
           tipo: 'salida', kg: kgUsar,
           motivo: `Rub ${modalHorneado.productoNombre || modalHorneado.loteId} — Lote ${modalHorneado.loteId} (${kgCarne.toFixed(3)} kg carne)`,
+          usuario_nombre: currentUser?.email || 'produccion',
+          user_id: currentUser?.id || null,
           fecha: hoy,
         });
       }
@@ -1302,7 +1318,7 @@ export default function TabMaduracion({ mobile, currentUser }) {
 
       // 2. Buscar o crear MP del producto en AHUMADOS-HORNEADOS (genérico)
       const { data: mpExist } = await supabase.from('materias_primas')
-        .select('id').ilike('nombre', `%${mpNombre}%`).maybeSingle();
+        .select('id').ilike('nombre', `%${mpNombre}%`).eq('categoria', 'AHUMADOS - HORNEADOS').maybeSingle();
       let mpPastrameId;
       if (mpExist) {
         mpPastrameId = mpExist.id;
@@ -1338,7 +1354,25 @@ export default function TabMaduracion({ mobile, currentUser }) {
         usuario_nombre: currentUser?.email || '', user_id: currentUser?.id || null, fecha: hoy,
       });
 
-      // 5. Sub-productos del wizard → inventario (solo créditos, no pérdidas)
+      // 5. Actualizar stock_lotes_inyectados con costos finales + guardar pasos en bloques_resultado
+      await supabase.from('stock_lotes_inyectados')
+        .update({ costo_total: costoFinalTotal, costo_mad_kg: cFinalKg, kg_inicial: kgFinalAjust, kg_disponible: kgFinalAjust, materia_prima_id: mpPastrameId })
+        .eq('lote_id', modalHorneado.loteId);
+      const { data: lotesMadRow } = await supabase
+        .from('lotes_maduracion').select('id, bloques_resultado').eq('lote_id', modalHorneado.loteId).maybeSingle();
+      if (lotesMadRow) {
+        const exBloques = lotesMadRow.bloques_resultado || {};
+        const pasosM2 = [
+          ...(costoMostaza > 0 ? [{ tipo: 'adicional', kgEntrada: kgCarne, kgSalida: kgCarne, costoAcum: modalHorneado.costoTotal + costoMostaza }] : []),
+          ...(costoRub > 0      ? [{ tipo: 'rub',       kgEntrada: kgCarne, kgSalida: kgCarne, costoAcum: modalHorneado.costoTotal + costoMostaza + costoRub }] : []),
+          { tipo: 'horneado', kgEntrada: kgMadLote, kgSalida: kgFinalAjust, costoAcum: costoFinalTotal, kgMermaReal: mermaHornoKg },
+        ];
+        await supabase.from('lotes_maduracion').update({
+          bloques_resultado: { ...exBloques, momento: 'completado', pasos: [...(exBloques.pasos || []), ...pasosM2] },
+        }).eq('id', lotesMadRow.id);
+      }
+
+      // 6. Sub-productos del wizard → inventario (solo créditos, no pérdidas)
       for (const fase of ['mostaza', 'rub', 'horneado']) {
         const faseRaw = spCfgHz[fase];
         if (!faseRaw) continue;
@@ -2039,7 +2073,15 @@ export default function TabMaduracion({ mobile, currentUser }) {
         const mHorno          = kgMad > 0 ? ((kgMad - kgHorno) / kgMad * 100) : 0;
         const listo3          = kgHorno > 0 && kgHorno <= kgMad;
 
-        const pasoColor = ['', '#e67e22', '#8e44ad', '#e74c3c'][horneadoPaso];
+        const hasMostaza = kgMostazaAuto > 0;
+        const hasRub     = !!cfg.formula_rub && rubFilas.length > 0;
+        const PASO_COLORS = { 1: '#e67e22', 2: '#8e44ad', 3: '#e74c3c' };
+        const pasoColor = PASO_COLORS[horneadoPaso] || '#e74c3c';
+        const tabsActivos = [
+          ...(hasMostaza ? [{ n: 1, label: 'Mostaza' }] : []),
+          ...(hasRub     ? [{ n: 2, label: 'Rub'     }] : []),
+          { n: 3, label: 'Horno' },
+        ];
 
         return (
           <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
@@ -2051,19 +2093,23 @@ export default function TabMaduracion({ mobile, currentUser }) {
                 Lote <b>{loteId}</b> · <b>{kgMad.toFixed(3)} kg</b> · <b>{kgCarne.toFixed(3)} kg carne</b> · C_mad <b>${cMadKg.toFixed(4)}/kg</b>
               </div>
 
-              {/* Indicador de pasos */}
+              {/* Indicador de pasos — solo pasos configurados */}
               <div style={{ display: 'flex', gap: 6, marginBottom: 20 }}>
-                {[1,2,3].map(n => (
-                  <div key={n} style={{
-                    flex: 1, textAlign: 'center', padding: '6px 4px', borderRadius: 8, fontSize: 11, fontWeight: 700,
-                    background: horneadoPaso === n ? pasoColor : horneadoPaso > n ? '#d5f5e3' : '#f0f2f5',
-                    color: horneadoPaso === n ? 'white' : horneadoPaso > n ? '#1e8449' : '#aaa',
-                    border: horneadoPaso === n ? `2px solid ${pasoColor}` : '2px solid transparent',
-                  }}>
-                    {n === 1 ? '1 · Mostaza' : n === 2 ? '2 · Rub' : '3 · Horno'}
-                    {horneadoPaso > n && ' ✓'}
-                  </div>
-                ))}
+                {tabsActivos.map(({ n, label }, i) => {
+                  const color = PASO_COLORS[n] || '#e74c3c';
+                  const isActive  = horneadoPaso === n;
+                  const isDone    = horneadoPaso > n;
+                  return (
+                    <div key={n} style={{
+                      flex: 1, textAlign: 'center', padding: '6px 4px', borderRadius: 8, fontSize: 11, fontWeight: 700,
+                      background: isActive ? color : isDone ? '#d5f5e3' : '#f0f2f5',
+                      color: isActive ? 'white' : isDone ? '#1e8449' : '#aaa',
+                      border: isActive ? `2px solid ${color}` : '2px solid transparent',
+                    }}>
+                      {i + 1} · {label}{isDone && ' ✓'}
+                    </div>
+                  );
+                })}
               </div>
 
               {/* ───── PASO 1: Mostaza ───── */}
@@ -2162,7 +2208,7 @@ export default function TabMaduracion({ mobile, currentUser }) {
                   {renderSpWizard('rub')}
 
                   <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 14 }}>
-                    <button onClick={() => setHorneadoPaso(1)} style={{ background: '#f0f2f5', border: 'none', borderRadius: 8, padding: '10px 16px', cursor: 'pointer', fontSize: 13 }}>← Atrás</button>
+                    {hasMostaza && <button onClick={() => setHorneadoPaso(1)} style={{ background: '#f0f2f5', border: 'none', borderRadius: 8, padding: '10px 16px', cursor: 'pointer', fontSize: 13 }}>← Atrás</button>}
                     <button onClick={registrarRub} disabled={guardHorneado} style={{
                       background: guardHorneado ? '#aaa' : 'linear-gradient(135deg,#8e44ad,#6c3483)',
                       color: 'white', border: 'none', borderRadius: 8,
@@ -2262,7 +2308,8 @@ export default function TabMaduracion({ mobile, currentUser }) {
                   )}
 
                   <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-                    <button onClick={() => setHorneadoPaso(2)} style={{ background: '#f0f2f5', border: 'none', borderRadius: 8, padding: '10px 16px', cursor: 'pointer', fontSize: 13 }}>← Atrás</button>
+                    {hasRub && <button onClick={() => setHorneadoPaso(2)} style={{ background: '#f0f2f5', border: 'none', borderRadius: 8, padding: '10px 16px', cursor: 'pointer', fontSize: 13 }}>← Atrás</button>}
+                    {!hasRub && hasMostaza && <button onClick={() => setHorneadoPaso(1)} style={{ background: '#f0f2f5', border: 'none', borderRadius: 8, padding: '10px 16px', cursor: 'pointer', fontSize: 13 }}>← Atrás</button>}
                     <button onClick={confirmarHorneado} disabled={!listo3 || guardHorneado} style={{
                       background: !listo3 || guardHorneado ? '#aaa' : 'linear-gradient(135deg,#e74c3c,#8e44ad)',
                       color: 'white', border: 'none', borderRadius: 8, padding: '10px 24px',
@@ -2528,7 +2575,8 @@ export default function TabMaduracion({ mobile, currentUser }) {
               </div>
 
               {(modalPesaje.produccion_inyeccion?.produccion_inyeccion_cortes || []).map(p => {
-                const kgInj  = parseFloat(p.kg_carne_cruda || 0) + parseFloat(p.kg_salmuera_asignada || 0);
+                const kgCarneReal = parseFloat(p.kg_carne_limpia || p.kg_carne_cruda || 0);
+                const kgInj  = kgCarneReal + parseFloat(p.kg_salmuera_asignada || 0);
                 const kgHoy  = parseFloat(pesajes[p.corte_nombre] || 0);
                 const diff   = kgHoy > 0 ? kgInj - kgHoy : null;
                 return (
@@ -2540,7 +2588,7 @@ export default function TabMaduracion({ mobile, currentUser }) {
                     <div style={{ fontWeight: 'bold', fontSize: 13, color: '#1a1a2e' }}>
                       🥩 {p.corte_nombre}
                       <div style={{ fontSize: 10, color: '#888', fontWeight: 'normal' }}>
-                        {parseFloat(p.kg_carne_cruda||0).toFixed(3)} carne + {parseFloat(p.kg_salmuera_asignada||0).toFixed(3)} sal
+                        {kgCarneReal.toFixed(3)} carne + {parseFloat(p.kg_salmuera_asignada||0).toFixed(3)} sal
                       </div>
                     </div>
                     <div style={{ textAlign: 'right', fontSize: 13, color: '#2980b9', fontWeight: 'bold' }}>

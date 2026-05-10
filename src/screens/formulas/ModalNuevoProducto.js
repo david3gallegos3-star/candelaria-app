@@ -21,18 +21,27 @@ export default function ModalNuevoProducto({
   const [cortesExist,    setCortesExist]    = useState([]);  // productos CORTES existentes
 
   const esCorte = nuevaCategoria === 'Cortes' || nuevaCategoria === 'CORTES';
+  const categoriasConMp = ['CORTES', 'Cortes', 'INMERSION', 'Inmersión', 'INMERSIÓN', 'MARIDADOS', 'Maridados', 'AHUMADOS-HORNEADOS', 'Ahumados-Horneados'];
+  const requiereMp = categoriasConMp.some(c => nuevaCategoria === c)
+    || (nuevaCategoria || '').toUpperCase().includes('INMERS')
+    || (nuevaCategoria || '').toUpperCase().includes('MARINAD')
+    || (nuevaCategoria || '').toUpperCase().includes('AHUMAD')
+    || (nuevaCategoria || '').toUpperCase().includes('HORNEADO')
+    || esCorte;
 
   useEffect(() => {
-    if (!esCorte) { setTieneDeshuese(false); setDshNombreHijo(''); return; }
+    if (!esCorte) { setTieneDeshuese(false); setDshNombreHijo(''); }
     supabase.from('materias_primas')
       .select('id,nombre,nombre_producto,precio_kg,categoria')
       .eq('eliminado', false).order('nombre')
       .then(({ data }) => setMps(data || []));
-    supabase.from('productos')
-      .select('nombre').or('categoria.eq.Cortes,categoria.eq.CORTES')
-      .eq('estado', 'ACTIVO').order('nombre')
-      .then(({ data }) => setCortesExist([...new Set((data || []).map(p => p.nombre))]));
-  }, [esCorte]);
+    if (esCorte) {
+      supabase.from('productos')
+        .select('nombre').or('categoria.eq.Cortes,categoria.eq.CORTES')
+        .eq('estado', 'ACTIVO').order('nombre')
+        .then(({ data }) => setCortesExist([...new Set((data || []).map(p => p.nombre))]));
+    }
+  }, [nuevaCategoria]);
 
   const mpsFiltradas = mps.filter(m => {
     const txt = buscador.toLowerCase();
@@ -85,14 +94,13 @@ export default function ModalNuevoProducto({
           ))}
         </select>
 
-        {/* Selector de MP — solo para categoría Cortes */}
-        {esCorte && (
-          <div style={{ marginTop:16 }}>
+        {/* Selector de MP — solo para categorías que lo requieren */}
+        {requiereMp && <div style={{ marginTop:16 }}>
             <label style={{ fontSize:'13px', fontWeight:'bold', color:'#6c3483', display:'block', marginBottom:6 }}>
-              🥩 Materia prima vinculada *
+              🥩 Materia prima vinculada{esCorte ? ' *' : ' (opcional)'}
             </label>
             <div style={{ fontSize:11, color:'#888', marginBottom:8 }}>
-              Selecciona el corte en materias primas para vincular precio y stock
+              {esCorte ? 'Requerido — vincula precio y stock de inventario' : 'Vincula este producto a su materia prima en inventario'}
             </div>
             {nuevoMpVinculado ? (
               <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', background:'#eafaf1', border:'1.5px solid #27ae60', borderRadius:8, padding:'10px 14px', marginBottom:8 }}>
@@ -120,7 +128,7 @@ export default function ModalNuevoProducto({
                             onClick={() => { setNuevoMpVinculado({ id: mp.id, nombre: mp.nombre_producto || mp.nombre, precio_kg: mp.precio_kg }); setBuscador(''); }}
                             style={{ padding:'9px 12px', cursor:'pointer', borderBottom:'1px solid #f5f5f5', fontSize:13, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
                             <span>{mp.nombre_producto || mp.nombre}</span>
-                            <span style={{ color:'#888', fontSize:11 }}>${parseFloat(mp.precio_kg || 0).toFixed(2)}/kg</span>
+                            <span style={{ color:'#888', fontSize:11 }}>${parseFloat(mp.precio_kg || 0).toFixed(2)}/kg · {mp.categoria}</span>
                           </div>
                         ))
                     }
@@ -128,8 +136,7 @@ export default function ModalNuevoProducto({
                 )}
               </>
             )}
-          </div>
-        )}
+          </div>}
 
         {/* ── Configuración Deshuese — solo para CORTES ── */}
         {esCorte && (
