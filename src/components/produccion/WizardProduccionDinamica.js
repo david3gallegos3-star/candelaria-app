@@ -376,7 +376,10 @@ export default function WizardProduccionDinamica({
         }
         await descontarIngredientesFormula(formulaSal, kgSalmuera, loteRef);
       }
-      const kgSalida = esBano ? kgActual : kgActual + kgSalmuera;
+      const pctPeso = b.pct_peso_inj != null
+        ? (parseFloat(b.pct_peso_inj) || 0) / 100
+        : (esBano ? 0 : 1);
+      const kgSalida = kgActual + kgSalmuera * pctPeso;
       const nuevoCosto = costoAcum + costoSalmuera;
       const res = { tipo: 'inyeccion', kgEntrada: kgActual, kgSalida, costoAcum: nuevoCosto, kgSalmuera, costoSalmuera, formulaSalmuera: formulaSal, esBano: !!esBano };
 
