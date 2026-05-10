@@ -23,7 +23,7 @@ export function calcBloques({ bloques, kgIni, precioCarne, precioKgSalmuera, cos
       const cSal  = kgSal * precioKgSalmuera;
       costoAcum  += cSal;
       const pctPeso = b.pct_peso_inj != null
-        ? parseFloat(b.pct_peso_inj) / 100
+        ? (parseFloat(b.pct_peso_inj) || 0) / 100
         : (esBano ? 0 : 1);
       kg += kgSal * pctPeso;
       pasos.push({ tipo: 'inyeccion', label: `💉 Inyección ${b.pct_inj}%`, kg, costoAcum, kgSal, cSal });
@@ -348,10 +348,11 @@ export function BloquesDinamicosEditor({
                               {precioKgSalmuera > 0 && ` · $${(kgSal * precioKgSalmuera).toFixed(4)}`}
                             </div>
                             <div style={{ marginTop: 4, fontWeight: 700, color: meta.color }}>
-                              {esBano
-                                ? <>→ <strong style={{ fontSize: 13 }}>{kgAntes.toFixed(3)} kg</strong> (peso no cambia — solo costo)</>
-                                : <>→ <strong style={{ fontSize: 13 }}>{(kgAntes + kgSal).toFixed(3)} kg</strong> total después de inyección</>
-                              }
+                              {(() => {
+                                const pctPesoP = b.pct_peso_inj != null ? (parseFloat(b.pct_peso_inj) || 0) / 100 : (esBano ? 0 : 1);
+                                const kgPreview = kgAntes + kgSal * pctPesoP;
+                                return <>→ <strong style={{ fontSize: 13 }}>{kgPreview.toFixed(3)} kg</strong> total después de inyección</>;
+                              })()}
                             </div>
                           </div>
                         )}
