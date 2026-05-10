@@ -2158,7 +2158,27 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion, esBano 
                   return hornPaso ? parseFloat(hornPaso.kgEntrada || 0) : kgPostMad;
                 })();
                 const kgDisp = parseFloat(l.kg_disponible || l.kg_inicial || 0);
-                const cMad   = parseFloat(l.costo_mad_kg || 0);
+                // Para esBano con pasos wizard completos: usar último paso
+                const pasosWizAll  = madInfo?.bloques_resultado?.pasos || [];
+                const tieneM1Pasos = pasosWizAll.some(p => p.tipo === 'merma' || p.tipo === 'inyeccion');
+                const cMad   = (() => {
+                  if (!esBano) return parseFloat(l.costo_mad_kg || 0);
+                  if (tieneM1Pasos && pasosWizAll.length > 0) {
+                    const last = pasosWizAll[pasosWizAll.length - 1];
+                    return last.kgSalida > 0 ? last.costoAcum / last.kgSalida : 0;
+                  }
+                  // Fallback para lotes sin pasos wizard: recalcular con crédito de merma config
+                  const kgIni2      = parseFloat(miCorte?.kg_carne_cruda || 0);
+                  const kgLimpia2   = parseFloat(miCorte?.kg_carne_limpia || kgIni2);
+                  const costoCarne2 = parseFloat(miCorte?.costo_carne || 0);
+                  const costoSal2   = parseFloat(miCorte?.costo_salmuera_asignado || 0);
+                  const mBlock      = (bloques || []).find(b => b.tipo === 'merma' && b.activo !== false);
+                  const credit2     = mBlock && (mBlock.merma_tipo === 2 || mBlock.merma_tipo === 3)
+                    ? (kgIni2 - kgLimpia2) * parseFloat(mBlock.precio_merma_kg || 0)
+                    : 0;
+                  const costoCorr = costoCarne2 - credit2 + costoSal2;
+                  return kgDisp > 0 ? costoCorr / kgDisp : 0;
+                })();
                 const hdrBg  = esBano
                   ? 'linear-gradient(135deg,#1a6b3c,#27ae60)'
                   : esPadre
@@ -2241,44 +2261,70 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion, esBano 
                         </div>
                       )}
 
-                      {/* Desglose paso a paso — esBano (reconstruido desde datos reales) */}
+                      {/* Desglose paso a paso — esBano */}
                       {esBano && (() => {
+                        const COLORS_B = { merma:'#e74c3c', inyeccion:'#2980b9', maduracion:'#27ae60', horneado:'#e67e22', rub:'#8e44ad', adicional:'#f39c12' };
+                        const LABELS_B = { inyeccion:'Inyección', maduracion:'Maduración', rub:'Rub/Especias', adicional:'Adicional', horneado:'Merma Horneado' };
+
+                        // ── Camino A: pasos wizard completos (momento1 + momento2) ──
+                        if (tieneM1Pasos && pasosWizAll.length > 0) {
+                          return (
+                            <div style={{ marginBottom: 12 }}>
+                              <div style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>Flujo de costo — paso a paso</div>
+                              {pasosWizAll.map((p, i) => {
+                                const prevCA  = i === 0 ? null : pasosWizAll[i - 1].costoAcum;
+                                const costoKg = p.kgSalida > 0 ? p.costoAcum / p.kgSalida : 0;
+                                const color   = COLORS_B[p.tipo] || '#555';
+                                const label   = p.tipo === 'merma' ? (p.nombre_merma || 'Merma') : (LABELS_B[p.tipo] || p.tipo);
+                                const delta   = prevCA !== null ? p.costoAcum - prevCA : null;
+                                return (
+                                  <div key={i} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'5px 10px', marginBottom:3, background:'#fafafa', borderRadius:6, fontSize:11, borderLeft:`3px solid ${color}` }}>
+                                    <div>
+                                      <span style={{ fontWeight:600, color }}>{label}</span>
+                                      {p.tipo === 'merma' && p.kgMermaReal > 0 && <span style={{ color:'#888', marginLeft:6 }}>−{parseFloat(p.kgMermaReal).toFixed(3)} kg</span>}
+                                      {p.tipo === 'inyeccion' && p.kgSalmuera > 0 && <span style={{ color:'#888', marginLeft:6 }}>+{parseFloat(p.kgSalmuera).toFixed(3)} kg salmuera</span>}
+                                      {delta !== null && delta < -0.00005 && <span style={{ color:'#27ae60', marginLeft:6 }}>· −${Math.abs(delta).toFixed(4)} crédito</span>}
+                                      {delta !== null && delta > 0.00005 && <span style={{ color, marginLeft:6 }}>· +${delta.toFixed(4)}</span>}
+                                    </div>
+                                    <div style={{ textAlign:'right', fontWeight:700, color:'#444' }}>
+                                      {parseFloat(p.kgSalida || 0).toFixed(3)} kg
+                                      <span style={{ color:'#888', marginLeft:8, fontWeight:400 }}>${costoKg.toFixed(4)}/kg</span>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          );
+                        }
+
+                        // ── Camino B: fallback para lotes sin pasos wizard (reconstrucción desde datos) ──
                         const kgIni      = parseFloat(miCorte?.kg_carne_cruda || 0);
                         const kgLimpia   = parseFloat(miCorte?.kg_carne_limpia || kgIni);
                         const kgSal      = parseFloat(miCorte?.kg_salmuera_asignada || 0);
                         const costoCarne = parseFloat(miCorte?.costo_carne || 0);
                         const costoSal   = parseFloat(miCorte?.costo_salmuera_asignado || 0);
-                        const pasosWiz   = madInfo?.bloques_resultado?.pasos || [];
-                        const hornPaso   = pasosWiz.find(p => p.tipo === 'horneado');
-                        const mermaPasoW = pasosWiz.find(p => p.tipo === 'merma');
+                        const hornPaso   = pasosWizAll.find(p => p.tipo === 'horneado');
                         const kgMad      = hornPaso ? parseFloat(hornPaso.kgEntrada || 0) : kgPostPesaje;
                         const kgFinal    = hornPaso ? parseFloat(hornPaso.kgSalida || 0) : kgDisp;
                         if (kgIni === 0) return null;
 
-                        // Leer crédito directamente del paso merma del wizard (evita back-calculation incorrecta)
-                        const mermaCredit = mermaPasoW
-                          ? Math.max(0, costoCarne - parseFloat(mermaPasoW.costoAcum || 0))
-                          : 0;
+                        const mermaBlock  = (bloques || []).find(b => b.tipo === 'merma' && b.activo !== false);
+                        const kgMermaReal = kgIni - kgLimpia;
+                        const mermaCredit = mermaBlock && (mermaBlock.merma_tipo === 2 || mermaBlock.merma_tipo === 3)
+                          ? kgMermaReal * parseFloat(mermaBlock.precio_merma_kg || 0) : 0;
 
-                        const COLORS = { merma:'#e74c3c', inyeccion:'#2980b9', maduracion:'#27ae60', horneado:'#e67e22' };
                         const pasos = [];
                         let cAcum = costoCarne;
-
-                        // Merma previa (si hubo diferencia entre cruda y limpia)
                         if (kgLimpia < kgIni) {
-                          const kgM = kgIni - kgLimpia;
                           cAcum -= mermaCredit;
-                          pasos.push({ tipo:'merma', label:'Merma', kgSalida: kgLimpia, costoAcum: cAcum, info: `-${kgM.toFixed(3)} kg · -$${mermaCredit.toFixed(4)} crédito` });
+                          pasos.push({ tipo:'merma', label:'Merma', kgSalida: kgLimpia, costoAcum: cAcum, info: `-${kgMermaReal.toFixed(3)} kg · -$${mermaCredit.toFixed(4)} crédito` });
                         }
-                        // Inyección
                         cAcum += costoSal;
-                        pasos.push({ tipo:'inyeccion', label:'Inyección 100%', kgSalida: kgLimpia, costoAcum: cAcum, info: `+${kgSal.toFixed(3)} kg salmuera · +$${costoSal.toFixed(4)}` });
-                        // Maduración
+                        pasos.push({ tipo:'inyeccion', label:'Inyección', kgSalida: kgLimpia, costoAcum: cAcum, info: `+${kgSal.toFixed(3)} kg salmuera · +$${costoSal.toFixed(4)}` });
                         if (kgMad > 0 && kgMad < kgLimpia) {
                           const mermaM = ((kgLimpia - kgMad) / kgLimpia * 100).toFixed(1);
                           pasos.push({ tipo:'maduracion', label:'Maduración', kgSalida: kgMad, costoAcum: cAcum, info: `-${(kgLimpia-kgMad).toFixed(3)} kg merma (${mermaM}%)` });
                         }
-                        // Horneado: usar cAcum propio (hornPaso.costoAcum puede estar incorrecto en lotes viejos)
                         if (kgFinal > 0) {
                           const mermaH = kgMad > 0 ? ((kgMad - kgFinal) / kgMad * 100).toFixed(1) : '?';
                           pasos.push({ tipo:'horneado', label:'Merma Horneado', kgSalida: kgFinal, costoAcum: cAcum, info: `-${(kgMad-kgFinal).toFixed(3)} kg merma (${mermaH}%)` });
@@ -2289,7 +2335,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion, esBano 
                             <div style={{ fontSize: 10, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6 }}>Flujo de costo — paso a paso</div>
                             {pasos.map((p, i) => {
                               const costoKg = p.kgSalida > 0 ? p.costoAcum / p.kgSalida : 0;
-                              const color = COLORS[p.tipo] || '#555';
+                              const color = COLORS_B[p.tipo] || '#555';
                               return (
                                 <div key={i} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'5px 10px', marginBottom:3, background:'#fafafa', borderRadius:6, fontSize:11, borderLeft:`3px solid ${color}` }}>
                                   <div>
