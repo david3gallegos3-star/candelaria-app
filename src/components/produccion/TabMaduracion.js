@@ -373,7 +373,7 @@ export default function TabMaduracion({ mobile, currentUser }) {
             banoWizardMpId   = mpId;
             banoWizardKgMad  = kgMad;
             banoWizardCosto  = costoTotal;
-            banoWizardNombre = p.corte_nombre;
+            banoWizardNombre = cfgCortesEntry?.producto_nombre || p.corte_nombre;
           } else if (!esCortesPadre) {
             // ── FLUJO NORMAL: actualizar inventario y stock ──
             const { data: inv } = await supabase.from('inventario_mp')
@@ -395,7 +395,7 @@ export default function TabMaduracion({ mobile, currentUser }) {
             const { data: stockEntry } = await supabase.from('stock_lotes_inyectados').insert({
               lote_id:            modalPesaje.lote_id,
               lote_maduracion_id: modalPesaje.id,
-              corte_nombre:       p.corte_nombre,
+              corte_nombre:       cfgCortesEntry?.producto_nombre || p.corte_nombre,
               materia_prima_id:   mpId,
               kg_inicial:         kgMad,
               kg_disponible:      kgMad,
@@ -489,6 +489,20 @@ export default function TabMaduracion({ mobile, currentUser }) {
 
       // ── Si es BANO con horneado → Wizard dinámico Momento 2 ──
       if (esEsBanoConHorneado && banoWizardMpId) {
+        // Insertar paso de maduración entre momento1 y momento2
+        const inyPasoBano = (brMomento1?.pasos || []).find(p => p.tipo === 'inyeccion');
+        const kgPostIny   = inyPasoBano ? parseFloat(inyPasoBano.kgSalida || 0) : banoWizardKgMad;
+        const madPaso     = {
+          tipo: 'maduracion',
+          kgEntrada: kgPostIny,
+          kgSalida:  banoWizardKgMad,
+          costoAcum: banoWizardCosto,
+          kgMermaReal: Math.max(0, kgPostIny - banoWizardKgMad),
+        };
+        const brConMad = {
+          ...(brMomento1 || {}),
+          pasos: [...(brMomento1?.pasos || []), madPaso],
+        };
         setWizardDinamico({
           modo:        'momento2',
           bloques:     cfgCortesEntry.config.bloques,
@@ -501,7 +515,7 @@ export default function TabMaduracion({ mobile, currentUser }) {
             corteNombreHijo:  '',
             mpPadreId:        banoWizardMpId,
             formulaSalmuera:  formulaSalActual,
-            bloquesResultado: brMomento1,
+            bloquesResultado: brConMad,
           },
           kgInicial:   banoWizardKgMad,
           precioCarne: banoWizardKgMad > 0 ? banoWizardCosto / banoWizardKgMad : 0,
@@ -1183,7 +1197,10 @@ export default function TabMaduracion({ mobile, currentUser }) {
               ? parseFloat(p.kg_carne_limpia || p.kg_carne_cruda || 0)
               : parseFloat(p.kg_carne_cruda || 0)), 0);
             const totalSal   = picortes.reduce((s, p) => s + parseFloat(p.kg_salmuera_asignada || 0), 0);
-            const totalInj   = esInm ? totalCarne : totalCarne + totalSal;
+            const inyPasoDisp = (lote.bloques_resultado?.pasos || []).find(p => p.tipo === 'inyeccion');
+            const totalInj   = inyPasoDisp
+              ? parseFloat(inyPasoDisp.kgSalida || 0)
+              : esInm ? totalCarne : totalCarne + totalSal;
             const expandido  = !!expandidos[lote.id];
 
             return (
@@ -1247,7 +1264,9 @@ export default function TabMaduracion({ mobile, currentUser }) {
                             ? parseFloat(p.kg_carne_limpia || p.kg_carne_cruda || 0)
                             : parseFloat(p.kg_carne_cruda || 0);
                           const kgSal   = parseFloat(p.kg_salmuera_asignada || 0);
-                          const kgInj   = esInm ? kgCarne : kgCarne + kgSal;
+                          const kgInj   = inyPasoDisp
+                            ? parseFloat(inyPasoDisp.kgSalida || 0)
+                            : esInm ? kgCarne : kgCarne + kgSal;
                           const pctSal  = kgCarne > 0 ? ((kgSal / kgCarne) * 100).toFixed(1) : '0.0';
                           return (
                             <div key={idx} style={{

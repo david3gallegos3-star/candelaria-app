@@ -333,14 +333,10 @@ export default function WizardProduccionDinamica({
         kgSalida  = kgActual - kgRealInput;
         const credito = kgRealInput * (parseFloat(b.precio_merma_kg) || 0);
         nuevoCosto = costoAcum - credito;
-      } else if (b.merma_tipo === 3) {
-        if (kgRealInput <= 0) { setError('Ingresa los kg reales obtenidos'); setGuardando(false); return; }
-        kgSalida  = kgActual - kgRealInput;
-        const credito = kgRealInput * (parseFloat(b.precio_merma_kg) || 0);
-        nuevoCosto = costoAcum - credito;
-        const mpMerma = b.mp_merma_id ? mpsFormula.find(m => String(m.id) === String(b.mp_merma_id)) : null;
+        // Agrega kg al inventario de la MP vinculada
         if (b.mp_merma_id) {
-          await ingresarMpAInventario(b.mp_merma_id, mpMerma?.nombre_producto || mpMerma?.nombre || b.nombre_merma || 'Merma', kgRealInput, loteRef);
+          const mpMerma = mpsFormula.find(m => String(m.id) === String(b.mp_merma_id));
+          await ingresarMpAInventario(b.mp_merma_id, mpMerma?.nombre_producto || mpMerma?.nombre || b.nombre_merma || 'Subproducto', kgRealInput, loteRef);
         }
       }
 
@@ -555,6 +551,10 @@ export default function WizardProduccionDinamica({
           const kgReal = parseFloat(inputsHijo[key] || 0);
           kgSalida  = kgCurrent - kgReal;
           nuevoCosto = costoCurrent - kgReal * (parseFloat(b.precio_merma_kg) || 0);
+          if (b.mp_merma_id) {
+            const mpMerma2 = mpsFormula.find(m => String(m.id) === String(b.mp_merma_id));
+            await ingresarMpAInventario(b.mp_merma_id, mpMerma2?.nombre_producto || mpMerma2?.nombre || b.nombre_merma || 'Subproducto', kgReal, loteRef);
+          }
         } else if (b.merma_tipo === 3) {
           const kgReal = parseFloat(inputsHijo[key] || 0);
           kgSalida  = kgCurrent - kgReal;

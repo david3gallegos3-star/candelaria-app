@@ -555,8 +555,7 @@ export function BloquesDinamicosEditor({
                             onChange={e => updateBloque(b.id, { merma_tipo: parseInt(e.target.value) })}
                             style={{ width: '100%', padding: '7px 10px', borderRadius: 7, border: `1.5px solid ${meta.color}`, fontSize: 13, background: modoEdicion ? 'white' : '#f8f9fa', boxSizing: 'border-box' }}>
                             <option value={1}>Tipo 1 — Descarte total (costo se absorbe)</option>
-                            <option value={2}>Tipo 2 — Valor recuperable (genera crédito)</option>
-                            <option value={3}>Tipo 3 — Genera nuevo producto (va a inventario)</option>
+                            <option value={2}>Tipo 2 — Subproducto con valor (crédito + agrega a inventario)</option>
                           </select>
                         </div>
 
@@ -661,44 +660,6 @@ export function BloquesDinamicosEditor({
                           </>
                         )}
 
-                        {/* Tipo 3: seleccionar de MPs existentes */}
-                        {b.merma_tipo === 3 && (
-                          <>
-                            <div>
-                              <label style={{ fontSize: 11, fontWeight: 600, color: '#27ae60', display: 'block', marginBottom: 4 }}>Materia prima (va a inventario)</label>
-                              <select value={b.mp_merma_id || ''} disabled={!modoEdicion}
-                                onChange={e => {
-                                  const mp = (mpsFormula || []).find(m => String(m.id) === e.target.value);
-                                  updateBloque(b.id, { mp_merma_id: e.target.value, precio_merma_kg: parseFloat(mp?.precio_kg || 0), nombre_merma: mp ? (mp.nombre_producto || mp.nombre || '') : '' });
-                                }}
-                                style={{ width: '100%', padding: '7px 10px', borderRadius: 7, border: '1.5px solid #27ae60', fontSize: 13, background: modoEdicion ? 'white' : '#f8f9fa', boxSizing: 'border-box' }}>
-                                <option value="">— seleccionar materia prima —</option>
-                                {(mpsFormula || []).map(m => (
-                                  <option key={m.id} value={String(m.id)}>
-                                    {m.nombre_producto || m.nombre} — ${parseFloat(m.precio_kg || 0).toFixed(4)}/kg
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-                            {b.mp_merma_id && kgMerma > 0 && (
-                              <div style={{ background: '#eafaf1', border: '1.5px solid #27ae60', borderRadius: 8, padding: '10px 12px' }}>
-                                <div style={{ fontSize: 11, color: '#27ae60', marginBottom: 6 }}>
-                                  {kgMerma.toFixed(3)} kg × ${precioRec.toFixed(4)}/kg
-                                </div>
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                                  <div style={{ background: 'white', borderRadius: 6, padding: '8px 10px', textAlign: 'center' }}>
-                                    <div style={{ fontSize: 10, color: '#888', marginBottom: 2 }}>kg a inventario</div>
-                                    <div style={{ fontSize: 16, fontWeight: 900, color: '#27ae60' }}>{kgMerma.toFixed(3)} kg</div>
-                                  </div>
-                                  <div style={{ background: 'white', borderRadius: 6, padding: '8px 10px', textAlign: 'center' }}>
-                                    <div style={{ fontSize: 10, color: '#888', marginBottom: 2 }}>valor crédito</div>
-                                    <div style={{ fontSize: 16, fontWeight: 900, color: '#27ae60' }}>${credito.toFixed(4)}</div>
-                                  </div>
-                                </div>
-                              </div>
-                            )}
-                          </>
-                        )}
                       </div>
                     );
                   })()}
