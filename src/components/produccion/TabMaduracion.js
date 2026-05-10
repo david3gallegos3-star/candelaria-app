@@ -1839,9 +1839,12 @@ export default function TabMaduracion({ mobile, currentUser }) {
                   const kgMad = parseFloat(pesajes[p.corte_nombre] || 0);
                   if (!kgMad) return null;
                   const kgCarneR = parseFloat(p.kg_carne_limpia || p.kg_carne_cruda || 0);
-                  const kgInj  = esInmersionLote(modalPesaje, horneadoCfgs)
-                    ? kgCarneR
-                    : kgCarneR + parseFloat(p.kg_salmuera_asignada || 0);
+                  const inyPasoResumen = (modalPesaje.bloques_resultado?.pasos || []).find(paso => paso.tipo === 'inyeccion');
+                  const kgInj = inyPasoResumen
+                    ? parseFloat(inyPasoResumen.kgSalida || 0)
+                    : esInmersionLote(modalPesaje, horneadoCfgs)
+                      ? kgCarneR
+                      : kgCarneR + parseFloat(p.kg_salmuera_asignada || 0);
                   const merma  = kgInj - kgMad;
                   const pctM   = kgInj > 0 ? (merma / kgInj * 100).toFixed(1) : '0.0';
                   return (
