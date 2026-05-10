@@ -59,29 +59,16 @@ export default function TabMaduracion({ mobile, currentUser }) {
   const [error,          setError]          = useState('');
   const [exito,          setExito]          = useState('');
 
-  // ── Modal Horneado (Pastrame) — wizard 3 pasos ──
-  const [modalHorneado,  setModalHorneado]  = useState(null); // {loteId,kgMad,kgCarne,costoTotal,cMadKg,cfg}
-  const [horneadoPaso,   setHorneadoPaso]   = useState(1);    // 1=mostaza 2=rub 3=horno
-  const [hrnHornoKg,     setHrnHornoKg]     = useState('');
-  const [hrnReposoKg,    setHrnReposoKg]    = useState('');
-  const [guardHorneado,  setGuardHorneado]  = useState(false);
-  const [errorHorneado,  setErrorHorneado]  = useState('');
-  const [mpMostaza,      setMpMostaza]      = useState(null);
-  const [rubCostoKg,     setRubCostoKg]     = useState(0);
-  const [rubFilas,       setRubFilas]       = useState([]); // ingredientes del Rub escalados
-  const [paso1Listo,     setPaso1Listo]     = useState(false); // mostaza ya descontada
-  const [paso2Listo,     setPaso2Listo]     = useState(false); // rub ya descontado
-  const [imprevisto,     setImprevisto]     = useState({ activo: false, kgDaniado: '', motivo: '' });
   const [horneadoCfgs,   setHorneadoCfgs]   = useState([]); // configs de vista_horneado_config
 
   // ── Modal Sub-productos post-pesaje ──
   const [wizardRetomar,  setWizardRetomar]  = useState(null); // params para re-lanzar wizard
-  const [modalSpPost,    setModalSpPost]    = useState(null); // {subproductos, loteId, totalKgMad, pendingFlow, horneadoData, deshueseData}
+  const [modalSpPost,    setModalSpPost]    = useState(null); // {subproductos, loteId, totalKgMad, pendingFlow, deshueseData}
   const [spPostKgs,      setSpPostKgs]      = useState({});   // {fase: kg}
   const [guardSpPost,    setGuardSpPost]    = useState(false);
   const [spPostMps,      setSpPostMps]      = useState({});   // mp_id → {nombre, precio_kg}
-  const [spRealesData,   setSpRealesData]   = useState({});   // para pasar a confirmarHorneado
-  const [spWizardKgs,   setSpWizardKgs]   = useState({});   // kg reales en wizard {mostaza, rub, horneado}
+  const [spRealesData,   setSpRealesData]   = useState({});
+  const [spWizardKgs,   setSpWizardKgs]   = useState({});
 
   // ── Modal Deshuese (dinámico desde deshuese_config) ──
   const [modalDeshuese,  setModalDeshuese]  = useState(null);
@@ -117,7 +104,7 @@ export default function TabMaduracion({ mobile, currentUser }) {
 
   function esCatBano(cat) {
     const c = (cat || '').replace(/[ÓÒÔ]/g,'O').toUpperCase();
-    return c.includes('INMERSION') || c.includes('MARINAD');
+    return c.includes('INMERSION') || c.includes('MARINAD') || c.includes('AHUMAD');
   }
 
   function abrirWizardMomento1(corteNombre, kgIni) {
@@ -177,24 +164,6 @@ export default function TabMaduracion({ mobile, currentUser }) {
           resS:   (data || []).find(m => m.id === 'C031')   || null,
           puntas: (data || []).find(m => m.id === 'RET002') || null,
         });
-      });
-    // Mostaza para Pastrame
-    supabase.from('materias_primas').select('id,nombre,precio_kg')
-      .ilike('nombre', '%mostaza%').limit(1)
-      .then(({ data }) => setMpMostaza(data?.[0] || null));
-    // Costo Rub Pastrame por kg
-    supabase.from('formulaciones').select('gramos,materia_prima_id')
-      .eq('producto_nombre', 'Rub Pastrame')
-      .then(async ({ data: rubFilas }) => {
-        if (!rubFilas?.length) return;
-        const ids = rubFilas.map(f => f.materia_prima_id).filter(Boolean);
-        const { data: mpRub } = await supabase.from('materias_primas').select('id,precio_kg').in('id', ids);
-        const totalGr  = rubFilas.reduce((s, f) => s + parseFloat(f.gramos || 0), 0);
-        const totalCosto = rubFilas.reduce((s, f) => {
-          const mp = (mpRub || []).find(m => m.id === f.materia_prima_id);
-          return s + (parseFloat(f.gramos || 0) / 1000) * parseFloat(mp?.precio_kg || 0);
-        }, 0);
-        setRubCostoKg(totalGr > 0 ? totalCosto / (totalGr / 1000) : 0);
       });
     // Configs de productos horneados (para wizard)
     supabase.from('vista_horneado_config').select('producto_nombre,config')
@@ -361,9 +330,11 @@ export default function TabMaduracion({ mobile, currentUser }) {
       for (const p of picortes) {
         const kgMad      = parseFloat(pesajes[p.corte_nombre]);
         const kgCarneReal = parseFloat(p.kg_carne_limpia || p.kg_carne_cruda || 0);
-        const kgInj      = esInmPesaje ? kgCarneReal : kgCarneReal + parseFloat(p.kg_salmuera_asignada || 0);
         // Si el wizard momento1 ya calculó el costo con crédito de merma, usarlo
         const inyPasoM1  = (modalPesaje.bloques_resultado?.pasos || []).find(paso => paso.tipo === 'inyeccion');
+        const kgInj = inyPasoM1
+          ? parseFloat(inyPasoM1.kgSalida || 0)
+          : esInmPesaje ? kgCarneReal : kgCarneReal + parseFloat(p.kg_salmuera_asignada || 0);
         const costoTotal = inyPasoM1
           ? parseFloat(inyPasoM1.costoAcum || 0)
           : parseFloat(p.costo_carne || 0) + parseFloat(p.costo_salmuera_asignado || 0);
@@ -580,13 +551,9 @@ export default function TabMaduracion({ mobile, currentUser }) {
         isHornCat(hc) && formulaSal && (hc.config?.formula_salmuera || '').toLowerCase() &&
         formulaSal.includes((hc.config?.formula_salmuera || '').toLowerCase())
       );
-      const esHorneado     = !!cfgHornEntry;
-      const cfgHorn        = cfgHornEntry?.config || {};
-      const productoNombreHorn = cfgHornEntry?.producto_nombre || '';
-
       // Solo sub-productos de MADURACION aquí — los demás van en el wizard de horneado
       const spActivosConf = [];
-      const madRaw = (cfgHorn.subproductos || {}).maduracion;
+      const madRaw = ((cfgHornEntry?.config || {}).subproductos || {}).maduracion;
       if (madRaw) {
         const isNew = 'perdida' in madRaw || 'nueva_mp' in madRaw || 'mp_existente' in madRaw;
         const tiposData = isNew ? madRaw : { [madRaw.tipo || 'perdida']: { ...madRaw } };
@@ -594,70 +561,6 @@ export default function TabMaduracion({ mobile, currentUser }) {
           const sp = tiposData[tipo];
           if (sp?.activo) spActivosConf.push({ fase: 'maduracion', tipo, sp });
         });
-      }
-
-      // Preparar datos para wizard horneado si aplica
-      let horneadoWizardData = null;
-      if (esHorneado) {
-        const p0        = picortes[0];
-        const kgMad0    = parseFloat(pesajes[p0?.corte_nombre]);
-        const kgCarne0  = parseFloat(p0?.kg_carne_cruda || 0);
-        const costoTot0 = parseFloat(p0?.costo_carne || 0) + parseFloat(p0?.costo_salmuera_asignado || 0);
-
-        if (cfgHorn.mp_mostaza_id) {
-          const { data: mpMos } = await supabase.from('materias_primas')
-            .select('id,nombre,precio_kg').eq('id', cfgHorn.mp_mostaza_id).maybeSingle();
-          setMpMostaza(mpMos || null);
-        }
-        let rubF = [];
-        if (cfgHorn.formula_rub) {
-          const { data: rubRows } = await supabase.from('formulaciones')
-            .select('ingrediente_nombre,gramos,materia_prima_id')
-            .eq('producto_nombre', cfgHorn.formula_rub);
-          const ids = (rubRows || []).map(r => r.materia_prima_id).filter(Boolean);
-          const { data: rubMps } = ids.length
-            ? await supabase.from('materias_primas').select('id,nombre,nombre_producto,precio_kg').in('id', ids)
-            : { data: [] };
-          rubF = (rubRows || []).map(r => {
-            const mp = (rubMps || []).find(m => m.id === r.materia_prima_id);
-            return { ...r, mp, precioKg: parseFloat(mp?.precio_kg || 0) };
-          });
-        }
-        setRubFilas(rubF);
-        setHrnHornoKg(''); setErrorHorneado('');
-        setPaso1Listo(false); setPaso2Listo(false);
-        setImprevisto({ activo: false, kgDaniado: '', motivo: '' });
-        setSpWizardKgs({});
-        { const hasMos = parseFloat(cfgHorn.gramos_mostaza || 0) > 0 && !!cfgHorn.mp_mostaza_id;
-          const hasRb  = !!cfgHorn.formula_rub && rubF.length > 0;
-          setHorneadoPaso(hasMos ? 1 : hasRb ? 2 : 3); }
-        // Calcular crédito de sub-productos de inyección para el C_FINAL correcto
-        const spInyReal  = modalPesaje.sp_inyeccion_real || {};
-        const inyRawCfg  = cfgHorn.subproductos?.inyeccion || {};
-        const inyIsNew   = 'perdida' in inyRawCfg || 'nueva_mp' in inyRawCfg || 'mp_existente' in inyRawCfg;
-        const inyData    = inyIsNew ? inyRawCfg : {};
-        let creditoIny   = 0;
-        for (const tipo of ['nueva_mp', 'mp_existente']) {
-          const sp = inyData[tipo];
-          if (!sp?.activo) continue;
-          const kgReal = parseFloat(spInyReal[`inyeccion_${tipo}`] || 0);
-          if (kgReal <= 0) continue;
-          let precio = tipo === 'nueva_mp' ? parseFloat(sp.precio_kg || 0) : 0;
-          if (tipo === 'mp_existente' && sp.mp_id) {
-            const { data: mpIny } = await supabase.from('materias_primas').select('precio_kg').eq('id', sp.mp_id).maybeSingle();
-            precio = parseFloat(mpIny?.precio_kg || 0);
-          }
-          creditoIny += kgReal * precio;
-        }
-
-        horneadoWizardData = {
-          loteId: loteIdGuardado, kgMad: kgMad0, kgCarne: kgCarne0,
-          costoTotal: costoTot0, cMadKg: kgMad0 > 0 ? costoTot0 / kgMad0 : 0,
-          cfg: cfgHorn,
-          spInyeccionReal: modalPesaje.sp_inyeccion_real || {},
-          creditoIny,
-          productoNombre: productoNombreHorn,
-        };
       }
 
       // Si hay sub-productos configurados → mostrar modal SP antes del siguiente paso
@@ -676,12 +579,9 @@ export default function TabMaduracion({ mobile, currentUser }) {
           subproductos: spActivosConf,
           loteId: loteIdGuardado,
           totalKgMad,
-          pendingFlow: esHorneado ? 'horneado' : deshueseEntries.length > 0 ? 'deshuese' : 'exito',
-          horneadoData: horneadoWizardData,
+          pendingFlow: deshueseEntries.length > 0 ? 'deshuese' : 'exito',
           deshueseData: deshueseEntries.length > 0 ? deshueseEntries : null,
         });
-      } else if (esHorneado && horneadoWizardData) {
-        setModalHorneado(horneadoWizardData);
       } else if (deshueseEntries.length > 0) {
         const initData = {};
         deshueseEntries.forEach(e => {
@@ -796,12 +696,8 @@ export default function TabMaduracion({ mobile, currentUser }) {
         isHornCat(hc) && formulaSal && (hc.config?.formula_salmuera || '').toLowerCase() &&
         formulaSal.includes((hc.config?.formula_salmuera || '').toLowerCase())
       );
-      const esHorneado         = !!cfgHornEntry;
-      const cfgHorn            = cfgHornEntry?.config || {};
-      const productoNombreHorn = cfgHornEntry?.producto_nombre || '';
-
       const spActivosConf = [];
-      const madRaw = (cfgHorn.subproductos || {}).maduracion;
+      const madRaw = ((cfgHornEntry?.config || {}).subproductos || {}).maduracion;
       if (madRaw) {
         const isNew = 'perdida' in madRaw || 'nueva_mp' in madRaw || 'mp_existente' in madRaw;
         const tiposData = isNew ? madRaw : { [madRaw.tipo || 'perdida']: { ...madRaw } };
@@ -809,65 +705,6 @@ export default function TabMaduracion({ mobile, currentUser }) {
           const sp = tiposData[tipo];
           if (sp?.activo) spActivosConf.push({ fase: 'maduracion', tipo, sp });
         });
-      }
-
-      let horneadoWizardData = null;
-      if (esHorneado) {
-        const p0        = picortes[0];
-        const kgMad0    = parseFloat(p0?.kg_carne_cruda || 0);
-        const costoTot0 = parseFloat(p0?.costo_carne || 0) + parseFloat(p0?.costo_salmuera_asignado || 0);
-
-        if (cfgHorn.mp_mostaza_id) {
-          const { data: mpMos } = await supabase.from('materias_primas')
-            .select('id,nombre,precio_kg').eq('id', cfgHorn.mp_mostaza_id).maybeSingle();
-          setMpMostaza(mpMos || null);
-        }
-        let rubF = [];
-        if (cfgHorn.formula_rub) {
-          const { data: rubRows } = await supabase.from('formulaciones')
-            .select('ingrediente_nombre,gramos,materia_prima_id').eq('producto_nombre', cfgHorn.formula_rub);
-          const ids = (rubRows || []).map(r => r.materia_prima_id).filter(Boolean);
-          const { data: rubMps } = ids.length
-            ? await supabase.from('materias_primas').select('id,nombre,nombre_producto,precio_kg').in('id', ids)
-            : { data: [] };
-          rubF = (rubRows || []).map(r => {
-            const mp = (rubMps || []).find(m => m.id === r.materia_prima_id);
-            return { ...r, mp, precioKg: parseFloat(mp?.precio_kg || 0) };
-          });
-        }
-        setRubFilas(rubF);
-        setHrnHornoKg(''); setErrorHorneado('');
-        setPaso1Listo(false); setPaso2Listo(false);
-        setImprevisto({ activo: false, kgDaniado: '', motivo: '' });
-        setSpWizardKgs({});
-        { const hasMos = parseFloat(cfgHorn.gramos_mostaza || 0) > 0 && !!cfgHorn.mp_mostaza_id;
-          const hasRb  = !!cfgHorn.formula_rub && rubF.length > 0;
-          setHorneadoPaso(hasMos ? 1 : hasRb ? 2 : 3); }
-
-        const spInyReal = lote.sp_inyeccion_real || {};
-        const inyRawCfg = cfgHorn.subproductos?.inyeccion || {};
-        const inyIsNew  = 'perdida' in inyRawCfg || 'nueva_mp' in inyRawCfg || 'mp_existente' in inyRawCfg;
-        const inyData   = inyIsNew ? inyRawCfg : {};
-        let creditoIny  = 0;
-        for (const tipo of ['nueva_mp', 'mp_existente']) {
-          const sp = inyData[tipo];
-          if (!sp?.activo) continue;
-          const kgReal = parseFloat(spInyReal[`inyeccion_${tipo}`] || 0);
-          if (kgReal <= 0) continue;
-          let precio = tipo === 'nueva_mp' ? parseFloat(sp.precio_kg || 0) : 0;
-          if (tipo === 'mp_existente' && sp.mp_id) {
-            const { data: mpIny } = await supabase.from('materias_primas').select('precio_kg').eq('id', sp.mp_id).maybeSingle();
-            precio = parseFloat(mpIny?.precio_kg || 0);
-          }
-          creditoIny += kgReal * precio;
-        }
-
-        horneadoWizardData = {
-          loteId: loteIdGuardado, kgMad: kgMad0, kgCarne: kgMad0,
-          costoTotal: costoTot0, cMadKg: kgMad0 > 0 ? costoTot0 / kgMad0 : 0,
-          cfg: cfgHorn, spInyeccionReal: lote.sp_inyeccion_real || {},
-          creditoIny, productoNombre: productoNombreHorn,
-        };
       }
 
       if (spActivosConf.length > 0) {
@@ -883,12 +720,9 @@ export default function TabMaduracion({ mobile, currentUser }) {
         setSpPostKgs({});
         setModalSpPost({
           subproductos: spActivosConf, loteId: loteIdGuardado, totalKgMad,
-          pendingFlow: esHorneado ? 'horneado' : deshueseEntries.length > 0 ? 'deshuese' : 'exito',
-          horneadoData: horneadoWizardData,
+          pendingFlow: deshueseEntries.length > 0 ? 'deshuese' : 'exito',
           deshueseData: deshueseEntries.length > 0 ? deshueseEntries : null,
         });
-      } else if (esHorneado && horneadoWizardData) {
-        setModalHorneado(horneadoWizardData);
       } else if (deshueseEntries.length > 0) {
         const initData = {};
         deshueseEntries.forEach(e => {
@@ -1099,9 +933,7 @@ export default function TabMaduracion({ mobile, currentUser }) {
       const pending = { ...modalSpPost };
       setModalSpPost(null);
 
-      if (pending.pendingFlow === 'horneado' && pending.horneadoData) {
-        setModalHorneado(pending.horneadoData);
-      } else if (pending.pendingFlow === 'deshuese' && pending.deshueseData) {
+      if (pending.pendingFlow === 'deshuese' && pending.deshueseData) {
         const initData = {};
         pending.deshueseData.forEach(e => {
           initData[e.corteNombre] = { kgEntrada: '', kgResS: '', kgPuntas: '', kgDesecho: '' };
@@ -1117,371 +949,6 @@ export default function TabMaduracion({ mobile, currentUser }) {
     }
     setGuardSpPost(false);
   }
-
-  // ── Paso 1: descontar Mostaza y avanzar ───────────────────
-  async function registrarMostaza() {
-    if (paso1Listo) { setHorneadoPaso(2); return; }
-    const cfg     = modalHorneado?.cfg || {};
-    const kgCarne = modalHorneado?.kgCarne || 0;
-    const kgMos   = (parseFloat(cfg.gramos_mostaza || 0) / 1000) * kgCarne;
-    if (!mpMostaza || kgMos <= 0) { setPaso1Listo(true); setHorneadoPaso(2); return; }
-    setGuardHorneado(true);
-    const hoy = new Date().toISOString().split('T')[0];
-    try {
-      const { data: inv } = await supabase.from('inventario_mp')
-        .select('id,stock_kg').eq('materia_prima_id', mpMostaza.id).maybeSingle();
-      const stockActual = parseFloat(inv?.stock_kg || 0);
-      if (stockActual < kgMos) {
-        const ok = window.confirm(
-          `⚠️ Stock insuficiente de ${mpMostaza.nombre}.\n` +
-          `Disponible: ${stockActual.toFixed(3)} kg\n` +
-          `Necesario: ${kgMos.toFixed(3)} kg\n\n¿Continuar de todas formas?`
-        );
-        if (!ok) { setGuardHorneado(false); return; }
-      }
-      if (inv) {
-        await supabase.from('inventario_mp')
-          .update({ stock_kg: Math.max(0, stockActual - kgMos) }).eq('id', inv.id);
-      }
-      await supabase.from('inventario_movimientos').insert({
-        materia_prima_id: mpMostaza.id,
-        nombre_mp: mpMostaza.nombre,
-        tipo: 'salida', kg: kgMos,
-        motivo: `Mostaza ${modalHorneado.productoNombre || modalHorneado.loteId} — Lote ${modalHorneado.loteId} (${kgCarne.toFixed(3)} kg carne)`,
-        usuario_nombre: currentUser?.email || 'produccion',
-        user_id: currentUser?.id || null,
-        fecha: hoy,
-      });
-      setPaso1Listo(true);
-      setHorneadoPaso(2);
-    } catch (e) {
-      alert('Error al descontar mostaza: ' + e.message);
-    }
-    setGuardHorneado(false);
-  }
-
-  // ── Paso 2: descontar Rub y avanzar ───────────────────────
-  async function registrarRub() {
-    if (paso2Listo) { setHorneadoPaso(3); return; }
-    if (!modalHorneado?.cfg?.formula_rub || rubFilas.length === 0) {
-      setPaso2Listo(true); setHorneadoPaso(3); return;
-    }
-    const kgCarne   = modalHorneado.kgCarne || 0;
-    const kgRubBase = parseFloat(modalHorneado.cfg.kg_rub_base || 1);
-    const escala    = kgRubBase > 0 ? kgCarne / kgRubBase : 1;
-    const hoy       = new Date().toISOString().split('T')[0];
-    setGuardHorneado(true);
-    try {
-      // Verificar si algún ingrediente tiene stock insuficiente
-      const bajos = [];
-      for (const f of rubFilas) {
-        if (!f.materia_prima_id) continue;
-        const kgUsar = (parseFloat(f.gramos || 0) / 1000) * escala;
-        const { data: inv } = await supabase.from('inventario_mp')
-          .select('stock_kg').eq('materia_prima_id', f.materia_prima_id).maybeSingle();
-        if (parseFloat(inv?.stock_kg || 0) < kgUsar) {
-          bajos.push(`• ${f.ingrediente_nombre}: hay ${parseFloat(inv?.stock_kg||0).toFixed(3)} kg, necesario ${kgUsar.toFixed(3)} kg`);
-        }
-      }
-      if (bajos.length > 0) {
-        const ok = window.confirm(`⚠️ Stock insuficiente en:\n${bajos.join('\n')}\n\n¿Continuar de todas formas?`);
-        if (!ok) { setGuardHorneado(false); return; }
-      }
-      for (const f of rubFilas) {
-        if (!f.materia_prima_id) continue;
-        const kgUsar = (parseFloat(f.gramos || 0) / 1000) * escala;
-        const { data: inv } = await supabase.from('inventario_mp')
-          .select('id,stock_kg').eq('materia_prima_id', f.materia_prima_id).maybeSingle();
-        if (inv) {
-          await supabase.from('inventario_mp')
-            .update({ stock_kg: Math.max(0, parseFloat(inv.stock_kg || 0) - kgUsar) }).eq('id', inv.id);
-        }
-        await supabase.from('inventario_movimientos').insert({
-          materia_prima_id: f.materia_prima_id,
-          nombre_mp: f.ingrediente_nombre,
-          tipo: 'salida', kg: kgUsar,
-          motivo: `Rub ${modalHorneado.productoNombre || modalHorneado.loteId} — Lote ${modalHorneado.loteId} (${kgCarne.toFixed(3)} kg carne)`,
-          usuario_nombre: currentUser?.email || 'produccion',
-          user_id: currentUser?.id || null,
-          fecha: hoy,
-        });
-      }
-      setPaso2Listo(true);
-      setHorneadoPaso(3);
-    } catch (e) {
-      alert('Error al descontar Rub: ' + e.message);
-    }
-    setGuardHorneado(false);
-  }
-
-  // ── Paso 2 (legacy): descontar Rub del inventario ─────────
-  async function descontarRub() {
-    if (!modalHorneado?.cfg?.formula_rub || rubFilas.length === 0) { setPaso2Listo(true); return; }
-    const kgCarne   = modalHorneado.kgCarne || 0;
-    const kgRubBase = parseFloat(modalHorneado.cfg.kg_rub_base || 1);
-    const escala    = kgRubBase > 0 ? kgCarne / kgRubBase : 1;
-    const hoy       = new Date().toISOString().split('T')[0];
-    try {
-      for (const f of rubFilas) {
-        if (!f.materia_prima_id) continue;
-        const kgUsar = (parseFloat(f.gramos || 0) / 1000) * escala;
-        const { data: inv } = await supabase.from('inventario_mp')
-          .select('id,stock_kg').eq('materia_prima_id', f.materia_prima_id).maybeSingle();
-        if (inv) {
-          await supabase.from('inventario_mp')
-            .update({ stock_kg: Math.max(0, (inv.stock_kg || 0) - kgUsar) }).eq('id', inv.id);
-        }
-        await supabase.from('inventario_movimientos').insert({
-          materia_prima_id: f.materia_prima_id,
-          nombre_mp: f.ingrediente_nombre,
-          tipo: 'salida', kg: kgUsar,
-          motivo: `Rub ${modalHorneado.productoNombre || modalHorneado.loteId} — Lote ${modalHorneado.loteId} (${kgCarne.toFixed(3)} kg carne)`,
-          usuario_nombre: currentUser?.email || 'produccion',
-          user_id: currentUser?.id || null,
-          fecha: hoy,
-        });
-      }
-      setPaso2Listo(true);
-    } catch (e) {
-      alert('Error al descontar Rub: ' + e.message);
-    }
-  }
-
-  // ── Imprimir receta Rub ───────────────────────────────────
-  function imprimirRub() {
-    if (!modalHorneado) return;
-    const { kgCarne, cfg } = modalHorneado;
-    const kgRubBase = parseFloat(cfg.kg_rub_base || 1);
-    const escala    = kgRubBase > 0 ? kgCarne / kgRubBase : 1;
-    const html = `<!DOCTYPE html><html><head><title>${cfg.formula_rub}</title>
-    <style>body{font-family:Arial,sans-serif;padding:24px;max-width:600px;}
-    h2{color:#6c3483;} table{width:100%;border-collapse:collapse;margin-top:16px;}
-    th{background:#6c3483;color:white;padding:8px 12px;text-align:left;}
-    td{padding:8px 12px;border-bottom:1px solid #eee;}
-    .total{font-weight:bold;background:#f5eef8;}
-    .nota{color:#888;font-size:12px;margin-top:12px;}</style>
-    </head><body>
-    <h2>🌶️ ${cfg.formula_rub || 'Rub'}</h2>
-    <p><strong>Lote:</strong> ${modalHorneado.loteId} &nbsp;|&nbsp;
-       <strong>Carne:</strong> ${kgCarne.toFixed(3)} kg &nbsp;|&nbsp;
-       <strong>Fecha:</strong> ${new Date().toLocaleDateString()}</p>
-    <table>
-      <tr><th>Ingrediente</th><th>Base (${kgRubBase}kg)</th><th>Para ${kgCarne.toFixed(2)}kg</th></tr>
-      ${rubFilas.map(f => {
-        const gr = parseFloat(f.gramos || 0);
-        return `<tr><td>${f.ingrediente_nombre}</td><td>${gr.toFixed(1)} g</td><td><strong>${(gr * escala).toFixed(1)} g</strong></td></tr>`;
-      }).join('')}
-      <tr class="total"><td>TOTAL</td>
-        <td>${rubFilas.reduce((s,f)=>s+parseFloat(f.gramos||0),0).toFixed(1)} g</td>
-        <td>${(rubFilas.reduce((s,f)=>s+parseFloat(f.gramos||0),0)*escala).toFixed(1)} g</td>
-      </tr>
-    </table>
-    <p class="nota">Fórmula base para ${kgRubBase} kg de carne → multiplicada × ${escala.toFixed(2)} para ${kgCarne.toFixed(2)} kg</p>
-    </body></html>`;
-    const w = window.open('', '_blank');
-    w.document.write(html);
-    w.document.close();
-    setTimeout(() => w.print(), 400);
-  }
-
-  async function confirmarHorneado() {
-    const cfg       = modalHorneado?.cfg || {};
-    const kgCarne   = modalHorneado?.kgCarne || 0;
-    const kgMadLote = modalHorneado?.kgMad || 0;
-    const kgRubBase = parseFloat(cfg.kg_rub_base || 1);
-    const kgMostaza = (parseFloat(cfg.gramos_mostaza || 0) / 1000) * kgCarne;
-    const kgRub     = (rubFilas.reduce((s, f) => s + parseFloat(f.gramos || 0), 0) / 1000) * (kgRubBase > 0 ? kgCarne / kgRubBase : 1);
-    const kgHorno   = parseFloat(hrnHornoKg) || 0; // peso real medido → inventario
-
-    if (kgHorno <= 0) { setErrorHorneado('Ingresa el peso final listo para rebanar'); return; }
-    if (kgHorno > kgMadLote) { setErrorHorneado('El peso no puede ser mayor al que entró al horno'); return; }
-
-    const costoMostaza    = kgMostaza * parseFloat(mpMostaza?.precio_kg || 0);
-    const costoRub        = kgRub * rubCostoKg;
-
-    // Créditos/mermas de sub-productos del wizard
-    const spCfgHz = cfg.subproductos || {};
-    let creditoWizard = 0;
-    let kgFinalAjust  = kgHorno;
-    for (const fase of ['mostaza', 'rub', 'horneado']) {
-      const faseRaw = spCfgHz[fase];
-      if (!faseRaw) continue;
-      const isNew = 'perdida' in faseRaw || 'nueva_mp' in faseRaw || 'mp_existente' in faseRaw;
-      const tiposData = isNew ? faseRaw : { [faseRaw.tipo || 'perdida']: { ...faseRaw } };
-      for (const tipo of ['perdida', 'nueva_mp', 'mp_existente']) {
-        const sp   = tiposData[tipo];
-        if (!sp?.activo) continue;
-        const kgSp = parseFloat(spWizardKgs[`${fase}_${tipo}`] || 0);
-        if (kgSp <= 0) continue;
-        if (tipo === 'perdida') {
-          kgFinalAjust = Math.max(0, kgFinalAjust - kgSp);
-        } else {
-          const precio = tipo === 'nueva_mp' ? parseFloat(sp.precio_kg || 0) : parseFloat(sp.precio_kg_ref || sp.precio_kg || 0);
-          creditoWizard += kgSp * precio;
-          kgFinalAjust   = Math.max(0, kgFinalAjust - kgSp);
-        }
-      }
-    }
-
-    const costoFinalTotal = modalHorneado.costoTotal + costoMostaza + costoRub - creditoWizard - (modalHorneado.creditoIny || 0);
-    const cFinalKg        = kgFinalAjust > 0 ? costoFinalTotal / kgFinalAjust : 0;
-
-    // Merma real
-    const mermaHornoKg    = kgMadLote - kgHorno;
-    const mermaHornoReal  = kgMadLote > 0 ? mermaHornoKg / kgMadLote * 100 : 0;
-
-    setGuardHorneado(true);
-    setErrorHorneado('');
-    try {
-      const hoy      = new Date().toISOString().split('T')[0];
-      const mpNombre = modalHorneado.productoNombre || 'Producto Horneado';
-
-      // 1. Guardar produccion_horneado_lotes
-      await supabase.from('produccion_horneado_lotes').insert({
-        lote_id:           modalHorneado.loteId,
-        fecha:             hoy,
-        producto_nombre:   mpNombre,
-        kg_mostaza:        kgMostaza,
-        costo_mostaza:     costoMostaza,
-        kg_rub:            kgRub,
-        costo_rub:         costoRub,
-        kg_entrada_horno:  kgMadLote,
-        kg_post_horno:     kgFinalAjust,
-        merma_horno_kg:    mermaHornoKg,
-        merma_horno_pct:   mermaHornoReal,
-        kg_post_reposo:    kgFinalAjust,
-        merma_reposo_kg:   0,
-        merma_reposo_pct:  0,
-        c_final_kg:        cFinalKg,
-        subproductos_real: { ...(modalHorneado.spInyeccionReal || {}), ...spRealesData, ...spWizardKgs },
-      });
-      setSpRealesData({});
-
-      // 2. Buscar o crear MP del producto en AHUMADOS-HORNEADOS (genérico)
-      const { data: mpExist } = await supabase.from('materias_primas')
-        .select('id').ilike('nombre', `%${mpNombre}%`).eq('categoria', 'AHUMADOS - HORNEADOS').maybeSingle();
-      let mpPastrameId;
-      if (mpExist) {
-        mpPastrameId = mpExist.id;
-        await supabase.from('materias_primas').update({ precio_kg: cFinalKg }).eq('id', mpPastrameId);
-      } else {
-        // Generar ID dinámico AHU00N
-        const { data: existIds } = await supabase.from('materias_primas').select('id').ilike('id', 'AHU%');
-        const nums = (existIds || []).map(m => parseInt((m.id || '').replace(/\D/g,'') || '0')).filter(n => !isNaN(n));
-        const nextNum = nums.length > 0 ? Math.max(...nums) + 1 : 1;
-        const newId = 'AHU' + String(nextNum).padStart(3, '0');
-        const { data: nueva } = await supabase.from('materias_primas').insert({
-          id: newId, nombre: mpNombre, nombre_producto: mpNombre,
-          categoria: 'AHUMADOS - HORNEADOS', precio_kg: cFinalKg,
-          tipo: 'MATERIAS PRIMAS', estado: 'ACTIVO', eliminado: false,
-        }).select('id').single();
-        mpPastrameId = nueva?.id || newId;
-      }
-
-      // 3. Sumar a inventario_mp (kg real medido)
-      const { data: inv } = await supabase.from('inventario_mp')
-        .select('id,stock_kg').eq('materia_prima_id', mpPastrameId).maybeSingle();
-      if (inv) {
-        await supabase.from('inventario_mp').update({ stock_kg: (inv.stock_kg || 0) + kgHorno }).eq('id', inv.id);
-      } else {
-        await supabase.from('inventario_mp').insert({ materia_prima_id: mpPastrameId, stock_kg: kgHorno, nombre: mpNombre });
-      }
-
-      // 4. Movimiento ENTRADA Pastrame
-      await supabase.from('inventario_movimientos').insert({
-        materia_prima_id: mpPastrameId, nombre_mp: mpNombre,
-        tipo: 'entrada', kg: kgHorno,
-        motivo: `Horneado ${mpNombre} — Lote ${modalHorneado.loteId} · $${cFinalKg.toFixed(4)}/kg`,
-        usuario_nombre: currentUser?.email || '', user_id: currentUser?.id || null, fecha: hoy,
-      });
-
-      // 5. Actualizar stock_lotes_inyectados con costos finales + guardar pasos en bloques_resultado
-      await supabase.from('stock_lotes_inyectados')
-        .update({ costo_total: costoFinalTotal, costo_mad_kg: cFinalKg, kg_inicial: kgFinalAjust, kg_disponible: kgFinalAjust, materia_prima_id: mpPastrameId })
-        .eq('lote_id', modalHorneado.loteId);
-      const { data: lotesMadRow } = await supabase
-        .from('lotes_maduracion').select('id, bloques_resultado').eq('lote_id', modalHorneado.loteId).maybeSingle();
-      if (lotesMadRow) {
-        const exBloques = lotesMadRow.bloques_resultado || {};
-        const pasosM2 = [
-          ...(costoMostaza > 0 ? [{ tipo: 'adicional', kgEntrada: kgCarne, kgSalida: kgCarne, costoAcum: modalHorneado.costoTotal + costoMostaza }] : []),
-          ...(costoRub > 0      ? [{ tipo: 'rub',       kgEntrada: kgCarne, kgSalida: kgCarne, costoAcum: modalHorneado.costoTotal + costoMostaza + costoRub }] : []),
-          { tipo: 'horneado', kgEntrada: kgMadLote, kgSalida: kgFinalAjust, costoAcum: costoFinalTotal, kgMermaReal: mermaHornoKg },
-        ];
-        await supabase.from('lotes_maduracion').update({
-          bloques_resultado: { ...exBloques, momento: 'completado', pasos: [...(exBloques.pasos || []), ...pasosM2] },
-        }).eq('id', lotesMadRow.id);
-      }
-
-      // 6. Sub-productos del wizard → inventario (solo créditos, no pérdidas)
-      for (const fase of ['mostaza', 'rub', 'horneado']) {
-        const faseRaw = spCfgHz[fase];
-        if (!faseRaw) continue;
-        const isNew2 = 'perdida' in faseRaw || 'nueva_mp' in faseRaw || 'mp_existente' in faseRaw;
-        const tiposData2 = isNew2 ? faseRaw : { [faseRaw.tipo || 'perdida']: { ...faseRaw } };
-        for (const tipo of ['nueva_mp', 'mp_existente']) {
-        const sp   = tiposData2[tipo];
-        if (!sp?.activo) continue;
-        const kgSp = parseFloat(spWizardKgs[`${fase}_${tipo}`] || 0);
-        if (kgSp <= 0) continue;
-        let mpSpId = null; let mpSpNom = sp.nombre || fase;
-        if (tipo === 'mp_existente' && sp.mp_id) {
-          mpSpId = sp.mp_id;
-          const { data: mpD } = await supabase.from('materias_primas').select('nombre,nombre_producto').eq('id', sp.mp_id).maybeSingle();
-          mpSpNom = mpD?.nombre_producto || mpD?.nombre || sp.mp_id;
-        } else if (tipo === 'nueva_mp' && sp.nombre) {
-          const { data: mpEx } = await supabase.from('materias_primas').select('id').ilike('nombre', sp.nombre).maybeSingle();
-          if (mpEx) { mpSpId = mpEx.id; } else {
-            const { data: nv } = await supabase.from('materias_primas').insert({
-              nombre: sp.nombre, nombre_producto: sp.nombre, categoria: 'SUB-PRODUCTOS',
-              precio_kg: parseFloat(sp.precio_kg || 0), tipo: 'MATERIAS PRIMAS', estado: 'ACTIVO', eliminado: false,
-            }).select('id').single();
-            mpSpId = nv?.id;
-          }
-          mpSpNom = sp.nombre;
-        }
-        if (mpSpId) {
-          const { data: invSp } = await supabase.from('inventario_mp').select('id,stock_kg').eq('materia_prima_id', mpSpId).maybeSingle();
-          if (invSp) {
-            await supabase.from('inventario_mp').update({ stock_kg: (invSp.stock_kg || 0) + kgSp }).eq('id', invSp.id);
-          } else {
-            await supabase.from('inventario_mp').insert({ materia_prima_id: mpSpId, stock_kg: kgSp, nombre: mpSpNom });
-          }
-          await supabase.from('inventario_movimientos').insert({
-            materia_prima_id: mpSpId, nombre_mp: mpSpNom, tipo: 'entrada', kg: kgSp,
-            motivo: `Sub-producto ${fase}/${tipo} — Lote ${modalHorneado.loteId}`,
-            usuario_nombre: currentUser?.email || '', user_id: currentUser?.id || null, fecha: hoy,
-          });
-        }
-        } // end for tipo
-      } // end for fase
-      setSpWizardKgs({});
-
-      // 6. Notificación imprevisto al admin
-      if (imprevisto.activo && imprevisto.motivo.trim()) {
-        const kgDan = parseFloat(imprevisto.kgDaniado) || 0;
-        await crearNotificacion({
-          tipo:           'imprevisto_horneado',
-          origen:         'produccion',
-          usuario_nombre: currentUser?.email || 'Producción',
-          user_id:        currentUser?.id || null,
-          producto_nombre: mpNombre,
-          mensaje: `⚠️ IMPREVISTO — Lote ${modalHorneado.loteId} · ${mpNombre}\n` +
-                   (kgDan > 0 ? `Kg dañados: ${kgDan.toFixed(3)} kg\n` : '') +
-                   `Motivo: ${imprevisto.motivo.trim()}`,
-        });
-      }
-
-      setModalHorneado(null);
-      setImprevisto({ activo: false, kgDaniado: '', motivo: '' });
-      setExito(`✅ ${mpNombre} — ${kgHorno.toFixed(3)} kg · C_final $${cFinalKg.toFixed(4)}/kg → Stock AHUMADOS`);
-      setTimeout(() => setExito(''), 10000);
-    } catch (e) {
-      setErrorHorneado('Error: ' + e.message);
-    }
-    setGuardHorneado(false);
-  }
-
   async function confirmarDeshuese() {
     const entries = modalDeshuese || [];
     const precioResS   = parseFloat(mpDeshuese.resS?.precio_kg  || 0);
@@ -2063,330 +1530,6 @@ export default function TabMaduracion({ mobile, currentUser }) {
         </div>
       )}
 
-      {/* ══ Modal Horneado — Pastrame — Wizard 3 pasos ══ */}
-      {modalHorneado && (() => {
-        const { loteId, kgMad, kgCarne, costoTotal, cMadKg, cfg } = modalHorneado;
-        const kgRubBase   = parseFloat(cfg.kg_rub_base || 1);
-        const escala      = kgRubBase > 0 ? kgCarne / kgRubBase : 1;
-        const kgMostazaAuto = (parseFloat(cfg.gramos_mostaza || 0) / 1000) * kgCarne;
-        const costoMosAuto  = kgMostazaAuto * parseFloat(mpMostaza?.precio_kg || 0);
-        const totalRubGr    = rubFilas.reduce((s, f) => s + parseFloat(f.gramos || 0), 0);
-        const kgRubAuto     = (totalRubGr / 1000) * escala;
-        const costoRubAuto  = kgRubAuto * rubCostoKg;
-
-        // Sub-productos del wizard (mostaza, rub, horneado) — múltiples tipos por fase
-        const spCfg = cfg.subproductos || {};
-
-        const renderSpWizard = (fase) => {
-          const faseRaw = spCfg[fase];
-          if (!faseRaw) return null;
-          const isNew = 'perdida' in faseRaw || 'nueva_mp' in faseRaw || 'mp_existente' in faseRaw;
-          const tiposData = isNew ? faseRaw : { [faseRaw.tipo || 'perdida']: { ...faseRaw } };
-          const items = ['perdida', 'nueva_mp', 'mp_existente']
-            .filter(t => tiposData[t]?.activo)
-            .map(tipo => ({ tipo, sp: tiposData[tipo] }));
-          if (items.length === 0) return null;
-          return items.map(({ tipo, sp }) => {
-            const key = `${fase}_${tipo}`;
-            const kgR = parseFloat(spWizardKgs[key] || 0);
-            const precio = tipo === 'perdida' ? 0 : tipo === 'nueva_mp' ? parseFloat(sp.precio_kg || 0) : parseFloat(sp.precio_kg_ref || sp.precio_kg || 0);
-            const valorRec = kgR * precio;
-            const esPerd = tipo === 'perdida';
-            const nombre = tipo === 'nueva_mp' ? sp.nombre : tipo === 'mp_existente' ? (sp.nombre || fase) : 'Merma';
-            const color = esPerd ? '#e74c3c' : '#27ae60';
-            return (
-              <div key={key} style={{ background: esPerd ? '#fff5f5' : '#f0fff8', border: `1.5px solid ${esPerd ? '#f5b7b1' : '#a9dfbf'}`, borderRadius: 10, padding: '12px 14px', marginTop: 10 }}>
-                <div style={{ fontWeight: 700, fontSize: 13, color, marginBottom: 4 }}>
-                  {esPerd ? '❌' : '📦'} {nombre || fase}
-                  <span style={{ fontSize: 11, fontWeight: 400, color: '#888', marginLeft: 8 }}>
-                    {esPerd ? 'Pérdida total' : tipo === 'mp_existente' ? '→ entra a inventario' : '→ nueva MP en inventario'}
-                  </span>
-                </div>
-                <div style={{ fontSize: 11, color: '#888', marginBottom: 8 }}>
-                  {esPerd ? '¿Cuántos kg de merma real hubo en esta fase?' : `¿Cuántos kg de ${nombre} obtuviste?`}
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <input type="number" min="0" step="0.001"
-                    value={spWizardKgs[key] ?? ''}
-                    onChange={e => setSpWizardKgs(prev => ({ ...prev, [key]: e.target.value }))}
-                    placeholder="0.000"
-                    style={{ flex: 1, padding: '8px 12px', borderRadius: 7, border: `1.5px solid ${color}`, fontSize: 15, fontWeight: 'bold', textAlign: 'right', outline: 'none' }} />
-                  <span style={{ fontWeight: 700, color: '#555' }}>kg</span>
-                </div>
-                {kgR > 0 && !esPerd && precio > 0 && (
-                  <div style={{ fontSize: 11, color: '#27ae60', fontWeight: 700, marginTop: 6 }}>
-                    💰 {kgR.toFixed(3)} × ${precio.toFixed(4)}/kg = ${valorRec.toFixed(4)} recuperado
-                  </div>
-                )}
-                {kgR > 0 && esPerd && (
-                  <div style={{ fontSize: 11, color: '#e74c3c', fontWeight: 700, marginTop: 6 }}>
-                    ❌ {kgR.toFixed(3)} kg de merma — sube el costo/kg
-                  </div>
-                )}
-              </div>
-            );
-          });
-        };
-
-        // Paso 3 derived — misma fórmula que confirmarHorneado (resta creditoIny una vez)
-        const kgHorno         = parseFloat(hrnHornoKg) || 0;
-        const costoFinalTotal = costoTotal + costoMosAuto + costoRubAuto - (modalHorneado?.creditoIny || 0);
-        const cFinal          = kgHorno > 0 ? costoFinalTotal / kgHorno : 0;
-        const mHorno          = kgMad > 0 ? ((kgMad - kgHorno) / kgMad * 100) : 0;
-        const listo3          = kgHorno > 0 && kgHorno <= kgMad;
-
-        const hasMostaza = kgMostazaAuto > 0;
-        const hasRub     = !!cfg.formula_rub && rubFilas.length > 0;
-        const PASO_COLORS = { 1: '#e67e22', 2: '#8e44ad', 3: '#e74c3c' };
-        const pasoColor = PASO_COLORS[horneadoPaso] || '#e74c3c';
-        const tabsActivos = [
-          ...(hasMostaza ? [{ n: 1, label: 'Mostaza' }] : []),
-          ...(hasRub     ? [{ n: 2, label: 'Rub'     }] : []),
-          { n: 3, label: 'Horno' },
-        ];
-
-        return (
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-            <div style={{ background: 'white', borderRadius: 18, padding: 24, width: '100%', maxWidth: 500, boxShadow: '0 8px 36px rgba(0,0,0,0.35)', maxHeight: '94vh', overflowY: 'auto' }}>
-
-              {/* Encabezado */}
-              <div style={{ fontWeight: 'bold', fontSize: 17, color: '#1a1a2e', marginBottom: 2 }}>🔥 {modalHorneado?.productoNombre || 'Horneado'}</div>
-              <div style={{ fontSize: 12, color: '#888', marginBottom: 14 }}>
-                Lote <b>{loteId}</b> · <b>{kgMad.toFixed(3)} kg</b> · <b>{kgCarne.toFixed(3)} kg carne</b> · C_mad <b>${cMadKg.toFixed(4)}/kg</b>
-              </div>
-
-              {/* Indicador de pasos — solo pasos configurados */}
-              <div style={{ display: 'flex', gap: 6, marginBottom: 20 }}>
-                {tabsActivos.map(({ n, label }, i) => {
-                  const color = PASO_COLORS[n] || '#e74c3c';
-                  const isActive  = horneadoPaso === n;
-                  const isDone    = horneadoPaso > n;
-                  return (
-                    <div key={n} style={{
-                      flex: 1, textAlign: 'center', padding: '6px 4px', borderRadius: 8, fontSize: 11, fontWeight: 700,
-                      background: isActive ? color : isDone ? '#d5f5e3' : '#f0f2f5',
-                      color: isActive ? 'white' : isDone ? '#1e8449' : '#aaa',
-                      border: isActive ? `2px solid ${color}` : '2px solid transparent',
-                    }}>
-                      {i + 1} · {label}{isDone && ' ✓'}
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* ───── PASO 1: Mostaza ───── */}
-              {horneadoPaso === 1 && (
-                <div>
-                  <div style={{ background: '#fffbf0', borderRadius: 12, padding: 16, border: '2px solid #f39c12', marginBottom: 18 }}>
-                    <div style={{ fontWeight: 700, color: '#e67e22', fontSize: 12, marginBottom: 12 }}>FASE 3 — MOSTAZA (agente de adherencia)</div>
-
-                    {/* Proporción calculada */}
-                    <div style={{ background: 'white', borderRadius: 8, padding: '12px 14px', border: '1px solid #f8c471' }}>
-                      <div style={{ fontSize: 11, color: '#999', marginBottom: 6 }}>PROPORCIÓN AUTOMÁTICA</div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                        <span style={{ fontSize: 12, color: '#555' }}>Tasa</span>
-                        <span style={{ fontWeight: 700, color: '#e67e22' }}>{parseFloat(cfg.gramos_mostaza || 0).toFixed(0)} g / kg carne</span>
-                      </div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                        <span style={{ fontSize: 12, color: '#555' }}>Kg de carne</span>
-                        <span style={{ fontWeight: 700 }}>{kgCarne.toFixed(3)} kg</span>
-                      </div>
-                      <div style={{ borderTop: '1px dashed #f8c471', marginTop: 8, paddingTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: 13, fontWeight: 700, color: '#e67e22' }}>Mostaza a aplicar</span>
-                        <span style={{ fontSize: 22, fontWeight: 900, color: '#e67e22' }}>{(kgMostazaAuto * 1000).toFixed(0)} g</span>
-                      </div>
-                      <div style={{ fontSize: 11, color: '#aaa', textAlign: 'right', marginTop: 2 }}>= {kgMostazaAuto.toFixed(3)} kg</div>
-                    </div>
-
-                    {mpMostaza && (
-                      <div style={{ marginTop: 10, display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
-                        <span style={{ color: '#888' }}>{mpMostaza.nombre} · ${parseFloat(mpMostaza.precio_kg||0).toFixed(4)}/kg</span>
-                        <span style={{ fontWeight: 700, color: '#e67e22' }}>Costo: ${costoMosAuto.toFixed(4)}</span>
-                      </div>
-                    )}
-                  </div>
-                  {renderSpWizard('mostaza')}
-
-                  <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
-                    <button onClick={registrarMostaza} disabled={guardHorneado} style={{
-                      background: guardHorneado ? '#aaa' : 'linear-gradient(135deg,#e67e22,#f39c12)',
-                      color: 'white', border: 'none', borderRadius: 8,
-                      padding: '11px 26px', cursor: guardHorneado ? 'default' : 'pointer',
-                      fontSize: 14, fontWeight: 'bold'
-                    }}>{guardHorneado ? 'Registrando...' : '✅ Registrar y continuar'}</button>
-                  </div>
-                </div>
-              )}
-
-              {/* ───── PASO 2: Rub ───── */}
-              {horneadoPaso === 2 && (
-                <div>
-                  <div style={{ background: '#f5f0ff', borderRadius: 12, padding: 16, border: '2px solid #8e44ad', marginBottom: 18 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                      <div style={{ fontWeight: 700, color: '#8e44ad', fontSize: 12 }}>FASE 4 — {cfg.formula_rub || 'Rub'}</div>
-                      <button onClick={imprimirRub} style={{
-                        background: '#8e44ad', color: 'white', border: 'none', borderRadius: 6,
-                        padding: '5px 12px', fontSize: 11, cursor: 'pointer', fontWeight: 700
-                      }}>🖨️ Imprimir</button>
-                    </div>
-
-                    {/* Encabezado tabla */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: '4px 12px', fontSize: 10, fontWeight: 700, color: '#9b59b6', borderBottom: '1.5px solid #d7bde2', paddingBottom: 4, marginBottom: 6 }}>
-                      <span>INGREDIENTE</span>
-                      <span style={{ textAlign: 'right' }}>BASE ({kgRubBase}kg)</span>
-                      <span style={{ textAlign: 'right' }}>PARA {kgCarne.toFixed(2)}kg</span>
-                    </div>
-
-                    {rubFilas.length === 0 && (
-                      <div style={{ fontSize: 12, color: '#aaa', padding: '10px 0' }}>Sin fórmula Rub cargada</div>
-                    )}
-
-                    {rubFilas.map((f, i) => {
-                      const grBase   = parseFloat(f.gramos || 0);
-                      const grEscala = grBase * escala;
-                      return (
-                        <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: '2px 12px', fontSize: 12, padding: '4px 0', borderBottom: '1px solid #e8daef' }}>
-                          <span style={{ color: '#333' }}>{f.ingrediente_nombre}</span>
-                          <span style={{ textAlign: 'right', color: '#888' }}>{grBase.toFixed(1)} g</span>
-                          <span style={{ textAlign: 'right', fontWeight: 700, color: '#6c3483' }}>{grEscala.toFixed(1)} g</span>
-                        </div>
-                      );
-                    })}
-
-                    {/* Total */}
-                    {rubFilas.length > 0 && (
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', gap: '2px 12px', fontSize: 13, padding: '8px 0 0', fontWeight: 700, borderTop: '1.5px solid #d7bde2', marginTop: 4 }}>
-                        <span style={{ color: '#6c3483' }}>TOTAL</span>
-                        <span style={{ textAlign: 'right', color: '#9b59b6' }}>{totalRubGr.toFixed(1)} g</span>
-                        <span style={{ textAlign: 'right', color: '#6c3483' }}>{(totalRubGr * escala).toFixed(1)} g</span>
-                      </div>
-                    )}
-
-                    <div style={{ marginTop: 10, display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
-                      <span style={{ color: '#888' }}>Costo Rub: ${rubCostoKg.toFixed(4)}/kg</span>
-                      <span style={{ fontWeight: 700, color: '#8e44ad' }}>Total: ${costoRubAuto.toFixed(4)}</span>
-                    </div>
-                  </div>
-                  {renderSpWizard('rub')}
-
-                  <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 14 }}>
-                    {hasMostaza && <button onClick={() => setHorneadoPaso(1)} style={{ background: '#f0f2f5', border: 'none', borderRadius: 8, padding: '10px 16px', cursor: 'pointer', fontSize: 13 }}>← Atrás</button>}
-                    <button onClick={registrarRub} disabled={guardHorneado} style={{
-                      background: guardHorneado ? '#aaa' : 'linear-gradient(135deg,#8e44ad,#6c3483)',
-                      color: 'white', border: 'none', borderRadius: 8,
-                      padding: '11px 26px', cursor: guardHorneado ? 'default' : 'pointer',
-                      fontSize: 14, fontWeight: 'bold'
-                    }}>{guardHorneado ? 'Registrando...' : '✅ Registrar y continuar'}</button>
-                  </div>
-                </div>
-              )}
-
-              {/* ───── PASO 3: Horno ───── */}
-              {horneadoPaso === 3 && (
-                <div>
-                  {/* Input peso real */}
-                  <div style={{ background: '#fff3f0', borderRadius: 12, padding: 20, border: '2px solid #e74c3c', marginBottom: 14 }}>
-                    <div style={{ fontWeight: 700, color: '#e74c3c', fontSize: 12, marginBottom: 12 }}>FASE 5 — HORNEADO (110°C → 70°C int → 92°C int)</div>
-                    <label style={{ fontSize: 12, color: '#555', fontWeight: 600 }}>Kg listo para rebanar (post-horno + reposo) *</label>
-                    <input type="number" min="0" step="0.001" placeholder={`máx ${kgMad.toFixed(3)}`} value={hrnHornoKg}
-                      onChange={e => setHrnHornoKg(e.target.value)}
-                      style={{ width: '100%', padding: '12px 14px', borderRadius: 8, border: '2px solid #e74c3c', fontSize: 18, fontWeight: 'bold', boxSizing: 'border-box', marginTop: 6 }} />
-                    {kgHorno > 0 && (
-                      <div style={{ fontSize: 12, color: kgHorno > kgMad ? '#e74c3c' : '#888', marginTop: 6 }}>
-                        Merma real: <b>{(kgMad - kgHorno).toFixed(3)} kg ({mHorno.toFixed(1)}%)</b>
-                        {kgHorno > kgMad && ' ⚠️ Excede peso de entrada'}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Resumen costos */}
-                  {kgHorno > 0 && (
-                    <div style={{ background: '#1a1a2e', borderRadius: 10, padding: '12px 16px', marginBottom: 14 }}>
-                      <div style={{ fontSize: 11, color: '#aaa', fontWeight: 700, marginBottom: 8 }}>RESUMEN DE COSTOS</div>
-                      {[
-                        ['Carne + Salmuera (C_mad)', `$${costoTotal.toFixed(4)}`, '#7ec8f7'],
-                        ['Mostaza', `+$${costoMosAuto.toFixed(4)}`, '#f39c12'],
-                        [cfg.formula_rub || 'Rub', `+$${costoRubAuto.toFixed(4)}`, '#c39bd3'],
-                        ['Merma total', `${mHorno.toFixed(1)}%`, '#e74c3c'],
-                      ].map(([l, v, c]) => (
-                        <div key={l} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
-                          <span style={{ color: '#888' }}>{l}</span>
-                          <span style={{ color: c, fontWeight: 600 }}>{v}</span>
-                        </div>
-                      ))}
-                      <div style={{ borderTop: '1px solid #333', marginTop: 8, paddingTop: 8, display: 'flex', justifyContent: 'space-between' }}>
-                        <span style={{ fontSize: 13, fontWeight: 700, color: '#a9dfbf' }}>Peso final ({kgHorno.toFixed(3)} kg)</span>
-                        <span style={{ fontSize: 14, fontWeight: 900, color: '#a9dfbf' }}>C_final = ${cFinal.toFixed(4)}/kg</span>
-                      </div>
-                    </div>
-                  )}
-
-                  {renderSpWizard('horneado')}
-
-                  {/* Imprevistos — sección desplegable */}
-                  <div style={{ marginBottom: 14 }}>
-                    <button
-                      onClick={() => setImprevisto(p => ({ ...p, activo: !p.activo }))}
-                      style={{
-                        width: '100%', textAlign: 'left', padding: '10px 14px',
-                        background: imprevisto.activo ? '#fff3e0' : '#f8f8f8',
-                        border: imprevisto.activo ? '1.5px solid #e67e22' : '1.5px solid #ddd',
-                        borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600,
-                        color: imprevisto.activo ? '#e67e22' : '#555',
-                        display: 'flex', justifyContent: 'space-between', alignItems: 'center'
-                      }}>
-                      <span>⚠️ ¿Ocurrió algún imprevisto?</span>
-                      <span style={{ fontSize: 16 }}>{imprevisto.activo ? '▲' : '▼'}</span>
-                    </button>
-
-                    {imprevisto.activo && (
-                      <div style={{ border: '1.5px solid #e67e22', borderTop: 'none', borderRadius: '0 0 8px 8px', padding: '14px', background: '#fffbf5' }}>
-                        <p style={{ fontSize: 12, color: '#7d6608', margin: '0 0 10px' }}>
-                          Si algo salió mal (daño en producto, falla de equipo, etc.) registralo aquí. Se enviará un aviso al administrador.
-                        </p>
-                        <div style={{ display: 'flex', gap: 10, marginBottom: 10, alignItems: 'center' }}>
-                          <label style={{ fontSize: 12, color: '#555', fontWeight: 600, whiteSpace: 'nowrap' }}>Kg dañados:</label>
-                          <input
-                            type="number" min="0" step="0.001" placeholder="0.000"
-                            value={imprevisto.kgDaniado}
-                            onChange={e => setImprevisto(p => ({ ...p, kgDaniado: e.target.value }))}
-                            style={{ width: 100, padding: '7px 10px', borderRadius: 7, border: '1.5px solid #e67e22', fontSize: 13, fontWeight: 'bold' }}
-                          />
-                          <span style={{ fontSize: 11, color: '#999' }}>(dejar en 0 si no hay pérdida de kg)</span>
-                        </div>
-                        <textarea
-                          placeholder="Describe el imprevisto: qué pasó, por qué, consecuencias..."
-                          value={imprevisto.motivo}
-                          onChange={e => setImprevisto(p => ({ ...p, motivo: e.target.value }))}
-                          rows={3}
-                          style={{ width: '100%', padding: '8px 10px', borderRadius: 7, border: '1.5px solid #e67e22', fontSize: 13, boxSizing: 'border-box', resize: 'vertical', fontFamily: 'Arial' }}
-                        />
-                      </div>
-                    )}
-                  </div>
-
-                  {errorHorneado && (
-                    <div style={{ background: '#ffeaea', border: '1px solid #e74c3c', borderRadius: 8, padding: '10px 14px', color: '#e74c3c', fontSize: 13, marginBottom: 14 }}>{errorHorneado}</div>
-                  )}
-
-                  <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-                    {hasRub && <button onClick={() => setHorneadoPaso(2)} style={{ background: '#f0f2f5', border: 'none', borderRadius: 8, padding: '10px 16px', cursor: 'pointer', fontSize: 13 }}>← Atrás</button>}
-                    {!hasRub && hasMostaza && <button onClick={() => setHorneadoPaso(1)} style={{ background: '#f0f2f5', border: 'none', borderRadius: 8, padding: '10px 16px', cursor: 'pointer', fontSize: 13 }}>← Atrás</button>}
-                    <button onClick={confirmarHorneado} disabled={!listo3 || guardHorneado} style={{
-                      background: !listo3 || guardHorneado ? '#aaa' : 'linear-gradient(135deg,#e74c3c,#8e44ad)',
-                      color: 'white', border: 'none', borderRadius: 8, padding: '10px 24px',
-                      cursor: !listo3 || guardHorneado ? 'default' : 'pointer', fontSize: 13, fontWeight: 'bold'
-                    }}>
-                      {guardHorneado ? 'Guardando...' : '🔥 Confirmar Horneado'}
-                    </button>
-                  </div>
-                </div>
-              )}
-
-            </div>
-          </div>
-        );
-      })()}
 
       {/* ══ Modal Deshuese (NY → Lomo Bife / Rib Eye → Ojo de Bife) ══ */}
       {modalDeshuese && (() => {
@@ -2640,7 +1783,10 @@ export default function TabMaduracion({ mobile, currentUser }) {
               (modalPesaje.produccion_inyeccion?.produccion_inyeccion_cortes || []).map(p => {
                 const kgCarneReal = parseFloat(p.kg_carne_limpia || p.kg_carne_cruda || 0);
                 const kgSalModal  = parseFloat(p.kg_salmuera_asignada || 0);
-                const kgInj  = esInmModal ? kgCarneReal : kgCarneReal + kgSalModal;
+                const inyPasoModal = (modalPesaje.bloques_resultado?.pasos || []).find(paso => paso.tipo === 'inyeccion');
+                const kgInj  = inyPasoModal
+                  ? parseFloat(inyPasoModal.kgSalida || 0)
+                  : esInmModal ? kgCarneReal : kgCarneReal + kgSalModal;
                 const kgHoy  = parseFloat(pesajes[p.corte_nombre] || 0);
                 const diff   = kgHoy > 0 ? kgInj - kgHoy : null;
                 return (
