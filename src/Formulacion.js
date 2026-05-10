@@ -24,8 +24,7 @@ function Formulacion({ producto, onVolver, onVolverMenu, onAbrirMaterias, userRo
   const esFormulador = userRol?.rol === 'formulador';
   const esCorte      = producto?.categoria === 'Cortes' || producto?.categoria === 'CORTES';
   const catUp        = (producto?.categoria || '').replace(/[ÓÒÔ]/g,'O').toUpperCase();
-  const esBano       = catUp.includes('INMERSION') || catUp.includes('MARINAD');
-  const esHorneado   = producto?.categoria === 'AHUMADOS - HORNEADOS' || producto?.categoria === 'AHUMADOS-HORNEADOS';
+  const esBano       = catUp.includes('INMERSION') || catUp.includes('MARINAD') || catUp.includes('AHUMAD');
   const [versionesAbierto, setVersionesAbierto] = useState(false);
   const [tabVersiones,     setTabVersiones]     = useState('versiones');
   const [scanAbierto,      setScanAbierto]      = useState(false);
@@ -59,10 +58,6 @@ function Formulacion({ producto, onVolver, onVolverMenu, onAbrirMaterias, userRo
     return () => { if (onIngredientesFormula) onIngredientesFormula(null); };
   }, [f.ingredientesMP, f.ingredientesAD]);
 
-  // ── Vista horneado (AHUMADOS - HORNEADOS) ────────────────
-  if (esHorneado) return (
-    <VistaHorneado producto={producto} mobile={f.mobile} onVolver={onVolver} />
-  );
 
   // ── Vista corte (categoría Cortes / Inmersión / Marinados) ──
   if (esCorte || esBano) return (
@@ -72,7 +67,11 @@ function Formulacion({ producto, onVolver, onVolverMenu, onAbrirMaterias, userRo
           <button onClick={onVolver} style={{ background:'rgba(255,255,255,0.15)', color:'white', border:'none', borderRadius:8, padding:'7px 12px', cursor:'pointer', fontSize:13 }}>← Volver</button>
           <div>
             <div style={{ color:'white', fontWeight:'bold', fontSize:17 }}>{esBano ? '🛁' : '🥩'} {producto.nombre}</div>
-            <div style={{ color:'rgba(255,255,255,0.65)', fontSize:11 }}>{esBano ? (catUp.includes('MARINAD') ? 'Marinado — historial de costos' : 'Inmersión — historial de costos') : 'Corte de carne — historial de costos'}</div>
+            <div style={{ color:'rgba(255,255,255,0.65)', fontSize:11 }}>{esBano
+              ? catUp.includes('MARINAD') ? 'Marinado — historial de costos'
+              : catUp.includes('AHUMAD')  ? 'Ahumado/Horneado — historial de costos'
+              : 'Inmersión — historial de costos'
+              : 'Corte de carne — historial de costos'}</div>
           </div>
         </div>
       </div>
