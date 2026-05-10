@@ -22,7 +22,10 @@ export function calcBloques({ bloques, kgIni, precioCarne, precioKgSalmuera, cos
       const kgSal = kg * pct;
       const cSal  = kgSal * precioKgSalmuera;
       costoAcum  += cSal;
-      if (!esBano) kg += kgSal; // INMERSIÓN: el baño no aumenta el peso del producto
+      const pctPeso = b.pct_peso_inj != null
+        ? parseFloat(b.pct_peso_inj) / 100
+        : (esBano ? 0 : 1);
+      kg += kgSal * pctPeso;
       pasos.push({ tipo: 'inyeccion', label: `💉 Inyección ${b.pct_inj}%`, kg, costoAcum, kgSal, cSal });
 
     } else if (b.tipo === 'maduracion') {
@@ -193,7 +196,7 @@ export function BloquesDinamicosEditor({
   function addBloque(tipo) {
     const newId = () => Math.random().toString(36).slice(2, 9);
     const templates = {
-      inyeccion:   { tipo: 'inyeccion',   activo: true, formula_salmuera: '', pct_inj: 20, kg_sal_base: 2 },
+      inyeccion:   { tipo: 'inyeccion',   activo: true, formula_salmuera: '', pct_inj: 20, kg_sal_base: 2, pct_peso_inj: null },
       maduracion:  { tipo: 'maduracion',  activo: true, horas_mad: 72, minutos_mad: 0, pct_mad: 0, kg_salida_mad: 0 },
       rub:         { tipo: 'rub',         activo: true, formula_rub: '', kg_rub_base: 1 },
       adicional:   { tipo: 'adicional',   activo: true, mp_adicional_id: '', gramos_adicional: 0 },
@@ -352,6 +355,26 @@ export function BloquesDinamicosEditor({
                             </div>
                           </div>
                         )}
+                        <div style={{ marginTop: 8 }}>
+                          <label style={{ fontSize: 11, fontWeight: 600, color: meta.color, display: 'block', marginBottom: 4 }}>
+                            % que agrega peso
+                          </label>
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            value={b.pct_peso_inj ?? ''}
+                            disabled={!modoEdicion}
+                            placeholder="vacío = auto"
+                            onChange={e => {
+                              const val = e.target.value.replace(',', '.');
+                              updateBloque(b.id, { pct_peso_inj: val === '' ? null : parseFloat(val) || 0 });
+                            }}
+                            style={baseInputStyle({ border: `1.5px solid ${meta.color}` })}
+                          />
+                          <div style={{ fontSize: 10, color: '#888', marginTop: 3 }}>
+                            % de la salmuera que entra a la carne (vacío = 0% INMERSIÓN / 100% CORTES)
+                          </div>
+                        </div>
                       </div>
                     );
                   })()}
