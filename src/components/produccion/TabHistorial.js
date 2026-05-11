@@ -64,8 +64,8 @@ export default function TabHistorial({
         .select('*').order('fecha', { ascending: false }).limit(60),
       supabase.from('lotes_maduracion')
         .select(`*, lotes_maduracion_cortes(*),
-          produccion_inyeccion(formula_salmuera, producto_nombre, kg_carne_total, kg_salmuera_requerida, porcentaje_inyeccion,
-            produccion_inyeccion_cortes(corte_nombre, materia_prima_id, kg_carne_cruda, kg_carne_limpia, kg_salmuera_asignada, costo_carne, costo_salmuera_asignado)
+          produccion_inyeccion ( formula_salmuera, porcentaje_inyeccion, kg_carne_total, kg_salmuera_requerida,
+            produccion_inyeccion_cortes ( corte_nombre, materia_prima_id, kg_carne_cruda, kg_carne_limpia, kg_salmuera_asignada, costo_carne, costo_salmuera_asignado, costo_final_kg )
           )`)
         .eq('estado', 'completado')
         .order('fecha_entrada', { ascending: false })
