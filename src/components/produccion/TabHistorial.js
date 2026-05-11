@@ -6,6 +6,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../supabase';
 import { useRealtime } from '../../hooks/useRealtime';
 import { revertirLote } from '../../utils/revertirLote';
+import { prepararEdicionLote } from '../../utils/prepararEdicionLote';
+import WizardProduccionDinamica from './WizardProduccionDinamica';
 
 export default function TabHistorial({
   historialAgrupado,
@@ -15,10 +17,14 @@ export default function TabHistorial({
   recargarHistorial,
   currentUser,
   userRol,
+  horneadoCfgs = [],
+  onIrAMaduracion,
 }) {
   const [lotesInyeccion,   setLotesInyeccion]   = useState([]);
   const [lotesMaduracion,  setLotesMaduracion]  = useState([]);
   const [revirtiendo,      setRevirtiendo]      = useState(null); // lote_id en proceso
+  const [preparando,       setPreparando]       = useState(false);
+  const [wizardEdicion,    setWizardEdicion]    = useState(null);
   const [cierresDespacho,  setCierresDespacho]  = useState([]);
   const [cortesDespacho,   setCortesDespacho]   = useState([]);
   const [lotesHorneado,    setLotesHorneado]    = useState([]);
@@ -395,6 +401,23 @@ export default function TabHistorial({
     );
   }
 
+  async function handleEditarLote(lote) {
+    if (!window.confirm(
+      `¿Editar Lote ${lote.lote_id}?\n\n` +
+      `El lote se reabrirá con los valores anteriores precargados.\n` +
+      `Podrás corregir lo que esté mal y confirmar de nuevo.`
+    )) return;
+    setPreparando(true);
+    try {
+      const params = await prepararEdicionLote(lote, horneadoCfgs, currentUser);
+      setLotesMaduracion(prev => prev.filter(l => l.lote_id !== lote.lote_id));
+      setWizardEdicion(params);
+    } catch (e) {
+      alert('Error al preparar edición: ' + e.message);
+    }
+    setPreparando(false);
+  }
+
   async function handleRevertirLote(lote) {
     if (!window.confirm(
       `¿Revertir Lote ${lote.lote_id}?\n\nSe devolverán todos los kg al inventario.\nEl lote desaparecerá del historial.\n\nEsta acción no se puede deshacer.`
@@ -496,17 +519,31 @@ export default function TabHistorial({
                     )}
                   </div>
                   {puedeRevertir && (
-                    <button
-                      disabled={revirtiendo === lote.lote_id}
-                      onClick={() => handleRevertirLote(lote)}
-                      style={{
-                        background: 'none', border: '1.5px solid #e74c3c',
-                        color: '#e74c3c', borderRadius: 8, padding: '5px 12px',
-                        cursor: revirtiendo === lote.lote_id ? 'not-allowed' : 'pointer',
-                        fontSize: 11, fontWeight: 'bold', whiteSpace: 'nowrap', opacity: revirtiendo === lote.lote_id ? 0.6 : 1,
-                      }}>
-                      {revirtiendo === lote.lote_id ? '⏳' : '🔄 Revertir'}
-                    </button>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <button
+                        disabled={preparando}
+                        onClick={() => handleEditarLote(lote)}
+                        style={{
+                          background: 'none', border: '1.5px solid #2980b9',
+                          color: '#2980b9', borderRadius: 8, padding: '5px 12px',
+                          cursor: preparando ? 'not-allowed' : 'pointer',
+                          fontSize: 11, fontWeight: 'bold', whiteSpace: 'nowrap',
+                          opacity: preparando ? 0.6 : 1,
+                        }}>
+                        {preparando ? '⏳' : '✏️ Editar'}
+                      </button>
+                      <button
+                        disabled={revirtiendo === lote.lote_id}
+                        onClick={() => handleRevertirLote(lote)}
+                        style={{
+                          background: 'none', border: '1.5px solid #e74c3c',
+                          color: '#e74c3c', borderRadius: 8, padding: '5px 12px',
+                          cursor: revirtiendo === lote.lote_id ? 'not-allowed' : 'pointer',
+                          fontSize: 11, fontWeight: 'bold', whiteSpace: 'nowrap', opacity: revirtiendo === lote.lote_id ? 0.6 : 1,
+                        }}>
+                        {revirtiendo === lote.lote_id ? '⏳' : '🔄 Revertir'}
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>
@@ -986,6 +1023,34 @@ export default function TabHistorial({
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── Wizard de edición de lote ── */}
+      {wizardEdicion && (
+        <WizardProduccionDinamica
+          modo="momento1"
+          bloques={wizardEdicion.bloques}
+          bloquesHijo={wizardEdicion.bloquesHijo}
+          cfg={wizardEdicion.cfg}
+          kgInicial={wizardEdicion.kgInicial}
+          precioCarne={wizardEdicion.precioCarne}
+          currentUser={currentUser}
+          mpsFormula={[]}
+          esBano={wizardEdicion.esBano}
+          savedLoteId={wizardEdicion.savedLoteId}
+          valoresPrevios={wizardEdicion.valoresPrevios}
+          valoresPreviosHijo={wizardEdicion.valoresPreviosHijo}
+          onComplete={() => {
+            setWizardEdicion(null);
+            if (onIrAMaduracion) onIrAMaduracion();
+          }}
+          onCancel={() => {
+            if (window.confirm('¿Cancelar la edición? El lote quedará en maduración sin completar.')) {
+              setWizardEdicion(null);
+              if (onIrAMaduracion) onIrAMaduracion();
+            }
+          }}
+        />
       )}
 
       {/* ══ Modal editar cierre despacho ══ */}
