@@ -15,8 +15,17 @@ import { revertirLote } from './revertirLote';
  */
 export async function prepararEdicionLote(lote, horneadoCfgs, currentUser = null) {
   // ── 1. Recopilar datos ANTES de revertir ──────────────────
-  const produccion   = lote.produccion_inyeccion;
-  const cortes       = produccion?.produccion_inyeccion_cortes || [];
+  // Cargar produccion + cortes frescos desde DB (no dependemos del join del historial)
+  const { data: produccionFresh, error: errProd0 } = await supabase
+    .from('produccion_inyeccion')
+    .select('*, produccion_inyeccion_cortes(*)')
+    .eq('id', lote.produccion_id)
+    .maybeSingle();
+  if (errProd0) throw new Error('Error cargando produccion: ' + errProd0.message);
+  if (!produccionFresh) throw new Error('Produccion no encontrada para este lote');
+
+  const produccion   = produccionFresh;
+  const cortes       = produccionFresh.produccion_inyeccion_cortes || [];
   const primerCorte  = cortes[0];
   const pasosPrev    = lote.bloques_resultado?.pasos || [];
   const formulaSal   = (produccion?.formula_salmuera || '').toLowerCase();
@@ -59,8 +68,8 @@ export async function prepararEdicionLote(lote, horneadoCfgs, currentUser = null
 
   // Sin transacción: si falla entre pasos 3-5, produccion_inyeccion queda huérfana.
   // El operario tendrá que limpiar manualmente o crear un nuevo lote.
-  // ── 2. Revertir el lote (borra todo) ─────────────────────
-  await revertirLote(lote.lote_id, currentUser);
+  // ── 2. Revertir el lote (borra todo) — usar id entero evita problemas con slashes en lote_id
+  await revertirLote(lote.lote_id, currentUser, lote.id);
 
   // ── 3. Re-crear produccion_inyeccion ──────────────────────
   const hoy = new Date().toISOString().split('T')[0];

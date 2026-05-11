@@ -9,17 +9,27 @@ import { registrarAuditoria } from './helpers';
  * - Registra en auditoría
  * Usa flag estado='revirtiendo' para recuperación ante crashes.
  */
-export async function revertirLote(loteId, currentUser) {
-  // 1. Marcar como 'revirtiendo' (flag de seguridad)
+// loteMadId opcional: id entero de lotes_maduracion para evitar filtro por lote_id (con slashes)
+export async function revertirLote(loteId, currentUser, loteMadId = null) {
+  // 1. Obtener datos del lote (usar id entero si disponible, evita problemas con slashes en lote_id)
+  let lote;
+  if (loteMadId) {
+    const { data } = await supabase.from('lotes_maduracion')
+      .select('id, produccion_id, fecha_entrada, lote_id')
+      .eq('id', loteMadId).maybeSingle();
+    lote = data;
+  } else {
+    const { data } = await supabase.from('lotes_maduracion')
+      .select('id, produccion_id, fecha_entrada, lote_id')
+      .eq('lote_id', loteId).maybeSingle();
+    lote = data;
+  }
+  if (!lote) return;
+
+  // 2. Marcar como 'revirtiendo' usando id entero (flag de seguridad para crash recovery)
   await supabase.from('lotes_maduracion')
     .update({ estado: 'revirtiendo' })
-    .eq('lote_id', loteId);
-
-  // 2. Obtener datos del lote
-  const { data: lote } = await supabase.from('lotes_maduracion')
-    .select('id, produccion_id, fecha_entrada, lote_id')
-    .eq('lote_id', loteId).maybeSingle();
-  if (!lote) return;
+    .eq('id', lote.id);
 
   const produccionId = lote.produccion_id;
 
@@ -77,11 +87,11 @@ export async function revertirLote(loteId, currentUser) {
 
   // 8. Eliminar stock_lotes_inyectados
   await supabase.from('stock_lotes_inyectados')
-    .delete().eq('lote_id', loteId);
+    .delete().eq('lote_id', lote.lote_id || loteId);
 
-  // 9. Eliminar lotes_maduracion
+  // 9. Eliminar lotes_maduracion (usar id entero)
   await supabase.from('lotes_maduracion')
-    .delete().eq('lote_id', loteId);
+    .delete().eq('id', lote.id);
 
   // 10. Eliminar produccion_inyeccion_cortes y produccion_inyeccion
   if (produccionId) {
