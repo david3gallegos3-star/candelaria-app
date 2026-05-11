@@ -169,19 +169,9 @@ const [modalSpPost,    setModalSpPost]    = useState(null); // {subproductos, lo
     async function detectarCrashes() {
       let huboRevert = false;
 
-      // Caso 0: flag 'revirtiendo' — revert manual interrumpido
-      const { data: revirtiendo } = await supabase.from('lotes_maduracion')
-        .select('lote_id').eq('estado', 'revirtiendo').limit(5);
-      for (const r of (revirtiendo || [])) {
-        await revertirLote(r.lote_id, null);
-        huboRevert = true;
-        setRecoveryMsg('⚠️ Se completó un revert interrumpido');
-      }
-
       // Caso 1: crash momento1 — lote madurando con bloques_resultado null
       for (const lote of (lotes || [])) {
         if (lote.bloques_resultado !== null) continue;
-        if (lote.estado === 'revirtiendo') continue; // Caso 0 ya lo maneja
         const formulaSal = (lote.produccion_inyeccion?.formula_salmuera || '').toLowerCase();
         const tieneBloques = (horneadoCfgs || []).some(hc =>
           (hc.config?.formula_salmuera || '').toLowerCase() === formulaSal &&

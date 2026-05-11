@@ -26,12 +26,6 @@ export async function revertirLote(loteId, currentUser, loteMadId = null) {
   }
   if (!lote) return;
 
-  // 2. Marcar como 'revirtiendo' (flag crash recovery — omitir si falla por trigger/constraint)
-  await supabase.from('lotes_maduracion')
-    .update({ estado: 'revirtiendo' })
-    .eq('id', lote.id)
-    .then(() => {}); // ignorar error — no bloquea el revert
-
   const produccionId = lote.produccion_id;
 
   // 3. Obtener produccion_inyeccion para saber la formula_salmuera
