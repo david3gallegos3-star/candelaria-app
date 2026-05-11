@@ -1,0 +1,152 @@
+// src/utils/revertirLote.js
+import { supabase } from '../supabase';
+import { registrarAuditoria } from './helpers';
+
+/**
+ * Revierte completamente un lote de producción:
+ * - Devuelve kg al inventario (carne + salmuera + rub + adicional + mermas)
+ * - Elimina stock_lotes_inyectados, lotes_maduracion, produccion_inyeccion
+ * - Registra en auditoría
+ * Usa flag estado='revirtiendo' para recuperación ante crashes.
+ */
+export async function revertirLote(loteId, currentUser) {
+  // 1. Marcar como 'revirtiendo' (flag de seguridad)
+  await supabase.from('lotes_maduracion')
+    .update({ estado: 'revirtiendo' })
+    .eq('lote_id', loteId);
+
+  // 2. Obtener datos del lote
+  const { data: lote } = await supabase.from('lotes_maduracion')
+    .select('id, produccion_id, fecha_entrada, lote_id')
+    .eq('lote_id', loteId).maybeSingle();
+  if (!lote) return;
+
+  const produccionId = lote.produccion_id;
+
+  // 3. Obtener produccion_inyeccion para saber la formula_salmuera y el nombre del producto
+  const { data: produccion } = await supabase.from('produccion_inyeccion')
+    .select('id, formula_salmuera, producto_nombre')
+    .eq('id', produccionId).maybeSingle();
+
+  // 4. Obtener materia_prima_id de la carne desde produccion_inyeccion_cortes
+  const { data: cortes } = await supabase.from('produccion_inyeccion_cortes')
+    .select('materia_prima_id, kg_carne_cruda, corte_nombre')
+    .eq('produccion_id', produccionId);
+
+  const carneEntry = (cortes || [])[0];
+  const carneMpId  = carneEntry?.materia_prima_id;
+  const kgCarne    = parseFloat(carneEntry?.kg_carne_cruda || 0);
+  const nombreProducto = produccion?.producto_nombre || carneEntry?.corte_nombre || loteId;
+
+  // 5. Revertir todos los movimientos del wizard (motivo contiene loteId)
+  const { data: wizardMovs } = await supabase.from('inventario_movimientos')
+    .select('id, materia_prima_id, tipo, kg')
+    .ilike('motivo', `%Lote ${loteId}%`);
+
+  for (const mov of (wizardMovs || [])) {
+    const { data: inv } = await supabase.from('inventario_mp')
+      .select('id, stock_kg').eq('materia_prima_id', mov.materia_prima_id).maybeSingle();
+    if (inv) {
+      const delta = mov.tipo === 'salida' ? mov.kg : -mov.kg; // invertir
+      await supabase.from('inventario_mp')
+        .update({ stock_kg: Math.max(0, (inv.stock_kg || 0) + delta) })
+        .eq('id', inv.id);
+    }
+  }
+
+  // 6. Revertir movimiento de carne (motivo: "Producción — {nombre}")
+  if (carneMpId && kgCarne > 0) {
+    const { data: carneInv } = await supabase.from('inventario_mp')
+      .select('id, stock_kg').eq('materia_prima_id', carneMpId).maybeSingle();
+    if (carneInv) {
+      await supabase.from('inventario_mp')
+        .update({ stock_kg: (carneInv.stock_kg || 0) + kgCarne })
+        .eq('id', carneInv.id);
+    }
+    // Eliminar movimiento de carne (fecha_entrada + materia_prima_id)
+    await supabase.from('inventario_movimientos')
+      .delete()
+      .eq('materia_prima_id', carneMpId)
+      .eq('tipo', 'salida')
+      .eq('fecha', lote.fecha_entrada);
+  }
+
+  // 7. Eliminar movimientos del wizard
+  await supabase.from('inventario_movimientos')
+    .delete().ilike('motivo', `%Lote ${loteId}%`);
+
+  // 8. Eliminar stock_lotes_inyectados
+  await supabase.from('stock_lotes_inyectados')
+    .delete().eq('lote_id', loteId);
+
+  // 9. Eliminar lotes_maduracion
+  await supabase.from('lotes_maduracion')
+    .delete().eq('lote_id', loteId);
+
+  // 10. Eliminar produccion_inyeccion_cortes y produccion_inyeccion
+  if (produccionId) {
+    await supabase.from('produccion_inyeccion_cortes')
+      .delete().eq('produccion_id', produccionId);
+    await supabase.from('produccion_inyeccion')
+      .delete().eq('id', produccionId);
+  }
+
+  // 11. Registrar en auditoría
+  await registrarAuditoria({
+    tipo:            'lote_revertido',
+    usuario_nombre:  currentUser?.email || 'sistema',
+    user_id:         currentUser?.id    || null,
+    producto_nombre: nombreProducto,
+    campo_modificado: 'lote',
+    valor_antes:     `${kgCarne.toFixed(3)} kg — Lote ${loteId}`,
+    valor_despues:   'revertido',
+    mensaje:         `Lote ${loteId} revertido por ${currentUser?.email || 'sistema'}`,
+  });
+}
+
+/**
+ * Revierte solo los pasos de momento2 de un lote (crash post-pesaje).
+ * Mantiene carne y salmuera de momento1.
+ * Resetea el lote a estado='activo' para reintentar desde pesaje.
+ */
+export async function revertirMomento2(loteId, formulaSalmuera) {
+  // 1. Obtener todos los movimientos del lote
+  const { data: allMovs } = await supabase.from('inventario_movimientos')
+    .select('id, materia_prima_id, tipo, kg, motivo')
+    .ilike('motivo', `%Lote ${loteId}%`);
+
+  // 2. Filtrar solo momento2 (excluir movimientos de salmuera momento1)
+  const salLower = (formulaSalmuera || '').toLowerCase();
+  const momento2Movs = (allMovs || []).filter(m =>
+    !salLower || !m.motivo.toLowerCase().includes(salLower)
+  );
+
+  // 3. Revertir movimientos de momento2 en inventario_mp
+  for (const mov of momento2Movs) {
+    const { data: inv } = await supabase.from('inventario_mp')
+      .select('id, stock_kg').eq('materia_prima_id', mov.materia_prima_id).maybeSingle();
+    if (inv) {
+      const delta = mov.tipo === 'salida' ? mov.kg : -mov.kg;
+      await supabase.from('inventario_mp')
+        .update({ stock_kg: Math.max(0, (inv.stock_kg || 0) + delta) })
+        .eq('id', inv.id);
+    }
+  }
+
+  // 4. Eliminar movimientos de momento2
+  for (const mov of momento2Movs) {
+    await supabase.from('inventario_movimientos').delete().eq('id', mov.id);
+  }
+
+  // 5. Limpiar pasos de momento2 en bloques_resultado (mantener solo momento1)
+  const { data: lote } = await supabase.from('lotes_maduracion')
+    .select('bloques_resultado').eq('lote_id', loteId).maybeSingle();
+
+  const pasosM1 = (lote?.bloques_resultado?.pasos || []).filter(p =>
+    ['merma', 'inyeccion'].includes(p.tipo)
+  );
+  await supabase.from('lotes_maduracion').update({
+    estado: 'activo',
+    bloques_resultado: { momento1: true, pasos: pasosM1 },
+  }).eq('lote_id', loteId);
+}
