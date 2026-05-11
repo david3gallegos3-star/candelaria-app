@@ -142,6 +142,8 @@ function Produccion({ onVolver, onVolverMenu, userRol, currentUser }) {
             recargarHistorial={p.cargarTodo}
             currentUser={currentUser}
             userRol={userRol}
+            horneadoCfgs={p.horneadoCfgs}
+            onIrAMaduracion={() => p.setTab('maduracion')}
           />
         )}
 
