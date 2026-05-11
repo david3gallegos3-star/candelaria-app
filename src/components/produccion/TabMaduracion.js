@@ -59,6 +59,7 @@ export default function TabMaduracion({ mobile, currentUser }) {
   const [guardando,      setGuardando]      = useState(false);
   const [error,          setError]          = useState('');
   const [exito,          setExito]          = useState('');
+  const [recoveryMsg,    setRecoveryMsg]    = useState('');
 
   const [horneadoCfgs,   setHorneadoCfgs]   = useState([]); // configs de vista_horneado_config
 
@@ -155,6 +156,56 @@ export default function TabMaduracion({ mobile, currentUser }) {
   }, []);
 
   useEffect(() => { cargar(); }, [cargar]);
+
+  // ── Crash recovery — corre cuando lotes y horneadoCfgs están cargados ──
+  useEffect(() => {
+    if (!lotes || !historial) return;
+
+    async function detectarCrashes() {
+      let huboRevert = false;
+
+      // Caso 0: flag 'revirtiendo'
+      const { data: revirtiendo } = await supabase.from('lotes_maduracion')
+        .select('lote_id').eq('estado', 'revirtiendo').limit(5);
+      for (const r of (revirtiendo || [])) {
+        await revertirLote(r.lote_id, null);
+        huboRevert = true;
+        setRecoveryMsg('⚠️ Se completó un revert interrumpido');
+      }
+
+      // Caso 1: crash momento1
+      for (const lote of lotes) {
+        if (lote.bloques_resultado !== null) continue;
+        if (lote.estado !== 'activo') continue;
+        const formulaSal = (lote.produccion_inyeccion?.formula_salmuera || '').toLowerCase();
+        const tieneBloques = (horneadoCfgs || []).some(hc =>
+          (hc.config?.formula_salmuera || '').toLowerCase() === formulaSal &&
+          (hc.config?.bloques || []).some(b => b.activo)
+        );
+        if (!tieneBloques) continue;
+        await revertirLote(lote.lote_id, null);
+        huboRevert = true;
+        setRecoveryMsg('⚠️ Se limpió 1 lote incompleto');
+      }
+
+      // Caso 2: crash momento2
+      for (const lote of historial) {
+        const { count } = await supabase.from('stock_lotes_inyectados')
+          .select('id', { count: 'exact', head: true }).eq('lote_id', lote.lote_id);
+        if ((count || 0) > 0) continue;
+        const formulaSal = lote.produccion_inyeccion?.formula_salmuera || '';
+        await revertirMomento2(lote.lote_id, formulaSal);
+        huboRevert = true;
+        setRecoveryMsg('⚠️ 1 lote retomado — continúa el registro de pesaje');
+      }
+
+      if (huboRevert) await cargar();
+    }
+
+    detectarCrashes();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lotes, historial, horneadoCfgs]);
+
   useRealtime(['lotes_maduracion', 'stock_lotes_inyectados', 'produccion_inyeccion', 'vista_horneado_config', 'deshuese_config', 'materias_primas', 'inventario_mp', 'inventario_movimientos'], cargar);
 
   useEffect(() => {
@@ -181,6 +232,12 @@ export default function TabMaduracion({ mobile, currentUser }) {
         setDeshueseMap(map);
       });
   }, []);
+
+  useEffect(() => {
+    if (!recoveryMsg) return;
+    const t = setTimeout(() => setRecoveryMsg(''), 5000);
+    return () => clearTimeout(t);
+  }, [recoveryMsg]);
 
   function toggleExpandido(id) {
     setExpandidos(prev => ({ ...prev, [id]: !prev[id] }));
@@ -1135,6 +1192,17 @@ export default function TabMaduracion({ mobile, currentUser }) {
           padding: '12px 16px', borderRadius: 10,
           marginBottom: 14, fontWeight: 'bold', fontSize: '13px'
         }}>{exito}</div>
+      )}
+
+      {recoveryMsg && (
+        <div style={{
+          position: 'fixed', bottom: 24, right: 24, zIndex: 9999,
+          background: '#f39c12', color: 'white', padding: '12px 20px',
+          borderRadius: 10, fontWeight: 'bold', fontSize: 13,
+          boxShadow: '0 4px 16px rgba(0,0,0,0.2)'
+        }}>
+          {recoveryMsg}
+        </div>
       )}
 
       {/* ── Alerta lotes listos ── */}
