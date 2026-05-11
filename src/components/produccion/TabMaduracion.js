@@ -1808,7 +1808,7 @@ const [modalSpPost,    setModalSpPost]    = useState(null); // {subproductos, lo
                         type="number" min="0" step="0.001"
                         value={pesajes[p.corte_nombre] ?? ''}
                         onChange={e => setPesajes(prev => ({ ...prev, [p.corte_nombre]: e.target.value }))}
-                        placeholder="0.000"
+                        placeholder={modalPesaje?.kg_inicial > 0 ? `Anterior: ${parseFloat(modalPesaje.kg_inicial).toFixed(3)} kg` : '0.000'}
                         style={{ ...inputStyle, textAlign: 'right', borderColor: pesajes[p.corte_nombre] ? '#27ae60' : '#ddd' }}
                       />
                     </div>
