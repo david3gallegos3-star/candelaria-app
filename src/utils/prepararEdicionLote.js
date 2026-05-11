@@ -101,7 +101,6 @@ export async function prepararEdicionLote(lote, horneadoCfgs, currentUser = null
     fecha_entrada: lote.fecha_entrada,
     fecha_salida:  lote.fecha_salida,
     estado:        'madurando',
-    kg_inicial:    kgInicial,
   });
   if (errLote) throw new Error('Error re-creando lote: ' + errLote.message);
 
