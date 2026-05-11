@@ -107,21 +107,28 @@ export async function revertirLote(loteId, currentUser) {
 /**
  * Revierte solo los pasos de momento2 de un lote (crash post-pesaje).
  * Mantiene carne y salmuera de momento1.
- * Resetea el lote a estado='activo' para reintentar desde pesaje.
+ * Resetea el lote a estado='madurando' para reintentar desde pesaje.
  */
 export async function revertirMomento2(loteId, formulaSalmuera) {
-  // 1. Obtener todos los movimientos del lote
+  if (!loteId) return;
+
+  // 1. Obtener datos del lote (usando id entero para el UPDATE posterior)
+  const { data: lote } = await supabase.from('lotes_maduracion')
+    .select('id, bloques_resultado').eq('lote_id', loteId).maybeSingle();
+  if (!lote) return;
+
+  // 2. Obtener todos los movimientos del lote
   const { data: allMovs } = await supabase.from('inventario_movimientos')
     .select('id, materia_prima_id, tipo, kg, motivo')
     .ilike('motivo', `%Lote ${loteId}%`);
 
-  // 2. Filtrar solo momento2 (excluir movimientos de salmuera momento1)
+  // 3. Filtrar solo momento2 (excluir movimientos de salmuera momento1)
   const salLower = (formulaSalmuera || '').toLowerCase();
   const momento2Movs = (allMovs || []).filter(m =>
     !salLower || !m.motivo.toLowerCase().includes(salLower)
   );
 
-  // 3. Revertir movimientos de momento2 en inventario_mp
+  // 4. Revertir movimientos de momento2 en inventario_mp
   for (const mov of momento2Movs) {
     const { data: inv } = await supabase.from('inventario_mp')
       .select('id, stock_kg').eq('materia_prima_id', mov.materia_prima_id).maybeSingle();
@@ -133,20 +140,18 @@ export async function revertirMomento2(loteId, formulaSalmuera) {
     }
   }
 
-  // 4. Eliminar movimientos de momento2
+  // 5. Eliminar movimientos de momento2
   for (const mov of momento2Movs) {
     await supabase.from('inventario_movimientos').delete().eq('id', mov.id);
   }
 
-  // 5. Limpiar pasos de momento2 en bloques_resultado (mantener solo momento1)
-  const { data: lote } = await supabase.from('lotes_maduracion')
-    .select('bloques_resultado').eq('lote_id', loteId).maybeSingle();
-
-  const pasosM1 = (lote?.bloques_resultado?.pasos || []).filter(p =>
+  // 6. Resetear lote a activo con bloques_resultado de momento1
+  const pasosM1 = (lote.bloques_resultado?.pasos || []).filter(p =>
     ['merma', 'inyeccion'].includes(p.tipo)
   );
-  await supabase.from('lotes_maduracion').update({
-    estado: 'activo',
+  const { error } = await supabase.from('lotes_maduracion').update({
+    estado: 'madurando',
     bloques_resultado: { momento1: true, pasos: pasosM1 },
-  }).eq('lote_id', loteId);
+  }).eq('id', lote.id);
+  if (error) console.error('revertirMomento2 UPDATE error:', error);
 }

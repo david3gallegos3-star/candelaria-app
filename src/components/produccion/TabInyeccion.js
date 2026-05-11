@@ -4,6 +4,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../../supabase';
 import WizardProduccionDinamica from './WizardProduccionDinamica';
+import { revertirLote } from '../../utils/revertirLote';
 
 export default function TabInyeccion({ currentUser }) {
   const [productos,    setProductos]    = useState([]); // {producto_nombre, config}
@@ -468,7 +469,10 @@ const fromHijo = (hijoRow?.config?.bloques_hijo || []).filter(esActivo).length >
             setExito(`✅ Producción registrada — lote ${loteId} en maduración hasta ${fechaSalida}`);
             setTimeout(() => setExito(''), 10000);
           }}
-          onCancel={() => setWizard(null)}
+          onCancel={async () => {
+            if (wizard.savedLoteId) await revertirLote(wizard.savedLoteId, currentUser);
+            setWizard(null);
+          }}
         />
       )}
     </div>

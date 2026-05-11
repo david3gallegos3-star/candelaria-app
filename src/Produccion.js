@@ -140,11 +140,13 @@ function Produccion({ onVolver, onVolverMenu, userRol, currentUser }) {
             esAdmin={p.esAdmin}
             setModalRevertir={p.setModalRevertir}
             recargarHistorial={p.cargarTodo}
+            currentUser={currentUser}
+            userRol={userRol}
           />
         )}
 
         {p.tab === 'maduracion' && (
-          <TabMaduracion mobile={p.mobile} currentUser={currentUser} />
+          <TabMaduracion mobile={p.mobile} currentUser={currentUser} userRol={userRol} />
         )}
 
         {p.tab === 'despacho' && (

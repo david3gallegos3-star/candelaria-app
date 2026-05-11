@@ -705,7 +705,7 @@ export default function WizardProduccionDinamica({
       const loteId = `L${Date.now()}`;
       const { data: loteRow, error: loteErr } = await supabase.from('lotes_maduracion').insert({
         lote_id: loteId,
-        estado: 'activo',
+        estado: 'madurando',
         fecha_entrada: hoy,
         fecha_salida: fechaSalida,
         kg_inicial: parseFloat(kgInicial),

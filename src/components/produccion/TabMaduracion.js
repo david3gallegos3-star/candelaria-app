@@ -2,7 +2,7 @@
 // TabMaduracion.js
 // Stock en maduración + pesaje final
 // ============================================
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../../supabase';
 import { crearNotificacion } from '../../utils/helpers';
 import { revertirLote, revertirMomento2 } from '../../utils/revertirLote';
@@ -48,11 +48,10 @@ function esCortesPadreLote(lote, cfgs) {
   return cat.includes('CORTES') && cfg?.config?.tipo === 'padre';
 }
 
-export default function TabMaduracion({ mobile, currentUser }) {
+export default function TabMaduracion({ mobile, currentUser, userRol }) {
   const [lotes,          setLotes]          = useState([]);
   const [historial,      setHistorial]      = useState([]);
   const [cargando,       setCargando]       = useState(true);
-  const [vistaHist,      setVistaHist]      = useState(false);
   const [expandidos,     setExpandidos]     = useState({});    // {loteId: bool}
   const [modalPesaje,    setModalPesaje]    = useState(null);
   const [pesajes,        setPesajes]        = useState({});
@@ -68,8 +67,7 @@ export default function TabMaduracion({ mobile, currentUser }) {
   const [horneadoCfgs,   setHorneadoCfgs]   = useState([]); // configs de vista_horneado_config
 
   // ── Modal Sub-productos post-pesaje ──
-  const [wizardRetomar,  setWizardRetomar]  = useState(null); // params para re-lanzar wizard
-  const [modalSpPost,    setModalSpPost]    = useState(null); // {subproductos, loteId, totalKgMad, pendingFlow, deshueseData}
+const [modalSpPost,    setModalSpPost]    = useState(null); // {subproductos, loteId, totalKgMad, pendingFlow, deshueseData}
   const [spPostKgs,      setSpPostKgs]      = useState({});   // {fase: kg}
   const [guardSpPost,    setGuardSpPost]    = useState(false);
   const [spPostMps,      setSpPostMps]      = useState({});   // mp_id → {nombre, precio_kg}
@@ -137,16 +135,14 @@ export default function TabMaduracion({ mobile, currentUser }) {
     setCargando(true);
     const [{ data: activos }, { data: completados }] = await Promise.all([
       supabase.from('lotes_maduracion')
-        .select(`id, lote_id, estado, fecha_entrada, fecha_salida, kg_inicial, bloques_resultado, produccion_id, updated_at,
-          lotes_maduracion_cortes(*),
+        .select(`*, lotes_maduracion_cortes(*),
           produccion_inyeccion ( formula_salmuera, porcentaje_inyeccion, kg_carne_total, kg_salmuera_requerida,
             produccion_inyeccion_cortes ( corte_nombre, materia_prima_id, kg_carne_cruda, kg_carne_limpia, kg_salmuera_asignada, costo_carne, costo_salmuera_asignado, costo_final_kg )
           )`)
         .neq('estado', 'completado')
         .order('fecha_entrada', { ascending: true }),
       supabase.from('lotes_maduracion')
-        .select(`id, lote_id, estado, fecha_entrada, fecha_salida, kg_inicial, bloques_resultado, produccion_id, updated_at,
-          lotes_maduracion_cortes(*),
+        .select(`*, lotes_maduracion_cortes(*),
           produccion_inyeccion ( formula_salmuera, porcentaje_inyeccion, kg_carne_total, kg_salmuera_requerida,
             produccion_inyeccion_cortes ( corte_nombre, materia_prima_id, kg_carne_cruda, kg_carne_limpia, kg_salmuera_asignada, costo_carne, costo_salmuera_asignado, costo_final_kg )
           )`)
@@ -161,14 +157,19 @@ export default function TabMaduracion({ mobile, currentUser }) {
 
   useEffect(() => { cargar(); }, [cargar]);
 
-  // ── Crash recovery — corre cuando lotes y horneadoCfgs están cargados ──
+  // ── Crash recovery — corre cuando datos están cargados y la app no está cargando ──
+  // Solo corre una vez al montar — evita revertir lotes en proceso activo
+  const crashCheckDone = useRef(false);
   useEffect(() => {
-    if (!lotes || !historial) return;
+    if (crashCheckDone.current) return;
+    // Esperar a que cargar() termine Y horneadoCfgs esté listo
+    if (cargando || !horneadoCfgs.length) return;
+    crashCheckDone.current = true;
 
     async function detectarCrashes() {
       let huboRevert = false;
 
-      // Caso 0: flag 'revirtiendo'
+      // Caso 0: flag 'revirtiendo' — revert manual interrumpido
       const { data: revirtiendo } = await supabase.from('lotes_maduracion')
         .select('lote_id').eq('estado', 'revirtiendo').limit(5);
       for (const r of (revirtiendo || [])) {
@@ -177,10 +178,10 @@ export default function TabMaduracion({ mobile, currentUser }) {
         setRecoveryMsg('⚠️ Se completó un revert interrumpido');
       }
 
-      // Caso 1: crash momento1
-      for (const lote of lotes) {
+      // Caso 1: crash momento1 — lote madurando con bloques_resultado null
+      for (const lote of (lotes || [])) {
         if (lote.bloques_resultado !== null) continue;
-        if (lote.estado !== 'activo') continue;
+        if (lote.estado === 'revirtiendo') continue; // Caso 0 ya lo maneja
         const formulaSal = (lote.produccion_inyeccion?.formula_salmuera || '').toLowerCase();
         const tieneBloques = (horneadoCfgs || []).some(hc =>
           (hc.config?.formula_salmuera || '').toLowerCase() === formulaSal &&
@@ -192,8 +193,25 @@ export default function TabMaduracion({ mobile, currentUser }) {
         setRecoveryMsg('⚠️ Se limpió 1 lote incompleto');
       }
 
-      // Caso 2: crash momento2
-      for (const lote of historial) {
+      // Caso 2: crash momento2 — lote completado sin stock (requería wizard post-pesaje)
+      // Solo aplica a lotes que necesitaban wizard: CORTES padre o bano con horneado post-mad
+      for (const lote of (historial || [])) {
+        const formulaSalLote = (lote.produccion_inyeccion?.formula_salmuera || '').toLowerCase();
+        const cfg = (horneadoCfgs || []).find(hc => {
+          const topLevel = (hc.config?.formula_salmuera || '').toLowerCase();
+          const inyBlock = (hc.config?.bloques || []).find(b => b.tipo === 'inyeccion');
+          const inyFormula = (inyBlock?.formula_salmuera || '').toLowerCase();
+          return topLevel === formulaSalLote || inyFormula === formulaSalLote;
+        });
+        if (!cfg) continue;
+        // Verificar que el producto requería wizard post-pesaje
+        const bloques = cfg.config?.bloques || [];
+        const madIdx = bloques.findIndex(b => b.tipo === 'maduracion');
+        const postMad = madIdx >= 0 ? bloques.slice(madIdx + 1) : [];
+        const esCortesPadre = (cfg.config?._categoria || '').replace(/[ÓÒ]/g,'O').toUpperCase().includes('CORTES') && cfg.config?.tipo === 'padre';
+        const esBanoConHorneadoPost = esCatBano(cfg.config?._categoria) && postMad.some(b => b.activo && b.tipo === 'horneado');
+        if (!esCortesPadre && !esBanoConHorneadoPost) continue;
+
         const { count } = await supabase.from('stock_lotes_inyectados')
           .select('id', { count: 'exact', head: true }).eq('lote_id', lote.lote_id);
         if ((count || 0) > 0) continue;
@@ -208,7 +226,7 @@ export default function TabMaduracion({ mobile, currentUser }) {
 
     detectarCrashes();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lotes, historial, horneadoCfgs]);
+  }, [cargando, lotes, historial, horneadoCfgs]);
 
   useRealtime(['lotes_maduracion', 'stock_lotes_inyectados', 'produccion_inyeccion', 'vista_horneado_config', 'deshuese_config', 'materias_primas', 'inventario_mp', 'inventario_movimientos'], cargar);
 
@@ -327,32 +345,6 @@ export default function TabMaduracion({ mobile, currentUser }) {
       setErrorRevertir('Error al revertir: ' + e.message);
     }
     setRevirtiendo(false);
-  }
-
-  function abrirWizardRetomar(lote) {
-    const formulaSal = (lote.produccion_inyeccion?.formula_salmuera || '').toLowerCase();
-    const cfg = horneadoCfgs.find(hc =>
-      (hc.config?.formula_salmuera || '').toLowerCase() === formulaSal
-    );
-    if (!cfg) return;
-    const picortes = lote.produccion_inyeccion?.produccion_inyeccion_cortes || [];
-    const primerCorte = picortes[0];
-    const kgInicial = parseFloat(lote.kg_inicial || lote.produccion_inyeccion?.kg_carne_total || 0);
-    const precioCarne = primerCorte
-      ? parseFloat(primerCorte.precio_kg_carne || (primerCorte.costo_carne / (primerCorte.kg_carne_cruda || 1)) || 0)
-      : 0;
-    const esInm = esInmersionLote(lote, horneadoCfgs);
-    setWizardRetomar({
-      bloques:          cfg.config?.bloques || [],
-      bloquesHijo:      cfg.config?.bloques_hijo || [],
-      cfg:              cfg.config || {},
-      kgInicial,
-      precioCarne,
-      esBano:           esInm,
-      prodNombre:       primerCorte?.corte_nombre || cfg.producto_nombre || '',
-      savedLoteId:      lote.lote_id,
-      savedFechaSalida: lote.fecha_salida,
-    });
   }
 
   async function confirmarPesaje() {
@@ -1244,28 +1236,9 @@ export default function TabMaduracion({ mobile, currentUser }) {
         </div>
       )}
 
-      {/* ── Tabs vista ── */}
-      <div style={{
-        display: 'flex', gap: 4, background: 'white',
-        borderRadius: 10, padding: 4, marginBottom: 14,
-        boxShadow: '0 1px 4px rgba(0,0,0,0.06)', width: 'fit-content'
-      }}>
-        {[
-          { k: false, label: `🧊 En maduración (${lotesActivos.length})` },
-          { k: true,  label: '📋 Historial' },
-        ].map(v => (
-          <button key={String(v.k)} onClick={() => setVistaHist(v.k)} style={{
-            padding: '8px 16px', borderRadius: 7, border: 'none', cursor: 'pointer',
-            fontSize: 12, fontWeight: 'bold',
-            background: vistaHist === v.k ? '#1a1a2e' : 'transparent',
-            color:      vistaHist === v.k ? 'white'   : '#666',
-          }}>{v.label}</button>
-        ))}
-      </div>
-
       {cargando ? (
         <div style={{ textAlign: 'center', padding: 40, color: '#888' }}>⏳ Cargando lotes...</div>
-      ) : !vistaHist ? (
+      ) : (
         /* ── Lista activos ── */
         <>
         {lotesActivos.length === 0 ? (
@@ -1407,16 +1380,7 @@ export default function TabMaduracion({ mobile, currentUser }) {
                         padding: '8px 14px', cursor: 'pointer', fontSize: 12, fontWeight: 'bold', color: '#856404'
                       }}>🧪 Prueba</button>
                     )}
-                    {/* Retomar wizard si momento1 nunca completó */}
-                    {!listo && lote.bloques_resultado === null && (
-                      <button onClick={() => abrirWizardRetomar(lote)} style={{
-                        background: 'linear-gradient(135deg,#e67e22,#d35400)',
-                        color: 'white', border: 'none', borderRadius: 8,
-                        padding: '8px 14px', cursor: 'pointer',
-                        fontSize: 12, fontWeight: 'bold', whiteSpace: 'nowrap'
-                      }}>▶ Retomar producción</button>
-                    )}
-                    {listo && (
+{listo && (
                       tieneMadActiva ? (
                         <button onClick={() => abrirPesaje(lote)} style={{
                           background: 'linear-gradient(135deg,#e74c3c,#c0392b)',
@@ -1447,104 +1411,6 @@ export default function TabMaduracion({ mobile, currentUser }) {
           })
         )}
 </>
-      ) : (
-        /* ── Historial completados ── */
-        historial.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: 40, color: '#aaa' }}>
-            No hay lotes completados aún.
-          </div>
-        ) : (
-          historial.map(lote => {
-            const cortes  = lote.lotes_maduracion_cortes || [];
-            const kgIn    = cortes.reduce((s, c) => s + (c.kg_inyectado  || 0), 0);
-            const kgMad   = cortes.reduce((s, c) => s + (c.kg_madurado   || 0), 0);
-            const perdida = kgIn - kgMad;
-
-            return (
-              <div key={lote.id} style={{
-                background: 'white', borderRadius: 12,
-                boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
-                padding: mobile ? 12 : 16, marginBottom: 10,
-                borderLeft: '5px solid #27ae60'
-              }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8 }}>
-                  <div>
-                    <div style={{ fontWeight: 'bold', fontSize: 14, color: '#1a1a2e', marginBottom: 4 }}>
-                      ✅ Lote {lote.lote_id}
-                    </div>
-                    <div style={{ fontSize: 12, color: '#666', display: 'flex', gap: 14, flexWrap: 'wrap' }}>
-                      <span>📅 {lote.fecha_entrada} → {lote.fecha_salida}</span>
-                      <span>⬇️ Inyectado: <b>{kgIn.toFixed(3)} kg</b></span>
-                      {kgMad > 0 && <span>⬆️ Madurado: <b>{kgMad.toFixed(3)} kg</b></span>}
-                      {perdida > 0 && (
-                        <span style={{ color: '#e74c3c' }}>
-                          📉 Pérdida: <b>{perdida.toFixed(3)} kg</b>
-                          ({kgIn > 0 ? ((perdida / kgIn) * 100).toFixed(1) : 0}%)
-                        </span>
-                      )}
-                    </div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
-                      {cortes.map(c => (
-                        <div key={c.id} style={{
-                          background: '#e8f5e9', borderRadius: 8,
-                          padding: '5px 10px', fontSize: 11
-                        }}>
-                          <b>{c.corte_nombre}</b>
-                          <span style={{ color: '#555', marginLeft: 4 }}>
-                            {(c.kg_inyectado||0).toFixed(3)} → {(c.kg_madurado||0).toFixed(3)} kg
-                          </span>
-                          {c.costo_kg_ajustado > 0 && (
-                            <span style={{ color: '#1a5276', marginLeft: 4 }}>
-                              · ${c.costo_kg_ajustado.toFixed(4)}/kg
-                            </span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                    {lote.bloques_resultado?.pasos?.length > 0 && (
-                      <details style={{ marginTop: 6 }}>
-                        <summary style={{ fontSize: 11, color: '#8e44ad', cursor: 'pointer', fontWeight: 600 }}>
-                          🧩 Ver pasos del flujo dinámico ({lote.bloques_resultado.pasos.length} pasos)
-                        </summary>
-                        <div style={{ marginTop: 6, paddingLeft: 8 }}>
-                          {lote.bloques_resultado.pasos.map((p, i) => {
-                            const costoKg = p.kgSalida > 0 ? p.costoAcum / p.kgSalida : 0;
-                            return (
-                              <div key={i} style={{ fontSize: 10, color: '#555', padding: '2px 0', borderBottom: '1px solid #f0f0f0' }}>
-                                {p.tipo}{p.merma_tipo ? ` T${p.merma_tipo}` : ''}: {p.kgSalida?.toFixed(3)} kg · ${costoKg.toFixed(4)}/kg
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </details>
-                    )}
-                    {/* Botón revertir — solo si tiene permiso */}
-                    {(() => {
-                      const esAdmin = currentUser?.rol === 'admin';
-                      const esProd  = currentUser?.rol === 'produccion';
-                      const hace24h = lote.updated_at
-                        ? (Date.now() - new Date(lote.updated_at).getTime()) < 24 * 60 * 60 * 1000
-                        : false;
-                      if (!esAdmin && !(esProd && hace24h)) return null;
-                      return (
-                        <button
-                          onClick={() => setModalRevertir(lote)}
-                          style={{
-                            background: 'none', border: '1.5px solid #e74c3c',
-                            color: '#e74c3c', borderRadius: 8, padding: '6px 14px',
-                            cursor: 'pointer', fontSize: 12, fontWeight: 'bold',
-                            marginTop: 8,
-                          }}>
-                          🔄 Revertir
-                        </button>
-                      );
-                    })()}
-                  </div>
-                </div>
-              </div>
-            );
-          })
-        )
       )}
 
       {/* ══ Modal Editar kg cortes ══ */}
@@ -2244,24 +2110,6 @@ export default function TabMaduracion({ mobile, currentUser }) {
         );
       })()}
 
-      {/* ── Wizard retomar producción incompleta ── */}
-      {wizardRetomar && (
-        <WizardProduccionDinamica
-          modo="momento1"
-          bloques={wizardRetomar.bloques}
-          bloquesHijo={wizardRetomar.bloquesHijo}
-          cfg={wizardRetomar.cfg}
-          kgInicial={wizardRetomar.kgInicial}
-          precioCarne={wizardRetomar.precioCarne}
-          currentUser={currentUser}
-          mpsFormula={[]}
-          esBano={wizardRetomar.esBano}
-          savedLoteId={wizardRetomar.savedLoteId}
-          savedFechaSalida={wizardRetomar.savedFechaSalida}
-          onComplete={() => { setWizardRetomar(null); cargar(); }}
-          onCancel={() => setWizardRetomar(null)}
-        />
-      )}
 
       {/* ── Wizard dinámico CORTES ── */}
       {wizardDinamico && (

@@ -5,6 +5,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../supabase';
 import { useRealtime } from '../../hooks/useRealtime';
+import { revertirLote } from '../../utils/revertirLote';
 
 export default function TabHistorial({
   historialAgrupado,
@@ -12,8 +13,12 @@ export default function TabHistorial({
   esAdmin,
   setModalRevertir,
   recargarHistorial,
+  currentUser,
+  userRol,
 }) {
   const [lotesInyeccion,   setLotesInyeccion]   = useState([]);
+  const [lotesMaduracion,  setLotesMaduracion]  = useState([]);
+  const [revirtiendo,      setRevirtiendo]      = useState(null); // lote_id en proceso
   const [cierresDespacho,  setCierresDespacho]  = useState([]);
   const [cortesDespacho,   setCortesDespacho]   = useState([]);
   const [lotesHorneado,    setLotesHorneado]    = useState([]);
@@ -51,17 +56,26 @@ export default function TabHistorial({
         .select('*').order('fecha', { ascending: false }).limit(300),
       supabase.from('produccion_horneado_lotes')
         .select('*').order('fecha', { ascending: false }).limit(60),
-    ]).then(([r1, r2, r3, r4]) => {
+      supabase.from('lotes_maduracion')
+        .select(`*, lotes_maduracion_cortes(*),
+          produccion_inyeccion(formula_salmuera, producto_nombre,
+            produccion_inyeccion_cortes(corte_nombre, materia_prima_id, kg_carne_cruda)
+          )`)
+        .eq('estado', 'completado')
+        .order('updated_at', { ascending: false })
+        .limit(50),
+    ]).then(([r1, r2, r3, r4, r5]) => {
       setLotesInyeccion(r1.data || []);
       setCierresDespacho(r2.data || []);
       setCortesDespacho(r3.data || []);
       setLotesHorneado(r4.data || []);
+      setLotesMaduracion(r5.data || []);
       setCargando(false);
     });
   }, []);
 
   useEffect(() => { cargar(); }, [cargar]);
-  useRealtime(['produccion_inyeccion', 'despacho_cierre_dia', 'despacho_cortes', 'produccion_horneado_lotes'], cargar);
+  useRealtime(['produccion_inyeccion', 'despacho_cierre_dia', 'despacho_cortes', 'produccion_horneado_lotes', 'lotes_maduracion'], cargar);
 
   // ── Revertir lote horneado — revierte TODO lo del ciclo ──
   async function revertirHorneado(lote) {
@@ -381,7 +395,21 @@ export default function TabHistorial({
     );
   }
 
-  if (todasFechas.length === 0) {
+  async function handleRevertirLote(lote) {
+    if (!window.confirm(
+      `¿Revertir Lote ${lote.lote_id}?\n\nSe devolverán todos los kg al inventario.\nEl lote desaparecerá del historial.\n\nEsta acción no se puede deshacer.`
+    )) return;
+    setRevirtiendo(lote.lote_id);
+    try {
+      await revertirLote(lote.lote_id, currentUser);
+      setLotesMaduracion(prev => prev.filter(l => l.lote_id !== lote.lote_id));
+    } catch (e) {
+      alert('Error al revertir: ' + e.message);
+    }
+    setRevirtiendo(null);
+  }
+
+  if (todasFechas.length === 0 && lotesMaduracion.length === 0) {
     return (
       <div style={{ textAlign:'center', padding:'60px', color:'#aaa' }}>
         <div style={{ fontSize:'48px', marginBottom:'12px' }}>📋</div>
@@ -409,6 +437,84 @@ export default function TabHistorial({
 
   return (
     <div>
+      {/* ── Lotes de maduración completados ── */}
+      {lotesMaduracion.length > 0 && (
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ fontWeight: 'bold', color: '#1a1a2e', fontSize: 13, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
+            🧊 Lotes de inyección / maduración
+          </div>
+          {lotesMaduracion.map(lote => {
+            const cortes  = lote.lotes_maduracion_cortes || [];
+            const kgIn    = cortes.reduce((s, c) => s + parseFloat(c.kg_inyectado  || 0), 0);
+            const kgMad   = cortes.reduce((s, c) => s + parseFloat(c.kg_madurado   || 0), 0);
+            const esAdmin = userRol?.rol === 'admin';
+            const esProd  = userRol?.rol === 'produccion';
+            const hace24h = lote.updated_at
+              ? (Date.now() - new Date(lote.updated_at).getTime()) < 24 * 60 * 60 * 1000
+              : false;
+            const puedeRevertir = esAdmin || (esProd && hace24h);
+            const pasos = lote.bloques_resultado?.pasos || [];
+
+            return (
+              <div key={lote.id} style={{
+                background: 'white', borderRadius: 10,
+                boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
+                padding: '12px 16px', marginBottom: 8,
+                borderLeft: '4px solid #27ae60',
+              }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8 }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 'bold', fontSize: 13, color: '#1a1a2e', marginBottom: 4 }}>
+                      ✅ Lote {lote.lote_id}
+                      {lote.produccion_inyeccion?.producto_nombre && (
+                        <span style={{ fontWeight: 'normal', color: '#555', marginLeft: 8, fontSize: 12 }}>
+                          — {lote.produccion_inyeccion.producto_nombre}
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: 11, color: '#666', display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 4 }}>
+                      <span>📅 {lote.fecha_entrada} → {lote.fecha_salida}</span>
+                      {kgIn > 0 && <span>⬇️ Inyectado: <b>{kgIn.toFixed(3)} kg</b></span>}
+                      {kgMad > 0 && <span>⬆️ Madurado: <b>{kgMad.toFixed(3)} kg</b></span>}
+                    </div>
+                    {pasos.length > 0 && (
+                      <details style={{ marginTop: 4 }}>
+                        <summary style={{ fontSize: 11, color: '#8e44ad', cursor: 'pointer', fontWeight: 600 }}>
+                          🧩 Ver pasos ({pasos.length} pasos)
+                        </summary>
+                        <div style={{ marginTop: 4, paddingLeft: 8 }}>
+                          {pasos.map((p, i) => {
+                            const costoKg = p.kgSalida > 0 ? p.costoAcum / p.kgSalida : 0;
+                            return (
+                              <div key={i} style={{ fontSize: 10, color: '#555', padding: '2px 0' }}>
+                                {p.tipo}{p.merma_tipo ? ` T${p.merma_tipo}` : ''}: {p.kgSalida?.toFixed(3)} kg · ${costoKg.toFixed(4)}/kg
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </details>
+                    )}
+                  </div>
+                  {puedeRevertir && (
+                    <button
+                      disabled={revirtiendo === lote.lote_id}
+                      onClick={() => handleRevertirLote(lote)}
+                      style={{
+                        background: 'none', border: '1.5px solid #e74c3c',
+                        color: '#e74c3c', borderRadius: 8, padding: '5px 12px',
+                        cursor: revirtiendo === lote.lote_id ? 'not-allowed' : 'pointer',
+                        fontSize: 11, fontWeight: 'bold', whiteSpace: 'nowrap', opacity: revirtiendo === lote.lote_id ? 0.6 : 1,
+                      }}>
+                      {revirtiendo === lote.lote_id ? '⏳' : '🔄 Revertir'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {todasFechas.map(fecha => {
         const registros  = historialAgrupado[fecha] || [];
         const inyecs     = inyeccionPorFecha[fecha]  || [];
