@@ -45,8 +45,14 @@ export function useProduccion({ userRol, currentUser }) {
 
   const esAdmin = userRol?.rol === 'admin';
 
+  const [horneadoCfgs, setHorneadoCfgs] = useState([]);
+
   // ── Carga inicial ─────────────────────────────────────────
   useEffect(() => { cargarTodo(); }, []);
+  useEffect(() => {
+    supabase.from('vista_horneado_config').select('producto_nombre,config')
+      .then(({ data }) => setHorneadoCfgs(data || []));
+  }, []);
   useRealtime(['productos', 'produccion_diaria', 'inventario_mp', 'materias_primas', 'formulaciones', 'config_productos', 'cif_items', 'inventario_movimientos'], cargarTodo);
 
   async function cargarTodo() {
@@ -436,6 +442,7 @@ export function useProduccion({ userRol, currentUser }) {
     modalRevertir,setModalRevertir,
     prodsFiltrados,
     historialAgrupado,
+    horneadoCfgs,
     kgHoy, costoHoy, kgMes, costoMes,
     agregarProducto,
     actualizarParadas,
