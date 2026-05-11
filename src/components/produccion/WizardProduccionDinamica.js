@@ -53,6 +53,8 @@ export default function WizardProduccionDinamica({
   savedLoteId,
   onComplete,
   onCancel,
+  valoresPrevios     = [],
+  valoresPreviosHijo = [],
 }) {
   const [pasoIdx,      setPasoIdx]      = useState(0);
   const [kgActual,     setKgActual]     = useState(parseFloat(kgInicial) || 0);
@@ -144,6 +146,22 @@ export default function WizardProduccionDinamica({
       })));
     })();
   }, [pasoActual?.id, pasoActual?.tipo]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Pre-llenar inputKg con el valor anterior cuando viene de edición
+  React.useEffect(() => {
+    const prevArr = rama === 'hijo' ? valoresPreviosHijo : valoresPrevios;
+    if (!prevArr.length) return;
+    const prev = prevArr[pasoIdx];
+    if (!prev) return;
+    const tipo = pasoActual?.tipo;
+    if (!tipo) return;
+    if (tipo === 'merma' && parseFloat(prev.kgMermaReal) > 0) {
+      setInputKg(String(prev.kgMermaReal));
+    } else if (!['inyeccion','rub','adicional','maduracion'].includes(tipo) && parseFloat(prev.kgSalida) > 0) {
+      setInputKg(String(prev.kgSalida));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pasoIdx, rama]);
 
   const pasosPadre = useMemo(
     () => buildPasos({ modo, rama: 'padre', bloques, bloquesHijo, esBano }),
