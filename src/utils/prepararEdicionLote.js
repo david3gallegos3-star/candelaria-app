@@ -13,7 +13,7 @@ import { revertirLote } from './revertirLote';
  * @param {array}  horneadoCfgs - array de vista_horneado_config
  * @returns {object} params para WizardProduccionDinamica
  */
-export async function prepararEdicionLote(lote, horneadoCfgs) {
+export async function prepararEdicionLote(lote, horneadoCfgs, currentUser = null) {
   // ── 1. Recopilar datos ANTES de revertir ──────────────────
   const produccion   = lote.produccion_inyeccion;
   const cortes       = produccion?.produccion_inyeccion_cortes || [];
@@ -35,10 +35,11 @@ export async function prepararEdicionLote(lote, horneadoCfgs) {
     : 0;
 
   // Buscar stock anterior (para kgMadPrevio y mpPadreId)
-  const { data: stockEntries } = await supabase
+  const { data: stockEntries, error: errStock } = await supabase
     .from('stock_lotes_inyectados')
     .select('kg_inicial, tipo_corte, corte_nombre, materia_prima_id')
     .eq('lote_id', lote.lote_id);
+  if (errStock) throw new Error('Error leyendo stock: ' + errStock.message);
   const stockPadre  = (stockEntries || []).find(s => s.tipo_corte === 'padre') || (stockEntries || [])[0];
   const kgMadPrevio = parseFloat(stockPadre?.kg_inicial || 0);
 
@@ -56,15 +57,17 @@ export async function prepararEdicionLote(lote, horneadoCfgs) {
     (cfgEntry?.config?._categoria || '').toUpperCase().includes(k)
   );
 
+  // Sin transacción: si falla entre pasos 3-5, produccion_inyeccion queda huérfana.
+  // El operario tendrá que limpiar manualmente o crear un nuevo lote.
   // ── 2. Revertir el lote (borra todo) ─────────────────────
-  await revertirLote(lote.lote_id, null);
+  await revertirLote(lote.lote_id, currentUser);
 
   // ── 3. Re-crear produccion_inyeccion ──────────────────────
   const hoy = new Date().toISOString().split('T')[0];
   const { data: newProd, error: errProd } = await supabase
     .from('produccion_inyeccion')
     .insert({
-      fecha:                hoy,
+      fecha:                hoy, // intencional: la edición registra fecha de hoy
       formula_salmuera:     produccion.formula_salmuera,
       producto_nombre:      produccion.producto_nombre,
       kg_carne_total:       produccion.kg_carne_total,
