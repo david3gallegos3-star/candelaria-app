@@ -26,16 +26,17 @@ export async function revertirLote(loteId, currentUser, loteMadId = null) {
   }
   if (!lote) return;
 
-  // 2. Marcar como 'revirtiendo' usando id entero (flag de seguridad para crash recovery)
+  // 2. Marcar como 'revirtiendo' (flag crash recovery — omitir si falla por trigger/constraint)
   await supabase.from('lotes_maduracion')
     .update({ estado: 'revirtiendo' })
-    .eq('id', lote.id);
+    .eq('id', lote.id)
+    .then(() => {}); // ignorar error — no bloquea el revert
 
   const produccionId = lote.produccion_id;
 
-  // 3. Obtener produccion_inyeccion para saber la formula_salmuera y el nombre del producto
+  // 3. Obtener produccion_inyeccion para saber la formula_salmuera
   const { data: produccion } = await supabase.from('produccion_inyeccion')
-    .select('id, formula_salmuera, producto_nombre')
+    .select('id, formula_salmuera')
     .eq('id', produccionId).maybeSingle();
 
   // 4. Obtener materia_prima_id de la carne desde produccion_inyeccion_cortes
@@ -46,7 +47,7 @@ export async function revertirLote(loteId, currentUser, loteMadId = null) {
   const carneEntry = (cortes || [])[0];
   const carneMpId  = carneEntry?.materia_prima_id;
   const kgCarne    = parseFloat(carneEntry?.kg_carne_cruda || 0);
-  const nombreProducto = produccion?.producto_nombre || carneEntry?.corte_nombre || loteId;
+  const nombreProducto = carneEntry?.corte_nombre || loteId;
 
   // 5. Revertir todos los movimientos del wizard (motivo contiene loteId)
   const { data: wizardMovs } = await supabase.from('inventario_movimientos')
