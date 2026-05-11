@@ -61,6 +61,10 @@ export default function TabMaduracion({ mobile, currentUser }) {
   const [exito,          setExito]          = useState('');
   const [recoveryMsg,    setRecoveryMsg]    = useState('');
 
+  const [modalRevertir,   setModalRevertir]   = useState(null); // lote a revertir
+  const [revirtiendo,     setRevirtiendo]     = useState(false);
+  const [errorRevertir,   setErrorRevertir]   = useState('');
+
   const [horneadoCfgs,   setHorneadoCfgs]   = useState([]); // configs de vista_horneado_config
 
   // ── Modal Sub-productos post-pesaje ──
@@ -307,6 +311,22 @@ export default function TabMaduracion({ mobile, currentUser }) {
     setPesajes(init);
     setError('');
     setModalPesaje(lote);
+  }
+
+  async function confirmarRevertir() {
+    if (!modalRevertir) return;
+    setRevirtiendo(true);
+    setErrorRevertir('');
+    try {
+      await revertirLote(modalRevertir.lote_id, currentUser);
+      setModalRevertir(null);
+      setExito('✅ Lote revertido correctamente');
+      setTimeout(() => setExito(''), 6000);
+      await cargar();
+    } catch (e) {
+      setErrorRevertir('Error al revertir: ' + e.message);
+    }
+    setRevirtiendo(false);
   }
 
   function abrirWizardRetomar(lote) {
@@ -1498,6 +1518,27 @@ export default function TabMaduracion({ mobile, currentUser }) {
                         </div>
                       </details>
                     )}
+                    {/* Botón revertir — solo si tiene permiso */}
+                    {(() => {
+                      const esAdmin = currentUser?.rol === 'admin';
+                      const esProd  = currentUser?.rol === 'produccion';
+                      const hace24h = lote.updated_at
+                        ? (Date.now() - new Date(lote.updated_at).getTime()) < 24 * 60 * 60 * 1000
+                        : false;
+                      if (!esAdmin && !(esProd && hace24h)) return null;
+                      return (
+                        <button
+                          onClick={() => setModalRevertir(lote)}
+                          style={{
+                            background: 'none', border: '1.5px solid #e74c3c',
+                            color: '#e74c3c', borderRadius: 8, padding: '6px 14px',
+                            cursor: 'pointer', fontSize: 12, fontWeight: 'bold',
+                            marginTop: 8,
+                          }}>
+                          🔄 Revertir
+                        </button>
+                      );
+                    })()}
                   </div>
                 </div>
               </div>
@@ -2238,6 +2279,52 @@ export default function TabMaduracion({ mobile, currentUser }) {
           onComplete={() => { setWizardDinamico(null); cargar(); }}
           onCancel={() => setWizardDinamico(null)}
         />
+      )}
+
+      {/* ── Modal confirmación revertir lote ── */}
+      {modalRevertir && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 3000,
+        }}>
+          <div style={{
+            background: 'white', borderRadius: 14, padding: 28,
+            maxWidth: 420, width: '90%', boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+          }}>
+            <div style={{ fontSize: 18, fontWeight: 'bold', color: '#1a1a2e', marginBottom: 8 }}>
+              🔄 Revertir lote
+            </div>
+            <div style={{ fontSize: 14, color: '#555', marginBottom: 16 }}>
+              ¿Revertir <b>Lote {modalRevertir.lote_id}</b>?
+            </div>
+            <div style={{ background: '#fdf2f2', border: '1px solid #e74c3c', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 13, color: '#c0392b' }}>
+              ⚠️ Se devolverán todos los kg al inventario.<br/>
+              El lote desaparecerá del historial.<br/>
+              <b>Esta acción no se puede deshacer.</b>
+            </div>
+            {errorRevertir && (
+              <div style={{ color: '#e74c3c', fontSize: 13, marginBottom: 10 }}>{errorRevertir}</div>
+            )}
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => { setModalRevertir(null); setErrorRevertir(''); }}
+                disabled={revirtiendo}
+                style={{ padding: '10px 20px', background: '#f0f2f5', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 13 }}>
+                Cancelar
+              </button>
+              <button
+                onClick={confirmarRevertir}
+                disabled={revirtiendo}
+                style={{
+                  padding: '10px 20px', background: revirtiendo ? '#aaa' : '#e74c3c',
+                  color: 'white', border: 'none', borderRadius: 8,
+                  cursor: revirtiendo ? 'default' : 'pointer', fontSize: 13, fontWeight: 'bold',
+                }}>
+                {revirtiendo ? 'Revirtiendo...' : 'Confirmar revertir'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>
