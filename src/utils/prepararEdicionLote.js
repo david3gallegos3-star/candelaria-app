@@ -104,12 +104,14 @@ export async function prepararEdicionLote(lote, horneadoCfgs, currentUser = null
   }
 
   // ── 5. Re-crear lotes_maduracion (mismo lote_id) ─────────
+  // bloques_resultado non-null evita que crash detection lo borre como "lote mal hecho"
   const { error: errLote } = await supabase.from('lotes_maduracion').insert({
-    lote_id:       lote.lote_id,
-    produccion_id: newProd.id,
-    fecha_entrada: lote.fecha_entrada,
-    fecha_salida:  lote.fecha_salida,
-    estado:        'madurando',
+    lote_id:           lote.lote_id,
+    produccion_id:     newProd.id,
+    fecha_entrada:     lote.fecha_entrada,
+    fecha_salida:      lote.fecha_salida,
+    estado:            'madurando',
+    bloques_resultado: { editando: true, pasos: [] },
   });
   if (errLote) throw new Error('Error re-creando lote: ' + errLote.message);
 
