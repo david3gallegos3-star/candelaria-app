@@ -953,6 +953,17 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion, esBano 
     XLSX.writeFile(wb, `${producto.nombre}_Produccion.xlsx`);
   }
 
+  // MP carne seleccionada para panel del padre en hijo
+  const mpCarneSelec = mpCarneId ? mpsCarneOpts.find(m => String(m.id) === mpCarneId) || null : null;
+
+  const precioCarne = parseFloat(mpVinculada?.precio_kg || 0);
+
+  // Costos salmuera desde fórmula seleccionada
+  const totalGrFormula    = formulaSalmueraIngs.reduce((s,i) => s + i.gramos, 0);
+  const costoTotalFormula = formulaSalmueraIngs.reduce((s,i) => s + i.costo,  0);
+  const totalKgFormula    = totalGrFormula / 1000;
+  const precioKgSalmuera  = totalKgFormula > 0 ? costoTotalFormula / totalKgFormula : 0;
+
   const cFinalActual   = getCFinal();
   const versionesPruebas = versiones.filter(v => v.tipo === 'prueba');
   // Calcular costos por fila de prueba
@@ -966,17 +977,6 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion, esBano 
     const total  = carne + cEmp + cEti;
     return { ...f, kg, empMp, etiMp, cEmp, cEti, carne, total };
   });
-
-  // MP carne seleccionada para panel del padre en hijo
-  const mpCarneSelec = mpCarneId ? mpsCarneOpts.find(m => String(m.id) === mpCarneId) || null : null;
-
-  const precioCarne = parseFloat(mpVinculada?.precio_kg || 0);
-
-  // Costos salmuera desde fórmula seleccionada
-  const totalGrFormula    = formulaSalmueraIngs.reduce((s,i) => s + i.gramos, 0);
-  const costoTotalFormula = formulaSalmueraIngs.reduce((s,i) => s + i.costo,  0);
-  const totalKgFormula    = totalGrFormula / 1000;
-  const precioKgSalmuera  = totalKgFormula > 0 ? costoTotalFormula / totalKgFormula : 0;
 
   // ── render ──
   const tabs = [
