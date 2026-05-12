@@ -763,11 +763,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion, esBano 
   function getCFinal() {
     if (tipo === 'hijo') return computeCLimpio().cLimpio;
 
-    // Prioridad 1: datos reales de producción
-    const lotesConCosto = lotesStock.filter(l => parseFloat(l.costo_mad_kg || 0) > 0);
-    if (lotesConCosto.length > 0) return parseFloat(lotesConCosto[0].costo_mad_kg);
-
-    // Prioridad 2: cálculo teórico del tab Costos 1 kg (modo dinámico)
+    // Siempre desde Costos 1 kg — modo dinámico
     if (bloques !== null) {
       const mpAdic = mpAdicionalId ? mpsFormula.find(m => String(m.id) === mpAdicionalId) : null;
       const result = calcBloques({
@@ -783,7 +779,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion, esBano 
       return result.costoKgFinal || 0;
     }
 
-    // Prioridad 3: cálculo teórico modo clásico
+    // Siempre desde Costos 1 kg — modo clásico
     const pctInjN    = parseFloat(pctInj) || 0;
     const pctMadN    = parseFloat(pctMad) || 0;
     const kgSal1     = pctInjN / 100;
