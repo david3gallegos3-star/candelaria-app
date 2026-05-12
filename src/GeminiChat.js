@@ -359,17 +359,22 @@ function GeminiChat({ formulaContexto, formulaIngredientes }) {
                 </div>
               )}
             </div>
-            <div style={{ display:'flex', gap:8, alignItems:'center' }}>
-              <button onClick={() => cerrar(false)} title="Minimizar (vuelve a esquina)" style={{
+            <div style={{ display:'flex', gap:6, alignItems:'center' }}>
+              <button
+                onClick={() => {
+                  if (window.confirm('¿Eliminar el historial de esta conversación?')) cerrar(true);
+                }}
+                title="Eliminar historial"
+                style={{
+                  background:'rgba(231,76,60,0.7)', border:'none',
+                  color:'white', cursor:'pointer', borderRadius:'4px',
+                  padding:'2px 8px', fontSize:'11px', fontWeight:'bold'
+                }}>🗑 Eliminar historial</button>
+              <button onClick={() => cerrar(false)} title="Minimizar" style={{
                 background:'rgba(255,255,255,0.2)', border:'none',
                 color:'white', cursor:'pointer', borderRadius:'4px',
                 padding:'2px 8px', fontSize:'14px'
               }}>—</button>
-              <button onClick={() => cerrar(true)} title="Cerrar y limpiar" style={{
-                background:'rgba(255,255,255,0.2)', border:'none',
-                color:'white', cursor:'pointer', borderRadius:'4px',
-                padding:'2px 8px', fontSize:'14px'
-              }}>✕</button>
             </div>
           </div>
 
