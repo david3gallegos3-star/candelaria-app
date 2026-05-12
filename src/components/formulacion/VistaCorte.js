@@ -667,6 +667,19 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion, esBano 
     setModoEdicion(true);
   }
 
+  async function eliminarVersionPrueba(idxEnPruebas) {
+    if (!window.confirm('¿Eliminar esta versión guardada?')) return;
+    const pruebas = versiones.filter(v => v.tipo === 'prueba');
+    const vToDelete = pruebas[idxEnPruebas];
+    const nuevas = versiones.filter(v => v !== vToDelete);
+    try {
+      const { error } = await supabase.from('vista_horneado_config')
+        .update({ versiones: nuevas }).eq('producto_nombre', producto.nombre);
+      if (error) throw error;
+      setVersiones(nuevas);
+    } catch (e) { alert('Error: ' + e.message); }
+  }
+
   async function eliminarVersionCorte(idxEnFormula) {
     if (!window.confirm('¿Eliminar esta versión?')) return;
     const versionesFormula = versiones.filter(v => v.tipo === 'formula');
@@ -2104,12 +2117,12 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion, esBano 
             <div>
               <div style={{ fontSize: 12, fontWeight: 700, color: '#555', marginBottom: 8 }}>📚 Versiones guardadas</div>
               {versionesPruebas.map((v, i) => (
-                <div key={i} onClick={() => {
-                  const filasRestored = (v.fundas || [{ kg: v.gramos_funda, emp_id: v.emp_id || '', eti_id: v.eti_id || '' }])
-                    .map((f, j) => ({ id: String(Date.now() + j), kg: String(f.kg), emp_id: f.emp_id || '', eti_id: f.eti_id || '' }));
-                  setPruebaFilas(filasRestored.length > 0 ? filasRestored : [{ id: '1', kg: '', emp_id: '', eti_id: '' }]);
-                }} style={{ background: 'white', borderRadius: 10, padding: '10px 14px', marginBottom: 8, cursor: 'pointer', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div>
+                <div key={i} style={{ background: 'white', borderRadius: 10, padding: '10px 14px', marginBottom: 8, boxShadow: '0 1px 3px rgba(0,0,0,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ cursor: 'pointer', flex: 1 }} onClick={() => {
+                    const filasRestored = (v.fundas || [{ kg: v.gramos_funda, emp_id: v.emp_id || '', eti_id: v.eti_id || '' }])
+                      .map((f, j) => ({ id: String(Date.now() + j), kg: String(f.kg), emp_id: f.emp_id || '', eti_id: f.eti_id || '' }));
+                    setPruebaFilas(filasRestored.length > 0 ? filasRestored : [{ id: '1', kg: '', emp_id: '', eti_id: '' }]);
+                  }}>
                     <div style={{ fontWeight: 700, color: '#333', fontSize: 12 }}>
                       {v.fundas ? `${v.fundas.length} funda${v.fundas.length > 1 ? 's' : ''}` : `${(v.gramos_funda * 1000).toFixed(0)}g`}
                     </div>
@@ -2118,7 +2131,16 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion, esBano 
                       {v.fundas ? ` · ${v.fundas.map(f => (f.kg*1000).toFixed(0)+'g').join(', ')}` : ''}
                     </div>
                   </div>
-                  <span style={{ fontSize: 11, color: '#aaa' }}>cargar →</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 11, color: '#aaa', cursor: 'pointer' }} onClick={() => {
+                      const filasRestored = (v.fundas || [{ kg: v.gramos_funda, emp_id: v.emp_id || '', eti_id: v.eti_id || '' }])
+                        .map((f, j) => ({ id: String(Date.now() + j), kg: String(f.kg), emp_id: f.emp_id || '', eti_id: f.eti_id || '' }));
+                      setPruebaFilas(filasRestored.length > 0 ? filasRestored : [{ id: '1', kg: '', emp_id: '', eti_id: '' }]);
+                    }}>cargar →</span>
+                    <button onClick={e => { e.stopPropagation(); eliminarVersionPrueba(i); }}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#e74c3c', fontSize: 15, padding: '2px 4px', lineHeight: 1 }}
+                      title="Eliminar versión">🗑</button>
+                  </div>
                 </div>
               ))}
             </div>
