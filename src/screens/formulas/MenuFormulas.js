@@ -308,13 +308,6 @@ export default function MenuFormulas({
           }}>{msgExito}</div>
         )}
 
-        {importando && (
-          <div style={{
-            background:'#cce5ff', color:'#004085',
-            padding:'10px 16px', borderRadius:'8px',
-            marginBottom:12, fontWeight:'bold', fontSize:'13px'
-          }}>⏳ {progreso}</div>
-        )}
 
         {/* ── Grid productos por categoría ── */}
         {busqueda && categoriasFiltradas.length === 0 && (
