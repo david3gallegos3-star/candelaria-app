@@ -2054,10 +2054,13 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion, esBano 
                 <div key={f.id} style={{ background: 'white', borderRadius: 10, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', border: '1px solid #e8e8e8' }}>
                   {/* Fila de inputs */}
                   <div style={{ display: 'grid', gridTemplateColumns: '130px 1fr 1fr 32px', gap: 8, padding: '10px 12px', alignItems: 'center' }}>
-                    <input type="number" min="0" step="0.001" placeholder="ej: 0.400"
-                      value={f.kg === 0 ? '' : f.kg}
+                    <input type="text" inputMode="decimal" placeholder="ej: 0.400"
+                      value={pruebaFilas.find(r => r.id === f.id)?.kg ?? ''}
                       disabled={!pruebasModoEdit}
-                      onChange={e => setPruebaFilas(prev => prev.map(r => r.id === f.id ? { ...r, kg: e.target.value } : r))}
+                      onChange={e => {
+                        const val = e.target.value.replace(/[^0-9.]/g, '');
+                        setPruebaFilas(prev => prev.map(r => r.id === f.id ? { ...r, kg: val } : r));
+                      }}
                       style={{ padding: '7px 10px', borderRadius: 7, border: '2px solid #27ae60', fontSize: 14, fontWeight: 'bold', textAlign: 'center', background: pruebasModoEdit ? 'white' : '#f8f9fa', boxSizing: 'border-box' }} />
                     <select value={f.emp_id}
                       disabled={!pruebasModoEdit}
