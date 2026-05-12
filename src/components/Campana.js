@@ -7,6 +7,7 @@ import React from 'react';
 import { supabase } from '../supabase';
 
 function colorTipo(tipo) {
+  if (tipo === 'login_usuario')   return '#16a085';
   if (tipo === 'precio_mp' || tipo === 'cambio_precio') return '#e74c3c';
   if (tipo === 'nota_formulador' || tipo === 'nota_produccion') return '#e67e22';
   if (tipo === 'nueva_mp')        return '#27ae60';
@@ -19,6 +20,7 @@ function colorTipo(tipo) {
 }
 
 function iconTipo(tipo) {
+  if (tipo === 'login_usuario')   return '👤';
   if (tipo === 'precio_mp' || tipo === 'cambio_precio') return '💰';
   if (tipo === 'nota_formulador') return '🧪';
   if (tipo === 'nota_produccion') return '🏭';

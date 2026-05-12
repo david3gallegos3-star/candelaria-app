@@ -41,9 +41,20 @@ export function useAuth() {
     const rol = await cargarRolUsuario(data.user.id);
     setUser(data.user);
     setLoading(false);
-    if (!rol) { 
-      alert('Tu usuario no tiene rol asignado. Contacta al administrador.'); 
-      return; 
+    if (!rol) {
+      alert('Tu usuario no tiene rol asignado. Contacta al administrador.');
+      return;
+    }
+    // Notificar al admin cuando un usuario no-admin inicia sesión
+    if (data.user.email !== 'davidbi.br@gmail.com') {
+      const nombre = rol?.nombre || data.user.email;
+      crearNotificacion({
+        tipo:           'login_usuario',
+        origen:         'auth',
+        usuario_nombre: nombre,
+        user_id:        data.user.id,
+        mensaje:        `${nombre} ingresó al sistema`,
+      });
     }
     if (onSuccess) onSuccess();
   }

@@ -1199,6 +1199,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion, esBano 
               margenHijo={margenHijo}
               pctSalmueraFormula={pctSalmueraFormula}
               tiposExcluidos={esBano ? ['bifurcacion'] : undefined}
+              mpsEmpaque={mpsEmpaque}
             />
           )}
 

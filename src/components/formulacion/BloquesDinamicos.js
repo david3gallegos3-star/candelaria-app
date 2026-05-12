@@ -86,6 +86,11 @@ export function calcBloques({ bloques, kgIni, precioCarne, precioKgSalmuera, cos
       kg = kg * (1 - pctM);
       const mermaKg = kgAntes - kg;
       pasos.push({ tipo: 'horneado', label: `🔥 Merma Horneado`, kg, costoAcum, kgAntes, mermaKg, pctReal: pctM * 100 });
+
+    } else if (b.tipo === 'funda') {
+      const cFunda = parseFloat(b.precio_funda || 0);
+      costoAcum += cFunda;
+      pasos.push({ tipo: 'funda', label: `📦 ${b.mp_nombre || 'Funda'}`, kg, costoAcum, cFunda });
     }
   }
 
@@ -104,6 +109,7 @@ const BLOQUE_META = {
   merma:       { color: '#e74c3c', icon: '✂️', label: 'Merma' },
   horneado:    { color: '#e67e22', icon: '🔥', label: 'Merma Horneado' },
   bifurcacion: { color: '#6c3483', icon: '🔀', label: 'Bifurcación Padre/Hijo' },
+  funda:       { color: '#2c3e50', icon: '📦', label: 'Funda / Empaque' },
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -168,6 +174,7 @@ export function BloquesDinamicosEditor({
   // etiqueta del punto de partida (para hijo: "Entrada desde padre")
   labelInicial, iconoInicial, colorInicial,
   // para hijo: margen usa setMargenHijo directamente (ya está en props)
+  mpsEmpaque = [],
 }) {
   const kgIni = parseFloat(kgSalBase) || 2;
 
@@ -237,6 +244,7 @@ export function BloquesDinamicosEditor({
       merma:       { tipo: 'merma',       activo: true, merma_tipo: 1, pct_merma: 5, precio_merma_kg: 0, nombre_merma: '', mp_merma_id: '' },
       horneado:    { tipo: 'horneado',    activo: true, pct_merma_horneado: 30 },
       bifurcacion: { tipo: 'bifurcacion', activo: true, kg_para_hijo: 0, margen_padre: parseFloat(margenPadre) || 15, margen_hijo: parseFloat(margenHijo) || 15, deshuese_hijo: { pct_res_segunda: 0, pct_puntas: 0, pct_desecho: 0 } },
+      funda:       { tipo: 'funda', activo: true, mp_funda_id: '', mp_nombre: '', precio_funda: 0 },
     };
     setBloques(prev => [...prev, { id: newId(), ...templates[tipo] }]);
   }
@@ -742,6 +750,41 @@ export function BloquesDinamicosEditor({
                     );
                   })()}
 
+                  {/* ── FUNDA ── */}
+                  {b.tipo === 'funda' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      <div>
+                        <label style={{ fontSize: 11, fontWeight: 600, color: meta.color, display: 'block', marginBottom: 4 }}>Empaque / Funda</label>
+                        <select value={b.mp_funda_id} disabled={!modoEdicion}
+                          onChange={e => {
+                            const mp = mpsEmpaque.find(m => String(m.id) === e.target.value);
+                            updateBloque(b.id, {
+                              mp_funda_id:  e.target.value,
+                              mp_nombre:    mp ? (mp.nombre_producto || mp.nombre) : '',
+                              precio_funda: mp ? parseFloat(mp.precio_kg || 0) : 0,
+                            });
+                          }}
+                          style={{ width: '100%', padding: '7px 10px', borderRadius: 7, border: `1.5px solid ${meta.color}`, fontSize: 13, background: modoEdicion ? 'white' : '#f8f9fa', boxSizing: 'border-box' }}>
+                          <option value="">— Selecciona empaque —</option>
+                          {mpsEmpaque.map(m => (
+                            <option key={m.id} value={String(m.id)}>{m.nombre_producto || m.nombre} — ${parseFloat(m.precio_kg || 0).toFixed(4)}/u</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 11, fontWeight: 600, color: meta.color, display: 'block', marginBottom: 4 }}>Precio por unidad ($/u)</label>
+                        <NumInput value={b.precio_funda}
+                          style={baseInputStyle({ border: `1.5px solid ${meta.color}` })} disabled={!modoEdicion}
+                          onCommit={v => updateBloque(b.id, { precio_funda: v })} />
+                      </div>
+                      {b.precio_funda > 0 && (
+                        <div style={{ background: `${meta.color}10`, borderRadius: 7, padding: '8px 12px', fontSize: 11, color: meta.color, fontWeight: 600 }}>
+                          +${parseFloat(b.precio_funda).toFixed(4)} por unidad se suma al costo total
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {/* ── BIFURCACIÓN ── */}
                   {b.tipo === 'bifurcacion' && (() => {
                     const activeIdx = bloques.slice(0, idx).filter(b2 => b2.activo).length;
@@ -788,6 +831,7 @@ export function BloquesDinamicosEditor({
           <div style={{ fontSize: 11, color: '#888', marginBottom: 6, fontWeight: 600 }}>+ Agregar bloque:</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {Object.entries(BLOQUE_META)
+              .filter(([tipo]) => tipo !== 'funda')
               .filter(([tipo]) => !tiposDisponibles || tiposDisponibles.includes(tipo))
               .filter(([tipo]) => !tiposExcluidos || !tiposExcluidos.includes(tipo))
               .filter(([tipo]) => tipo !== 'bifurcacion' || !bloques.some(b => b.tipo === 'bifurcacion'))
@@ -800,6 +844,16 @@ export function BloquesDinamicosEditor({
                 </button>
               ))}
           </div>
+          {/* Agregar funda — separado, máximo 1 */}
+          {!bloques.some(b => b.tipo === 'funda') && (
+            <div style={{ marginTop: 8 }}>
+              <div style={{ fontSize: 11, color: '#888', marginBottom: 4, fontWeight: 600 }}>+ Agregar funda:</div>
+              <button onClick={() => addBloque('funda')}
+                style={{ padding: '5px 14px', borderRadius: 8, border: '1.5px dashed #2c3e5060', background: '#2c3e5008', cursor: 'pointer', fontSize: 11, color: '#2c3e50', fontWeight: 600 }}>
+                📦 Funda / Empaque
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -833,6 +887,7 @@ export function BloquesDinamicosEditor({
             if (p.tipo === 'merma')       detalle = `−${p.kgMerma.toFixed(3)} kg${p.credito > 0 ? ` · −$${p.credito.toFixed(4)} crédito` : ''}`;
             if (p.tipo === 'horneado')    detalle = `−${p.mermaKg.toFixed(3)} kg merma (${p.pctReal.toFixed(1)}%)`;
             if (p.tipo === 'bifurcacion') detalle = `Padre ${p.kgPadre.toFixed(3)} kg · Hijo ${p.kgHijo.toFixed(3)} kg`;
+            if (p.tipo === 'funda')       detalle = `+$${p.cFunda.toFixed(4)} por unidad`;
 
             return (
               <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 10px', marginBottom: 4, background: i % 2 === 0 ? '#f8f9fa' : 'white', borderRadius: 7, fontSize: 12, borderLeft: `3px solid ${BLOQUE_META[p.tipo]?.color || '#888'}` }}>
