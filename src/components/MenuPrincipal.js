@@ -24,6 +24,7 @@ const ROL_COLOR = {
 
 function MenuPrincipal({
   userRol, navegarA, logout,
+  presentes,
   notificaciones, notifNoLeidas,
   campanAbierta, setCampanaAbierta,
   cargarNotificaciones, productos,
@@ -163,6 +164,7 @@ function MenuPrincipal({
           <div style={{ display:'flex', justifyContent:'flex-end', marginBottom:'12px' }}>
             <Campana
               userRol={userRol}
+              presentes={presentes}
               notificaciones={notificaciones}
               notifNoLeidas={notifNoLeidas}
               campanAbierta={campanAbierta}

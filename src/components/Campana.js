@@ -33,13 +33,22 @@ function iconTipo(tipo) {
   return '🔔';
 }
 
-function Campana({ 
-  userRol, notificaciones, notifNoLeidas,
+const ACTIVIDAD_LABEL = {
+  conectado:  { label: 'Conectado',  color: '#27ae60' },
+  navegando:  { label: 'Navegando',  color: '#3498db' },
+  editando:   { label: 'Editando',   color: '#e67e22' },
+};
+
+function Campana({
+  userRol, presentes = [], notificaciones, notifNoLeidas,
   campanAbierta, setCampanaAbierta,
   cargarNotificaciones, productos,
   abrirProducto, navegarA
 }) {
   if (userRol?.rol !== 'admin') return null;
+
+  // Excluir al propio admin de la lista de presentes mostrada
+  const otrosUsuarios = presentes.filter(p => p.email !== 'davidbi.br@gmail.com');
 
   async function marcarLeida(id) {
     await supabase.from('notificaciones')
@@ -63,6 +72,19 @@ function Campana({
 
   return (
     <div style={{ position:'relative' }}>
+
+      {/* Indicador usuarios en línea */}
+      {otrosUsuarios.length > 0 && (
+        <div style={{
+          display:'inline-flex', alignItems:'center', gap:'5px',
+          background:'rgba(39,174,96,0.2)', border:'1px solid rgba(39,174,96,0.5)',
+          borderRadius:'8px', padding:'6px 10px',
+          marginRight:'6px', fontSize:'12px', color:'white', cursor:'pointer'
+        }} onClick={() => setCampanaAbierta(!campanAbierta)}>
+          <span style={{ width:'8px', height:'8px', borderRadius:'50%', background:'#27ae60', display:'inline-block' }} />
+          {otrosUsuarios.length} en línea
+        </div>
+      )}
 
       {/* Botón campana */}
       <button
@@ -122,6 +144,51 @@ function Campana({
               }}>✕</button>
             </div>
           </div>
+
+          {/* Usuarios en línea */}
+          {otrosUsuarios.length > 0 && (
+            <div style={{ borderBottom:'2px solid #eef' }}>
+              <div style={{
+                padding:'8px 14px 4px', fontSize:'11px',
+                fontWeight:'700', color:'#27ae60',
+                textTransform:'uppercase', letterSpacing:'0.5px'
+              }}>
+                👥 En línea ahora
+              </div>
+              {otrosUsuarios.map((p, i) => {
+                const act = ACTIVIDAD_LABEL[p.actividad] || ACTIVIDAD_LABEL.conectado;
+                return (
+                  <div key={p.user_id || i} style={{
+                    padding:'8px 14px', display:'flex', alignItems:'center', gap:'10px',
+                    borderBottom: i < otrosUsuarios.length - 1 ? '1px solid #f5f5f5' : 'none'
+                  }}>
+                    <div style={{
+                      width:'32px', height:'32px', borderRadius:'50%',
+                      background:'#1a1a2e', display:'flex', alignItems:'center',
+                      justifyContent:'center', fontSize:'14px', flexShrink:0
+                    }}>
+                      👤
+                    </div>
+                    <div style={{ flex:1 }}>
+                      <div style={{ fontSize:'12px', fontWeight:'700', color:'#1a1a2e' }}>
+                        {p.nombre || p.email}
+                      </div>
+                      <div style={{ fontSize:'11px', color:'#888' }}>
+                        {p.pantalla_label || p.pantalla}
+                      </div>
+                    </div>
+                    <div style={{
+                      fontSize:'10px', fontWeight:'600', color: act.color,
+                      background: act.color + '18', borderRadius:'10px',
+                      padding:'2px 8px', whiteSpace:'nowrap'
+                    }}>
+                      ● {act.label}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
           {/* Lista notificaciones */}
           <div style={{ maxHeight:'400px', overflowY:'auto' }}>

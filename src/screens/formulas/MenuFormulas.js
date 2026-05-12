@@ -45,6 +45,7 @@ export default function MenuFormulas({
   confirmElimCat, setConfirmElimCat,
   confirmarElimCategoria,
   // campana
+  presentes,
   notificaciones, notifNoLeidas,
   campanAbierta, setCampanaAbierta,
   cargarNotificaciones,
@@ -180,6 +181,7 @@ export default function MenuFormulas({
           <div style={{ display:'flex', alignItems:'center', gap:8 }}>
             <Campana
               userRol={userRol}
+              presentes={presentes}
               notificaciones={notificaciones}
               notifNoLeidas={notifNoLeidas}
               campanAbierta={campanAbierta}

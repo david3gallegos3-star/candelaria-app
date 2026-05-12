@@ -38,6 +38,7 @@ import InventarioProduccion from './screens/produccion/InventarioProduccion';
 
 // Hooks y helpers
 import { useAuth }           from './hooks/useAuth';
+import { usePresence }       from './hooks/usePresence';
 
 // ── EMOJIS_CAT global (compartido con MenuFormulas) ──
 export const EMOJIS_CAT = {};
@@ -82,6 +83,9 @@ function App() {
   const [categoriasMp,     setCategoriasMp]     = useState([]);
   const [importando,       setImportando]       = useState(false);
   const [progreso,         setProgreso]         = useState('');
+
+  // ── Presencia en tiempo real ──────────────────────────
+  const { presentes } = usePresence(user, userRol, pantalla);
 
   // ── Notificaciones ────────────────────────────────────
   const [notificaciones, setNotificaciones] = useState([]);
@@ -870,6 +874,7 @@ async function confirmarImportacion() {
         userRol={userRol}
         navegarA={navegarA}
         logout={() => logout(() => setPantalla('login'))}
+        presentes={presentes}
         notificaciones={notificaciones}
         notifNoLeidas={notifNoLeidas}
         campanAbierta={campanAbierta}
@@ -1078,6 +1083,7 @@ return (
       confirmElimCat={confirmElimCat} setConfirmElimCat={setConfirmElimCat}
       confirmarElimCategoria={confirmarElimCategoria}
       categoriasProtegidas={CATS_PROTEGIDAS}
+      presentes={presentes}
       notificaciones={notificaciones}
       notifNoLeidas={notifNoLeidas}
       campanAbierta={campanAbierta}   setCampanaAbierta={setCampanaAbierta}
