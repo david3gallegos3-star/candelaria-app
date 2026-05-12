@@ -762,8 +762,42 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion, esBano 
 
   function getCFinal() {
     if (tipo === 'hijo') return computeCLimpio().cLimpio;
+
+    // Prioridad 1: datos reales de producción
     const lotesConCosto = lotesStock.filter(l => parseFloat(l.costo_mad_kg || 0) > 0);
-    return lotesConCosto.length > 0 ? parseFloat(lotesConCosto[0].costo_mad_kg) : 0;
+    if (lotesConCosto.length > 0) return parseFloat(lotesConCosto[0].costo_mad_kg);
+
+    // Prioridad 2: cálculo teórico del tab Costos 1 kg (modo dinámico)
+    if (bloques !== null) {
+      const mpAdic = mpAdicionalId ? mpsFormula.find(m => String(m.id) === mpAdicionalId) : null;
+      const result = calcBloques({
+        bloques,
+        kgIni:           parseFloat(kgSalBase) || 2,
+        precioCarne,
+        precioKgSalmuera,
+        costoRubFormula,
+        kgRubBase,
+        mpAdic,
+        esBano,
+      });
+      return result.costoKgFinal || 0;
+    }
+
+    // Prioridad 3: cálculo teórico modo clásico
+    const pctInjN    = parseFloat(pctInj) || 0;
+    const pctMadN    = parseFloat(pctMad) || 0;
+    const kgSal1     = pctInjN / 100;
+    const PT         = 1 + kgSal1;
+    const costoRubKg = (parseFloat(kgRubBase) || 1) > 0 ? costoRubFormula / (parseFloat(kgRubBase) || 1) : 0;
+    const mpAdic     = mpAdicionalId ? mpsFormula.find(m => String(m.id) === mpAdicionalId) : null;
+    const costoAdic  = ((parseFloat(gramosAdicional) || 0) / 1000) * parseFloat(mpAdic?.precio_kg || 0);
+    const CI         = precioCarne + kgSal1 * precioKgSalmuera + costoRubKg + costoAdic;
+    const kgSalidaN  = parseFloat(kgSalidaMad) || 0;
+    if (kgSalidaN > 0) {
+      return (CI * (parseFloat(kgSalBase) || 2)) / kgSalidaN;
+    }
+    const kgMad1 = PT * (1 - pctMadN / 100);
+    return kgMad1 > 0 ? CI / kgMad1 : 0;
   }
 
   async function guardarCierre() {
