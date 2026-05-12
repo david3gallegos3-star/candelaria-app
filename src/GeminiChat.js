@@ -111,6 +111,7 @@ function GeminiChat({ formulaContexto, formulaIngredientes }) {
   const [btnDragging,   setBtnDragging]   = useState(false);
   const [btnDragStart,  setBtnDragStart]  = useState(null);
   const btnHasMoved = useRef(false);
+  const chatKeyRef  = useRef(null);
 
   const chatRef = useRef();
   const fileRef = useRef();
@@ -120,11 +121,40 @@ function GeminiChat({ formulaContexto, formulaIngredientes }) {
       chatRef.current.scrollTop = chatRef.current.scrollHeight;
   }, [chat, cargando]);
 
+  // ── Persistencia por fórmula ──
+  const chatKey = formulaIngredientes?.nombre
+    ? `chat_formula_${formulaIngredientes.nombre}`
+    : null;
+
+  // Cargar historial cuando cambia la fórmula activa
+  useEffect(() => {
+    chatKeyRef.current = chatKey;
+    if (!chatKey) { setChat([]); return; }
+    try {
+      const saved = localStorage.getItem(chatKey);
+      setChat(saved ? JSON.parse(saved) : []);
+    } catch { setChat([]); }
+  }, [chatKey]);
+
+  // Guardar historial en cada cambio del chat (sin imágenes base64)
+  useEffect(() => {
+    const key = chatKeyRef.current;
+    if (!key || chat.length === 0) return;
+    try {
+      const chatParaGuardar = chat.map(m => ({ ...m, previewUrl: null }));
+      localStorage.setItem(key, JSON.stringify(chatParaGuardar));
+    } catch {}
+  }, [chat]);
+
   // ── Cerrar: resetea posición ──
   function cerrar(limpiarChat) {
     setAbierto(false);
     setPos(POS_DEFAULT);
-    if (limpiarChat) { setChat([]); setArchivo(null); }
+    if (limpiarChat) {
+      setChat([]);
+      setArchivo(null);
+      if (chatKeyRef.current) localStorage.removeItem(chatKeyRef.current);
+    }
   }
 
   // ── Drag burbuja minimizada ──
