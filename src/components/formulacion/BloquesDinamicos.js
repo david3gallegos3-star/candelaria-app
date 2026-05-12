@@ -107,6 +107,40 @@ const BLOQUE_META = {
 };
 
 // ─────────────────────────────────────────────────────────────
+// NumInput — input de texto que acepta decimales con coma o punto
+// Mantiene estado local string mientras el usuario escribe,
+// y al hacer blur parsea y confirma el número final.
+function NumInput({ value, onCommit, style, disabled, placeholder }) {
+  const [str, setStr] = React.useState(() => (value != null && value !== '') ? String(value) : '');
+  const focusedRef = React.useRef(false);
+  React.useEffect(() => {
+    if (!focusedRef.current) setStr((value != null && value !== '') ? String(value) : '');
+  }, [value]);
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      style={style}
+      disabled={disabled}
+      placeholder={placeholder}
+      value={str}
+      onFocus={() => { focusedRef.current = true; }}
+      onChange={e => {
+        const v = e.target.value.replace(/[^0-9.,]/g, '').replace(',', '.');
+        setStr(v);
+        const n = parseFloat(v);
+        if (!isNaN(n)) onCommit(n);
+      }}
+      onBlur={() => {
+        focusedRef.current = false;
+        const n = parseFloat(str.replace(',', '.')) || 0;
+        setStr(String(n));
+        onCommit(n);
+      }}
+    />
+  );
+}
+
 // BloquesDinamicosEditor — componente principal
 // ─────────────────────────────────────────────────────────────
 export function BloquesDinamicosEditor({
@@ -231,11 +265,10 @@ export function BloquesDinamicosEditor({
         <div style={{ background: 'white', borderRadius: 10, padding: '12px 16px', marginBottom: 12, border: '2px solid #e67e22', display: 'flex', alignItems: 'center', gap: 14 }}>
           <span style={{ fontSize: 18 }}>🥩</span>
           <span style={{ fontWeight: 700, color: '#e67e22', flex: 1, fontSize: 13 }}>Carne inicial</span>
-          <input
-            type="number" min="0.1" step="0.1"
+          <NumInput
             value={kgSalBase}
             disabled={!modoEdicion}
-            onChange={e => setKgSalBase(e.target.value)}
+            onCommit={v => setKgSalBase(String(v))}
             style={{ width: 80, padding: '7px 10px', borderRadius: 7, border: '2px solid #e67e22', fontSize: 15, fontWeight: 'bold', textAlign: 'center', background: modoEdicion ? 'white' : '#fef9e7' }}
           />
           <span style={{ fontSize: 12, color: '#888' }}>kg</span>
@@ -458,9 +491,9 @@ export function BloquesDinamicosEditor({
                               (la fórmula está calculada para cuántos kg)
                             </span>
                           </label>
-                          <input type="number" min="0.1" step="0.1" value={b.kg_rub_base}
+                          <NumInput value={b.kg_rub_base}
                             style={baseInputStyle({ border: `1.5px solid ${meta.color}` })} disabled={!modoEdicion}
-                            onChange={e => { const v = parseFloat(e.target.value) || 1; updateBloque(b.id, { kg_rub_base: v }); setKgRubBase(String(v)); }} />
+                            onCommit={v => { updateBloque(b.id, { kg_rub_base: v || 1 }); setKgRubBase(String(v || 1)); }} />
                         </div>
                         {costoRubFormula > 0 && (
                           <div style={{ background: `${meta.color}10`, borderRadius: 8, padding: '10px 12px' }}>
@@ -570,9 +603,9 @@ export function BloquesDinamicosEditor({
                             )}
                           </label>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                            <input type="number" min="0" max="99" step="0.1" value={b.pct_merma}
+                            <NumInput value={b.pct_merma}
                               style={baseInputStyle({ border: `1.5px solid ${meta.color}` })} disabled={!modoEdicion}
-                              onChange={e => updateBloque(b.id, { pct_merma: parseFloat(e.target.value) || 0 })} />
+                              onCommit={v => updateBloque(b.id, { pct_merma: v })} />
                             {kgMerma > 0 && (
                               <div style={{ background: '#fdf2f2', border: `1.5px solid ${meta.color}`, borderRadius: 7, padding: '6px 12px', textAlign: 'center', whiteSpace: 'nowrap' }}>
                                 <div style={{ fontSize: 10, color: '#888' }}>kg merma</div>
@@ -642,9 +675,9 @@ export function BloquesDinamicosEditor({
                             </div>
                             <div>
                               <label style={{ fontSize: 11, fontWeight: 600, color: '#27ae60', display: 'block', marginBottom: 4 }}>Precio recuperable ($/kg)</label>
-                              <input type="number" min="0" step="0.01" value={b.precio_merma_kg}
+                              <NumInput value={b.precio_merma_kg}
                                 style={baseInputStyle({ border: '1.5px solid #27ae60' })} disabled={!modoEdicion}
-                                onChange={e => updateBloque(b.id, { precio_merma_kg: parseFloat(e.target.value) || 0 })} />
+                                onCommit={v => updateBloque(b.id, { precio_merma_kg: v })} />
                             </div>
                             {kgMerma > 0 && precioRec > 0 && (
                               <div style={{ background: '#eafaf1', border: '1.5px solid #27ae60', borderRadius: 8, padding: '10px 12px' }}>
@@ -683,9 +716,9 @@ export function BloquesDinamicosEditor({
                             )}
                           </label>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                            <input type="number" min="0" max="99" step="0.1" value={b.pct_merma_horneado}
+                            <NumInput value={b.pct_merma_horneado}
                               style={baseInputStyle({ border: `1.5px solid ${meta.color}` })} disabled={!modoEdicion}
-                              onChange={e => updateBloque(b.id, { pct_merma_horneado: parseFloat(e.target.value) || 0 })} />
+                              onCommit={v => updateBloque(b.id, { pct_merma_horneado: v })} />
                             <span style={{ fontSize: 13, fontWeight: 700, color: meta.color }}>%</span>
                             {kgMerma > 0 && (
                               <div style={{ background: '#fef3e2', border: `1.5px solid ${meta.color}`, borderRadius: 7, padding: '6px 12px', textAlign: 'center', whiteSpace: 'nowrap' }}>
@@ -722,9 +755,9 @@ export function BloquesDinamicosEditor({
                             kg que van al Hijo ({deshueseConfig?.corte_hijo || 'producto hijo'})
                             <span style={{ fontWeight: 400, color: '#aaa', marginLeft: 8 }}>disponibles: {kgAntes.toFixed(3)} kg</span>
                           </label>
-                          <input type="number" min="0" step="0.001" value={b.kg_para_hijo} placeholder="ej: 1.000"
+                          <NumInput value={b.kg_para_hijo} placeholder="ej: 1.000"
                             style={baseInputStyle({ border: `1.5px solid ${meta.color}`, textAlign: 'left' })} disabled={!modoEdicion}
-                            onChange={e => { const v = parseFloat(e.target.value) || 0; updateBloque(b.id, { kg_para_hijo: v }); setKgParaHijo(String(v)); }} />
+                            onCommit={v => { updateBloque(b.id, { kg_para_hijo: v }); setKgParaHijo(String(v)); }} />
                         </div>
                         {kgHijoV > 0 && (
                           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>

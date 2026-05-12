@@ -1,5 +1,5 @@
 // VistaCorte.js — CORTES: Costos 1 kg | Pruebas | Producción | Historial
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../supabase';
 import * as XLSX from 'xlsx';
 import { BloquesDinamicosEditor, calcBloques } from './BloquesDinamicos';
@@ -8,6 +8,8 @@ import { useRealtime } from '../../hooks/useRealtime';
 export default function VistaCorte({ producto, mobile, onAbrirInyeccion, esBano = false }) {
   const [tabActivo,       setTabActivo]       = useState('costos');
   const [cargando,        setCargando]        = useState(true);
+  const modoEdicionRef    = useRef(false);
+  const guardarConfigRef  = useRef(null);
 
   // Data
   const [mpVinculada,     setMpVinculada]     = useState(null);
@@ -582,6 +584,27 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion, esBano 
     setModoEdicion(false);
   }
 
+  // Mantener refs actualizados en cada render para el auto-save en unmount
+  useEffect(() => { modoEdicionRef.current = modoEdicion; });
+  useEffect(() => { guardarConfigRef.current = guardarConfig; });
+
+  // Auto-save al desmontar el componente (navegar a otra fórmula / volver)
+  useEffect(() => {
+    return () => {
+      if (modoEdicionRef.current && guardarConfigRef.current) {
+        guardarConfigRef.current();
+      }
+    };
+  }, []);
+
+  // Cambiar tab: si está en edición y sale del tab costos, auto-guarda
+  function cambiarTab(nuevoTab) {
+    if (modoEdicion && tabActivo === 'costos' && nuevoTab !== 'costos') {
+      fijarCambios();
+    }
+    setTabActivo(nuevoTab);
+  }
+
   async function recargarConfigPadre() {
     if (!deshueseConfig?.corte_padre) return;
     const { data: padreActivo } = await supabase.from('productos')
@@ -1124,7 +1147,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion, esBano 
       {/* Tabs */}
       <div style={{ display: 'flex', background: 'white', borderRadius: 10, padding: 4, marginBottom: 14, gap: 4, boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
         {tabs.map(([key, label]) => (
-          <button key={key} onClick={() => setTabActivo(key)} style={{
+          <button key={key} onClick={() => cambiarTab(key)} style={{
             flex: 1, padding: '9px 4px', border: 'none', borderRadius: 7, cursor: 'pointer',
             fontSize: mobile ? 11 : 13, fontWeight: 'bold',
             background: tabActivo === key ? '#6c3483' : 'transparent',
