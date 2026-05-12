@@ -48,16 +48,12 @@ export default function MenuFormulas({
   notificaciones, notifNoLeidas,
   campanAbierta, setCampanaAbierta,
   cargarNotificaciones,
-  // importar
-  importando, progreso,
-  importarProductosExcel,
   // misc
   msgExito,
   onVolverMenu,
   cargarCategorias,
 }) {
 
-  const fileRefProductos = useRef();
   // EMOJIS_CAT viene del padre como prop
   const EC = emojisExterno || EMOJIS_CAT;
 
@@ -239,22 +235,6 @@ export default function MenuFormulas({
           flexWrap:'wrap', alignItems:'center',
           boxShadow:'0 2px 6px rgba(0,0,0,0.07)'
         }}>
-          <button
-            onClick={() => fileRefProductos.current.click()}
-            disabled={importando}
-            style={{
-              padding:'8px 14px', background:'#8e44ad', color:'white',
-              border:'none', borderRadius:8, cursor:'pointer',
-              fontSize:'13px', fontWeight:'bold'
-            }}
-          >📤 Importar Excel</button>
-          <input
-            ref={fileRefProductos}
-            type="file"
-            accept=".xlsx,.xlsm"
-            style={{ display:'none' }}
-            onChange={importarProductosExcel}
-          />
 
           <button onClick={() => setModalNuevo(true)} style={{
             padding:'8px 14px', background:'#27ae60', color:'white',
