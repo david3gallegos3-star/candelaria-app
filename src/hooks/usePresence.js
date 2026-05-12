@@ -27,26 +27,29 @@ const NOMBRES_PANTALLA = {
 };
 
 export function usePresence(user, userRol, pantalla) {
-  const channelRef   = useRef(null);
-  const pantallaRef  = useRef(pantalla);
-  const actividadRef = useRef('conectado');
-  const debounceRef  = useRef(null);
+  const channelRef      = useRef(null);
+  const pantallaRef     = useRef(pantalla);
+  const actividadRef    = useRef('conectado');
+  const debounceRef     = useRef(null);
+  const lastActivityRef = useRef(Date.now());
   const [presentes, setPresentes] = useState([]);
 
   function track(extra = {}) {
     if (!channelRef.current || !user) return;
     channelRef.current.track({
-      user_id:    user.id,
-      email:      user.email,
-      nombre:     userRol?.nombre || user.email,
-      pantalla:   pantallaRef.current,
+      user_id:       user.id,
+      email:         user.email,
+      nombre:        userRol?.nombre || user.email,
+      pantalla:      pantallaRef.current,
       pantalla_label: NOMBRES_PANTALLA[pantallaRef.current] || pantallaRef.current,
-      actividad:  actividadRef.current,
+      actividad:     actividadRef.current,
+      last_activity: lastActivityRef.current,
       ...extra,
     });
   }
 
   function onInput() {
+    lastActivityRef.current = Date.now();
     if (actividadRef.current !== 'editando') {
       actividadRef.current = 'editando';
       track();
@@ -74,6 +77,7 @@ export function usePresence(user, userRol, pantalla) {
 
     channel.subscribe(async (status) => {
       if (status === 'SUBSCRIBED') {
+        lastActivityRef.current = Date.now();
         actividadRef.current = 'conectado';
         track();
       }
@@ -81,20 +85,24 @@ export function usePresence(user, userRol, pantalla) {
 
     document.addEventListener('keydown', onInput);
     document.addEventListener('input',   onInput);
+    // Clicks también cuentan como actividad
+    document.addEventListener('click',   onInput);
 
     return () => {
       channel.untrack();
       channel.unsubscribe();
       document.removeEventListener('keydown', onInput);
       document.removeEventListener('input',   onInput);
+      document.removeEventListener('click',   onInput);
       clearTimeout(debounceRef.current);
       channelRef.current = null;
     };
   }, [user]);
 
-  // Actualizar pantalla cuando cambia
+  // Actualizar pantalla cuando cambia (navegar = actividad)
   useEffect(() => {
     pantallaRef.current = pantalla;
+    lastActivityRef.current = Date.now();
     if (actividadRef.current !== 'editando') {
       actividadRef.current = 'navegando';
     }

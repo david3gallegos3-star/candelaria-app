@@ -3,7 +3,7 @@
 // Usado por: App.js, pantalla menu y fórmulas
 // ============================================
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabase';
 
 function colorTipo(tipo) {
@@ -33,6 +33,18 @@ function iconTipo(tipo) {
   return '🔔';
 }
 
+const INACTIVO_MIN = 20; // minutos sin interacción → inactivo
+
+function tiempoInactivo(last_activity) {
+  if (!last_activity) return null;
+  const mins = Math.floor((Date.now() - last_activity) / 60000);
+  if (mins < INACTIVO_MIN) return null;
+  if (mins < 60) return `${mins} min`;
+  const hrs = Math.floor(mins / 60);
+  const rem = mins % 60;
+  return rem > 0 ? `${hrs}h ${rem}min` : `${hrs}h`;
+}
+
 const ACTIVIDAD_LABEL = {
   conectado:  { label: 'Conectado',  color: '#27ae60' },
   navegando:  { label: 'Navegando',  color: '#3498db' },
@@ -46,6 +58,14 @@ function Campana({
   abrirProducto, navegarA
 }) {
   if (userRol?.rol !== 'admin') return null;
+
+  // Tick cada 60s para actualizar etiquetas de inactividad mientras el panel está abierto
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!campanAbierta) return;
+    const t = setInterval(() => setTick(n => n + 1), 60000);
+    return () => clearInterval(t);
+  }, [campanAbierta]);
 
   // Excluir al propio admin de la lista de presentes mostrada
   const otrosUsuarios = presentes.filter(p => p.email !== 'davidbi.br@gmail.com');
@@ -168,24 +188,31 @@ function Campana({
                 👥 En línea ahora
               </div>
               {otrosUsuarios.map((p, i) => {
-                const act = ACTIVIDAD_LABEL[p.actividad] || ACTIVIDAD_LABEL.conectado;
+                const inactivoStr = tiempoInactivo(p.last_activity);
+                const esInactivo  = !!inactivoStr;
+                const act = esInactivo
+                  ? { label: `Inactivo ${inactivoStr}`, color: '#95a5a6' }
+                  : (ACTIVIDAD_LABEL[p.actividad] || ACTIVIDAD_LABEL.conectado);
                 return (
                   <div key={p.user_id || i} style={{
                     padding:'8px 14px', display:'flex', alignItems:'center', gap:'10px',
-                    borderBottom: i < otrosUsuarios.length - 1 ? '1px solid #f5f5f5' : 'none'
+                    borderBottom: i < otrosUsuarios.length - 1 ? '1px solid #f5f5f5' : 'none',
+                    background: esInactivo ? '#fafafa' : 'white',
+                    opacity: esInactivo ? 0.75 : 1,
                   }}>
                     <div style={{
                       width:'32px', height:'32px', borderRadius:'50%',
-                      background:'#1a1a2e', display:'flex', alignItems:'center',
+                      background: esInactivo ? '#ccc' : '#1a1a2e',
+                      display:'flex', alignItems:'center',
                       justifyContent:'center', fontSize:'14px', flexShrink:0
                     }}>
-                      👤
+                      {esInactivo ? '💤' : '👤'}
                     </div>
                     <div style={{ flex:1 }}>
-                      <div style={{ fontSize:'12px', fontWeight:'700', color:'#1a1a2e' }}>
+                      <div style={{ fontSize:'12px', fontWeight:'700', color: esInactivo ? '#888' : '#1a1a2e' }}>
                         {p.nombre || p.email}
                       </div>
-                      <div style={{ fontSize:'11px', color:'#888' }}>
+                      <div style={{ fontSize:'11px', color:'#aaa' }}>
                         {p.pantalla_label || p.pantalla}
                       </div>
                     </div>
