@@ -146,6 +146,18 @@ function Campana({
           </div>
 
           {/* Usuarios en línea */}
+          {otrosUsuarios.length === 0 && (
+            <div style={{
+              padding:'10px 14px', borderBottom:'1px solid #eef',
+              display:'flex', alignItems:'center', gap:'8px',
+              background:'#f8fff8'
+            }}>
+              <span style={{ fontSize:'11px', color:'#27ae60', fontWeight:'600' }}>
+                👥 En línea ahora
+              </span>
+              <span style={{ fontSize:'11px', color:'#aaa' }}>— Solo tú estás conectado</span>
+            </div>
+          )}
           {otrosUsuarios.length > 0 && (
             <div style={{ borderBottom:'2px solid #eef' }}>
               <div style={{
