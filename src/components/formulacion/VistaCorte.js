@@ -705,10 +705,12 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion, esBano 
     };
     const nuevasVersiones = [nuevaVer, ...versiones].slice(0, 10);
     const { data: existing } = await supabase
-      .from('vista_horneado_config').select('id')
+      .from('vista_horneado_config').select('producto_nombre')
       .eq('producto_nombre', producto.nombre).maybeSingle();
     if (existing) {
-      await supabase.from('vista_horneado_config').update({ versiones: nuevasVersiones }).eq('id', existing.id);
+      await supabase.from('vista_horneado_config')
+        .update({ versiones: nuevasVersiones })
+        .eq('producto_nombre', producto.nombre);
     } else {
       await supabase.from('vista_horneado_config')
         .insert({ producto_nombre: producto.nombre, producto_id: producto.id, config: {}, versiones: nuevasVersiones });
