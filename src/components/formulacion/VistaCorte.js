@@ -763,9 +763,10 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion, esBano 
   function getCFinal() {
     if (tipo === 'hijo') return computeCLimpio().cLimpio;
 
+    const mpAdicObj = mpAdicionalId ? mpsFormula.find(m => String(m.id) === mpAdicionalId) : null;
+
     // Siempre desde Costos 1 kg — modo dinámico
     if (bloques !== null) {
-      const mpAdic = mpAdicionalId ? mpsFormula.find(m => String(m.id) === mpAdicionalId) : null;
       const result = calcBloques({
         bloques,
         kgIni:           parseFloat(kgSalBase) || 2,
@@ -773,7 +774,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion, esBano 
         precioKgSalmuera,
         costoRubFormula,
         kgRubBase,
-        mpAdic,
+        mpAdic:          mpAdicObj,
         esBano,
       });
       return result.costoKgFinal || 0;
@@ -785,8 +786,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion, esBano 
     const kgSal1     = pctInjN / 100;
     const PT         = 1 + kgSal1;
     const costoRubKg = (parseFloat(kgRubBase) || 1) > 0 ? costoRubFormula / (parseFloat(kgRubBase) || 1) : 0;
-    const mpAdic     = mpAdicionalId ? mpsFormula.find(m => String(m.id) === mpAdicionalId) : null;
-    const costoAdic  = ((parseFloat(gramosAdicional) || 0) / 1000) * parseFloat(mpAdic?.precio_kg || 0);
+    const costoAdic  = ((parseFloat(gramosAdicional) || 0) / 1000) * parseFloat(mpAdicObj?.precio_kg || 0);
     const CI         = precioCarne + kgSal1 * precioKgSalmuera + costoRubKg + costoAdic;
     const kgSalidaN  = parseFloat(kgSalidaMad) || 0;
     if (kgSalidaN > 0) {
