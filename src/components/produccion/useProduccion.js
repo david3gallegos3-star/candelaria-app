@@ -70,7 +70,11 @@ export function useProduccion({ userRol, currentUser }) {
         .select('*, materias_primas(id,nombre,nombre_producto,precio_kg)'),
       supabase.from('materias_primas').select('id, nombre, nombre_producto, precio_kg'),
     ]);
-    setProductos(prods   || []);
+    const prodsFiltered = (prods || []).filter(p => {
+      const cat = (p.categoria || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
+      return !cat.includes('CORTE') && !cat.includes('INMERSION') && !cat.includes('MARINAD') && !cat.includes('AHUMAD');
+    });
+    setProductos(prodsFiltered);
     setProduccionDiaria(prod || []);
     setInventario(inv    || []);
     setMateriasPrimas(mps || []);
