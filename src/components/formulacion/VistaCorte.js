@@ -54,6 +54,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion, esBano 
   // Pruebas — múltiples filas
   const [pruebaFilas,       setPruebaFilas]       = useState([{ id: '1', kg: '', emp_id: '', eti_id: '' }]);
   const [pruebasModoEdit,   setPruebasModoEdit]   = useState(false);
+  const [margenPrueba,      setMargenPrueba]      = useState('');
 
   // Formulaciones salmuera
   const [formulaciones,         setFormulaciones]         = useState([]);
@@ -711,8 +712,8 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion, esBano 
       tipo: 'prueba',
       fundas,
       c_base: cBase,
+      margen_prueba: parseFloat(margenPrueba) || null,
       fecha: new Date().toISOString().split('T')[0],
-      // campos legacy para mostrar en versiones antiguas
       gramos_funda: fundas[0].kg,
       c_total: fundas[0].c_total,
     };
@@ -2028,12 +2029,16 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion, esBano 
           {/* Header */}
           <div style={{ marginBottom: 14 }}>
             <div style={{ fontWeight: 700, color: '#1a5276', fontSize: 15 }}>Simulador — Costo por Funda</div>
-            <div style={{ fontSize: 11, color: '#888', marginTop: 2, display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <div style={{ fontSize: 11, color: '#888', marginTop: 2, display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
               <span>Costo base: {cFinalActual > 0 ? <strong style={{ color: '#27ae60' }}>${cFinalActual.toFixed(4)}/kg</strong> : <span style={{ color: '#e74c3c' }}>sin datos — configura Costos 1 kg</span>}</span>
-              {(() => {
-                const mg = tipo === 'padre' ? parseFloat(margenPadre) : tipo === 'hijo' ? parseFloat(margenHijo) : 0;
-                return mg > 0 ? <span>· Margen: <strong style={{ color: '#8e44ad' }}>{mg}%</strong></span> : null;
-              })()}
+              <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                · % Ganancia:
+                <input type="text" inputMode="decimal" placeholder="15"
+                  value={margenPrueba}
+                  onChange={e => setMargenPrueba(e.target.value.replace(/[^0-9.]/g, ''))}
+                  style={{ width: 44, padding: '2px 5px', borderRadius: 5, border: '1.5px solid #8e44ad', fontSize: 12, textAlign: 'center', color: '#8e44ad', fontWeight: 700, outline: 'none' }} />
+                <strong style={{ color: '#8e44ad' }}>%</strong>
+              </span>
             </div>
           </div>
 
@@ -2048,8 +2053,10 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion, esBano 
           {/* Filas */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 14 }}>
             {pruebaFilasCalc.map((f, idx) => {
-              const mgConf = tipo === 'padre' ? parseFloat(margenPadre) || 0 : tipo === 'hijo' ? parseFloat(margenHijo) || 0 : 0;
+              const mgConf = parseFloat(margenPrueba) || 0;
               const pvp = mgConf > 0 && mgConf < 100 && f.total > 0 ? f.total / (1 - mgConf / 100) : 0;
+              const precioFinal = pvp > 0 ? pvp : f.total;
+              const costo1kg = f.kg > 0 ? precioFinal / f.kg : 0;
               return (
                 <div key={f.id} style={{ background: 'white', borderRadius: 10, overflow: 'hidden', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', border: '1px solid #e8e8e8' }}>
                   {/* Fila de inputs */}
@@ -2083,24 +2090,31 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion, esBano 
                   </div>
                   {/* Resultado */}
                   {f.kg > 0 && cFinalActual > 0 && (
-                    <div style={{ background: 'linear-gradient(135deg,#4a235a,#6c3483)', padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-                      <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.8)' }}>
-                        <span style={{ fontWeight: 700, color: '#f9e79f', fontSize: 13 }}>{(f.kg * 1000).toFixed(0)}g</span>
-                        <span style={{ marginLeft: 8 }}>🥩 ${f.carne.toFixed(4)}{f.cEmp > 0 ? ` · 📦 $${f.cEmp.toFixed(4)}` : ''}{f.cEti > 0 ? ` · 🏷️ $${f.cEti.toFixed(4)}` : ''}</span>
-                      </div>
-                      <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                        <div style={{ textAlign: 'right' }}>
-                          <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.6)' }}>Total funda</div>
-                          <div style={{ fontSize: 18, fontWeight: 900, color: '#f9e79f' }}>${f.total.toFixed(4)}</div>
+                    <>
+                      <div style={{ background: 'linear-gradient(135deg,#4a235a,#6c3483)', padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                        <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.8)' }}>
+                          <span style={{ fontWeight: 700, color: '#f9e79f', fontSize: 13 }}>{(f.kg * 1000).toFixed(0)}g</span>
+                          <span style={{ marginLeft: 8 }}>🥩 ${f.carne.toFixed(4)}{f.cEmp > 0 ? ` · 📦 $${f.cEmp.toFixed(4)}` : ''}{f.cEti > 0 ? ` · 🏷️ $${f.cEti.toFixed(4)}` : ''}</span>
                         </div>
-                        {pvp > 0 && (
+                        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
                           <div style={{ textAlign: 'right' }}>
-                            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.6)' }}>PVP ({mgConf}%)</div>
-                            <div style={{ fontSize: 18, fontWeight: 900, color: '#a9dfbf' }}>${pvp.toFixed(4)}</div>
+                            <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.6)' }}>Total funda</div>
+                            <div style={{ fontSize: 18, fontWeight: 900, color: '#f9e79f' }}>${f.total.toFixed(4)}</div>
                           </div>
-                        )}
+                          {pvp > 0 && (
+                            <div style={{ textAlign: 'right' }}>
+                              <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.6)' }}>PVP ({mgConf}%)</div>
+                              <div style={{ fontSize: 18, fontWeight: 900, color: '#a9dfbf' }}>${pvp.toFixed(4)}</div>
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    </div>
+                      {/* Equivalente 1 kg */}
+                      <div style={{ padding: '7px 14px', background: '#f0f3f7', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11 }}>
+                        <span style={{ color: '#666' }}>📊 Equivalente 1 kg{pvp > 0 ? ` (con ${mgConf}% ganancia)` : ''}:</span>
+                        <strong style={{ color: '#1a5276', fontSize: 13 }}>${costo1kg.toFixed(4)}/kg</strong>
+                      </div>
+                    </>
                   )}
                 </div>
               );
@@ -2125,12 +2139,14 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion, esBano 
                     const filasRestored = (v.fundas || [{ kg: v.gramos_funda, emp_id: v.emp_id || '', eti_id: v.eti_id || '' }])
                       .map((f, j) => ({ id: String(Date.now() + j), kg: String(f.kg), emp_id: f.emp_id || '', eti_id: f.eti_id || '' }));
                     setPruebaFilas(filasRestored.length > 0 ? filasRestored : [{ id: '1', kg: '', emp_id: '', eti_id: '' }]);
+                    if (v.margen_prueba != null) setMargenPrueba(String(v.margen_prueba));
                   }}>
                     <div style={{ fontWeight: 700, color: '#333', fontSize: 12 }}>
                       {v.fundas ? `${v.fundas.length} funda${v.fundas.length > 1 ? 's' : ''}` : `${(v.gramos_funda * 1000).toFixed(0)}g`}
                     </div>
                     <div style={{ fontSize: 11, color: '#888' }}>
                       {v.fecha} · base ${v.c_base?.toFixed(4) || '—'}/kg
+                      {v.margen_prueba ? ` · ${v.margen_prueba}% ganancia` : ''}
                       {v.fundas ? ` · ${v.fundas.map(f => (f.kg*1000).toFixed(0)+'g').join(', ')}` : ''}
                     </div>
                   </div>
@@ -2139,6 +2155,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion, esBano 
                       const filasRestored = (v.fundas || [{ kg: v.gramos_funda, emp_id: v.emp_id || '', eti_id: v.eti_id || '' }])
                         .map((f, j) => ({ id: String(Date.now() + j), kg: String(f.kg), emp_id: f.emp_id || '', eti_id: f.eti_id || '' }));
                       setPruebaFilas(filasRestored.length > 0 ? filasRestored : [{ id: '1', kg: '', emp_id: '', eti_id: '' }]);
+                      if (v.margen_prueba != null) setMargenPrueba(String(v.margen_prueba));
                     }}>cargar →</span>
                     <button onClick={e => { e.stopPropagation(); eliminarVersionPrueba(i); }}
                       style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#e74c3c', fontSize: 15, padding: '2px 4px', lineHeight: 1 }}
