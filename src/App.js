@@ -85,7 +85,9 @@ function App() {
   const [progreso,         setProgreso]         = useState('');
 
   // ── Presencia en tiempo real ──────────────────────────
-  const { presentes } = usePresence(user, userRol, pantalla);
+  const { presentes: presentesRaw } = usePresence(user, userRol, pantalla);
+  // Solo davidbi.br@gmail.com puede ver quién está conectado
+  const presentes = user?.email === 'davidbi.br@gmail.com' ? presentesRaw : [];
 
   // ── Notificaciones ────────────────────────────────────
   const [notificaciones, setNotificaciones] = useState([]);
