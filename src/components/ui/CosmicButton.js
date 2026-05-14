@@ -6,15 +6,28 @@ import { useState } from 'react';
  *   <CosmicButton onClick={fn}>Texto</CosmicButton>
  *   <CosmicButton as="a" href="/ruta">Enlace</CosmicButton>
  */
-export function CosmicButton({ as, children, onClick, href, style, ...props }) {
+// colors: { c1, c2, c3 } — colores del gradiente. Por defecto verde lima (original).
+const PRESETS = {
+  green: { c1: '#adfa1b', c2: '#c9ff63', c3: '#6f9f19' },
+  blue:  { c1: '#3b82f6', c2: '#93c5fd', c3: '#1d4ed8' },
+  red:   { c1: '#ef4444', c2: '#fca5a5', c3: '#b91c1c' },
+  purple:{ c1: '#a855f7', c2: '#d8b4fe', c3: '#7e22ce' },
+};
+
+export function CosmicButton({ as, children, onClick, href, style, colors, labelStyle, ...props }) {
   const [hovered, setHovered] = useState(false);
+
+  const pal = typeof colors === 'string'
+    ? (PRESETS[colors] || PRESETS.green)
+    : (colors || PRESETS.green);
+  const { c1, c2, c3 } = pal;
 
   const inset = hovered ? '-3px' : '0px';
 
   const wrapper = {
     position: 'relative',
     display:  'inline-flex',
-    minHeight: '44px',
+    minHeight: '36px',
     minWidth:  '44px',
     alignItems: 'center',
     justifyContent: 'center',
@@ -38,7 +51,7 @@ export function CosmicButton({ as, children, onClick, href, style, ...props }) {
   const spinInner = {
     position: 'absolute',
     inset: '-200%',
-    background: 'conic-gradient(from 0deg, #adfa1b, #c9ff63, #efffb7, #8cd413, #6f9f19, #92d61b, #adfa1b)',
+    background: `conic-gradient(from 0deg, ${c1}, ${c2}, #efffb7, ${c3}, ${c3}, ${c1}, ${c1})`,
     opacity: 0.95,
   };
 
@@ -55,7 +68,7 @@ export function CosmicButton({ as, children, onClick, href, style, ...props }) {
   const slowInner = {
     position: 'absolute',
     inset: '-200%',
-    background: 'conic-gradient(from 180deg, #efffb7 0%, transparent 30%, #adfa1b 50%, transparent 70%, #7fbf17 100%)',
+    background: `conic-gradient(from 180deg, ${c2} 0%, transparent 30%, ${c1} 50%, transparent 70%, ${c3} 100%)`,
   };
 
   const inner = {
@@ -74,11 +87,12 @@ export function CosmicButton({ as, children, onClick, href, style, ...props }) {
   };
 
   const label = {
-    fontWeight: 500,
-    fontSize: '16px',
-    letterSpacing: '0.02em',
+    fontWeight: 600,
+    fontSize: '13px',
+    letterSpacing: '0.01em',
     color: '#09090b',
     whiteSpace: 'nowrap',
+    ...labelStyle,
   };
 
   const content = (

@@ -7,6 +7,7 @@ import Campana   from '../../components/Campana';
 import GeminiChat from '../../GeminiChat';
 import ModalNuevoProducto from './ModalNuevoProducto';
 import ModalGestionar     from './ModalGestionar';
+import CosmicButton from '../../components/ui/CosmicButton';
 import { supabase } from '../../supabase';
 
 const EMOJIS_CAT = {};
@@ -238,17 +239,19 @@ export default function MenuFormulas({
           boxShadow:'0 2px 6px rgba(0,0,0,0.07)'
         }}>
 
-          <button onClick={() => setModalNuevo(true)} style={{
-            padding:'8px 14px', background:'#27ae60', color:'white',
-            border:'none', borderRadius:8, cursor:'pointer',
-            fontSize:'13px', fontWeight:'bold'
-          }}>➕ Nuevo producto</button>
+          <CosmicButton
+            onClick={() => setModalNuevo(true)}
+            colors="green"
+          >
+            ➕ Nuevo producto
+          </CosmicButton>
 
-          <button onClick={() => { setModalGestionar(true); setTabGestionar('productos'); }} style={{
-            padding:'8px 14px', background:'#2980b9', color:'white',
-            border:'none', borderRadius:8, cursor:'pointer',
-            fontSize:'13px', fontWeight:'bold'
-          }}>⚙️ Gestionar</button>
+          <CosmicButton
+            onClick={() => { setModalGestionar(true); setTabGestionar('productos'); }}
+            colors="blue"
+          >
+            ⚙️ Gestionar
+          </CosmicButton>
 
           <div style={{
             marginLeft:'auto', background:'white',
