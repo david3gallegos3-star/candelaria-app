@@ -2,6 +2,18 @@
   text-align: center;
 }
 
+/* ── CosmicButton animations ── */
+@keyframes cosmic-spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+@keyframes cosmic-spin-slow {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(-360deg); }
+}
+.cosmic-spin      { animation: cosmic-spin      3s linear infinite; }
+.cosmic-spin-slow { animation: cosmic-spin-slow 5s linear infinite; }
+
 .App-logo {
   height: 40vmin;
   pointer-events: none;
