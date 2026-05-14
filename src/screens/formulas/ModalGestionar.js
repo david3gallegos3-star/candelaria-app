@@ -2,14 +2,101 @@
 // ModalGestionar.js
 // Modal gestionar productos/categorías + Eliminados
 // ============================================
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../supabase';
+
+const BUCKET = 'iconos-categorias';
 
 const EMOJIS_OPCIONES = [
   '🥓','🌭','🍖','🍔','🥩','🫙','🔀','🧀',
   '🧆','🍗','🥚','🫕','🥘','🍱','🥫','🏷️',
   '📦','⭐','🆕'
 ];
+
+// Renderiza un ícono que puede ser emoji unicode o URL de imagen
+function IconoCat({ valor, size = 22 }) {
+  if (!valor) return <span style={{ fontSize: size }}>📋</span>;
+  if (valor.startsWith('http')) {
+    return <img src={valor} alt="" style={{ width: size, height: size, objectFit: 'contain', borderRadius: 4, display: 'block' }} />;
+  }
+  return <span style={{ fontSize: size }}>{valor}</span>;
+}
+
+async function subirIcono(file, onUrl) {
+  const ext  = file.name.split('.').pop().toLowerCase();
+  const name = `cat_${Date.now()}.${ext}`;
+  const { error } = await supabase.storage.from(BUCKET).upload(name, file, { upsert: true });
+  if (error) { alert('Error subiendo imagen: ' + error.message); return; }
+  const { data } = supabase.storage.from(BUCKET).getPublicUrl(name);
+  onUrl(data.publicUrl);
+}
+
+// Selector de ícono reutilizable (emojis + imágenes subidas)
+function SelectorIcono({ valor, onChange, onDeleteImagen, imagenesSubidas, subiendoIcono, fileRef, onFileChange }) {
+  return (
+    <div>
+      {/* Preview */}
+      <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
+        <div style={{ width:44, height:44, borderRadius:10, border:'2px solid #3498db', display:'flex', alignItems:'center', justifyContent:'center', background:'#f8f9fa' }}>
+          <IconoCat valor={valor} size={28} />
+        </div>
+        <span style={{ fontSize:12, color:'#888' }}>Ícono seleccionado</span>
+      </div>
+
+      {/* Emojis predefinidos */}
+      <div style={{ fontSize:11, color:'#aaa', marginBottom:5, fontWeight:600, textTransform:'uppercase', letterSpacing:'0.5px' }}>Emojis</div>
+      <div style={{ display:'flex', flexWrap:'wrap', gap:6, marginBottom:12 }}>
+        {EMOJIS_OPCIONES.map(em => (
+          <button key={em} onClick={() => onChange(em)} style={{
+            fontSize:'20px', padding:5, borderRadius:7, cursor:'pointer',
+            border: valor===em ? '2.5px solid #3498db' : '2px solid #eee',
+            background: valor===em ? '#ebf5fb' : 'white',
+          }}>{em}</button>
+        ))}
+      </div>
+
+      {/* Imágenes subidas */}
+      {imagenesSubidas.length > 0 && (
+        <>
+          <div style={{ fontSize:11, color:'#aaa', marginBottom:5, fontWeight:600, textTransform:'uppercase', letterSpacing:'0.5px' }}>Mis imágenes</div>
+          <div style={{ display:'flex', flexWrap:'wrap', gap:8, marginBottom:12 }}>
+            {imagenesSubidas.map(url => (
+              <div key={url} style={{ position:'relative', display:'inline-flex' }}>
+                <button onClick={() => onChange(url)} style={{
+                  width:46, height:46, padding:4, borderRadius:8, cursor:'pointer',
+                  border: valor===url ? '2.5px solid #3498db' : '2px solid #eee',
+                  background: valor===url ? '#ebf5fb' : 'white',
+                  display:'flex', alignItems:'center', justifyContent:'center',
+                }}>
+                  <img src={url} alt="" style={{ width:34, height:34, objectFit:'contain', borderRadius:4 }} />
+                </button>
+                {onDeleteImagen && (
+                  <button onClick={e => { e.stopPropagation(); onDeleteImagen(url); }} style={{
+                    position:'absolute', top:-6, right:-6,
+                    width:16, height:16, borderRadius:'50%',
+                    background:'#e74c3c', color:'white', border:'none',
+                    cursor:'pointer', fontSize:'9px', fontWeight:'bold',
+                    display:'flex', alignItems:'center', justifyContent:'center',
+                    lineHeight:1, padding:0,
+                  }}>✕</button>
+                )}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* Subir nueva imagen */}
+      <input ref={fileRef} type="file" accept="image/*" style={{ display:'none' }} onChange={onFileChange} />
+      <button onClick={() => fileRef.current.click()} disabled={subiendoIcono} style={{
+        padding:'7px 14px', background: subiendoIcono ? '#ccc' : '#8e44ad', color:'white',
+        border:'none', borderRadius:7, cursor:'pointer', fontSize:'12px', fontWeight:600
+      }}>
+        {subiendoIcono ? '⏳ Subiendo...' : '🖼️ Subir imagen nueva'}
+      </button>
+    </div>
+  );
+}
 
 export default function ModalGestionar({
   modalGestionar, setModalGestionar,
@@ -33,11 +120,34 @@ export default function ModalGestionar({
   categoriasProtegidas = [],
 }) {
   const [productosEliminados, setProductosEliminados] = useState([]);
-  const [restaurando, setRestaurando] = useState(false);
+  const [restaurando,         setRestaurando]         = useState(false);
+  const [subiendoIcono,       setSubiendoIcono]       = useState(false);
+  const [imagenesSubidas,     setImagenesSubidas]     = useState([]);
+  const fileEditRef  = useRef();
+  const fileNuevoRef = useRef();
 
   useEffect(() => {
-    if (modalGestionar) cargarEliminados();
+    if (modalGestionar) {
+      cargarEliminados();
+      cargarImagenesSubidas();
+    }
   }, [modalGestionar]);
+
+  async function eliminarImagen(url) {
+    const nombre = url.split('/').pop();
+    if (!window.confirm(`¿Eliminar la imagen "${nombre}"?`)) return;
+    await supabase.storage.from(BUCKET).remove([nombre]);
+    setImagenesSubidas(prev => prev.filter(u => u !== url));
+  }
+
+  async function cargarImagenesSubidas() {
+    const { data } = await supabase.storage.from(BUCKET).list('', { limit: 100, sortBy: { column: 'created_at', order: 'desc' } });
+    if (!data) return;
+    const urls = data
+      .filter(f => f.name && f.name !== '.emptyFolderPlaceholder')
+      .map(f => supabase.storage.from(BUCKET).getPublicUrl(f.name).data.publicUrl);
+    setImagenesSubidas(urls);
+  }
 
   async function cargarEliminados() {
     const { data } = await supabase
@@ -155,7 +265,7 @@ export default function ModalGestionar({
                       fontWeight:'bold', fontSize:'14px',
                       marginBottom:8, display:'flex', alignItems:'center', gap:8
                     }}>
-                      <span>{EMOJIS_CAT[categoria]||'📋'}</span>
+                      <IconoCat valor={EMOJIS_CAT[categoria]} size={20} />
                       {categoria}
                       {esProtegida && (
                         <span style={{ fontSize:'11px', background:'rgba(255,200,0,0.25)', color:'#ffd700', padding:'2px 8px', borderRadius:8 }}>
@@ -213,7 +323,7 @@ export default function ModalGestionar({
                                 style={{ padding:'4px 6px', borderRadius:6, border:'1px solid #ddd', fontSize:'12px' }}
                               >
                                 {Object.keys(categoriasConfig).map(c => (
-                                  <option key={c} value={c}>{EMOJIS_CAT[c]||'📋'} {c}</option>
+                                  <option key={c} value={c}>{(EMOJIS_CAT[c] && !EMOJIS_CAT[c].startsWith('http')) ? EMOJIS_CAT[c] + ' ' : ''}{c}</option>
                                 ))}
                               </select>
                             )}
@@ -253,23 +363,36 @@ export default function ModalGestionar({
                   }}>
                     {editandoCat?.nombre === categoria ? (
                       <div>
-                        <div style={{ display:'flex', gap:8, marginBottom:10, alignItems:'center' }}>
-                          <select
-                            value={editandoCat.emoji}
-                            onChange={e => setEditandoCat({...editandoCat, emoji: e.target.value})}
-                            style={{ padding:7, borderRadius:7, border:'1px solid #ddd', fontSize:'18px', background:'white' }}
-                          >
-                            {EMOJIS_OPCIONES.map(em => <option key={em} value={em}>{em}</option>)}
-                          </select>
-                          <input
-                            value={editandoCat.nuevoNombre}
-                            onChange={e => setEditandoCat({...editandoCat, nuevoNombre: e.target.value})}
-                            style={{
-                              flex:1, padding:'8px 12px', borderRadius:7,
-                              border:'1.5px solid #3498db', fontSize:'14px',
-                              fontWeight:'bold', textTransform:'uppercase'
+                        <div style={{ marginBottom:10 }}>
+                          <SelectorIcono
+                            valor={editandoCat.emoji}
+                            onChange={v => setEditandoCat({...editandoCat, emoji: v})}
+                            onDeleteImagen={eliminarImagen}
+                            imagenesSubidas={imagenesSubidas}
+                            subiendoIcono={subiendoIcono}
+                            fileRef={fileEditRef}
+                            onFileChange={async e => {
+                              const f = e.target.files[0]; if (!f) return;
+                              setSubiendoIcono(true);
+                              await subirIcono(f, url => {
+                                setEditandoCat(prev => ({...prev, emoji: url}));
+                                setImagenesSubidas(prev => [url, ...prev]);
+                              });
+                              setSubiendoIcono(false);
+                              e.target.value = '';
                             }}
                           />
+                          {!categoriasProtegidas.includes(editandoCat.nombre) && (
+                            <input
+                              value={editandoCat.nuevoNombre}
+                              onChange={e => setEditandoCat({...editandoCat, nuevoNombre: e.target.value})}
+                              style={{
+                                width:'100%', marginTop:12, padding:'8px 12px', borderRadius:7,
+                                border:'1.5px solid #3498db', fontSize:'14px',
+                                fontWeight:'bold', textTransform:'uppercase', boxSizing:'border-box'
+                              }}
+                            />
+                          )}
                         </div>
                         <div style={{ display:'flex', gap:8, justifyContent:'flex-end' }}>
                           <button onClick={() => setEditandoCat(null)} style={{
@@ -285,7 +408,7 @@ export default function ModalGestionar({
                       </div>
                     ) : (
                       <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-                        <span style={{ fontSize:'22px' }}>{EMOJIS_CAT[categoria]||'📋'}</span>
+                        <IconoCat valor={EMOJIS_CAT[categoria]} size={26} />
                         <div style={{ flex:1 }}>
                           <div style={{ fontWeight:'bold', fontSize:'14px', color:'#1a1a2e' }}>
                             {categoria}
@@ -296,6 +419,15 @@ export default function ModalGestionar({
                         </div>
                         {esProtCat && (
                           <span style={{ fontSize:'11px', color:'#856404', background:'#fff3cd', padding:'3px 8px', borderRadius:6 }}>🔒 Protegida</span>
+                        )}
+                        {esProtCat && (
+                          <button onClick={() => setEditandoCat({
+                            nombre: categoria, nuevoNombre: categoria,
+                            emoji: EMOJIS_CAT[categoria]||'📦'
+                          })} style={{
+                            padding:'6px 12px', background:'#8e44ad', color:'white',
+                            border:'none', borderRadius:7, cursor:'pointer', fontSize:'12px'
+                          }}>🖼️ Ícono</button>
                         )}
                         {!esProtCat && (
                           <button onClick={() => setEditandoCat({
@@ -408,20 +540,26 @@ export default function ModalGestionar({
             width:400, boxShadow:'0 20px 60px rgba(0,0,0,0.35)'
           }}>
             <h3 style={{ margin:'0 0 20px', color:'#1a1a2e' }}>🗂️ Nueva Categoría</h3>
-            <label style={{
-              fontSize:'13px', fontWeight:'bold',
-              color:'#555', display:'block', marginBottom:6
-            }}>Emoji</label>
-            <div style={{ display:'flex', flexWrap:'wrap', gap:8, marginBottom:16 }}>
-              {EMOJIS_OPCIONES.map(em => (
-                <button key={em} onClick={() => setNuevaCatEmoji(em)} style={{
-                  fontSize:'22px', padding:6, borderRadius:8,
-                  border: nuevaCatEmoji===em ? '2.5px solid #27ae60' : '2px solid #eee',
-                  background: nuevaCatEmoji===em ? '#e8f5e9' : 'white',
-                  cursor:'pointer'
-                }}>{em}</button>
-              ))}
-            </div>
+            <label style={{ fontSize:'13px', fontWeight:'bold', color:'#555', display:'block', marginBottom:8 }}>Ícono</label>
+            <SelectorIcono
+              valor={nuevaCatEmoji}
+              onChange={setNuevaCatEmoji}
+              onDeleteImagen={eliminarImagen}
+              imagenesSubidas={imagenesSubidas}
+              subiendoIcono={subiendoIcono}
+              fileRef={fileNuevoRef}
+              onFileChange={async e => {
+                const f = e.target.files[0]; if (!f) return;
+                setSubiendoIcono(true);
+                await subirIcono(f, url => {
+                  setNuevaCatEmoji(url);
+                  setImagenesSubidas(prev => [url, ...prev]);
+                });
+                setSubiendoIcono(false);
+                e.target.value = '';
+              }}
+            />
+            <div style={{ marginBottom:16 }} />
             <label style={{
               fontSize:'13px', fontWeight:'bold',
               color:'#555', display:'block', marginBottom:6
@@ -485,7 +623,7 @@ export default function ModalGestionar({
               {Object.keys(categoriasConfig)
                 .filter(c => c !== confirmElimCat)
                 .map(c => (
-                  <option key={c} value={c}>{EMOJIS_CAT[c]||'📋'} {c}</option>
+                  <option key={c} value={c}>{(EMOJIS_CAT[c] && !EMOJIS_CAT[c].startsWith('http')) ? EMOJIS_CAT[c] + ' ' : ''}{c}</option>
                 ))
               }
             </select>

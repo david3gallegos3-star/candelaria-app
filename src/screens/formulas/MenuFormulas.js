@@ -10,6 +10,14 @@ import ModalGestionar     from './ModalGestionar';
 import CosmicButton from '../../components/ui/CosmicButton';
 import { supabase } from '../../supabase';
 
+function IconoCat({ valor, size = 22 }) {
+  if (!valor) return <span style={{ fontSize: size }}>📋</span>;
+  if (valor.startsWith('http')) {
+    return <img src={valor} alt="" style={{ width: size, height: size, objectFit: 'contain', borderRadius: 4, display: 'inline-block' }} />;
+  }
+  return <span style={{ fontSize: size }}>{valor}</span>;
+}
+
 const EMOJIS_CAT = {};
 const LABEL_CAT = { 'CORTES': 'CORTES DE RES' };
 
@@ -327,7 +335,7 @@ export default function MenuFormulas({
                 display:'flex', alignItems:'center',
                 gap:10, marginBottom:12
               }}>
-                <span style={{ fontSize:'22px' }}>{EC[categoria]||'📋'}</span>
+                <IconoCat valor={EC[categoria]} size={24} />
                 <h3 style={{ margin:0, color:'#1a1a2e', fontSize:'18px' }}>{LABEL_CAT[categoria] || categoria}</h3>
                 <span style={{
                   background:'#e8f4fd', color:'#1a5276',
@@ -424,7 +432,7 @@ export default function MenuFormulas({
                       onMouseLeave={e => { e.currentTarget.style.transform='translateY(0)'; e.currentTarget.style.boxShadow='0 2px 8px rgba(0,0,0,0.06)'; }}
                     >
                       <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:6 }}>
-                        <span style={{ fontSize:'20px' }}>{EC[categoria]||'📋'}</span>
+                        <IconoCat valor={EC[categoria]} size={22} />
                         {esPadre && <span style={{ fontSize:10, fontWeight:800, color:'#f39c12', background:'#fef9e7', padding:'2px 7px', borderRadius:6, border:'1px solid #f0c040' }}>👑 PADRE</span>}
                         {esHijo  && <span style={{ fontSize:10, fontWeight:800, color:'#8e44ad', background:'#f5eef8', padding:'2px 7px', borderRadius:6, border:'1px solid #c39bd3' }}>✂️ HIJO</span>}
                       </div>

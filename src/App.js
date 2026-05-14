@@ -306,7 +306,7 @@ function App() {
     }
   }
 
-  const CATS_PROTEGIDAS = ['SALMUERAS', 'CORTES', 'INMERSIÓN', 'MARINADOS'];
+  const CATS_PROTEGIDAS = ['SALMUERAS', 'CORTES', 'INMERSIÓN', 'MARINADOS', 'AHUMADOS - HORNEADOS'];
 
   // Mapa categoría producto → { cat: categoría MP, pref: prefijo ID }
   const MP_CAT_MAP = {
