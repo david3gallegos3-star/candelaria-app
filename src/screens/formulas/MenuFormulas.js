@@ -3,8 +3,8 @@
 // Pantalla menú de fórmulas — grid de productos
 // ============================================
 import React, { useRef, useState, useEffect } from 'react';
-import Campana   from '../../components/Campana';
 import GeminiChat from '../../GeminiChat';
+import Campana   from '../../components/Campana';
 import ModalNuevoProducto from './ModalNuevoProducto';
 import ModalGestionar     from './ModalGestionar';
 import CosmicButton from '../../components/ui/CosmicButton';
@@ -156,6 +156,7 @@ export default function MenuFormulas({
   }, [productos]);
 
   return (
+    <>
     <div style={{ minHeight:'100vh', background:'#f0f2f5', fontFamily:'Arial,sans-serif' }}>
 
       {/* ── Sticky top: header + botones ── */}
@@ -545,7 +546,8 @@ export default function MenuFormulas({
         cargarCategorias={cargarCategorias}
       />
 
-      <GeminiChat />
     </div>
+    <GeminiChat />
+  </>
   );
 }

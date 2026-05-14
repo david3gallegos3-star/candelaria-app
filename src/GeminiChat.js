@@ -289,24 +289,106 @@ function GeminiChat({ formulaContexto, formulaIngredientes }) {
       zIndex:1000,
       userSelect: (drag || resizing) ? 'none' : 'auto'
     }}>
-      <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}`}</style>
+      <style>{`
+        @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
+        @keyframes bar1{0%{height:6px}100%{height:16px}}
+        @keyframes bar2{0%{height:12px}100%{height:5px}}
+        @keyframes bar3{0%{height:8px}100%{height:18px}}
+        @keyframes bar4{0%{height:16px}100%{height:7px}}
+        @keyframes bar5{0%{height:5px}100%{height:13px}}
+        @keyframes orbit{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+      `}</style>
 
       {/* Burbuja minimizada — arrastrable */}
       {!abierto && (
         <button
           onMouseDown={onBtnMouseDown}
           style={{
-            background:'linear-gradient(135deg,#4285f4,#1a73e8)',
-            color:'white', border:'none', borderRadius:'50px',
-            padding:'12px 18px', fontSize:'14px', fontWeight:'bold',
-            boxShadow:'0 4px 15px rgba(66,133,244,0.4)',
-            display:'flex', alignItems:'center', gap:8,
-            cursor: btnDragging ? 'grabbing' : 'grab',
-            userSelect:'none'
+            background:'white',
+            border:'1.5px solid #f0f0f0',
+            borderRadius:'50px',
+            padding:'10px 16px 10px 10px',
+            boxShadow:'0 4px 20px rgba(0,0,0,0.13)',
+            display:'flex', alignItems:'center', gap:12,
+            cursor: btnDragging ? 'grabbing' : 'pointer',
+            userSelect:'none',
+            minWidth:210,
           }}
         >
-          <div style={{ width:8, height:8, background:'#34a853', borderRadius:'50%', animation:'pulse 2s infinite' }}/>
-          🤖 Asistente
+          {/* Ícono izquierdo */}
+          <div style={{ position:'relative', flexShrink:0, width:40, height:40 }}>
+
+            {/* Capa DETRÁS del ícono — mitad inferior del órbita */}
+            <div style={{
+              position:'absolute', inset:-10, zIndex:1,
+              clipPath:'polygon(0 50%, 100% 50%, 100% 100%, 0 100%)',
+              pointerEvents:'none',
+            }}>
+              <div style={{ position:'absolute', top:'50%', left:'50%', width:0, height:0, animation:'orbit 2.5s linear infinite' }}>
+                <div style={{
+                  position:'absolute', width:9, height:9,
+                  background:'#f97316', borderRadius:'50%',
+                  top:-26, left:-4,
+                  border:'2px solid white',
+                  boxShadow:'0 0 5px rgba(249,115,22,0.7)',
+                }} />
+              </div>
+            </div>
+
+            {/* Ícono */}
+            <div style={{
+              position:'relative', zIndex:2,
+              width:40, height:40,
+              background:'#1a2540',
+              borderRadius:12,
+              display:'flex', alignItems:'center', justifyContent:'center', gap:5,
+            }}>
+              <div style={{ width:8, height:8, background:'#f97316', borderRadius:'50%' }} />
+              <div style={{ width:8, height:8, background:'#f97316', borderRadius:'50%' }} />
+            </div>
+
+            {/* Capa AL FRENTE del ícono — mitad superior del órbita */}
+            <div style={{
+              position:'absolute', inset:-10, zIndex:3,
+              clipPath:'polygon(0 0, 100% 0, 100% 50%, 0 50%)',
+              pointerEvents:'none',
+            }}>
+              <div style={{ position:'absolute', top:'50%', left:'50%', width:0, height:0, animation:'orbit 2.5s linear infinite' }}>
+                <div style={{
+                  position:'absolute', width:9, height:9,
+                  background:'#f97316', borderRadius:'50%',
+                  top:-26, left:-4,
+                  border:'2px solid white',
+                  boxShadow:'0 0 5px rgba(249,115,22,0.7)',
+                }} />
+              </div>
+            </div>
+
+          </div>
+
+          {/* Texto */}
+          <div style={{ flex:1, textAlign:'left' }}>
+            <div style={{ fontWeight:700, fontSize:14, color:'#1a2540', lineHeight:1.3 }}>Asistente IA</div>
+            <div style={{ fontSize:12, color:'#aaa', lineHeight:1.3 }}>Listo para ayudarte</div>
+          </div>
+
+          {/* Barras animadas */}
+          <div style={{ display:'flex', alignItems:'flex-end', gap:2, height:20, flexShrink:0 }}>
+            {[
+              { anim:'bar1 0.55s ease-in-out infinite alternate' },
+              { anim:'bar2 0.65s ease-in-out infinite alternate' },
+              { anim:'bar3 0.50s ease-in-out infinite alternate' },
+              { anim:'bar4 0.70s ease-in-out infinite alternate' },
+              { anim:'bar5 0.60s ease-in-out infinite alternate' },
+            ].map((b, i) => (
+              <div key={i} style={{
+                width:3,
+                background:'#f97316',
+                borderRadius:2,
+                animation: b.anim,
+              }} />
+            ))}
+          </div>
         </button>
       )}
 
