@@ -3,7 +3,7 @@
 // Usado por: App.js
 // ============================================
 
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import Campana from './Campana';
 
 const ROL_LABEL = {
@@ -137,9 +137,11 @@ function MenuPrincipal({
       fontFamily:'Arial,sans-serif',
       display:'flex', flexDirection:'column',
       alignItems:'center', justifyContent:'center',
-      padding:'20px'
+      padding:'20px',
+      position:'relative', overflow:'hidden'
     }}>
-      <div style={{ width:'100%', maxWidth:'700px' }}>
+      <ParticlesBg />
+      <div style={{ width:'100%', maxWidth:'700px', position:'relative', zIndex:1 }}>
 
         {/* Logo y título */}
         <div style={{ textAlign:'center', marginBottom:'32px' }}>
@@ -270,6 +272,84 @@ function MenuPrincipal({
 
       </div>
     </div>
+  );
+}
+
+// ── Partículas animadas de fondo ──────────────────────
+// Colores fuego: desde rojo oscuro hasta naranja/amarillo intenso
+const FIRE_COLORS = [
+  '#ff0000','#ff1100','#ff2200','#ff3300',
+  '#ff4400','#ff5500','#ff6600','#ff7700',
+  '#ff8800','#ff9900','#ffaa00','#cc0000',
+  '#dd1100','#bb0000','#ff2200',
+];
+
+function ParticlesBg() {
+  const canvasRef = useRef();
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    let animId;
+
+    function resize() {
+      canvas.width  = canvas.offsetWidth;
+      canvas.height = canvas.offsetHeight;
+    }
+    resize();
+    window.addEventListener('resize', resize);
+
+    const particles = Array.from({ length: 120 }, () => {
+      const intense = Math.random() > 0.5; // mitad intensas, mitad suaves
+      return {
+        x:     Math.random() * canvas.width,
+        y:     Math.random() * canvas.height,
+        r:     intense ? Math.random() * 4 + 2 : Math.random() * 2 + 0.8,
+        dx:    (Math.random() - 0.5) * (intense ? 0.8 : 0.3),
+        dy:    (Math.random() - 0.5) * (intense ? 0.8 : 0.3),
+        color: FIRE_COLORS[Math.floor(Math.random() * FIRE_COLORS.length)],
+        alpha: intense ? Math.random() * 0.12 + 0.08 : Math.random() * 0.05 + 0.02,
+        glow:  intense,
+      };
+    });
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      for (const p of particles) {
+        // Glow para las partículas intensas
+        ctx.shadowBlur  = p.glow ? 30 : 14;
+        ctx.shadowColor = p.color;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        ctx.fillStyle   = p.color;
+        ctx.globalAlpha = p.alpha;
+        ctx.fill();
+        p.x += p.dx;
+        p.y += p.dy;
+        if (p.x < 0 || p.x > canvas.width)  p.dx *= -1;
+        if (p.y < 0 || p.y > canvas.height) p.dy *= -1;
+      }
+      ctx.globalAlpha = 1;
+      ctx.shadowBlur  = 0;
+      animId = requestAnimationFrame(draw);
+    }
+    draw();
+
+    return () => {
+      cancelAnimationFrame(animId);
+      window.removeEventListener('resize', resize);
+    };
+  }, []);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      style={{
+        position:'absolute', inset:0,
+        width:'100%', height:'100%',
+        pointerEvents:'none', zIndex:0,
+      }}
+    />
   );
 }
 
