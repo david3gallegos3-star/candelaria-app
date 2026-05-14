@@ -1,6 +1,13 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
 function LoginScreen({ email, setEmail, password, setPassword, login, loading }) {
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 700);
+  useEffect(() => {
+    const fn = () => setIsMobile(window.innerWidth < 700);
+    window.addEventListener('resize', fn);
+    return () => window.removeEventListener('resize', fn);
+  }, []);
+
   return (
     <div style={{
       display: 'flex', height: '100vh', overflow: 'hidden',
@@ -25,19 +32,25 @@ function LoginScreen({ email, setEmail, password, setPassword, login, loading })
       {/* Partículas subiendo */}
       <EmberParticles />
 
-      {/* ── Contenedor centrado con dos columnas iguales ── */}
+      {/* ── Contenedor centrado ── */}
       <div style={{
         position: 'relative', zIndex: 1,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        width: '100%', height: '100%', gap: '60px', padding: '40px',
+        display: 'flex',
+        flexDirection: isMobile ? 'column' : 'row',
+        alignItems: 'center', justifyContent: 'center',
+        width: '100%', height: '100%',
+        gap: isMobile ? '28px' : '60px',
+        padding: isMobile ? '32px 20px' : '40px',
         boxSizing: 'border-box',
+        overflowY: isMobile ? 'auto' : 'hidden',
       }}>
 
       {/* Columna izquierda */}
       <div style={{
-        width: '380px', flexShrink: 0,
+        width: isMobile ? '100%' : '380px',
+        flexShrink: 0,
         display: 'flex', flexDirection: 'column',
-        alignItems: 'center', gap: '22px',
+        alignItems: 'center', gap: isMobile ? '14px' : '22px',
       }}>
         {/* Logo dentro de cuadradito blanco */}
         <div style={{
@@ -49,19 +62,19 @@ function LoginScreen({ email, setEmail, password, setPassword, login, loading })
           <img
             src="/LOGO_CANDELARIA_1.png"
             alt="Candelaria"
-            style={{ height: '56px', objectFit: 'contain' }}
+            style={{ height: isMobile ? '38px' : '56px', objectFit: 'contain' }}
           />
         </div>
 
         {/* Título */}
         <h1 style={{ margin: 0, lineHeight: 1.1, textAlign: 'center' }}>
-          <span style={{ display: 'block', fontSize: 'clamp(26px, 3vw, 46px)', fontWeight: 900, color: 'white', letterSpacing: '-0.5px' }}>
+          <span style={{ display: 'block', fontSize: isMobile ? '26px' : 'clamp(26px, 3vw, 46px)', fontWeight: 900, color: 'white', letterSpacing: '-0.5px' }}>
             Sistema de
           </span>
-          <span style={{ display: 'block', fontSize: 'clamp(26px, 3vw, 46px)', fontWeight: 900, color: '#e67e22', letterSpacing: '-0.5px' }}>
+          <span style={{ display: 'block', fontSize: isMobile ? '26px' : 'clamp(26px, 3vw, 46px)', fontWeight: 900, color: '#e67e22', letterSpacing: '-0.5px' }}>
             Gestión
           </span>
-          <span style={{ display: 'block', fontSize: 'clamp(26px, 3vw, 46px)', fontWeight: 900, color: 'white', letterSpacing: '-0.5px' }}>
+          <span style={{ display: 'block', fontSize: isMobile ? '26px' : 'clamp(26px, 3vw, 46px)', fontWeight: 900, color: 'white', letterSpacing: '-0.5px' }}>
             Empresarial
           </span>
         </h1>
@@ -75,7 +88,7 @@ function LoginScreen({ email, setEmail, password, setPassword, login, loading })
       </div>
 
       {/* Columna derecha — tarjeta login */}
-      <div style={{ width: '380px', flexShrink: 0 }}>
+      <div style={{ width: isMobile ? '100%' : '380px', flexShrink: 0 }}>
         <div style={{
           background: 'rgba(255,255,255,0.96)',
           borderRadius: '18px', padding: '36px 32px',
