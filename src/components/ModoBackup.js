@@ -413,10 +413,22 @@ function buildStandardSheet(prod, ings, cfg, mpList, precioAgua) {
   if (fundas.length > 0) {
     rows.push(E());
     rows.push(SEP('EMPAQUES DE DISTRIBUCIÓN'));
+    const kgProducido = totalKg * (1 - merma);
     fundas.forEach((f, i) => {
-      const kgF = parseFloat(f.kg_funda || f.kg || 1);
-      const precioSug = (1 - margen) > 0 ? (costoTotalKg * kgF) / (1 - margen) : 0;
-      rows.push(C(`FUNDA ${i + 1}`, f.nombre || f.nombre_funda || '—', '', kgF, '', precioSug, '', f.etiqueta || ''));
+      const kgFunda    = parseFloat(f.kg_por_funda)    || 1;
+      const costoFunda = parseFloat(f.precio_funda)    || 0;
+      const costoEtiq  = parseFloat(f.precio_etiqueta) || 0;
+      const precioSug  = (1 - margen) > 0
+        ? (costoTotalKg * kgFunda + costoFunda + costoEtiq) / (1 - margen) : 0;
+      const nFundas    = kgFunda > 0 ? Math.ceil(kgProducido / kgFunda) : '—';
+      const etiqNombre = f.nombre_etiqueta || '';
+      rows.push(C(`FUNDA ${i + 1}`, f.nombre_funda || f.nombre || '—',
+        '', kgFunda, '', '', precioSug,
+        `N° fundas: ${nFundas}${etiqNombre ? ' — Etiqueta: ' + etiqNombre : ''}`));
+      if (costoFunda > 0)
+        rows.push(C(`FUNDA ${i + 1}`, 'Precio funda/unidad', '', '', '', costoFunda, '', ''));
+      if (costoEtiq > 0)
+        rows.push(C(`FUNDA ${i + 1}`, 'Precio etiqueta/unidad', '', '', '', costoEtiq, '', ''));
     });
   }
 
