@@ -502,50 +502,92 @@ export function useFormulacion({ producto, userRol, currentUser }) {
 
   // ── Excel ─────────────────────────────────────────────────
   function descargarExcel() {
-    const nombreConEspec = (ing) => {
+    const C = (sec, det, g, k, pct, pkg, costo, nota) => ({
+      'SECCIÓN': sec  || '',
+      'DETALLE': det  || '',
+      'GRAMOS':  g    !== '' ? Math.round(g)                           : '',
+      'KILOS':   k    !== '' ? parseFloat(parseFloat(k).toFixed(3))    : '',
+      '% TOTAL': pct  !== '' ? parseFloat(parseFloat(pct).toFixed(2))  : '',
+      '$/KG':    pkg  !== '' ? parseFloat(parseFloat(pkg).toFixed(4))  : '',
+      'COSTO $': costo!== '' ? parseFloat(parseFloat(costo).toFixed(4)): '',
+      'NOTA':    nota || '',
+    });
+    const E   = () => C('','','','','','','','');
+    const SEP = t   => C(`── ${t} ──`,'','','','','','','');
+
+    const mapIng = (ing, sec) => {
+      const g    = parseFloat(ing.gramos) || 0;
+      const p    = obtenerPrecioLive(ing, materiasPrimas);
       const spec = ing.especificacion?.trim();
-      return ing.ingrediente_nombre + (spec ? ` (${spec})` : '');
+      return C(sec, ing.ingrediente_nombre + (spec ? ` (${spec})` : ''), g, g / 1000,
+        totalCrudoG > 0 ? (g / totalCrudoG) * 100 : 0, p, (g / 1000) * p, ing.nota_cambio || '');
     };
-    const filaVaciaXL = () => ({
-      'SECCIÓN':'','DETALLE':'','GRAMOS':'','KILOS':'',
-      '% TOTAL':'','$/KG':'','COSTO $':'','NOTA':''
-    });
-    const sep = (titulo) => ({
-      'SECCIÓN':`── ${titulo} ──`,'DETALLE':'','GRAMOS':'',
-      'KILOS':'','% TOTAL':'','$/KG':'','COSTO $':'','NOTA':''
-    });
-    const mapIng = (ing, seccion) => {
-      const g = parseFloat(ing.gramos) || 0;
-      const p = obtenerPrecioLive(ing, materiasPrimas);
-      return {
-        'SECCIÓN': seccion,
-        'DETALLE': nombreConEspec(ing),
-        'GRAMOS':  Math.round(g),
-        'KILOS':   parseFloat((g/1000).toFixed(3)),
-        '% TOTAL': totalCrudoG > 0 ? parseFloat(((g/totalCrudoG)*100).toFixed(2)) : 0,
-        '$/KG':    parseFloat(p.toFixed(4)),
-        'COSTO $': parseFloat(((g/1000)*p).toFixed(4)),
-        'NOTA':    ing.nota_cambio || ''
-      };
-    };
-    const datos = [
-      ...ingredientesMP.filter(i => i.ingrediente_nombre).map(i => mapIng(i,'MATERIAS PRIMAS')),
-      { 'SECCIÓN':'','DETALLE':'SUB-TOTAL MATERIAS PRIMAS','GRAMOS':Math.round(totMP.gramos),'KILOS':parseFloat((totMP.gramos/1000).toFixed(3)),'% TOTAL':totalCrudoG>0?parseFloat(((totMP.gramos/totalCrudoG)*100).toFixed(2)):0,'$/KG':'','COSTO $':parseFloat(totMP.costo.toFixed(4)),'NOTA':'' },
-      filaVaciaXL(),
-      ...ingredientesAD.filter(i => i.ingrediente_nombre).map(i => mapIng(i,'CONDIMENTOS Y ADITIVOS')),
-      { 'SECCIÓN':'','DETALLE':'SUB-TOTAL CONDIMENTOS','GRAMOS':Math.round(totAD.gramos),'KILOS':parseFloat((totAD.gramos/1000).toFixed(3)),'% TOTAL':totalCrudoG>0?parseFloat(((totAD.gramos/totalCrudoG)*100).toFixed(2)):0,'$/KG':'','COSTO $':parseFloat(totAD.costo.toFixed(4)),'NOTA':'' },
-      filaVaciaXL(),
-      { 'SECCIÓN':'','DETALLE':'TOTAL CRUDO','GRAMOS':Math.round(totalCrudoG),'KILOS':parseFloat(totalCrudoKg.toFixed(3)),'% TOTAL':100,'$/KG':'','COSTO $':parseFloat(totalCostoMP.toFixed(4)),'NOTA':'' },
-      filaVaciaXL(), sep('COSTOS Y AJUSTES'),
-      { 'SECCIÓN':'COSTOS','DETALLE':'Merma %','% TOTAL':((merma||0)*100).toFixed(0)+'%','GRAMOS':'','KILOS':'','$/KG':'','COSTO $':'','NOTA':'' },
-      { 'SECCIÓN':'COSTOS','DETALLE':'Margen %','% TOTAL':((margen||0)*100).toFixed(0)+'%','GRAMOS':'','KILOS':'','$/KG':'','COSTO $':'','NOTA':'' },
-      { 'SECCIÓN':'COSTOS','DETALLE':'PRECIO VENTA/KG','$/KG':precioVentaKg.toFixed(4),'GRAMOS':'','KILOS':'','% TOTAL':'','COSTO $':'','NOTA':'' },
+
+    const kgProducido = totalCrudoKg * (1 - merma);
+    const fundas      = Array.isArray(config.fundas) ? config.fundas : [];
+
+    const rows = [
+      C('PRODUCTO', producto.nombre, '', '', '', '', '', `Categoría: ${producto.categoria || ''}`),
+      C('', `Fecha fórmula: ${config.fecha || '—'}`, '', '', '', '', '', ''),
+      E(),
+      SEP('MATERIAS PRIMAS'),
+      ...ingredientesMP.filter(i => i.ingrediente_nombre).map(i => mapIng(i, 'MATERIAS PRIMAS')),
+      C('', 'SUB-TOTAL MATERIAS PRIMAS', totMP.gramos, totMP.gramos / 1000,
+        totalCrudoG > 0 ? (totMP.gramos / totalCrudoG) * 100 : 0, '', totMP.costo, ''),
+      E(),
+      SEP('CONDIMENTOS Y ADITIVOS'),
+      ...ingredientesAD.filter(i => i.ingrediente_nombre).map(i => mapIng(i, 'CONDIMENTOS Y ADITIVOS')),
+      C('', 'SUB-TOTAL CONDIMENTOS', totAD.gramos, totAD.gramos / 1000,
+        totalCrudoG > 0 ? (totAD.gramos / totalCrudoG) * 100 : 0, '', totAD.costo, ''),
+      E(),
+      C('TOTAL CRUDO', '', totalCrudoG, totalCrudoKg, 100, '', totalCostoMP, ''),
+      E(),
+      SEP('COSTOS Y AJUSTES'),
+      C('COSTOS', 'Merma %',           '', '', (merma  * 100).toFixed(1) + '%', '', '', ''),
+      C('COSTOS', 'Margen ganancia %', '', '', (margen * 100).toFixed(1) + '%', '', '', ''),
+      C('COSTOS', 'MOD+CIF $/kg',      '', '', '', modCif,         '', ''),
+      C('COSTOS', 'Costo MP/kg',       '', '', '', costoMPkg,      '', ''),
+      C('COSTOS', 'Con merma',         '', '', '', costoConMerma,  '', ''),
+      C('COSTOS', 'Empaques/kg',       '', '', '', costoEmpaqueKg, '', ''),
+      C('COSTOS', 'Amarre/kg',         '', '', '', costoAmarreKg,  '', ''),
+      C('COSTOS', 'COSTO TOTAL/KG',    '', '', '', costoTotalKg,   '', ''),
+      C('COSTOS', 'PRECIO VENTA/KG',   '', '', '', precioVentaKg,  '', ''),
+      E(),
+      SEP('EMPAQUE Y AMARRE'),
+      C('EMPAQUE', 'Tripa/Empaque',     '', '', '', '', '', config.empaque_nombre || '—'),
+      C('EMPAQUE', 'Cantidad',          '', empCantidad || '', '', '', '', config.empaque_unidad || ''),
+      C('EMPAQUE', 'Precio/kg',         '', '', '', empPrecio || '', '', ''),
+      C('EMPAQUE', 'Costo empaques/kg', '', '', '', costoEmpaqueKg, '', ''),
+      C('AMARRE',  'Amarre/Hilo',       '', '', '', '', '', config.hilo_nombre || '—'),
+      C('AMARRE',  'Kg hilo',           '', hiloKg || '', '', '', '', ''),
+      C('AMARRE',  'Costo amarre/kg',   '', '', '', costoAmarreKg, '', ''),
     ];
-    const ws = XLSX.utils.json_to_sheet(datos);
-    ws['!cols'] = [{wch:22},{wch:35},{wch:10},{wch:10},{wch:10},{wch:12},{wch:12},{wch:25}];
+
+    if (fundas.length > 0) {
+      rows.push(E());
+      rows.push(SEP('EMPAQUES DE DISTRIBUCIÓN'));
+      fundas.forEach((f, i) => {
+        const kgFunda    = parseFloat(f.kg_por_funda)    || 1;
+        const costoFunda = parseFloat(f.precio_funda)    || 0;
+        const costoEtiq  = parseFloat(f.precio_etiqueta) || 0;
+        const pvpSug     = precioFunda(f);
+        const nFundas    = kgFunda > 0 ? Math.ceil(kgProducido / kgFunda) : '—';
+        const etiqNombre = f.nombre_etiqueta || '';
+        rows.push(C(`FUNDA ${i + 1}`, f.nombre_funda || f.nombre || '—',
+          '', kgFunda, '', '', pvpSug,
+          `N° fundas: ${nFundas}${etiqNombre ? ' — Etiqueta: ' + etiqNombre : ''}`));
+        if (costoFunda > 0)
+          rows.push(C(`FUNDA ${i + 1}`, 'Precio funda/unidad',    '', '', '', costoFunda, '', ''));
+        if (costoEtiq > 0)
+          rows.push(C(`FUNDA ${i + 1}`, 'Precio etiqueta/unidad', '', '', '', costoEtiq,  '', ''));
+      });
+    }
+
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws['!cols'] = [{ wch: 22 }, { wch: 35 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 25 }];
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, producto.nombre.substring(0,31));
-    XLSX.writeFile(wb, `${producto.nombre}_${config.fecha||'formula'}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, ws, producto.nombre.replace(/[:\\\/\?\*\[\]]/g, '-').substring(0, 31));
+    XLSX.writeFile(wb, `${producto.nombre}_${config.fecha || 'formula'}.xlsx`);
   }
 
   // ── Imprimir ──────────────────────────────────────────────
