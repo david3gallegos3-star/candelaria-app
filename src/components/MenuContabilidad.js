@@ -1,4 +1,5 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
+import { supabase } from '../supabase';
 
 const SUBMODULOS = [
   {
@@ -33,7 +34,47 @@ const SUBMODULOS = [
   },
 ];
 
+async function borrarDatosPrueba() {
+  const tablas = [
+    'libro_diario_detalle','libro_diario',
+    'facturas_detalle','facturas',
+    'compras_detalle','compras',
+    'caja_gastos','caja_entregas','cobros','caja_chica',
+    'nomina',
+    'cuentas_cobrar','cuentas_pagar',
+    'clientes','empleados','proveedores',
+  ];
+  for (const t of tablas) {
+    await supabase.from(t).delete().neq('id', '00000000-0000-0000-0000-000000000000');
+  }
+  await supabase.from('config_sistema')
+    .update({ valor: '1' }).eq('clave', 'factura_secuencial');
+  await supabase.from('config_contabilidad')
+    .update({ valor: { completado: false, fecha: null, banco: 0, caja: 0, inventario: 0, patrimonio: 0 } })
+    .eq('clave', 'asiento_inicial');
+}
+
 export default function MenuContabilidad({ navegarA, onVolver }) {
+  const [borrando, setBorrando] = useState(false);
+  const [msgBorrar, setMsgBorrar] = useState('');
+
+  async function handleBorrarPruebas() {
+    const ok = window.confirm('⚠️ ¿Borrar TODOS los datos de prueba?\n\nSe eliminarán: facturas, compras, nómina, caja chica, libro diario, clientes, empleados y proveedores.\n\nEsta acción NO se puede deshacer.');
+    if (!ok) return;
+    const ok2 = window.confirm('¿Estás seguro? Se borrarán todos los registros.');
+    if (!ok2) return;
+    setBorrando(true);
+    setMsgBorrar('');
+    try {
+      await borrarDatosPrueba();
+      setMsgBorrar('✓ Datos borrados correctamente');
+    } catch (e) {
+      setMsgBorrar('Error: ' + e.message);
+    }
+    setBorrando(false);
+    setTimeout(() => setMsgBorrar(''), 5000);
+  }
+
   return (
     <div style={{
       minHeight: '100vh',
@@ -99,6 +140,24 @@ export default function MenuContabilidad({ navegarA, onVolver }) {
               </div>
             </button>
           ))}
+        </div>
+
+        {/* Borrar pruebas */}
+        <div style={{ textAlign: 'center', marginBottom: '16px' }}>
+          <button onClick={handleBorrarPruebas} disabled={borrando} style={{
+            background: borrando ? '#374151' : 'rgba(220,38,38,0.15)',
+            border: '1.5px solid rgba(220,38,38,0.5)',
+            color: '#f87171', borderRadius: '10px',
+            padding: '10px 28px', cursor: borrando ? 'default' : 'pointer',
+            fontSize: '13px', fontWeight: 'bold',
+          }}>
+            {borrando ? '⏳ Borrando...' : '🗑️ Borrar datos de prueba'}
+          </button>
+          {msgBorrar && (
+            <div style={{ marginTop: 8, fontSize: 12, color: msgBorrar.startsWith('✓') ? '#4ade80' : '#f87171' }}>
+              {msgBorrar}
+            </div>
+          )}
         </div>
 
         {/* Volver */}
