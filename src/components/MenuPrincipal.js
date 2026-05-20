@@ -65,21 +65,12 @@ function MenuPrincipal({
       fn: () => navegarA('inventarioproduccion')
     });
 
-  if (rol === 'admin') {
-    modulos.push({
-      emoji:'👥', titulo:'Clientes',
-      desc:'Precios y alertas de margen',
-      color:'#3498db', border:'rgba(52,152,219,0.4)',
-      fn: () => navegarA('clientes')
-    });
-  }
-
   if (rol === 'admin')
     modulos.push({
-      emoji:'👥', titulo:'RRHH',
-      desc:'Empleados, nómina, IESS',
-      color:'#4a2c7a', border:'rgba(74,44,122,0.4)',
-      fn: () => navegarA('rrhh')
+      emoji:'📊', titulo:'Contabilidad',
+      desc:'Facturación, RRHH, Compras, Clientes',
+      color:'#2471a3', border:'rgba(36,113,163,0.4)',
+      fn: () => navegarA('contabilidad')
     });
 
   if (rol === 'admin')
@@ -98,15 +89,7 @@ function MenuPrincipal({
       fn: () => navegarA('conciliacion')
     });
 
-  if (rol === 'admin')
-    modulos.push({
-      emoji:'🛒', titulo:'Compras',
-      desc:'Proveedores, ingresos, pagos',
-      color:'#1a5276', border:'rgba(26,82,118,0.4)',
-      fn: () => navegarA('compras')
-    });
-
-  if (rol === 'admin' || rol === 'contadora')
+  if (rol === 'contadora')
     modulos.push({
       emoji:'🧾', titulo:'Facturación',
       desc:'Ventas, SRI, cobros',

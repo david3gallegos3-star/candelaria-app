@@ -44,11 +44,11 @@ module.exports = async function handler(req, res) {
     fecha_emision:  fechaHoy,
 
     emisor: {
-      ruc:                    '1004007884001',
+      ruc:                    '1002345351001',
       obligado_contabilidad:  false,
       contribuyente_especial: '',
-      nombre_comercial:       'Embutidos y Jamones Candelaria',
-      razon_social:           'Embutidos y Jamones Candelaria',
+      nombre_comercial:       'Corella Placencia Sebastian Francisco',
+      razon_social:           'Corella Placencia Sebastian Francisco',
       direccion:              'Ibarra, Imbabura, Ecuador',
       establecimiento: {
         punto_emision: '001',
