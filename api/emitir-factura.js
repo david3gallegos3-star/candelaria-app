@@ -34,7 +34,7 @@ module.exports = async function handler(req, res) {
   const total       = parseFloat((subtotal + iva).toFixed(2));
 
   // Fecha y secuencial
-  const fechaHoy      = new Date().toISOString().split('T')[0];
+  const fechaHoy      = new Date(Date.now() - 5 * 3600 * 1000).toISOString().split('T')[0]; // UTC-5 Ecuador
   const secuencialStr = String(secuencial).padStart(9, '0');
 
   const payload = {
