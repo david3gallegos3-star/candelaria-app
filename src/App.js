@@ -21,13 +21,15 @@ import Conciliacion  from './Conciliacion';
 import RRHH          from './RRHH';
 import Trazabilidad  from './Trazabilidad';
 import Dashboard     from './Dashboard';
+import LibroDiario   from './LibroDiario';
 import './App.css';
 import html2canvas from 'html2canvas';
 
 // Componentes
 import { checkRecordatoriosFactura, crearNotificacion } from './utils/helpers';
 import LoginScreen    from './components/LoginScreen';
-import MenuPrincipal  from './components/MenuPrincipal';
+import MenuPrincipal    from './components/MenuPrincipal';
+import MenuContabilidad from './components/MenuContabilidad';
 import GestorUsuarios from './components/GestorUsuarios';
 
 // Screens modulares
@@ -963,6 +965,20 @@ async function confirmarImportacion() {
       onVolver={volverAtras}
       onVolverMenu={() => setPantalla('menuPrincipal')}
       userRol={userRol}
+    />;
+
+  if (pantalla === 'contabilidad')
+    return <MenuContabilidad
+      navegarA={navegarA}
+      onVolver={volverAtras}
+    />;
+
+  if (pantalla === 'libroDiario')
+    return <LibroDiario
+      onVolver={volverAtras}
+      onVolverMenu={() => setPantalla('menuPrincipal')}
+      userRol={userRol}
+      currentUser={user}
     />;
 
   if (pantalla === 'clientes')

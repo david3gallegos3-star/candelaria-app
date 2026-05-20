@@ -1,6 +1,6 @@
 import { supabase } from '../supabase';
 
-async function getCuentasModulos() {
+export async function getCuentasModulos() {
   const { data, error } = await supabase
     .from('config_contabilidad')
     .select('valor')

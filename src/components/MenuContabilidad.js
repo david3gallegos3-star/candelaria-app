@@ -1,0 +1,176 @@
+import React, { useRef, useEffect } from 'react';
+
+const SUBMODULOS = [
+  {
+    emoji: '📒', titulo: 'Libro Diario',
+    desc: 'Cerebro contable — asientos, cuentas, saldos',
+    color: '#1e3a5f', border: 'rgba(30,58,95,0.6)',
+    destino: 'libroDiario',
+  },
+  {
+    emoji: '🧾', titulo: 'Facturación',
+    desc: 'Ventas, SRI, cobros',
+    color: '#2980b9', border: 'rgba(41,128,185,0.4)',
+    destino: 'facturacion',
+  },
+  {
+    emoji: '👥', titulo: 'RRHH',
+    desc: 'Empleados, nómina, IESS',
+    color: '#4a2c7a', border: 'rgba(74,44,122,0.4)',
+    destino: 'rrhh',
+  },
+  {
+    emoji: '🛒', titulo: 'Compras',
+    desc: 'Proveedores, ingresos, pagos',
+    color: '#1a5276', border: 'rgba(26,82,118,0.4)',
+    destino: 'compras',
+  },
+  {
+    emoji: '👥', titulo: 'Clientes',
+    desc: 'Precios y alertas de margen',
+    color: '#3498db', border: 'rgba(52,152,219,0.4)',
+    destino: 'clientes',
+  },
+];
+
+export default function MenuContabilidad({ navegarA, onVolver }) {
+  return (
+    <div style={{
+      minHeight: '100vh',
+      background: 'linear-gradient(135deg,#0d1b2a,#1a2a3a)',
+      fontFamily: 'Arial,sans-serif',
+      display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'center',
+      padding: '20px',
+      position: 'relative', overflow: 'hidden',
+    }}>
+      <BgParticles />
+
+      <div style={{ width: '100%', maxWidth: '680px', position: 'relative', zIndex: 1 }}>
+
+        {/* Header */}
+        <div style={{ textAlign: 'center', marginBottom: '32px' }}>
+          <div style={{ fontSize: '44px', marginBottom: '12px' }}>📊</div>
+          <div style={{ color: 'white', fontSize: '24px', fontWeight: 'bold', marginBottom: '6px' }}>
+            Contabilidad
+          </div>
+          <div style={{ color: '#7fb3d3', fontSize: '13px' }}>
+            Gestión financiera y administrativa
+          </div>
+        </div>
+
+        {/* Grid submodulos */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))',
+          gap: '14px', marginBottom: '28px',
+        }}>
+          {SUBMODULOS.map(m => (
+            <button key={m.destino} onClick={() => navegarA(m.destino)}
+              style={{
+                background: 'rgba(255,255,255,0.05)',
+                border: `1.5px solid ${m.border}`,
+                borderRadius: '14px', padding: '24px 16px',
+                textAlign: 'center', cursor: 'pointer',
+                transition: 'all 0.2s',
+              }}
+              onMouseEnter={e => {
+                e.currentTarget.style.background = 'rgba(255,255,255,0.12)';
+                e.currentTarget.style.transform = 'translateY(-3px)';
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
+                e.currentTarget.style.transform = 'translateY(0)';
+              }}
+            >
+              <div style={{ fontSize: '32px', marginBottom: '10px' }}>{m.emoji}</div>
+              <div style={{ color: 'white', fontSize: '14px', fontWeight: 'bold', marginBottom: '6px' }}>
+                {m.titulo}
+              </div>
+              <div style={{ color: '#888', fontSize: '11px', marginBottom: '14px' }}>
+                {m.desc}
+              </div>
+              <div style={{
+                background: m.color, color: 'white',
+                borderRadius: '8px', padding: '8px',
+                fontSize: '12px', fontWeight: 'bold',
+              }}>
+                Abrir
+              </div>
+            </button>
+          ))}
+        </div>
+
+        {/* Volver */}
+        <div style={{ textAlign: 'center' }}>
+          <button onClick={onVolver} style={{
+            background: 'rgba(255,255,255,0.08)',
+            border: '1px solid rgba(255,255,255,0.2)',
+            color: 'white', borderRadius: '10px',
+            padding: '10px 28px', cursor: 'pointer',
+            fontSize: '13px', fontWeight: 'bold',
+          }}>
+            ← Volver al menú
+          </button>
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
+function BgParticles() {
+  const canvasRef = useRef();
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    let animId;
+
+    function resize() {
+      canvas.width  = canvas.offsetWidth;
+      canvas.height = canvas.offsetHeight;
+    }
+    resize();
+    window.addEventListener('resize', resize);
+
+    const particles = Array.from({ length: 60 }, () => ({
+      x: Math.random() * canvas.width,
+      y: Math.random() * canvas.height,
+      r: Math.random() * 1.5 + 0.5,
+      dx: (Math.random() - 0.5) * 0.4,
+      dy: (Math.random() - 0.5) * 0.4,
+      alpha: Math.random() * 0.12 + 0.03,
+    }));
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      for (const p of particles) {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        ctx.fillStyle = '#4a90d9';
+        ctx.globalAlpha = p.alpha;
+        ctx.fill();
+        p.x += p.dx; p.y += p.dy;
+        if (p.x < 0 || p.x > canvas.width)  p.dx *= -1;
+        if (p.y < 0 || p.y > canvas.height) p.dy *= -1;
+      }
+      ctx.globalAlpha = 1;
+      animId = requestAnimationFrame(draw);
+    }
+    draw();
+
+    return () => {
+      cancelAnimationFrame(animId);
+      window.removeEventListener('resize', resize);
+    };
+  }, []);
+
+  return (
+    <canvas ref={canvasRef} style={{
+      position: 'absolute', inset: 0,
+      width: '100%', height: '100%',
+      pointerEvents: 'none', zIndex: 0,
+    }} />
+  );
+}
