@@ -29,6 +29,8 @@ export default function ModoBackup({ onVolver }) {
   const [estado, setEstado] = useState('idle');
   const [progreso, setProgreso] = useState({ actual: '', porcentaje: 0 });
   const [mensaje, setMensaje] = useState('');
+  const [resumen, setResumen] = useState(null);
+  const [verResumen, setVerResumen] = useState(false);
 
   async function hacerBackup() {
     if (!window.confirm(
@@ -211,6 +213,16 @@ export default function ModoBackup({ onVolver }) {
     }
   }
 
+  async function cargarResumen() {
+    setVerResumen(true);
+    setResumen(null);
+    const { data } = await supabaseBackup
+      .from('backup_datos')
+      .select('tabla, registros, updated_at')
+      .order('tabla');
+    setResumen(data || []);
+  }
+
   const cargando = estado === 'cargando';
 
   return (
@@ -261,7 +273,89 @@ export default function ModoBackup({ onVolver }) {
               Todas las fórmulas — una hoja por producto
             </div>
           </button>
+
+          <button onClick={cargarResumen} disabled={cargando} style={btnStyle('#8e44ad', 'rgba(142,68,173,0.5)', cargando)}>
+            <div style={{ color: '#c084fc', fontSize: '16px', fontWeight: 'bold', marginBottom: '4px' }}>
+              📋 Ver contenido del Backup
+            </div>
+            <div style={{ color: '#888', fontSize: '12px' }}>
+              Tablas guardadas, registros y fecha del último backup
+            </div>
+          </button>
         </div>
+
+        {verResumen && (
+          <div style={{
+            background: 'rgba(255,255,255,0.05)',
+            border: '1px solid rgba(142,68,173,0.4)',
+            borderRadius: '12px', padding: '16px', marginBottom: '20px',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <div style={{ color: '#c084fc', fontWeight: 'bold', fontSize: '14px' }}>
+                📦 Contenido del Backup
+              </div>
+              <button onClick={() => setVerResumen(false)} style={{
+                background: 'none', border: 'none', color: '#888',
+                cursor: 'pointer', fontSize: '16px', lineHeight: 1,
+              }}>✕</button>
+            </div>
+
+            {resumen === null ? (
+              <div style={{ textAlign: 'center', color: '#888', fontSize: '13px', padding: '12px' }}>
+                ⏳ Cargando...
+              </div>
+            ) : resumen.length === 0 ? (
+              <div style={{ textAlign: 'center', color: '#f87171', fontSize: '13px', padding: '12px' }}>
+                No hay backup guardado todavía
+              </div>
+            ) : (
+              <>
+                {/* Fecha del backup (tomada de la primera fila) */}
+                {resumen[0]?.updated_at && (
+                  <div style={{ color: '#7fb3d3', fontSize: '11px', marginBottom: '10px', textAlign: 'center' }}>
+                    Último backup: {new Date(resumen[0].updated_at).toLocaleString('es-EC', {
+                      day: '2-digit', month: '2-digit', year: 'numeric',
+                      hour: '2-digit', minute: '2-digit',
+                    })}
+                  </div>
+                )}
+
+                {/* Tabla de resumen */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {resumen.map(r => (
+                    <div key={r.tabla} style={{
+                      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                      padding: '7px 10px',
+                      background: 'rgba(255,255,255,0.04)',
+                      borderRadius: '8px',
+                    }}>
+                      <span style={{ color: '#ccc', fontSize: '12px' }}>{r.tabla}</span>
+                      <span style={{
+                        color: r.registros > 0 ? '#4ade80' : '#888',
+                        fontSize: '12px', fontWeight: 'bold',
+                        background: r.registros > 0 ? 'rgba(74,222,128,0.1)' : 'rgba(255,255,255,0.05)',
+                        padding: '2px 8px', borderRadius: '6px',
+                      }}>
+                        {r.registros} reg.
+                      </span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Total */}
+                <div style={{
+                  marginTop: '10px', paddingTop: '10px',
+                  borderTop: '1px solid rgba(255,255,255,0.1)',
+                  display: 'flex', justifyContent: 'space-between',
+                  color: '#7fb3d3', fontSize: '12px',
+                }}>
+                  <span>Total tablas</span>
+                  <span style={{ fontWeight: 'bold' }}>{resumen.length} / {TABLAS_BACKUP.length}</span>
+                </div>
+              </>
+            )}
+          </div>
+        )}
 
         {cargando && (
           <div style={{ marginBottom: '16px' }}>
