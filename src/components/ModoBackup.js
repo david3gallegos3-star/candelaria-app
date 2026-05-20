@@ -309,7 +309,16 @@ function buildStandardSheet(prod, ings, cfg, mpList, precioAgua) {
   const ingAD = ings.filter(f => f.seccion === 'AD');
 
   function getPrecio(fila) {
-    const mp = mpList.find(m => m.id === fila.materia_prima_id);
+    const n = s => (s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim();
+    let mp = mpList.find(m => m.id === fila.materia_prima_id);
+    if (!mp) {
+      const nombre = n(fila.ingrediente_nombre);
+      mp = mpList.find(m =>
+        n(m.nombre_producto) === nombre || n(m.nombre) === nombre ||
+        (n(m.nombre_producto) && nombre.includes(n(m.nombre_producto)) && n(m.nombre_producto).length > 4) ||
+        (nombre.length > 4 && n(m.nombre).includes(nombre))
+      );
+    }
     if (mp) {
       if (mp.categoria?.toUpperCase().includes('AGUA')) return precioAgua;
       return parseFloat(mp.precio_kg) || 0;
