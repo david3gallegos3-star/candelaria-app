@@ -164,7 +164,8 @@ export default function ModoBackup({ onVolver }) {
 
         const ws = XLSX.utils.json_to_sheet(datos);
         ws['!cols'] = colWidths;
-        XLSX.utils.book_append_sheet(wb, ws, prod.nombre.substring(0, 31));
+        const sheetName = prod.nombre.replace(/[:\\\/\?\*\[\]]/g, '-').substring(0, 31);
+        XLSX.utils.book_append_sheet(wb, ws, sheetName);
       }
 
       const fecha = new Date().toISOString().split('T')[0];
