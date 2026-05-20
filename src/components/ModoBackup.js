@@ -247,24 +247,6 @@ export default function ModoBackup({ onVolver }) {
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '28px' }}>
-          <button onClick={hacerBackup} disabled={cargando} style={btnStyle('#27ae60', 'rgba(39,174,96,0.5)', cargando)}>
-            <div style={{ color: '#4ade80', fontSize: '16px', fontWeight: 'bold', marginBottom: '4px' }}>
-              💾 Hacer Backup
-            </div>
-            <div style={{ color: '#888', fontSize: '12px' }}>
-              Copia todos los datos al proyecto de respaldo
-            </div>
-          </button>
-
-          <button onClick={restaurar} disabled={cargando} style={btnStyle('#2980b9', 'rgba(41,128,185,0.5)', cargando)}>
-            <div style={{ color: '#60a5fa', fontSize: '16px', fontWeight: 'bold', marginBottom: '4px' }}>
-              🔄 Restaurar desde Backup
-            </div>
-            <div style={{ color: '#888', fontSize: '12px' }}>
-              Reemplaza datos actuales con el último backup
-            </div>
-          </button>
-
           <button onClick={descargarExcel} disabled={cargando} style={btnStyle('#f39c12', 'rgba(243,156,18,0.5)', cargando)}>
             <div style={{ color: '#fbbf24', fontSize: '16px', fontWeight: 'bold', marginBottom: '4px' }}>
               📥 Descargar Excel
@@ -274,12 +256,30 @@ export default function ModoBackup({ onVolver }) {
             </div>
           </button>
 
+          <button onClick={hacerBackup} disabled={cargando} style={btnStyle('#27ae60', 'rgba(39,174,96,0.5)', cargando)}>
+            <div style={{ color: '#4ade80', fontSize: '16px', fontWeight: 'bold', marginBottom: '4px' }}>
+              💾 Hacer Backup
+            </div>
+            <div style={{ color: '#888', fontSize: '12px' }}>
+              Copia todos los datos al proyecto de respaldo
+            </div>
+          </button>
+
           <button onClick={cargarResumen} disabled={cargando} style={btnStyle('#8e44ad', 'rgba(142,68,173,0.5)', cargando)}>
             <div style={{ color: '#c084fc', fontSize: '16px', fontWeight: 'bold', marginBottom: '4px' }}>
               📋 Ver contenido del Backup
             </div>
             <div style={{ color: '#888', fontSize: '12px' }}>
               Tablas guardadas, registros y fecha del último backup
+            </div>
+          </button>
+
+          <button onClick={restaurar} disabled={cargando} style={btnStyle('#2980b9', 'rgba(41,128,185,0.5)', cargando)}>
+            <div style={{ color: '#60a5fa', fontSize: '16px', fontWeight: 'bold', marginBottom: '4px' }}>
+              🔄 Restaurar desde Backup
+            </div>
+            <div style={{ color: '#888', fontSize: '12px' }}>
+              Reemplaza datos actuales con el último backup
             </div>
           </button>
         </div>
@@ -310,7 +310,7 @@ export default function ModoBackup({ onVolver }) {
               </div>
             ) : (
               <>
-                {/* Fecha del backup (tomada de la primera fila) */}
+                {/* Fecha del backup */}
                 {resumen[0]?.updated_at && (
                   <div style={{ color: '#7fb3d3', fontSize: '11px', marginBottom: '10px', textAlign: 'center' }}>
                     Último backup: {new Date(resumen[0].updated_at).toLocaleString('es-EC', {
@@ -320,7 +320,39 @@ export default function ModoBackup({ onVolver }) {
                   </div>
                 )}
 
-                {/* Tabla de resumen */}
+                {/* Resumen destacado: productos y fórmulas */}
+                {(() => {
+                  const rProds = resumen.find(r => r.tabla === 'productos');
+                  const rForms = resumen.find(r => r.tabla === 'formulaciones');
+                  return (
+                    <div style={{
+                      display: 'flex', gap: '8px', marginBottom: '12px',
+                    }}>
+                      <div style={{
+                        flex: 1, background: 'rgba(74,222,128,0.08)',
+                        border: '1px solid rgba(74,222,128,0.3)',
+                        borderRadius: '10px', padding: '10px', textAlign: 'center',
+                      }}>
+                        <div style={{ color: '#4ade80', fontSize: '22px', fontWeight: 'bold' }}>
+                          {rProds?.registros ?? '—'}
+                        </div>
+                        <div style={{ color: '#888', fontSize: '11px' }}>Productos</div>
+                      </div>
+                      <div style={{
+                        flex: 1, background: 'rgba(251,191,36,0.08)',
+                        border: '1px solid rgba(251,191,36,0.3)',
+                        borderRadius: '10px', padding: '10px', textAlign: 'center',
+                      }}>
+                        <div style={{ color: '#fbbf24', fontSize: '22px', fontWeight: 'bold' }}>
+                          {rForms?.registros ?? '—'}
+                        </div>
+                        <div style={{ color: '#888', fontSize: '11px' }}>Fórmulas guardadas</div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Lista de todas las tablas */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                   {resumen.map(r => (
                     <div key={r.tabla} style={{
