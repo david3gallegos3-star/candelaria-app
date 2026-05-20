@@ -168,8 +168,12 @@ export default function ModoBackup({ onVolver }) {
         XLSX.utils.book_append_sheet(wb, ws, sheetName);
       }
 
-      const fecha = new Date().toISOString().split('T')[0];
-      XLSX.writeFile(wb, `Formulas_Candelaria_${fecha}.xlsx`);
+      const hoy = new Date();
+      const dd = String(hoy.getDate()).padStart(2, '0');
+      const mm = String(hoy.getMonth() + 1).padStart(2, '0');
+      const yyyy = hoy.getFullYear();
+      const fecha = `${dd}-${mm}-${yyyy}`;
+      XLSX.writeFile(wb, `Respaldo Fórmulas ${fecha}.xlsx`);
       setProgreso({ actual: '', porcentaje: 100 });
       setEstado('exito');
       setMensaje(`✓ Excel descargado — ${prodList.length} productos`);
