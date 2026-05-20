@@ -31,8 +31,9 @@ export default function ResumenPrecios({ onVolver, onVolverMenu, onAbrirProducto
       { data: mod_d },
       { data: mod_i },
       { data: cif_i },
+      { data: vhcRows },
     ] = await Promise.all([
-      supabase.from('productos').select('*').order('categoria').order('nombre'),
+      supabase.from('productos').select('*').eq('eliminado', false).order('categoria').order('nombre'),
       supabase.from('materias_primas').select('*'),
       supabase.from('formulaciones').select('*'),
       supabase.from('config_productos').select('*'),
@@ -40,6 +41,7 @@ export default function ResumenPrecios({ onVolver, onVolverMenu, onAbrirProducto
       supabase.from('mod_directa').select('*'),
       supabase.from('mod_indirecta').select('*'),
       supabase.from('cif_items').select('*'),
+      supabase.from('vista_horneado_config').select('*'),
     ]);
 
     /* MOD+CIF global real */
@@ -73,64 +75,101 @@ export default function ResumenPrecios({ onVolver, onVolverMenu, onAbrirProducto
       return 0;
     }
 
+    /* Mapa vista_horneado_config por nombre */
+    const vhcMap = {};
+    (vhcRows||[]).forEach(r => { if (r.producto_nombre) vhcMap[r.producto_nombre] = r; });
+
+    /* Detecta categorías de flujo dinámico (usan vista_horneado_config) */
+    function esCatEspecial(cat) {
+      const c = (cat||'').toUpperCase()
+        .replace(/Á/g,'A').replace(/É/g,'E').replace(/Í/g,'I').replace(/Ó/g,'O').replace(/Ú/g,'U');
+      return c.includes('CORTES') || c.includes('INMERSION') || c.includes('MARINAD') || c.includes('AHUMADOS');
+    }
+
     const resultado = (prods||[]).map(prod => {
-      const cfg          = (cfgs||[]).find(c=>c.producto_nombre===prod.nombre)||{};
-      const ingredientes = (forms||[]).filter(f=>f.producto_nombre===prod.nombre);
+      let precioPrincipal = 0, gananciaPorc = 15, fundas = [];
 
-      const merma  = parseFloat(cfg.merma)  || 0.07;
-      const margen = parseFloat(cfg.margen) || 0.15;
+      if (esCatEspecial(prod.categoria)) {
+        /* ── Producto de flujo dinámico (Cortes, Inmersión, Marinados, Ahumados) ── */
+        const vhc   = vhcMap[prod.nombre];
+        const cfg   = vhc?.config || {};
+        const tipo  = cfg.tipo || 'independiente';
+        const margenPct = tipo === 'hijo'
+          ? parseFloat(cfg.margen_hijo  || 15)
+          : parseFloat(cfg.margen_padre || 15);
+        const cMadReal = parseFloat(cfg.c_mad_real || 0);
 
-      /* ══════════════════════════════════════════════════════
-         PRECIO PRINCIPAL:
-         Si Formulacion.js ya lo guardó exacto → úsalo directo.
-         Si no → recalcula con la misma lógica.
-      ══════════════════════════════════════════════════════ */
-      let precioPrincipal, costoTotalKgParaFundas;
+        gananciaPorc    = margenPct;
+        precioPrincipal = margenPct < 100 && cMadReal > 0
+          ? cMadReal / (1 - margenPct / 100)
+          : 0;
 
-      if (parseFloat(cfg.precio_venta_kg) > 0) {
-        /* Precio guardado exactamente desde Formulacion → garantizado correcto */
-        precioPrincipal       = parseFloat(cfg.precio_venta_kg);
-        costoTotalKgParaFundas = parseFloat(cfg.costo_total_kg) > 0
-          ? parseFloat(cfg.costo_total_kg)
-          : precioPrincipal / (1 + margen);
+        /* Fundas — de la versión prueba más reciente */
+        const pruebaVer = (vhc?.versiones || []).find(v => v.tipo === 'prueba');
+        if (pruebaVer) {
+          const mPct = parseFloat(pruebaVer.margen_prueba || margenPct);
+          fundas = (pruebaVer.fundas || []).map(f => ({
+            nombre:   f.emp_nombre || 'Sin nombre',
+            precio:   mPct < 100 ? f.c_total / (1 - mPct / 100) : 0,
+            ganancia: mPct,
+          }));
+        }
       } else {
-        /* Fallback: recalcular (mismo algoritmo que Formulacion.js) */
-        const totalCrudoG  = ingredientes.reduce((s,f)=>s+(parseFloat(f.gramos)||0),0);
-        const totalCrudoKg = totalCrudoG/1000;
-        const totalCostoMP = ingredientes.reduce((s,f)=>s+(parseFloat(f.gramos)/1000)*getPrecio(f),0);
-        const costoMPkg     = totalCrudoKg>0?totalCostoMP/totalCrudoKg:0;
-        const modCif        = parseFloat(cfg.mod_cif_kg)>0?parseFloat(cfg.mod_cif_kg):modCifGlobal;
-        const costoConMerma = (1-merma)>0?costoMPkg/(1-merma):0;
-        const empPrecio     = parseFloat(cfg.empaque_precio_kg)||0;
-        const empCantidad   = parseFloat(cfg.empaque_cantidad)||0;
-        const costoEmpKg    = totalCrudoKg>0?(empPrecio*empCantidad)/totalCrudoKg:0;
-        const hiloPrecio    = parseFloat(cfg.hilo_precio_kg)||0;
-        const hiloKg        = parseFloat(cfg.hilo_kg)||0;
-        const costoHiloKg   = totalCrudoKg>0?(hiloPrecio*hiloKg)/totalCrudoKg:0;
-        costoTotalKgParaFundas = costoConMerma+modCif+costoEmpKg+costoHiloKg;
-        precioPrincipal        = costoTotalKgParaFundas*(1+margen);
+        /* ── Producto normal (Chorizos, Salchichas, etc.) ── */
+        const cfg          = (cfgs||[]).find(c=>c.producto_nombre===prod.nombre)||{};
+        const ingredientes = (forms||[]).filter(f=>f.producto_nombre===prod.nombre);
+
+        const merma  = parseFloat(cfg.merma)  || 0.07;
+        const margen = parseFloat(cfg.margen) || 0.15;
+
+        let costoTotalKgParaFundas;
+
+        if (parseFloat(cfg.precio_venta_kg) > 0) {
+          precioPrincipal        = parseFloat(cfg.precio_venta_kg);
+          costoTotalKgParaFundas = parseFloat(cfg.costo_total_kg) > 0
+            ? parseFloat(cfg.costo_total_kg)
+            : precioPrincipal * (1 - margen);
+        } else {
+          const totalCrudoG  = ingredientes.reduce((s,f)=>s+(parseFloat(f.gramos)||0),0);
+          const totalCrudoKg = totalCrudoG/1000;
+          const totalCostoMP = ingredientes.reduce((s,f)=>s+(parseFloat(f.gramos)/1000)*getPrecio(f),0);
+          const costoMPkg     = totalCrudoKg>0?totalCostoMP/totalCrudoKg:0;
+          const modCif        = parseFloat(cfg.mod_cif_kg)>0?parseFloat(cfg.mod_cif_kg):modCifGlobal;
+          const costoConMerma = (1-merma)>0?costoMPkg/(1-merma):0;
+          const empPrecio     = parseFloat(cfg.empaque_precio_kg)||0;
+          const empCantidad   = parseFloat(cfg.empaque_cantidad)||0;
+          const costoEmpKg    = totalCrudoKg>0?(empPrecio*empCantidad)/totalCrudoKg:0;
+          const hiloPrecio    = parseFloat(cfg.hilo_precio_kg)||0;
+          const hiloKg        = parseFloat(cfg.hilo_kg)||0;
+          const costoHiloKg   = totalCrudoKg>0?(hiloPrecio*hiloKg)/totalCrudoKg:0;
+          costoTotalKgParaFundas = costoConMerma+modCif+costoEmpKg+costoHiloKg;
+          precioPrincipal        = margen < 1 ? costoTotalKgParaFundas / (1 - margen) : 0;
+        }
+
+        gananciaPorc = margen * 100;
+        fundas = (cfg.fundas||[]).map(f=>({
+          nombre:   f.nombre_funda||'Sin nombre',
+          precio:   margen < 1
+            ? (costoTotalKgParaFundas*(parseFloat(f.kg_por_funda)||1)+
+               (parseFloat(f.precio_funda)||0)+
+               (parseFloat(f.precio_etiqueta)||0)) / (1 - margen)
+            : 0,
+          ganancia: margen*100,
+        }));
       }
 
-      /* Fundas — idéntico a precioFunda() en Formulacion.js */
-      const fundas = (cfg.fundas||[]).map(f=>({
-        nombre:   f.nombre_funda||'Sin nombre',
-        precio:   (costoTotalKgParaFundas*(parseFloat(f.kg_por_funda)||1)+
-                   (parseFloat(f.precio_funda)||0)+
-                   (parseFloat(f.precio_etiqueta)||0))*(1+margen),
-        ganancia: margen*100
-      }));
-
-      return { ...prod, precioPrincipal, gananciaPorc: margen*100, fundas };
+      return { ...prod, precioPrincipal, gananciaPorc, fundas };
     });
 
     setResumen(resultado);
     setCargando(false);
 
-    // Guardar precio exacto de todos los productos automaticamente al actualizar
+    // Guardar precio exacto de productos normales en config_productos
     setSincronizando(true);
     setSyncMsg('Sincronizando precios...');
-    for (const prod of resultado) {
-      const costoTotalKg = prod.precioPrincipal / (1 + prod.gananciaPorc/100);
+    const normales = resultado.filter(p => !esCatEspecial(p.categoria));
+    for (const prod of normales) {
+      const costoTotalKg = prod.precioPrincipal * (1 - prod.gananciaPorc/100);
       await supabase.from('config_productos').update({
         precio_venta_kg: prod.precioPrincipal,
         costo_total_kg: costoTotalKg
