@@ -113,6 +113,11 @@ function MenuPrincipal({
       fn: () => navegarA('auditoria')
     });
 
+  function abrirModoBackup() {
+    const ok = window.confirm('🔐 Modo Backup\n\nEsta sección es solo para administradores.\n\nPodrás hacer respaldo, restaurar datos y descargar fórmulas en Excel.\n\n¿Continuar?');
+    if (ok) navegarA('modoBackup');
+  }
+
   return (
     <div style={{
       minHeight:'100vh',
@@ -230,6 +235,16 @@ function MenuPrincipal({
           </div>
 
           <div style={{ display:'flex', gap:'8px' }}>
+            {rol === 'admin' && (
+              <button onClick={abrirModoBackup} style={{
+                background:'rgba(142,68,173,0.2)',
+                border:'1px solid rgba(142,68,173,0.5)',
+                color:'#c084fc', borderRadius:'8px',
+                padding:'8px 14px', cursor:'pointer', fontSize:'12px', fontWeight:'bold'
+              }}>
+                🔐 Backup
+              </button>
+            )}
             {rol === 'admin' && (
               <button onClick={() => {
                 cargarUsuariosRoles();

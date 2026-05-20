@@ -22,6 +22,7 @@ import RRHH          from './RRHH';
 import Trazabilidad  from './Trazabilidad';
 import Dashboard     from './Dashboard';
 import LibroDiario   from './LibroDiario';
+import ModoBackup    from './components/ModoBackup';
 import './App.css';
 import html2canvas from 'html2canvas';
 
@@ -972,6 +973,9 @@ async function confirmarImportacion() {
       navegarA={navegarA}
       onVolver={volverAtras}
     />;
+
+  if (pantalla === 'modoBackup')
+    return <ModoBackup onVolver={volverAtras} />;
 
   if (pantalla === 'libroDiario')
     return <LibroDiario
