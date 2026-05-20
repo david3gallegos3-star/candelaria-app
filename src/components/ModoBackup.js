@@ -108,6 +108,7 @@ export default function ModoBackup({ onVolver }) {
         { data: cifItems },
         { data: cifCfg },
         { data: vhConfigs },
+        { data: deshueseConfigs },
       ] = await Promise.all([
         supabase.from('productos').select('*').eq('eliminado', false).order('categoria,nombre'),
         supabase.from('formulaciones').select('*').order('orden'),
@@ -116,6 +117,7 @@ export default function ModoBackup({ onVolver }) {
         supabase.from('cif_items').select('*'),
         supabase.from('costos_mod_cif').select('*').single(),
         supabase.from('vista_horneado_config').select('*'),
+        supabase.from('deshuese_config').select('*'),
       ]);
 
       const mpList = mps || [];
@@ -155,7 +157,28 @@ export default function ModoBackup({ onVolver }) {
 
         let datos, colWidths;
         if (isDynamic) {
-          [datos, colWidths] = buildDynamicSheet(prod, vhRow.config, mpList);
+          let cfgHijo = vhRow.config;
+          if (vhRow.config?.tipo === 'hijo') {
+            // Buscar el padre en deshuese_config para obtener el costo live de la bifurcación
+            const dCfg = (deshueseConfigs || []).find(d =>
+              (d.corte_hijo || '').toLowerCase().trim() === nombreLow
+            );
+            if (dCfg) {
+              const padreLow = (dCfg.corte_padre || '').toLowerCase().trim();
+              const padreVh  = (vhConfigs || []).find(v =>
+                (v.producto_nombre || '').toLowerCase().trim() === padreLow
+              );
+              const bifPaso = (padreVh?.config?.pasos_flujo || []).find(p => p.tipo === 'bifurcacion');
+              if (bifPaso) {
+                cfgHijo = {
+                  ...vhRow.config,
+                  costo_mad_padre: parseFloat(bifPaso.costoKg || vhRow.config.costo_mad_padre || 0),
+                  kg_para_hijo:    parseFloat(bifPaso.kgHijo  || vhRow.config.kg_para_hijo    || 1),
+                };
+              }
+            }
+          }
+          [datos, colWidths] = buildDynamicSheet(prod, cfgHijo, mpList);
         } else {
           const ings = (formulaciones || []).filter(
             f => f.producto_id === prod.id || f.producto_nombre === prod.nombre
@@ -416,7 +439,9 @@ function buildDynamicSheet(prod, config, mpList) {
     : (config.bloques || [])
   ).filter(b => b.activo !== false);
 
-  const kgIni = parseFloat(config.kg_sal_base || 1);
+  const kgIni = esHijo
+    ? parseFloat(config.kg_para_hijo || config.kg_sal_base || 1)
+    : parseFloat(config.kg_sal_base || 1);
   const mpCarne = (!esHijo && config.mp_carne_id)
     ? mpList.find(m => m.id === config.mp_carne_id) : null;
   const precioCarne = esHijo
@@ -550,9 +575,11 @@ function buildDynamicSheet(prod, config, mpList) {
   }
 
   // ── Resumen final ──
-  const cMadReal = parseFloat(config.c_mad_real || 0);
+  const kgFin = pasos.length > 0 ? parseFloat(pasos[pasos.length - 1].kg || 0) : kgIni;
+  const lastCostoAcum = pasos.length > 0 ? parseFloat(pasos[pasos.length - 1].costoAcum || 0) : kgIni * precioCarne;
+  const derivedCMadReal = kgFin > 0 ? lastCostoAcum / kgFin : 0;
+  const cMadReal = parseFloat(config.c_mad_real || 0) || derivedCMadReal;
   const margen   = parseFloat(esHijo ? config.margen_hijo : config.margen_padre) || 15;
-  const kgFin    = pasos.length > 0 ? parseFloat(pasos[pasos.length - 1].kg || 0) : kgIni;
   const pvp      = margen > 0 && margen < 100 ? cMadReal / (1 - margen / 100) : 0;
 
   rows.push(SEP('RESUMEN FINAL'));
