@@ -106,6 +106,13 @@ export default function ResumenPrecios({ onVolver, onVolverMenu, onAbrirProducto
 
         /* Fundas — de la versión prueba más reciente */
         const pruebaVer = (vhc?.versiones || []).find(v => v.tipo === 'prueba');
+
+        /* Para hijos, c_mad_real puede no estar guardado en config → usar c_base de la prueba */
+        if (precioPrincipal === 0 && pruebaVer?.c_base > 0) {
+          const cBase = parseFloat(pruebaVer.c_base);
+          precioPrincipal = margenPct < 100 ? cBase / (1 - margenPct / 100) : 0;
+        }
+
         if (pruebaVer) {
           const mPct = parseFloat(pruebaVer.margen_prueba || margenPct);
           fundas = (pruebaVer.fundas || []).map(f => ({
