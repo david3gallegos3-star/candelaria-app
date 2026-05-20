@@ -231,10 +231,16 @@ export async function sincronizarAsientos() {
   let sincronizados = 0;
   const errores = [];
 
-  const { data: facturasSinAsiento, error: errFact } = await supabase
-    .from('facturas')
-    .select('*')
-    .not('id', 'in', `(select origen_id from libro_diario where origen='facturacion' and origen_id is not null)`);
+  const { data: idsFactConAsiento } = await supabase
+    .from('libro_diario')
+    .select('origen_id')
+    .eq('origen', 'facturacion')
+    .not('origen_id', 'is', null);
+  const idsFactSet = (idsFactConAsiento || []).map((r) => r.origen_id);
+
+  let queryFact = supabase.from('facturas').select('*');
+  if (idsFactSet.length > 0) queryFact = queryFact.not('id', 'in', `(${idsFactSet.join(',')})`);
+  const { data: facturasSinAsiento, error: errFact } = await queryFact;
 
   if (errFact) {
     errores.push(`Error leyendo facturas: ${errFact.message}`);
@@ -250,10 +256,16 @@ export async function sincronizarAsientos() {
     }
   }
 
-  const { data: comprasSinAsiento, error: errComp } = await supabase
-    .from('compras')
-    .select('*')
-    .not('id', 'in', `(select origen_id from libro_diario where origen='compras' and origen_id is not null)`);
+  const { data: idsCompConAsiento } = await supabase
+    .from('libro_diario')
+    .select('origen_id')
+    .eq('origen', 'compras')
+    .not('origen_id', 'is', null);
+  const idsCompSet = (idsCompConAsiento || []).map((r) => r.origen_id);
+
+  let queryComp = supabase.from('compras').select('*');
+  if (idsCompSet.length > 0) queryComp = queryComp.not('id', 'in', `(${idsCompSet.join(',')})`);
+  const { data: comprasSinAsiento, error: errComp } = await queryComp;
 
   if (errComp) {
     errores.push(`Error leyendo compras: ${errComp.message}`);
