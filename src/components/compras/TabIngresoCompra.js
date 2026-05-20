@@ -5,6 +5,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../supabase';
 import { registrarAuditoria, crearNotificacion } from '../../utils/helpers';
+import { generarAsientoCompra } from '../../utils/asientosContables';
 import { useRealtime } from '../../hooks/useRealtime';
 
 const itemVacio = () => ({
@@ -146,6 +147,12 @@ export default function TabIngresoCompra({ mobile, currentUser, userRol }) {
         created_by:       currentUser?.email || ''
       }).select().single();
       if (errC) throw errC;
+      generarAsientoCompra({
+        id: compra.id,
+        proveedor_nombre: proveedor?.nombre || '',
+        subtotal, iva, total,
+        forma_pago: formaPago
+      }).catch(console.error);
 
       // 1b. Subir XML a Storage si fue cargado
       if (xmlContent) {

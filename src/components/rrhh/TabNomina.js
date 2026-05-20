@@ -5,6 +5,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../supabase';
 import { useRealtime } from '../../hooks/useRealtime';
+import { generarAsientoNomina } from '../../utils/asientosContables';
 
 const MESES = [
   'Enero','Febrero','Marzo','Abril','Mayo','Junio',
@@ -324,6 +325,16 @@ export default function TabNomina({ mobile }) {
 
   async function marcarPagado(id) {
     await supabase.from('nomina').update({ estado: 'pagado', fecha_pago: now.toISOString().slice(0, 10) }).eq('id', id);
+    const row = nomina.find(n => n.id === id);
+    if (row) {
+      generarAsientoNomina({
+        id: row.id,
+        periodo: row.periodo,
+        total_sueldos: row.sueldo_prop || 0,
+        total_iess_patronal: row.iess_patronal || 0,
+        total_pagar: row.sueldo_neto || 0
+      }).catch(console.error);
+    }
     await cargar();
   }
 

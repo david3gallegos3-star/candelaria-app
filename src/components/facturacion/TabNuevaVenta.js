@@ -5,6 +5,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../supabase';
 import { useRealtime } from '../../hooks/useRealtime';
+import { generarAsientoFactura } from '../../utils/asientosContables';
 
 const CONSUMIDOR_FINAL = {
   id: null, nombre: 'CONSUMIDOR FINAL',
@@ -197,6 +198,10 @@ export default function TabNuevaVenta({ mobile, currentUser }) {
 
       setSecuencial(prev => prev + 1);
       setFacturaEmitida({ ...data, numero, cliente: clienteObj.nombre, total });
+      generarAsientoFactura({
+        id: factura.id, numero, subtotal, iva, total,
+        cliente_nombre: clienteObj.nombre, metodo_pago: formaPago
+      }, 'tributario').catch(console.error);
 
     } catch (e) {
       setError('Error al emitir: ' + e.message);
@@ -269,6 +274,10 @@ export default function TabNuevaVenta({ mobile, currentUser }) {
 
       setSecuencial(prev => prev + 1);
       setFacturaEmitida({ numero, cliente: clienteObj.nombre, total, autorizacion: null, esBorrador: true });
+      generarAsientoFactura({
+        id: factura.id, numero, subtotal, iva: 0, total: subtotal,
+        cliente_nombre: clienteObj.nombre, metodo_pago: formaPago
+      }, 'interno').catch(console.error);
 
     } catch (e) {
       setError('Error al guardar: ' + e.message);

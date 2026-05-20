@@ -5,6 +5,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../supabase';
 import { useRealtime } from '../../hooks/useRealtime';
+import { generarAsientoCierre, getCuentasModulos } from '../../utils/asientosContables';
 
 export default function TabCajaChica({ mobile, currentUser }) {
   const hoy = new Date().toISOString().split('T')[0];
@@ -162,6 +163,17 @@ export default function TabCajaChica({ mobile, currentUser }) {
     }
 
     setGuardando(false);
+    getCuentasModulos().then(({ cuentas }) => {
+      if (cuentas?.caja_chica_id) {
+        generarAsientoCierre({
+          id,
+          fecha,
+          total_ingresos: parseFloat(inicial) || 0,
+          total_gastos: tGastos,
+          saldo_final: parseFloat(cierre) || 0
+        }, cuentas.caja_chica_id).catch(console.error);
+      }
+    }).catch(console.error);
     setMsgExito('✅ Caja guardada correctamente');
     setTimeout(() => setMsgExito(''), 3000);
   }
