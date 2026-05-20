@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../supabase';
 import * as XLSX from 'xlsx';
 import { BloquesDinamicosEditor, calcBloques } from './BloquesDinamicos';
+import { descargarExcelProducto } from '../../utils/excelDinamico';
 import { useRealtime } from '../../hooks/useRealtime';
 
 export default function VistaCorte({ producto, mobile, onAbrirInyeccion, esBano = false }) {
@@ -873,72 +874,54 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion, esBano 
 
   // ── Funciones de descarga Excel ──────────────────────────────
   function descargarExcelCostos() {
-    const pctInjN  = parseFloat(pctInj) || 0;
-    const kgIni    = parseFloat(kgSalBase) || 2;
-    const kgSal1   = pctInjN / 100;
-    const kgSalmueraNec = kgIni * kgSal1;
-    const kgEntradaMad  = kgIni + kgSalmueraNec;
-    const kgSalidaN     = parseFloat(kgSalidaMad) || 0;
-    const mermaMadKg    = kgSalidaN > 0 ? kgEntradaMad - kgSalidaN : 0;
-    const pctMermaMad   = kgEntradaMad > 0 && kgSalidaN > 0 ? (mermaMadKg / kgEntradaMad * 100) : 0;
-    const kgHijoN       = parseFloat(kgParaHijo) || 0;
-    const kgPadreN      = Math.max(0, kgSalidaN - kgHijoN);
-    const costoKg       = cMadReal > 0 ? cMadReal : 0;
-    const mgPadreN      = parseFloat(margenPadre) || 0;
-    const pvpPadre      = mgPadreN < 100 && costoKg > 0 ? costoKg / (1 - mgPadreN / 100) : 0;
-    const totalKgF      = formulaSalmueraIngs.reduce((s,i) => s + i.gramos, 0) / 1000;
-    const costoTotF     = formulaSalmueraIngs.reduce((s,i) => s + i.costo, 0);
-    const precioKgSal   = totalKgF > 0 ? costoTotF / totalKgF : 0;
+    let config;
+    if (tipo === 'hijo') {
+      const { cMadP, kgEnt } = computeCLimpio();
+      config = {
+        tipo: 'hijo',
+        bloques_hijo: bloquesHijo || [],
+        kg_para_hijo: kgEnt,
+        costo_mad_padre: cMadP,
+        margen_hijo: parseFloat(margenHijo) || 15,
+      };
+    } else {
+      const precCarne = parseFloat(mpVinculada?.precio_kg || 0);
+      const totalKgF  = formulaSalmueraIngs.reduce((s,i) => s + i.gramos, 0) / 1000;
+      const costoTotF = formulaSalmueraIngs.reduce((s,i) => s + i.costo, 0);
+      const pKgSal    = totalKgF > 0 ? costoTotF / totalKgF : 0;
+      const kgBase    = parseFloat(kgSalBase) || 2;
+      const mpAdicObj = mpAdicionalId ? mpsFormula.find(m => String(m.id) === mpAdicionalId) : null;
 
-    const rows = [
-      ['COSTOS 1 KG —', producto.nombre],
-      [],
-      ['═══ FASE 1 — MATERIA PRIMA ═══'],
-      ['Materia Prima', mpVinculada ? (mpVinculada.nombre_producto || mpVinculada.nombre) : '—'],
-      ['Precio/kg', precioCarne, '$/kg'],
-      ['kg iniciales', kgIni, 'kg'],
-      ['Costo carne', kgIni * precioCarne, '$'],
-      [],
-      ['═══ FASE 2 — INYECCIÓN ═══'],
-      ['Salmuera', formulaSalmueraNombre || '—'],
-      ['% Inyección', pctInjN, '%'],
-      ['kg salmuera necesarios', kgSalmueraNec.toFixed(3), 'kg'],
-      ['Precio salmuera/kg', precioKgSal.toFixed(4), '$/kg'],
-      ...(formulaSalmueraIngs.length > 0 ? [
-        [],
-        ['  Ingredientes Salmuera', 'Gramos', 'Costo'],
-        ...formulaSalmueraIngs.map(i => [`  ${i.nombre}`, i.gramos + 'g', '$' + i.costo.toFixed(4)]),
-      ] : []),
-      ...(formulaRubNombre ? [[], ['Rub/Especias', formulaRubNombre]] : []),
-      ...(mpAdicionalId ? [['Adicional', mpsFormula.find(m => String(m.id) === mpAdicionalId)?.nombre_producto || mpAdicionalId, gramosAdicional + 'g/kg']] : []),
-      [],
-      ['═══ FASE 3 — MADURACIÓN ═══'],
-      ['Tiempo', `${horasMad}h ${minutosMad}m`, `= ${(parseFloat(horasMad||0)+parseFloat(minutosMad||0)/60).toFixed(1)}h`],
-      ['Peso entrada (calculado)', kgEntradaMad.toFixed(3), 'kg'],
-      ['Peso salida (real)', kgSalidaN > 0 ? kgSalidaN.toFixed(3) : '—', 'kg'],
-      ['Merma', kgSalidaN > 0 ? mermaMadKg.toFixed(3) : '—', 'kg'],
-      ['% Merma', kgSalidaN > 0 ? pctMermaMad.toFixed(1) + '%' : '—'],
-      ['C_mad (costo/kg post-mad)', costoKg > 0 ? costoKg.toFixed(4) : '—', '$/kg'],
-      [],
-      ['═══ DISTRIBUCIÓN ═══'],
-      ['kg totales post-maduración', kgSalidaN.toFixed(3), 'kg'],
-      ['kg para Padre (' + producto.nombre + ')', kgPadreN.toFixed(3), 'kg'],
-      ['kg para Hijo', kgHijoN.toFixed(3), 'kg'],
-      ['Costo/kg', costoKg.toFixed(4), '$/kg'],
-      ['Costo Padre', (kgPadreN * costoKg).toFixed(4), '$'],
-      ['Costo Hijo', (kgHijoN * costoKg).toFixed(4), '$'],
-      [],
-      ['═══ PRECIO DE VENTA — PADRE ═══'],
-      ['Costo/kg', costoKg.toFixed(4), '$/kg'],
-      ['Margen', mgPadreN + '%'],
-      ['PRECIO VENTA/KG', pvpPadre.toFixed(4), '$/kg'],
-    ];
+      let cMadFinal = 0;
+      let pasosFinal = [];
+      if (bloques !== null && bloques.length > 0) {
+        const res = calcBloques({
+          bloques,
+          kgIni: kgBase,
+          precioCarne: precCarne,
+          precioKgSalmuera: pKgSal,
+          costoRubFormula,
+          kgRubBase: parseFloat(kgRubBase) || 1,
+          mpAdic: mpAdicObj,
+          esBano,
+        });
+        cMadFinal  = res.costoKgFinal || 0;
+        pasosFinal = res.pasos || [];
+      }
 
-    const ws = XLSX.utils.aoa_to_sheet(rows);
-    ws['!cols'] = [{ wch: 35 }, { wch: 18 }, { wch: 12 }];
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Costos 1kg');
-    XLSX.writeFile(wb, `${producto.nombre}_Costos1kg.xlsx`);
+      config = {
+        tipo: tipo || 'independiente',
+        bloques: bloques || [],
+        kg_sal_base: kgBase,
+        mp_carne_id: mpVinculada?.id,
+        margen_padre: parseFloat(margenPadre) || 15,
+        margen_hijo: parseFloat(margenHijo) || 15,
+        kg_para_hijo: parseFloat(kgParaHijo) || 0,
+        c_mad_real: cMadFinal,
+        pasos_flujo: pasosFinal,
+      };
+    }
+    descargarExcelProducto(producto, config, mpsFormula);
   }
 
   function descargarExcelPruebas() {
