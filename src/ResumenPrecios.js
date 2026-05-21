@@ -134,9 +134,11 @@ export default function ResumenPrecios({ onVolver, onVolverMenu, onAbrirProducto
           : 0;
 
         if (pruebaVer) {
-          const mPct = parseFloat(pruebaVer.margen_prueba || margenPct);
+          /* margen_prueba es independiente del margen del producto — default 15% */
+          const mPct = parseFloat(pruebaVer.margen_prueba) > 0
+            ? parseFloat(pruebaVer.margen_prueba)
+            : 15;
           fundas = (pruebaVer.fundas || []).map(f => {
-            /* Recalcular c_total con el costo vivo actual en vez del guardado */
             const cTotal = f.kg * cMadReal + (f.c_emp || 0) + (f.c_eti || 0);
             return {
               nombre:   f.emp_nombre || 'Sin nombre',
