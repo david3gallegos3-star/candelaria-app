@@ -91,10 +91,10 @@ function MenuPrincipal({
 
   if (rol === 'contadora')
     modulos.push({
-      emoji:'🧾', titulo:'Facturación',
-      desc:'Ventas, SRI, cobros',
-      color:'#2980b9', border:'rgba(41,128,185,0.4)',
-      fn: () => navegarA('facturacion')
+      emoji:'📊', titulo:'Contabilidad',
+      desc:'Facturación, RRHH, Compras, Clientes',
+      color:'#2471a3', border:'rgba(36,113,163,0.4)',
+      fn: () => navegarA('contabilidad')
     });
 
   if (rol === 'admin')

@@ -10,14 +10,16 @@ const ROL_COLOR = {
   admin:      '#8e44ad',
   formulador: '#1a5276',
   produccion: '#e67e22',
-  bodeguero:  '#27ae60'
+  bodeguero:  '#27ae60',
+  contadora:  '#2471a3',
 };
 
 const ROL_LABEL = {
   admin:      'Administrador',
   formulador: 'Formulador',
   produccion: 'Producción',
-  bodeguero:  'Bodeguero'
+  bodeguero:  'Bodeguero',
+  contadora:  'Contadora',
 };
 
 function GestorUsuarios({
@@ -193,6 +195,7 @@ function GestorUsuarios({
                         <option value="formulador">Formulador</option>
                         <option value="produccion">Producción</option>
                         <option value="bodeguero">Bodeguero</option>
+                        <option value="contadora">Contadora</option>
                       </select>
                     </div>
                   </div>
