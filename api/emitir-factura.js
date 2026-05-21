@@ -125,14 +125,26 @@ module.exports = async function handler(req, res) {
 
     const data = await datilRes.json();
 
+    // Error HTTP directo (4xx/5xx)
     if (!datilRes.ok) {
-      // Extraer mensajes legibles del error Dátil
       const errores = data?.errores || data?.errors || data?.mensaje || data;
       const mensajes = Array.isArray(errores)
         ? errores.map(e => `[${e.campo || e.field || ''}] ${e.mensaje || e.message || JSON.stringify(e)}`).join(' | ')
         : JSON.stringify(errores);
-      console.error('DATIL ERROR:', JSON.stringify(data, null, 2));
+      console.error('DATIL HTTP ERROR:', JSON.stringify(data, null, 2));
       return res.status(400).json({ error: mensajes || 'Error Dátil/SRI', detalle: data });
+    }
+
+    // Error de estado en respuesta 200 (Dátil acepta pero SRI rechaza)
+    const estado = (data.estado || data.status || '').toLowerCase();
+    const estadosError = ['error', 'no_autorizada', 'rechazada', 'devuelta', 'anulada'];
+    if (estadosError.includes(estado)) {
+      const errores = data.errores || data.errors || data.mensajes_error || [];
+      const mensajes = Array.isArray(errores) && errores.length > 0
+        ? errores.map(e => e.mensaje || e.message || JSON.stringify(e)).join(' | ')
+        : `Dátil estado: ${estado}`;
+      console.error('DATIL STATE ERROR:', JSON.stringify(data, null, 2));
+      return res.status(422).json({ error: mensajes, estado, detalle: data });
     }
 
     return res.status(200).json({
