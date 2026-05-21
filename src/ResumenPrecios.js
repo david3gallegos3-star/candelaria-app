@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from './supabase';
+import { computePasos } from './utils/excelDinamico';
 
 const isMobile = () => window.innerWidth < 700;
 
@@ -32,6 +33,7 @@ export default function ResumenPrecios({ onVolver, onVolverMenu, onAbrirProducto
       { data: mod_i },
       { data: cif_i },
       { data: vhcRows },
+      { data: deshRows },
     ] = await Promise.all([
       supabase.from('productos').select('*').eq('eliminado', false).order('categoria').order('nombre'),
       supabase.from('materias_primas').select('*'),
@@ -42,6 +44,7 @@ export default function ResumenPrecios({ onVolver, onVolverMenu, onAbrirProducto
       supabase.from('mod_indirecta').select('*'),
       supabase.from('cif_items').select('*'),
       supabase.from('vista_horneado_config').select('*'),
+      supabase.from('deshuese_config').select('corte_padre,corte_hijo'),
     ]);
 
     /* MOD+CIF global real */
@@ -79,6 +82,10 @@ export default function ResumenPrecios({ onVolver, onVolverMenu, onAbrirProducto
     const vhcMap = {};
     (vhcRows||[]).forEach(r => { if (r.producto_nombre) vhcMap[r.producto_nombre] = r; });
 
+    /* Mapa hijo → padre desde deshuese_config */
+    const padreDeHijoMap = {};
+    (deshRows||[]).forEach(r => { if (r.corte_hijo && r.corte_padre) padreDeHijoMap[r.corte_hijo] = r.corte_padre; });
+
     /* Detecta categorías de flujo dinámico (usan vista_horneado_config) */
     function esCatEspecial(cat) {
       const c = (cat||'').toUpperCase()
@@ -97,21 +104,34 @@ export default function ResumenPrecios({ onVolver, onVolverMenu, onAbrirProducto
         const margenPct = tipo === 'hijo'
           ? parseFloat(cfg.margen_hijo  || 15)
           : parseFloat(cfg.margen_padre || 15);
-        const cMadReal = parseFloat(cfg.c_mad_real || 0);
+        /* Versión prueba más reciente (para fundas y fallback de costo) */
+        const pruebaVer = (vhc?.versiones || []).find(v => v.tipo === 'prueba');
+
+        /* Costo/kg: config guardado → live desde padre → c_base de prueba */
+        let cMadReal = parseFloat(cfg.c_mad_real || 0);
+        if (tipo === 'hijo' && cMadReal === 0) {
+          const padreNombre = padreDeHijoMap[prod.nombre];
+          const padreVhc    = padreNombre ? vhcMap[padreNombre] : null;
+          const padreCMad   = parseFloat(padreVhc?.config?.c_mad_real || 0);
+          if (padreCMad > 0) {
+            const bloques = (cfg.bloques_hijo || []).filter(b => b.activo !== false);
+            const kgIni   = parseFloat(cfg.kg_para_hijo || 1);
+            if (bloques.length > 0) {
+              const pasos = computePasos(bloques, kgIni, padreCMad);
+              if (pasos.length > 0) {
+                const last = pasos[pasos.length - 1];
+                const kgFin = parseFloat(last.kg || 0);
+                cMadReal = kgFin > 0 ? parseFloat(last.costoAcum || 0) / kgFin : padreCMad;
+              } else { cMadReal = padreCMad; }
+            } else { cMadReal = padreCMad; }
+          }
+          if (cMadReal === 0) cMadReal = parseFloat(pruebaVer?.c_base || 0);
+        }
 
         gananciaPorc    = margenPct;
         precioPrincipal = margenPct < 100 && cMadReal > 0
           ? cMadReal / (1 - margenPct / 100)
           : 0;
-
-        /* Fundas — de la versión prueba más reciente */
-        const pruebaVer = (vhc?.versiones || []).find(v => v.tipo === 'prueba');
-
-        /* Para hijos, c_mad_real puede no estar guardado en config → usar c_base de la prueba */
-        if (precioPrincipal === 0 && pruebaVer?.c_base > 0) {
-          const cBase = parseFloat(pruebaVer.c_base);
-          precioPrincipal = margenPct < 100 ? cBase / (1 - margenPct / 100) : 0;
-        }
 
         if (pruebaVer) {
           const mPct = parseFloat(pruebaVer.margen_prueba || margenPct);
