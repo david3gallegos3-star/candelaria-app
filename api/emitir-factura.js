@@ -148,14 +148,28 @@ module.exports = async function handler(req, res) {
       return res.status(422).json({ error: mensajes, estado, detalle: data });
     }
 
+    // Dátil devuelve la autorización SRI en clave_acceso (49 dígitos)
+    const autorizacion = data.clave_acceso
+                      || data.autorizacion?.numero
+                      || (typeof data.autorizacion === 'string' ? data.autorizacion : '')
+                      || '';
+
+    // es_valida:false o sin clave_acceso = factura no autorizada
+    if (data.es_valida === false || !autorizacion) {
+      const errores = data.errores || data.errors || [];
+      const mensajes = Array.isArray(errores) && errores.length > 0
+        ? errores.map(e => e.mensaje || e.message || JSON.stringify(e)).join(' | ')
+        : `Dátil: factura no autorizada por el SRI`;
+      console.error('DATIL NO AUTORIZADA:', JSON.stringify(data, null, 2));
+      return res.status(422).json({ error: mensajes, detalle: data });
+    }
+
     return res.status(200).json({
       ok:           true,
-      datil_id:     data.id                              || '',
-      autorizacion: data.autorizacion?.numero
-                    || data.autorizacion
-                    || data.id                           || '',
-      pdf_url:      data.pdf     || data.pdf_url         || '',
-      xml_url:      data.xml     || data.xml_url         || '',
+      datil_id:     data.id      || '',
+      autorizacion,
+      pdf_url:      data.pdf     || data.pdf_url || '',
+      xml_url:      data.xml     || data.xml_url || '',
       subtotal,
       iva,
       total
