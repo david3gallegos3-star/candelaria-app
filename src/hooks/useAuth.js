@@ -73,7 +73,18 @@ export function useAuth() {
     const { data: { session } } = await supabase.auth.getSession();
     if (session?.user) {
       setUser(session.user);
-      await cargarRolUsuario(session.user.id);
+      const rol = await cargarRolUsuario(session.user.id);
+      // Registrar entrada automática si no es el admin
+      if (session.user.email !== 'davidbi.br@gmail.com') {
+        const nombre = rol?.nombre || session.user.email;
+        crearNotificacion({
+          tipo:           'login_usuario',
+          origen:         'auth',
+          usuario_nombre: nombre,
+          user_id:        session.user.id,
+          mensaje:        `${nombre} ingresó al sistema`,
+        });
+      }
       if (onSuccess) onSuccess();
     }
   }
