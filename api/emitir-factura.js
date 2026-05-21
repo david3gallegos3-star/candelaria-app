@@ -124,6 +124,7 @@ module.exports = async function handler(req, res) {
     });
 
     const data = await datilRes.json();
+    console.log('DATIL RESPONSE status:', datilRes.status, 'body:', JSON.stringify(data, null, 2));
 
     // Error HTTP directo (4xx/5xx)
     if (!datilRes.ok) {
