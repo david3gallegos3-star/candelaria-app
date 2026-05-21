@@ -687,7 +687,7 @@ export function useFormulacion({ producto, userRol, currentUser }) {
     totMP, totAD,
     totalCrudoG, totalCrudoKg, totalCostoMP,
     costoMPkg, costoConMerma, costoEmpaqueKg,
-    costoAmarreKg, costoTotalKg, precioVentaKg,
+    costoAmarreKg, costoTotalKg, precioVentaKg, precioVentaSalmuera,
     merma, margen, modCif,
     empPrecio, empCantidad, hiloPrecio, hiloKg,
     mpFiltradas,

@@ -117,7 +117,7 @@ function Formulacion({ producto, onVolver, onVolverMenu, onAbrirMaterias, userRo
         totalCrudoG={f.totalCrudoG}
         totalCostoMP={f.totalCostoMP}
         costoMPkg={f.costoMPkg}
-        precioVentaKg={f.precioVentaKg}
+        precioVentaKg={['SALMUERAS','INMERSIÓN','MARINADOS'].includes(producto?.categoria) ? f.precioVentaSalmuera : f.precioVentaKg}
         comparadorAbierto={f.comparadorAbierto}
         setComparadorAbierto={f.setComparadorAbierto}
         versionesAbierto={versionesAbierto}
