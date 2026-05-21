@@ -231,6 +231,15 @@ export default function ResumenPrecios({ onVolver, onVolverMenu, onAbrirProducto
     p.categoria?.toLowerCase().includes(buscar.toLowerCase())
   );
 
+  /* Agrupar por categoría */
+  const grupos = {};
+  filtrado.forEach(p => {
+    const cat = p.categoria || 'SIN CATEGORÍA';
+    if (!grupos[cat]) grupos[cat] = [];
+    grupos[cat].push(p);
+  });
+  const cats = Object.keys(grupos).sort();
+
   if (cargando) return (
     <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'#f0f2f5' }}>
       <div style={{ textAlign:'center', color:'#888' }}>
@@ -286,37 +295,47 @@ export default function ResumenPrecios({ onVolver, onVolverMenu, onAbrirProducto
                 </tr>
               </thead>
               <tbody>
-                {filtrado.map((prod,gi) => {
-                  const esPar=gi%2===0, bgFila=esPar?BG_PAR:BG_IMPAR, bgNum=esPar?BG_NUM_PAR:BG_NUM_IMP, borderC=esPar?'#b8cfea':'#d8d8d8';
-                  return (
-                    <React.Fragment key={prod.id}>
-                      <tr style={{ borderBottom:`1px solid ${borderC}` }}>
-                        <td style={{ background:bgNum, padding:mobile?'9px 4px':'10px 8px', textAlign:'center', fontWeight:'bold', color:'#1a2744', fontSize:mobile?12:13, borderRight:'2px solid #9ab8d8' }}>{gi+1}</td>
-                        <td style={{ background:bgFila, padding:mobile?'9px 8px':'10px 14px', borderRight:`1px solid ${borderC}` }}>
-                          <span onClick={()=>onAbrirProducto(prod)} style={{ color:'#0563c1', fontWeight:'bold', fontSize:mobile?12:13, cursor:'pointer', textDecoration:'underline', display:'block' }}>{prod.nombre}</span>
-                          <span style={{ fontSize:10, color:'#888' }}>{prod.categoria}</span>
-                        </td>
-                        <td style={{ background:bgFila, padding:mobile?'9px 8px':'10px 14px', color:'#444', fontSize:mobile?11:12, borderRight:`1px solid ${borderC}` }}>Precio principal (sin funda)</td>
-                        <td style={{ padding:0, borderRight:`1px solid ${borderC}` }}>
-                          <div style={{ background:BG_GREEN, color:'white', fontWeight:'bold', fontSize:mobile?13:14, textAlign:'right', padding:mobile?'9px 8px':'10px 14px' }}>${prod.precioPrincipal.toFixed(4)}</div>
-                        </td>
-                        <td style={{ background:bgFila, padding:mobile?'9px 6px':'10px 14px', textAlign:'right', color:'#333', fontSize:mobile?11:13, fontWeight:'500' }}>{prod.gananciaPorc.toFixed(2)}%</td>
-                      </tr>
-                      {(prod.fundas||[]).map((funda,fi) => (
-                        <tr key={`f${fi}`} style={{ borderBottom:`1px solid ${borderC}` }}>
-                          <td style={{ background:bgNum, borderRight:'2px solid #9ab8d8' }}></td>
-                          <td style={{ background:bgFila, borderRight:`1px solid ${borderC}` }}></td>
-                          <td style={{ background:bgFila, padding:mobile?'7px 8px':'8px 14px', color:'#555', fontStyle:'italic', fontSize:mobile?11:12, borderRight:`1px solid ${borderC}` }}>📦 {funda.nombre}</td>
-                          <td style={{ padding:0, borderRight:`1px solid ${borderC}` }}>
-                            <div style={{ background:BG_DGREEN, color:'white', fontWeight:'bold', fontSize:mobile?12:13, textAlign:'right', padding:mobile?'7px 8px':'8px 14px' }}>${funda.precio.toFixed(4)}</div>
-                          </td>
-                          <td style={{ background:bgFila, padding:mobile?'7px 6px':'8px 14px', textAlign:'right', color:'#555', fontSize:mobile?11:12 }}>{funda.ganancia.toFixed(2)}%</td>
-                        </tr>
-                      ))}
-                      <tr><td colSpan={5} style={{ height:4, background:'#7fa8d0', padding:0 }}></td></tr>
-                    </React.Fragment>
-                  );
-                })}
+                {cats.map(cat => (
+                  <React.Fragment key={cat}>
+                    {/* Encabezado de categoría */}
+                    <tr>
+                      <td colSpan={5} style={{ background:'#2c3e50', color:'white', padding:mobile?'8px 10px':'10px 16px', fontWeight:'bold', fontSize:mobile?11:13, letterSpacing:'0.5px', textTransform:'uppercase' }}>
+                        📁 {cat} <span style={{ fontWeight:'normal', opacity:0.7, fontSize:mobile?10:11 }}>— {grupos[cat].length} producto{grupos[cat].length!==1?'s':''}</span>
+                      </td>
+                    </tr>
+                    {grupos[cat].map((prod,gi) => {
+                      const esPar=gi%2===0, bgFila=esPar?BG_PAR:BG_IMPAR, bgNum=esPar?BG_NUM_PAR:BG_NUM_IMP, borderC=esPar?'#b8cfea':'#d8d8d8';
+                      return (
+                        <React.Fragment key={prod.id}>
+                          <tr style={{ borderBottom:`1px solid ${borderC}` }}>
+                            <td style={{ background:bgNum, padding:mobile?'9px 4px':'10px 8px', textAlign:'center', fontWeight:'bold', color:'#1a2744', fontSize:mobile?12:13, borderRight:'2px solid #9ab8d8' }}>{gi+1}</td>
+                            <td style={{ background:bgFila, padding:mobile?'9px 8px':'10px 14px', borderRight:`1px solid ${borderC}` }}>
+                              <span onClick={()=>onAbrirProducto(prod)} style={{ color:'#0563c1', fontWeight:'bold', fontSize:mobile?12:13, cursor:'pointer', textDecoration:'underline' }}>{prod.nombre}</span>
+                            </td>
+                            <td style={{ background:bgFila, padding:mobile?'9px 8px':'10px 14px', color:'#444', fontSize:mobile?11:12, borderRight:`1px solid ${borderC}` }}>Precio principal (sin funda)</td>
+                            <td style={{ padding:0, borderRight:`1px solid ${borderC}` }}>
+                              <div style={{ background:BG_GREEN, color:'white', fontWeight:'bold', fontSize:mobile?13:14, textAlign:'right', padding:mobile?'9px 8px':'10px 14px' }}>${prod.precioPrincipal.toFixed(4)}</div>
+                            </td>
+                            <td style={{ background:bgFila, padding:mobile?'9px 6px':'10px 14px', textAlign:'right', color:'#333', fontSize:mobile?11:13, fontWeight:'500' }}>{prod.gananciaPorc.toFixed(2)}%</td>
+                          </tr>
+                          {(prod.fundas||[]).map((funda,fi) => (
+                            <tr key={`f${fi}`} style={{ borderBottom:`1px solid ${borderC}` }}>
+                              <td style={{ background:bgNum, borderRight:'2px solid #9ab8d8' }}></td>
+                              <td style={{ background:bgFila, borderRight:`1px solid ${borderC}` }}></td>
+                              <td style={{ background:bgFila, padding:mobile?'7px 8px':'8px 14px', color:'#555', fontStyle:'italic', fontSize:mobile?11:12, borderRight:`1px solid ${borderC}` }}>📦 {funda.nombre}</td>
+                              <td style={{ padding:0, borderRight:`1px solid ${borderC}` }}>
+                                <div style={{ background:BG_DGREEN, color:'white', fontWeight:'bold', fontSize:mobile?12:13, textAlign:'right', padding:mobile?'7px 8px':'8px 14px' }}>${funda.precio.toFixed(4)}</div>
+                              </td>
+                              <td style={{ background:bgFila, padding:mobile?'7px 6px':'8px 14px', textAlign:'right', color:'#555', fontSize:mobile?11:12 }}>{funda.ganancia.toFixed(2)}%</td>
+                            </tr>
+                          ))}
+                          <tr><td colSpan={5} style={{ height:3, background:'#b8cfea', padding:0 }}></td></tr>
+                        </React.Fragment>
+                      );
+                    })}
+                    <tr><td colSpan={5} style={{ height:6, background:'#2c3e50', padding:0 }}></td></tr>
+                  </React.Fragment>
+                ))}
               </tbody>
             </table>
             {filtrado.length===0&&<div style={{ textAlign:'center', padding:50, color:'#aaa' }}><div style={{ fontSize:36, marginBottom:10 }}>💰</div><div>No se encontraron productos</div></div>}
