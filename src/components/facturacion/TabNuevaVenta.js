@@ -41,6 +41,7 @@ export default function TabNuevaVenta({ mobile, currentUser }) {
   const [emitiendo,      setEmitiendo]      = useState(false);
   const [facturaEmitida, setFacturaEmitida] = useState(null);
   const [error,          setError]          = useState('');
+  const [errorTipo,      setErrorTipo]      = useState('interno');
 
   useEffect(() => { cargarDatos(); }, []);
   useRealtime(['clientes', 'config_productos', 'cuentas_cobrar', 'facturas', 'precios_clientes', 'productos'], cargarDatos);
@@ -140,7 +141,7 @@ export default function TabNuevaVenta({ mobile, currentUser }) {
         })
       });
       const data = await res.json();
-      if (!data.ok) throw new Error(data.error);
+      if (!data.ok) { const e = new Error(data.error || 'Error Dátil/SRI'); e.esDatil = true; throw e; }
 
       const numero = `001-001-${String(secuencial).padStart(9, '0')}`;
 
@@ -204,7 +205,8 @@ export default function TabNuevaVenta({ mobile, currentUser }) {
       }, 'tributario').catch(console.error);
 
     } catch (e) {
-      setError('Error al emitir: ' + e.message);
+      setErrorTipo(e.esDatil ? 'datil' : 'interno');
+      setError(e.esDatil ? e.message : 'Error interno: ' + e.message);
     }
     setEmitiendo(false);
   }
@@ -291,7 +293,7 @@ export default function TabNuevaVenta({ mobile, currentUser }) {
     setObservaciones('');
     setFormaPago('efectivo');
     setClienteId('consumidor_final');
-    setError('');
+    setError(''); setErrorTipo('interno');
   }
 
   // ── Estilos reutilizables ─────────────────────────────────
@@ -377,11 +379,17 @@ export default function TabNuevaVenta({ mobile, currentUser }) {
       {/* Error */}
       {error && (
         <div style={{
-          background: '#fde8e8', border: '1px solid #e74c3c',
+          background: errorTipo === 'datil' ? '#fff3e0' : '#fde8e8',
+          border:     `1px solid ${errorTipo === 'datil' ? '#e67e22' : '#e74c3c'}`,
           borderRadius: 8, marginBottom: 14, overflow: 'hidden'
         }}>
-          <div style={{ padding: '10px 14px', fontSize: '13px', fontWeight: 'bold', color: '#c0392b' }}>
-            ⚠️ {error}
+          <div style={{ padding: '6px 14px', fontSize: '11px', fontWeight: 'bold',
+            background: errorTipo === 'datil' ? '#e67e22' : '#e74c3c', color: 'white' }}>
+            {errorTipo === 'datil' ? '📡 Error Dátil / SRI' : '⚠️ Error interno'}
+          </div>
+          <div style={{ padding: '10px 14px', fontSize: '13px', fontWeight: 'bold',
+            color: errorTipo === 'datil' ? '#b7510a' : '#c0392b' }}>
+            {error}
           </div>
         </div>
       )}
