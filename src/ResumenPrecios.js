@@ -167,9 +167,19 @@ export default function ResumenPrecios({ onVolver, onVolverMenu, onAbrirProducto
         const merma  = parseFloat(cfg.merma)  || 0.07;
         const margen = parseFloat(cfg.margen) || 0.15;
 
+        /* SALMUERAS: precio solo con costo MP (sin MOD+CIF), siempre recalculado */
+        const esSalmuera = (prod.categoria||'').toUpperCase().includes('SALMUERA');
+
         let costoTotalKgParaFundas;
 
-        if (parseFloat(cfg.precio_venta_kg) > 0) {
+        if (esSalmuera) {
+          const totalCrudoG  = ingredientes.reduce((s,f)=>s+(parseFloat(f.gramos)||0),0);
+          const totalCrudoKg = totalCrudoG/1000;
+          const totalCostoMP = ingredientes.reduce((s,f)=>s+(parseFloat(f.gramos)/1000)*getPrecio(f),0);
+          const costoMPkg    = totalCrudoKg>0?totalCostoMP/totalCrudoKg:0;
+          precioPrincipal    = margen < 1 ? costoMPkg / (1 - margen) : 0;
+          costoTotalKgParaFundas = costoMPkg;
+        } else if (parseFloat(cfg.precio_venta_kg) > 0) {
           precioPrincipal        = parseFloat(cfg.precio_venta_kg);
           costoTotalKgParaFundas = parseFloat(cfg.costo_total_kg) > 0
             ? parseFloat(cfg.costo_total_kg)
