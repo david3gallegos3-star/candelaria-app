@@ -55,8 +55,28 @@ async function borrarDatosPrueba() {
 }
 
 export default function MenuContabilidad({ navegarA, onVolver }) {
-  const [borrando, setBorrando] = useState(false);
-  const [msgBorrar, setMsgBorrar] = useState('');
+  const [borrando,         setBorrando]         = useState(false);
+  const [msgBorrar,        setMsgBorrar]        = useState('');
+  const [borrandoFacturas, setBorrandoFacturas] = useState(false);
+  const [msgFacturas,      setMsgFacturas]      = useState('');
+
+  async function handleBorrarFacturas() {
+    const ok = window.confirm('⚠️ ¿Borrar TODAS las facturas de prueba?\n\nSe eliminarán: facturas, detalles y cuentas por cobrar. El secuencial vuelve a 1.\n\nEsta acción NO se puede deshacer.');
+    if (!ok) return;
+    setBorrandoFacturas(true);
+    setMsgFacturas('');
+    try {
+      await supabase.from('facturas_detalle').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      await supabase.from('cuentas_cobrar').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      await supabase.from('facturas').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      await supabase.from('config_sistema').update({ valor: '1' }).eq('clave', 'factura_secuencial');
+      setMsgFacturas('✓ Facturas borradas y secuencial reiniciado');
+    } catch (e) {
+      setMsgFacturas('Error: ' + e.message);
+    }
+    setBorrandoFacturas(false);
+    setTimeout(() => setMsgFacturas(''), 5000);
+  }
 
   async function handleBorrarPruebas() {
     const ok = window.confirm('⚠️ ¿Borrar TODOS los datos de prueba?\n\nSe eliminarán: facturas, compras, nómina, caja chica, libro diario, clientes, empleados y proveedores.\n\nEsta acción NO se puede deshacer.');
@@ -143,19 +163,35 @@ export default function MenuContabilidad({ navegarA, onVolver }) {
         </div>
 
         {/* Borrar pruebas */}
-        <div style={{ textAlign: 'center', marginBottom: '16px' }}>
-          <button onClick={handleBorrarPruebas} disabled={borrando} style={{
-            background: borrando ? '#374151' : 'rgba(220,38,38,0.15)',
-            border: '1.5px solid rgba(220,38,38,0.5)',
-            color: '#f87171', borderRadius: '10px',
-            padding: '10px 28px', cursor: borrando ? 'default' : 'pointer',
-            fontSize: '13px', fontWeight: 'bold',
-          }}>
-            {borrando ? '⏳ Borrando...' : '🗑️ Borrar datos de prueba'}
-          </button>
+        <div style={{ textAlign: 'center', marginBottom: '16px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
+            <button onClick={handleBorrarPruebas} disabled={borrando} style={{
+              background: borrando ? '#374151' : 'rgba(220,38,38,0.15)',
+              border: '1.5px solid rgba(220,38,38,0.5)',
+              color: '#f87171', borderRadius: '10px',
+              padding: '10px 20px', cursor: borrando ? 'default' : 'pointer',
+              fontSize: '13px', fontWeight: 'bold',
+            }}>
+              {borrando ? '⏳ Borrando...' : '🗑️ Borrar datos de prueba'}
+            </button>
+            <button onClick={handleBorrarFacturas} disabled={borrandoFacturas} style={{
+              background: borrandoFacturas ? '#374151' : 'rgba(234,88,12,0.15)',
+              border: '1.5px solid rgba(234,88,12,0.5)',
+              color: '#fb923c', borderRadius: '10px',
+              padding: '10px 20px', cursor: borrandoFacturas ? 'default' : 'pointer',
+              fontSize: '13px', fontWeight: 'bold',
+            }}>
+              {borrandoFacturas ? '⏳ Borrando...' : '🧾 Borrar facturas de prueba'}
+            </button>
+          </div>
           {msgBorrar && (
-            <div style={{ marginTop: 8, fontSize: 12, color: msgBorrar.startsWith('✓') ? '#4ade80' : '#f87171' }}>
+            <div style={{ fontSize: 12, color: msgBorrar.startsWith('✓') ? '#4ade80' : '#f87171' }}>
               {msgBorrar}
+            </div>
+          )}
+          {msgFacturas && (
+            <div style={{ fontSize: 12, color: msgFacturas.startsWith('✓') ? '#4ade80' : '#f87171' }}>
+              {msgFacturas}
             </div>
           )}
         </div>
