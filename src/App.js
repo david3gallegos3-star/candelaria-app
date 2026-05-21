@@ -41,6 +41,8 @@ import InventarioProduccion from './screens/produccion/InventarioProduccion';
 
 // Hooks y helpers
 import { useAuth }           from './hooks/useAuth';
+import { verificarDispositivo } from './hooks/useDeviceAuth';
+import DispositivoBloqueado      from './components/DispositivoBloqueado';
 import { usePresence }       from './hooks/usePresence';
 
 // ── EMOJIS_CAT global (compartido con MenuFormulas) ──
@@ -99,6 +101,9 @@ function App() {
 
   // ── Usuarios ──────────────────────────────────────────
   const [modalUsuarios,   setModalUsuarios]   = useState(false);
+  const [dispositivoEstado, setDispositivoEstado] = useState(null);
+  const [dispositivoUser,   setDispositivoUser]   = useState(null);
+  const [dispositivoRol,    setDispositivoRol]    = useState(null);
   const [usuariosRoles,   setUsuariosRoles]   = useState([]);
   const [editandoUsuario, setEditandoUsuario] = useState(null);
 
@@ -267,9 +272,16 @@ function App() {
 
   // ── useEffects ────────────────────────────────────────
   useEffect(() => {
-    checkSession(async () => {
-      await cargarTodo();
-      setPantalla('menuPrincipal');
+    checkSession(async (authUser, authRol) => {
+      const estado = await verificarDispositivo(authUser.id, authRol?.rol);
+      if (estado === 'aprobado') {
+        await cargarTodo();
+        setPantalla('menuPrincipal');
+      } else {
+        setDispositivoUser(authUser);
+        setDispositivoRol(authRol);
+        setDispositivoEstado(estado);
+      }
     });
   }, []);
 
@@ -861,14 +873,39 @@ async function confirmarImportacion() {
   //  RENDERS
   // ══════════════════════════════════════════
 
+  if (dispositivoEstado === 'pendiente' || dispositivoEstado === 'rechazado') {
+    return (
+      <DispositivoBloqueado
+        estado={dispositivoEstado}
+        onReverificar={async () => {
+          const estado = await verificarDispositivo(dispositivoUser.id, dispositivoRol?.rol);
+          if (estado === 'aprobado') {
+            setDispositivoEstado(null);
+            await cargarTodo();
+            setPantalla('menuPrincipal');
+          } else {
+            setDispositivoEstado(estado);
+          }
+        }}
+      />
+    );
+  }
+
   if (pantalla === 'login') return (
     <LoginScreen
       email={email}       setEmail={setEmail}
       password={password} setPassword={setPassword}
       loading={loading}
-      login={() => login(async () => {
-        await cargarTodo();
-        setPantalla('menuPrincipal');
+      login={() => login(async (authUser, authRol) => {
+        const estado = await verificarDispositivo(authUser.id, authRol?.rol);
+        if (estado === 'aprobado') {
+          await cargarTodo();
+          setPantalla('menuPrincipal');
+        } else {
+          setDispositivoUser(authUser);
+          setDispositivoRol(authRol);
+          setDispositivoEstado(estado);
+        }
       })}
     />
   );
