@@ -164,6 +164,36 @@ module.exports = async function handler(req, res) {
       return res.status(422).json({ error: mensajes, detalle: data });
     }
 
+    // Polling: esperar 3s y verificar estado final (Dátil procesa de forma asíncrona)
+    const datilId = data.id || '';
+    if (datilId) {
+      await new Promise(r => setTimeout(r, 3000));
+      try {
+        const pollRes = await fetch(`https://link.datil.co/invoices/${datilId}`, {
+          headers: {
+            'X-Key':      process.env.DATIL_API_KEY,
+            'X-Password': process.env.DATIL_PASSWORD
+          }
+        });
+        if (pollRes.ok) {
+          const poll = await pollRes.json();
+          console.log('DATIL POLL estado:', poll.estado, 'es_valida:', poll.es_valida);
+          const estadoFinal = (poll.estado || poll.status || '').toLowerCase();
+          const estadosError = ['error', 'no_autorizada', 'rechazada', 'devuelta', 'anulada'];
+          if (estadosError.includes(estadoFinal) || poll.es_valida === false) {
+            const errores = poll.errores || poll.errors || poll.mensajes_error || [];
+            const mensajes = Array.isArray(errores) && errores.length > 0
+              ? errores.map(e => e.mensaje || e.message || JSON.stringify(e)).join(' | ')
+              : `Dátil estado: ${estadoFinal || 'error'}`;
+            console.error('DATIL POLL ERROR:', JSON.stringify(poll, null, 2));
+            return res.status(422).json({ error: mensajes, estado: estadoFinal, detalle: poll });
+          }
+        }
+      } catch (pollErr) {
+        console.warn('DATIL POLL falló, continuando:', pollErr.message);
+      }
+    }
+
     return res.status(200).json({
       ok:           true,
       datil_id:     data.id      || '',
