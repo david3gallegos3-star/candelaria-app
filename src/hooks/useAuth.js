@@ -56,7 +56,7 @@ export function useAuth() {
         mensaje:        `${nombre} ingresó al sistema`,
       });
     }
-    if (onSuccess) onSuccess();
+    if (onSuccess) onSuccess(data.user, rol);
   }
 
   // Logout
@@ -85,7 +85,7 @@ export function useAuth() {
           mensaje:        `${nombre} ingresó al sistema`,
         });
       }
-      if (onSuccess) onSuccess();
+      if (onSuccess) onSuccess(session.user, rol);
     }
   }
 
