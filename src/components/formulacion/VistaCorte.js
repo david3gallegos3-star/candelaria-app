@@ -57,7 +57,7 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion, esBano 
   // Pruebas — múltiples filas
   const [pruebaFilas,       setPruebaFilas]       = useState([{ id: '1', kg: '', emp_id: '', eti_id: '' }]);
   const [pruebasModoEdit,   setPruebasModoEdit]   = useState(false);
-  const [margenPrueba,      setMargenPrueba]      = useState('');
+  const [margenPrueba,      setMargenPrueba]      = useState('15');
 
   // Formulaciones salmuera
   const [formulaciones,         setFormulaciones]         = useState([]);

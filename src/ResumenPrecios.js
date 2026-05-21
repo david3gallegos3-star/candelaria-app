@@ -134,18 +134,30 @@ export default function ResumenPrecios({ onVolver, onVolverMenu, onAbrirProducto
           : 0;
 
         if (pruebaVer) {
-          /* margen_prueba es independiente del margen del producto — default 15% */
-          const mPct = parseFloat(pruebaVer.margen_prueba) > 0
-            ? parseFloat(pruebaVer.margen_prueba)
-            : 15;
-          fundas = (pruebaVer.fundas || []).map(f => {
-            const cTotal = f.kg * cMadReal + (f.c_emp || 0) + (f.c_eti || 0);
-            return {
-              nombre:   f.emp_nombre || 'Sin nombre',
+          if (pruebaVer.fundas?.length > 0) {
+            /* Estructura VistaCorte: fundas[] con kg, c_emp, c_eti */
+            const mPct = parseFloat(pruebaVer.margen_prueba) > 0
+              ? parseFloat(pruebaVer.margen_prueba)
+              : 15;
+            fundas = pruebaVer.fundas.map(f => {
+              const cTotal = f.kg * cMadReal + (f.c_emp || 0) + (f.c_eti || 0);
+              return {
+                nombre:   f.emp_nombre || 'Sin nombre',
+                precio:   mPct < 100 ? cTotal / (1 - mPct / 100) : 0,
+                ganancia: mPct,
+              };
+            });
+          } else if (pruebaVer.gramos > 0) {
+            /* Estructura VistaHorneado: objeto plano con gramos, costoEmp, costoEti */
+            const mPct = parseFloat(cfg.margen || 15);
+            const kg   = pruebaVer.gramos / 1000;
+            const cTotal = kg * cMadReal + (pruebaVer.costoEmp || 0) + (pruebaVer.costoEti || 0);
+            fundas = [{
+              nombre:   pruebaVer.empNombre || 'Sin nombre',
               precio:   mPct < 100 ? cTotal / (1 - mPct / 100) : 0,
               ganancia: mPct,
-            };
-          });
+            }];
+          }
         }
       } else {
         /* ── Producto normal (Chorizos, Salchichas, etc.) ── */
