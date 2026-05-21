@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Whitelist de Dispositivos — Diseño</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0d1b2a; color: #e2e8f0; font-family: Arial, sans-serif; padding: 32px 24px; max-width: 800px; margin: 0 auto; }
+    h2 { font-size: 22px; margin-bottom: 6px; color: #fff; }
+    .subtitle { color: #60a5fa; font-size: 13px; margin-bottom: 28px; }
+    .section { margin-bottom: 32px; }
+    h3 { font-size: 15px; font-weight: bold; color: #93c5fd; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.05em; }
+    p { color: #cbd5e1; font-size: 13px; line-height: 1.6; }
+    pre { background: #1a2744; color: #a8d8ff; padding: 14px; border-radius: 8px; font-size: 12px; overflow-x: auto; line-height: 1.5; }
+    .flow-step { background: #1a2744; padding: 10px 14px; border-radius: 4px; color: #e2e8f0; font-size: 13px; margin-bottom: 6px; border-left: 4px solid #3b82f6; }
+    .flow-step.purple { border-left-color: #8b5cf6; }
+    .flow-step.yellow { border-left-color: #f59e0b; }
+    .flow-step.red    { border-left-color: #ef4444; }
+    .flow-step.green  { border-left-color: #22c55e; }
+    .split { display: flex; gap: 16px; flex-wrap: wrap; }
+    .mockup { flex: 1; min-width: 220px; background: #1a2744; border-radius: 10px; overflow: hidden; border: 1px solid #2d4a7a; }
+    .mockup-header { background: #0f1729; padding: 10px 14px; font-size: 13px; font-weight: bold; color: #93c5fd; border-bottom: 1px solid #2d4a7a; }
+    .mockup-body { padding: 20px; text-align: center; }
+    .mock-button { background: rgba(59,130,246,0.2); border: 1px solid rgba(59,130,246,0.5); color: #60a5fa; border-radius: 6px; padding: 8px 16px; cursor: pointer; font-size: 12px; margin-top: 12px; }
+    .tabs { display: flex; gap: 8px; margin-bottom: 12px; }
+    .tab { padding: 4px 14px; border-radius: 20px; font-size: 12px; font-weight: bold; }
+    .tab.active { background: #f59e0b; color: #000; }
+    .tab.inactive { background: #1a2744; color: #94a3b8; }
+    .table-header { display: grid; grid-template-columns: 1fr 1fr 1fr auto auto; gap: 8px; padding: 8px 12px; background: #0f1729; color: #64748b; font-size: 11px; font-weight: bold; text-transform: uppercase; }
+    .table-row { display: grid; grid-template-columns: 1fr 1fr 1fr auto auto; gap: 8px; padding: 10px 12px; color: #e2e8f0; font-size: 12px; border-top: 1px solid #1e3a5f; background: #1a2744; align-items: center; }
+    .btn-approve { background: rgba(59,130,246,0.2); border: 1px solid rgba(59,130,246,0.4); color: #60a5fa; border-radius: 6px; font-size: 11px; padding: 4px 10px; cursor: pointer; }
+    .btn-reject  { background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.4); color: #f87171; border-radius: 6px; font-size: 11px; padding: 4px 10px; cursor: pointer; }
+    .file-item { background: #1a2744; padding: 8px 12px; border-radius: 6px; font-size: 12px; color: #e2e8f0; margin-bottom: 6px; }
+    code { background: #0f1729; color: #7dd3fc; padding: 2px 5px; border-radius: 4px; font-size: 11px; }
+  </style>
+</head>
+<body>
+
+<h2>Whitelist de Dispositivos — Diseño</h2>
+<p class="subtitle">Especificación aprobada · Lista para implementar</p>
+
+<div class="section">
+  <h3>🎯 Objetivo</h3>
+  <p>Solo dispositivos aprobados por el admin pueden usar la app. Los administradores están exentos. Los roles y permisos existentes no cambian.</p>
+</div>
+
+<div class="section">
+  <h3>🗄️ Tabla Supabase</h3>
+  <pre>create table dispositivos_autorizados (
+  id         uuid primary key default gen_random_uuid(),
+  uuid       text not null unique,
+  user_id    uuid references auth.users(id),
+  estado     text not null default 'pendiente',
+             -- pendiente | aprobado | rechazado
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);</pre>
+</div>
+
+<div class="section">
+  <h3>🔄 Flujo de verificación</h3>
+  <div class="flow-step">1️⃣ Leer UUID de <code>localStorage['candelaria_device_id']</code> — si no existe, generarlo</div>
+  <div class="flow-step purple">2️⃣ Si es <strong>admin</strong> → saltar verificación, entrar directo</div>
+  <div class="flow-step yellow">3️⃣ Consultar Supabase con el UUID del dispositivo</div>
+  <div class="flow-step red">4️⃣ <strong>No existe</strong> → insertar como pendiente + notificar admin</div>
+  <div class="flow-step yellow">5️⃣ <strong>Pendiente</strong> → pantalla de espera con botón "Verificar de nuevo"</div>
+  <div class="flow-step red">6️⃣ <strong>Rechazado</strong> → pantalla de acceso denegado</div>
+  <div class="flow-step green">7️⃣ <strong>Aprobado</strong> → continuar al login normal ✅</div>
+</div>
+
+<div class="section">
+  <h3>📱 Pantallas de bloqueo</h3>
+  <div class="split">
+    <div class="mockup">
+      <div class="mockup-header">⏳ Pendiente</div>
+      <div class="mockup-body">
+        <div style="font-size:40px;margin-bottom:12px">⏳</div>
+        <div style="font-weight:bold;margin-bottom:8px;color:#e2e8f0">Dispositivo pendiente de aprobación</div>
+        <div style="color:#94a3b8;font-size:12px;margin-bottom:4px">Tu solicitud fue enviada al administrador.</div>
+        <div style="color:#94a3b8;font-size:12px">Espera la aprobación.</div>
+        <button class="mock-button">Verificar de nuevo</button>
+      </div>
+    </div>
+    <div class="mockup">
+      <div class="mockup-header">🚫 Rechazado</div>
+      <div class="mockup-body">
+        <div style="font-size:40px;margin-bottom:12px">🚫</div>
+        <div style="font-weight:bold;margin-bottom:8px;color:#e2e8f0">Acceso denegado</div>
+        <div style="color:#94a3b8;font-size:12px">Este dispositivo no tiene acceso.</div>
+        <div style="color:#94a3b8;font-size:12px">Contacta al administrador.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>👤 Panel en Gestión de Usuarios</h3>
+  <p style="color:#94a3b8;font-size:13px;margin-bottom:12px">Nueva sección debajo de la lista de usuarios — solo visible para admins</p>
+  <div class="tabs">
+    <span class="tab active">Pendientes</span>
+    <span class="tab inactive">Aprobados</span>
+    <span class="tab inactive">Rechazados</span>
+  </div>
+  <div style="border-radius:8px;overflow:hidden">
+    <div class="table-header">
+      <span>UUID</span><span>Usuario</span><span>Fecha</span><span>✅</span><span>❌</span>
+    </div>
+    <div class="table-row">
+      <span style="font-family:monospace;color:#60a5fa">a3f2...9c1d</span>
+      <span>Mayra</span>
+      <span style="color:#64748b">21 May 2026</span>
+      <button class="btn-approve">Aprobar</button>
+      <button class="btn-reject">Rechazar</button>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h3>📁 Archivos a tocar</h3>
+  <div class="file-item">🆕 <code>src/hooks/useDeviceAuth.js</code> — lógica UUID + verificación Supabase</div>
+  <div class="file-item">🆕 <code>src/components/DispositivoBloqueado.js</code> — pantallas pendiente/rechazado</div>
+  <div class="file-item">✏️ <code>src/App.js</code> — agregar verificación en flujo de inicio</div>
+  <div class="file-item">✏️ <code>src/components/GestorUsuarios.js</code> — panel de dispositivos</div>
+  <div class="file-item">🗄️ <strong>Supabase</strong> — crear tabla <code>dispositivos_autorizados</code> con RLS</div>
+</div>
+
+</body>
+</html>
