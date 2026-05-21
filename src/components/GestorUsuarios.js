@@ -3,7 +3,7 @@
 // Usado por: App.js
 // ============================================
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '../supabase';
 
 const ROL_COLOR = {
@@ -26,6 +26,48 @@ function GestorUsuarios({
   editandoUsuario, setEditandoUsuario,
   mostrarExito
 }) {
+  const [tabDispositivos, setTabDispositivos]           = useState('pendientes');
+  const [dispositivos, setDispositivos]                 = useState([]);
+  const [cargandoDispositivos, setCargandoDispositivos] = useState(false);
+
+  async function cargarDispositivos() {
+    setCargandoDispositivos(true);
+    const { data } = await supabase
+      .from('dispositivos_autorizados')
+      .select('*')
+      .order('created_at', { ascending: false });
+    setDispositivos(data || []);
+    setCargandoDispositivos(false);
+  }
+
+  async function aprobarDispositivo(id) {
+    await supabase.from('dispositivos_autorizados')
+      .update({ estado: 'aprobado', updated_at: new Date().toISOString() })
+      .eq('id', id);
+    await cargarDispositivos();
+    mostrarExito('✅ Dispositivo aprobado');
+  }
+
+  async function rechazarDispositivo(id) {
+    await supabase.from('dispositivos_autorizados')
+      .update({ estado: 'rechazado', updated_at: new Date().toISOString() })
+      .eq('id', id);
+    await cargarDispositivos();
+    mostrarExito('Dispositivo rechazado');
+  }
+
+  async function revocarDispositivo(id) {
+    await supabase.from('dispositivos_autorizados')
+      .update({ estado: 'rechazado', updated_at: new Date().toISOString() })
+      .eq('id', id);
+    await cargarDispositivos();
+    mostrarExito('Dispositivo revocado');
+  }
+
+  useEffect(() => {
+    if (modalUsuarios) cargarDispositivos();
+  }, [modalUsuarios]);
+
   if (!modalUsuarios) return null;
 
   async function guardarRolUsuario() {
@@ -223,6 +265,97 @@ function GestorUsuarios({
             </div>
           ))}
         </div>
+
+        {/* ─── DISPOSITIVOS ─────────────────────────────── */}
+        <div style={{
+          borderTop: '1px solid #e5e7eb',
+          padding: '16px 20px',
+          background: '#f8fafc',
+          borderRadius: '0 0 14px 14px',
+        }}>
+          <div style={{ fontWeight:'bold', fontSize:'13px', color:'#1a1a2e', marginBottom:'12px' }}>
+            💻 Dispositivos autorizados
+          </div>
+
+          {/* Tabs */}
+          <div style={{ display:'flex', gap:'8px', marginBottom:'12px' }}>
+            {['pendientes','aprobados','rechazados'].map(tab => (
+              <button key={tab} onClick={() => setTabDispositivos(tab)} style={{
+                padding:'4px 14px', borderRadius:'20px', fontSize:'12px',
+                fontWeight:'bold', cursor:'pointer', border:'none',
+                background: tabDispositivos === tab
+                  ? (tab === 'pendientes' ? '#f59e0b' : tab === 'aprobados' ? '#22c55e' : '#ef4444')
+                  : '#e5e7eb',
+                color: tabDispositivos === tab ? (tab === 'pendientes' ? '#000' : '#fff') : '#555',
+              }}>
+                {tab.charAt(0).toUpperCase() + tab.slice(1)}
+              </button>
+            ))}
+          </div>
+
+          {/* Lista */}
+          {cargandoDispositivos ? (
+            <div style={{ fontSize:'12px', color:'#888', textAlign:'center', padding:'8px' }}>
+              Cargando...
+            </div>
+          ) : (
+            <div style={{ display:'flex', flexDirection:'column', gap:'6px', maxHeight:'180px', overflowY:'auto' }}>
+              {dispositivos
+                .filter(d => d.estado === tabDispositivos.slice(0, -1))
+                .map(d => (
+                  <div key={d.id} style={{
+                    display:'flex', alignItems:'center', gap:'10px',
+                    background:'white', borderRadius:'8px', padding:'8px 12px',
+                    border:'1px solid #e5e7eb', fontSize:'12px',
+                  }}>
+                    <div style={{ flex:1 }}>
+                      <span style={{ fontFamily:'monospace', color:'#3b82f6' }}>
+                        {d.uuid.slice(0,8)}...{d.uuid.slice(-4)}
+                      </span>
+                      <span style={{ color:'#888', marginLeft:'10px' }}>
+                        {new Date(d.created_at).toLocaleDateString('es-EC')}
+                      </span>
+                    </div>
+                    {d.estado === 'pendiente' && (
+                      <>
+                        <button onClick={() => aprobarDispositivo(d.id)} style={{
+                          background:'rgba(34,197,94,0.15)', border:'1px solid rgba(34,197,94,0.4)',
+                          color:'#16a34a', borderRadius:'6px', padding:'3px 10px',
+                          cursor:'pointer', fontSize:'11px', fontWeight:'bold',
+                        }}>Aprobar</button>
+                        <button onClick={() => rechazarDispositivo(d.id)} style={{
+                          background:'rgba(239,68,68,0.1)', border:'1px solid rgba(239,68,68,0.4)',
+                          color:'#dc2626', borderRadius:'6px', padding:'3px 10px',
+                          cursor:'pointer', fontSize:'11px',
+                        }}>Rechazar</button>
+                      </>
+                    )}
+                    {d.estado === 'aprobado' && (
+                      <button onClick={() => revocarDispositivo(d.id)} style={{
+                        background:'rgba(239,68,68,0.1)', border:'1px solid rgba(239,68,68,0.4)',
+                        color:'#dc2626', borderRadius:'6px', padding:'3px 10px',
+                        cursor:'pointer', fontSize:'11px',
+                      }}>Revocar</button>
+                    )}
+                    {d.estado === 'rechazado' && (
+                      <button onClick={() => aprobarDispositivo(d.id)} style={{
+                        background:'rgba(34,197,94,0.15)', border:'1px solid rgba(34,197,94,0.4)',
+                        color:'#16a34a', borderRadius:'6px', padding:'3px 10px',
+                        cursor:'pointer', fontSize:'11px', fontWeight:'bold',
+                      }}>Aprobar</button>
+                    )}
+                  </div>
+                ))}
+              {dispositivos.filter(d => d.estado === tabDispositivos.slice(0,-1)).length === 0 && (
+                <div style={{ fontSize:'12px', color:'#aaa', textAlign:'center', padding:'12px' }}>
+                  Sin dispositivos {tabDispositivos}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+        {/* ─── FIN DISPOSITIVOS ──────────────────────────── */}
+
       </div>
     </div>
   );
