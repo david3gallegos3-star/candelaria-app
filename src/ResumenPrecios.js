@@ -135,11 +135,15 @@ export default function ResumenPrecios({ onVolver, onVolverMenu, onAbrirProducto
 
         if (pruebaVer) {
           const mPct = parseFloat(pruebaVer.margen_prueba || margenPct);
-          fundas = (pruebaVer.fundas || []).map(f => ({
-            nombre:   f.emp_nombre || 'Sin nombre',
-            precio:   mPct < 100 ? f.c_total / (1 - mPct / 100) : 0,
-            ganancia: mPct,
-          }));
+          fundas = (pruebaVer.fundas || []).map(f => {
+            /* Recalcular c_total con el costo vivo actual en vez del guardado */
+            const cTotal = f.kg * cMadReal + (f.c_emp || 0) + (f.c_eti || 0);
+            return {
+              nombre:   f.emp_nombre || 'Sin nombre',
+              precio:   mPct < 100 ? cTotal / (1 - mPct / 100) : 0,
+              ganancia: mPct,
+            };
+          });
         }
       } else {
         /* ── Producto normal (Chorizos, Salchichas, etc.) ── */
