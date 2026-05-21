@@ -21,19 +21,23 @@ export async function verificarDispositivo(userId, rol) {
     .from('dispositivos_autorizados')
     .select('estado')
     .eq('uuid', deviceId)
-    .single();
+    .maybeSingle();
 
   if (!data) {
-    await supabase.from('dispositivos_autorizados').insert({
-      uuid:    deviceId,
-      user_id: userId,
-      estado:  'pendiente',
-    });
-    crearNotificacion({
-      tipo:    'dispositivo_nuevo',
-      origen:  'auth',
-      mensaje: 'Nuevo dispositivo solicita acceso',
-    });
+    try {
+      await supabase.from('dispositivos_autorizados').insert({
+        uuid:    deviceId,
+        user_id: userId,
+        estado:  'pendiente',
+      });
+      crearNotificacion({
+        tipo:    'dispositivo_nuevo',
+        origen:  'auth',
+        mensaje: 'Nuevo dispositivo solicita acceso',
+      });
+    } catch (_) {
+      // UUID already exists (race condition) — ignore
+    }
     return 'pendiente';
   }
 
