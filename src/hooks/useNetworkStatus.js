@@ -76,7 +76,6 @@ export function useNetworkStatus() {
           offlineBorradores.removeBorrador(b.id);
 
           if (b.tipo === 'nota_venta') {
-            // Nota de venta: ya está autorizada, no necesita ir al SRI
             emitidos++;
             continue;
           }
