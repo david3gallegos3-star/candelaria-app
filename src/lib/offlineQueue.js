@@ -6,7 +6,8 @@ function load() {
 }
 
 function save(queue) {
-  localStorage.setItem(QUEUE_KEY, JSON.stringify(queue));
+  try { localStorage.setItem(QUEUE_KEY, JSON.stringify(queue)); }
+  catch { /* quota exceeded — queue not persisted */ }
 }
 
 export function enqueue({ table, operation, data, filters }) {
