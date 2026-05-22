@@ -481,16 +481,23 @@ export default function TabNuevaVenta({ mobile, currentUser }) {
       textAlign: 'center'
     }}>
       <div style={{ fontSize: 56, marginBottom: 12 }}>
-        {facturaEmitida.esBorrador ? '💾' : '✅'}
+        {facturaEmitida.tipo === 'nota_venta' ? '📋'
+          : facturaEmitida.esBorrador ? '💾' : '✅'}
       </div>
-      <div style={{ fontSize: '20px', fontWeight: 'bold', color: facturaEmitida.esBorrador ? '#f39c12' : '#27ae60', marginBottom: 8 }}>
-        {facturaEmitida.esBorrador ? '¡Borrador guardado!' : '¡Factura emitida!'}
+      <div style={{
+        fontSize: '20px', fontWeight: 'bold', marginBottom: 8,
+        color: facturaEmitida.tipo === 'nota_venta' ? '#8e44ad'
+          : facturaEmitida.esBorrador ? '#f39c12' : '#27ae60'
+      }}>
+        {facturaEmitida.tipo === 'nota_venta'
+          ? (facturaEmitida.esBorrador ? '📋 Nota de venta guardada' : '¡Nota de venta registrada!')
+          : (facturaEmitida.esBorrador ? '¡Borrador guardado!' : '¡Factura emitida!')}
       </div>
       <div style={{ fontSize: '15px', color: '#555', marginBottom: 20 }}>
         {facturaEmitida.numero} — {facturaEmitida.cliente}
       </div>
 
-      {facturaEmitida.esBorrador && (
+      {facturaEmitida.esBorrador && facturaEmitida.tipo !== 'nota_venta' && (
         <div style={{
           background: '#fff8f0', border: '1px solid #f39c12', borderRadius: 10,
           padding: '10px 14px', marginBottom: 16, fontSize: '12px', color: '#856404'
@@ -499,21 +506,36 @@ export default function TabNuevaVenta({ mobile, currentUser }) {
         </div>
       )}
 
+      {facturaEmitida.esBorrador && facturaEmitida.tipo === 'nota_venta' && (
+        <div style={{
+          background: '#f9f0ff', border: '1px solid #8e44ad', borderRadius: 10,
+          padding: '10px 14px', marginBottom: 16, fontSize: '12px', color: '#6c3483'
+        }}>
+          📴 Sin conexión. La nota de venta se registrará automáticamente al restaurarse el internet.
+        </div>
+      )}
+
       <div style={{
         background: '#f8f9fa', borderRadius: 10,
         padding: '14px 16px', marginBottom: 20, textAlign: 'left'
       }}>
-        <div style={{ fontSize: '12px', color: '#888', marginBottom: 6 }}>Autorización SRI</div>
-        <div style={{
-          fontSize: '11px', color: '#1a1a2e', fontWeight: 'bold',
-          wordBreak: 'break-all', fontFamily: 'monospace'
-        }}>
-          {facturaEmitida.autorizacion || '(pendiente — borrador)'}
-        </div>
-        <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        {facturaEmitida.tipo !== 'nota_venta' && (
+          <>
+            <div style={{ fontSize: '12px', color: '#888', marginBottom: 6 }}>Autorización SRI</div>
+            <div style={{
+              fontSize: '11px', color: '#1a1a2e', fontWeight: 'bold',
+              wordBreak: 'break-all', fontFamily: 'monospace'
+            }}>
+              {facturaEmitida.autorizacion || '(pendiente — borrador)'}
+            </div>
+          </>
+        )}
+        <div style={{ marginTop: facturaEmitida.tipo !== 'nota_venta' ? 10 : 0, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <div style={{
-            background: '#e8f5e9', borderRadius: 8,
-            padding: '6px 12px', fontSize: '13px', fontWeight: 'bold', color: '#27ae60'
+            background: facturaEmitida.tipo === 'nota_venta' ? '#f3e5f5' : '#e8f5e9',
+            borderRadius: 8, padding: '6px 12px',
+            fontSize: '13px', fontWeight: 'bold',
+            color: facturaEmitida.tipo === 'nota_venta' ? '#8e44ad' : '#27ae60'
           }}>
             TOTAL: ${facturaEmitida.total?.toFixed(2)}
           </div>
@@ -805,6 +827,18 @@ export default function TabNuevaVenta({ mobile, currentUser }) {
             {emitiendo
               ? (isOnline ? '⏳ Emitiendo...' : '⏳ Guardando...')
               : isOnline ? '🧾 Emitir factura' : '💾 Emitir factura'}
+          </button>
+          <button
+            onClick={emitirNotaVenta}
+            disabled={emitiendo || subtotal <= 0}
+            style={{
+              background: emitiendo || subtotal <= 0 ? '#95a5a6' : '#8e44ad',
+              color: 'white', border: 'none', borderRadius: 10,
+              padding: mobile ? '12px 20px' : '12px 28px',
+              cursor: emitiendo || subtotal <= 0 ? 'not-allowed' : 'pointer',
+              fontWeight: 'bold', fontSize: '14px', whiteSpace: 'nowrap'
+            }}>
+            {emitiendo ? '⏳...' : '📋 Nota de venta'}
           </button>
         </div>
       </div>
