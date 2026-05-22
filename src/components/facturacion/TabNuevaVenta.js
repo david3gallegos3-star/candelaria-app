@@ -122,6 +122,10 @@ export default function TabNuevaVenta({ mobile, currentUser }) {
     if (secuencial === null)
       return setError('No se pudo cargar el número de factura');
 
+    if (!navigator.onLine) {
+      return setError('Sin conexión a internet — no se puede emitir al SRI. Guarda como borrador y emite cuando vuelva el internet.');
+    }
+
     setEmitiendo(true);
     const itemsValidos = items.filter(i => i.producto_nombre && parseFloat(i.cantidad) > 0);
 
