@@ -49,8 +49,9 @@ function makeBuilderProxy(target, table, state) {
       return (...args) => {
         trackCall(prop, args, state);
         const result = value.apply(t, args);
-        // Si el resultado es otro builder (encadenamiento), proxearlo también
-        if (result && typeof result === 'object' && result !== t && typeof result.then === 'function') {
+        // Siempre re-envolver builders (incluyendo cuando devuelven `this`)
+        // Sin esto, .order()/.eq()/.limit() rompen la cadena y el execute() nunca corre offline
+        if (result && typeof result === 'object' && typeof result.then === 'function') {
           return makeBuilderProxy(result, table, state);
         }
         return result;
