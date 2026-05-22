@@ -59,6 +59,8 @@ export default function MenuContabilidad({ navegarA, onVolver }) {
   const [msgBorrar,        setMsgBorrar]        = useState('');
   const [borrandoFacturas, setBorrandoFacturas] = useState(false);
   const [msgFacturas,      setMsgFacturas]      = useState('');
+  const [borrandoNV,       setBorrandoNV]       = useState(false);
+  const [msgNV,            setMsgNV]            = useState('');
 
   async function handleBorrarFacturas() {
     const ok = window.confirm('⚠️ ¿Borrar TODAS las facturas de prueba?\n\nSe eliminarán: facturas, detalles y cuentas por cobrar. El secuencial vuelve a 1.\n\nEsta acción NO se puede deshacer.');
@@ -76,6 +78,28 @@ export default function MenuContabilidad({ navegarA, onVolver }) {
     }
     setBorrandoFacturas(false);
     setTimeout(() => setMsgFacturas(''), 5000);
+  }
+
+  async function handleBorrarNotasVenta() {
+    const ok = window.confirm('⚠️ ¿Borrar TODAS las notas de venta de prueba?\n\nSe eliminarán: notas de venta, detalles y cuentas por cobrar. El secuencial vuelve a 1.\n\nEsta acción NO se puede deshacer.');
+    if (!ok) return;
+    setBorrandoNV(true);
+    setMsgNV('');
+    try {
+      const { data: nvs } = await supabase.from('facturas').select('id').eq('tipo', 'nota_venta');
+      const ids = (nvs || []).map(f => f.id);
+      if (ids.length > 0) {
+        await supabase.from('facturas_detalle').delete().in('factura_id', ids);
+        await supabase.from('cuentas_cobrar').delete().in('factura_id', ids);
+      }
+      await supabase.from('facturas').delete().eq('tipo', 'nota_venta');
+      await supabase.from('config_sistema').update({ valor: '1' }).eq('clave', 'nota_venta_secuencial');
+      setMsgNV('✓ Notas de venta borradas y secuencial reiniciado');
+    } catch (e) {
+      setMsgNV('Error: ' + e.message);
+    }
+    setBorrandoNV(false);
+    setTimeout(() => setMsgNV(''), 5000);
   }
 
   async function handleBorrarPruebas() {
@@ -183,6 +207,15 @@ export default function MenuContabilidad({ navegarA, onVolver }) {
             }}>
               {borrandoFacturas ? '⏳ Borrando...' : '🧾 Borrar facturas de prueba'}
             </button>
+            <button onClick={handleBorrarNotasVenta} disabled={borrandoNV} style={{
+              background: borrandoNV ? '#374151' : 'rgba(142,68,173,0.15)',
+              border: '1.5px solid rgba(142,68,173,0.5)',
+              color: '#c39bd3', borderRadius: '10px',
+              padding: '10px 20px', cursor: borrandoNV ? 'default' : 'pointer',
+              fontSize: '13px', fontWeight: 'bold',
+            }}>
+              {borrandoNV ? '⏳ Borrando...' : '📋 Borrar notas de venta de prueba'}
+            </button>
           </div>
           {msgBorrar && (
             <div style={{ fontSize: 12, color: msgBorrar.startsWith('✓') ? '#4ade80' : '#f87171' }}>
@@ -192,6 +225,11 @@ export default function MenuContabilidad({ navegarA, onVolver }) {
           {msgFacturas && (
             <div style={{ fontSize: 12, color: msgFacturas.startsWith('✓') ? '#4ade80' : '#f87171' }}>
               {msgFacturas}
+            </div>
+          )}
+          {msgNV && (
+            <div style={{ fontSize: 12, color: msgNV.startsWith('✓') ? '#4ade80' : '#f87171' }}>
+              {msgNV}
             </div>
           )}
         </div>
