@@ -24,6 +24,8 @@ export default function TabFacturas({ mobile }) {
   const [motivoAnul,  setMotivoAnul]  = useState('');
   const [anulando,    setAnulando]    = useState(false);
   const [msgExito,    setMsgExito]    = useState('');
+  const [emitiendoId, setEmitiendoId] = useState(null);
+  const [errorEmitir, setErrorEmitir] = useState({});
 
   useEffect(() => { cargarFacturas(); }, []);
   useRealtime(['facturas', 'facturas_detalle'], cargarFacturas);
@@ -79,6 +81,59 @@ export default function TabFacturas({ mobile }) {
     setMotivoAnul('');
     mostrarExito('✅ Factura anulada con nota de crédito');
     cargarFacturas();
+  }
+
+  // ── Emitir borrador al SRI ────────────────────────────────
+  async function emitirBorrador(f) {
+    if (!navigator.onLine) {
+      setErrorEmitir(prev => ({ ...prev, [f.id]: 'Sin conexión a internet. Conéctate e intenta de nuevo.' }));
+      return;
+    }
+    setEmitiendoId(f.id);
+    setErrorEmitir(prev => { const n = { ...prev }; delete n[f.id]; return n; });
+
+    try {
+      const { data: clienteData, error: errC } = await supabase.from('clientes')
+        .select('*').eq('id', f.cliente_id).single();
+      if (errC || !clienteData) throw new Error('No se pudo cargar el cliente');
+
+      const { data: detalleData, error: errD } = await supabase.from('facturas_detalle')
+        .select('*').eq('factura_id', f.id);
+      if (errD || !detalleData?.length) throw new Error('No se pudo cargar el detalle');
+
+      const secuencial = parseInt(f.numero.split('-').pop(), 10);
+
+      const res = await fetch('/api/emitir-factura', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cliente:      clienteData,
+          items:        detalleData,
+          formaPago:    f.forma_pago,
+          diasCredito:  f.dias_credito || 0,
+          observaciones: f.observaciones || '',
+          vendedor:     f.vendedor || '',
+          secuencial
+        })
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || 'Error Dátil/SRI');
+
+      await supabase.from('facturas').update({
+        estado:           'autorizada',
+        autorizacion_sri: data.autorizacion,
+        datil_id:         data.datil_id,
+        pdf_url:          data.pdf_url,
+        xml_url:          data.xml_url,
+      }).eq('id', f.id);
+
+      mostrarExito(`✅ Factura ${f.numero} autorizada por el SRI`);
+      cargarFacturas();
+
+    } catch (e) {
+      setErrorEmitir(prev => ({ ...prev, [f.id]: e.message }));
+    }
+    setEmitiendoId(null);
   }
 
   function mostrarExito(msg) {
@@ -138,6 +193,7 @@ export default function TabFacturas({ mobile }) {
         >
           <option value="todas">Todas</option>
           <option value="autorizada">Autorizadas</option>
+          <option value="borrador">Borradores</option>
           <option value="anulada">Anuladas</option>
         </select>
         <div style={{
@@ -240,6 +296,21 @@ export default function TabFacturas({ mobile }) {
                       }}>📄 RIDE</a>
                     )}
 
+                    {f.estado === 'borrador' && (
+                      <button
+                        onClick={() => emitirBorrador(f)}
+                        disabled={emitiendoId === f.id}
+                        style={{
+                          background: emitiendoId === f.id ? '#95a5a6' : '#f39c12',
+                          color: 'white', border: 'none',
+                          borderRadius: 7, padding: '6px 12px',
+                          cursor: emitiendoId === f.id ? 'not-allowed' : 'pointer',
+                          fontWeight: 'bold', fontSize: '12px'
+                        }}>
+                        {emitiendoId === f.id ? '⏳ Emitiendo...' : '📤 Emitir al SRI'}
+                      </button>
+                    )}
+
                     {f.estado === 'autorizada' && (
                       <button onClick={() => { setModalAnular(f); setMotivoAnul(''); }} style={{
                         background: 'white', color: '#e74c3c',
@@ -250,6 +321,17 @@ export default function TabFacturas({ mobile }) {
                     )}
                   </div>
                 </div>
+
+                {/* Error al emitir borrador */}
+                {errorEmitir[f.id] && (
+                  <div style={{
+                    padding: '8px 16px', background: '#fde8e8',
+                    color: '#e74c3c', fontSize: '12px', fontWeight: 'bold',
+                    borderTop: '1px solid #f5c6cb'
+                  }}>
+                    ⚠️ {errorEmitir[f.id]}
+                  </div>
+                )}
 
                 {/* Detalle expandido */}
                 {abierta && (
