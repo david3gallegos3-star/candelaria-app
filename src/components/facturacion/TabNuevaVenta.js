@@ -554,7 +554,9 @@ export default function TabNuevaVenta({ mobile, currentUser }) {
         background: '#2980b9', color: 'white', border: 'none',
         borderRadius: 10, padding: '12px 28px',
         cursor: 'pointer', fontWeight: 'bold', fontSize: '14px'
-      }}>+ Nueva factura</button>
+      }}>
+        {facturaEmitida.tipo === 'nota_venta' ? '+ Nueva venta' : '+ Nueva factura'}
+      </button>
     </div>
   );
 
