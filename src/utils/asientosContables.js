@@ -282,3 +282,28 @@ export async function sincronizarAsientos() {
 
   return { sincronizados, errores };
 }
+
+export async function revertirAsientoNotaVenta(factura) {
+  const { cuentas, error: errCfg } = await getCuentasModulos();
+  if (errCfg) return { data: null, error: errCfg };
+
+  const fecha = new Date().toISOString().split('T')[0];
+  const cuentaDebe = factura.metodo_pago === 'credito'
+    ? cuentas.cxc_id
+    : cuentas.caja_general_id;
+  const descripcion = `Anulación NV - ${factura.numero} - ${factura.cliente_nombre}`;
+
+  const lineas = [
+    { cuenta_id: cuentas.ventas_internas_id, descripcion, debe: factura.total, haber: 0, orden: 0 },
+    { cuenta_id: cuentaDebe,                 descripcion, debe: 0, haber: factura.total, orden: 1 },
+  ];
+
+  return insertarAsiento({
+    fecha,
+    descripcion,
+    tipo: 'interno',
+    origen: 'facturacion',
+    origen_id: factura.id,
+    lineas,
+  });
+}
