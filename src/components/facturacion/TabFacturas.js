@@ -177,7 +177,9 @@ export default function TabFacturas({ mobile }) {
     const textoOk = !filtroTexto ||
       f.numero?.toLowerCase().includes(filtroTexto.toLowerCase()) ||
       (f.cliente_nombre || '').toLowerCase().includes(filtroTexto.toLowerCase());
-    const estadoOk = filtroEstado === 'todas' || f.estado === filtroEstado;
+    const estadoOk = filtroEstado === 'nota_venta'
+      ? f.tipo === 'nota_venta'
+      : filtroEstado === 'todas' || f.estado === filtroEstado;
     return textoOk && estadoOk;
   });
 
@@ -226,6 +228,7 @@ export default function TabFacturas({ mobile }) {
           <option value="autorizada">Autorizadas</option>
           <option value="borrador">Borradores</option>
           <option value="anulada">Anuladas</option>
+          <option value="nota_venta">Notas de venta</option>
         </select>
         <div style={{
           fontSize: '13px', color: '#555',
@@ -282,6 +285,13 @@ export default function TabFacturas({ mobile }) {
                         background: est.bg, color: est.color,
                         padding: '2px 8px', borderRadius: 8
                       }}>{est.label}</span>
+                      {f.tipo === 'nota_venta' && (
+                        <span style={{
+                          marginLeft: 6, fontSize: '10px',
+                          background: '#f3e5f5', color: '#8e44ad',
+                          padding: '2px 8px', borderRadius: 8, fontWeight: 'bold'
+                        }}>📋 Nota de venta</span>
+                      )}
                       {f._local && (
                         <span style={{
                           marginLeft: 6, fontSize: '10px',
@@ -334,7 +344,8 @@ export default function TabFacturas({ mobile }) {
                       }}>📄 RIDE</a>
                     )}
 
-                    {f.estado === 'borrador' && !f._local && (
+                    {/* Emitir al SRI: solo facturas normales en borrador, no nota_venta */}
+                    {f.estado === 'borrador' && !f._local && f.tipo !== 'nota_venta' && (
                       <button
                         onClick={() => emitirBorrador(f)}
                         disabled={emitiendoId === f.id}
@@ -356,7 +367,8 @@ export default function TabFacturas({ mobile }) {
                       }}>⏳ Se enviará al conectarse</span>
                     )}
 
-                    {f.estado === 'autorizada' && (
+                    {/* Anular: solo facturas normales autorizadas, nunca nota_venta */}
+                    {f.estado === 'autorizada' && f.tipo !== 'nota_venta' && (
                       <button onClick={() => { setModalAnular(f); setMotivoAnul(''); }} style={{
                         background: 'white', color: '#e74c3c',
                         border: '1.5px solid #e74c3c',
