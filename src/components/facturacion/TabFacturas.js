@@ -6,6 +6,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../../supabase';
 import { useRealtime } from '../../hooks/useRealtime';
 import { getBorradores as getLocalBorradores } from '../../lib/offlineBorradores';
+import { revertirAsientoNotaVenta } from '../../utils/asientosContables';
 
 const ESTADO_COLOR = {
   autorizada: { bg: '#e8f5e9', color: '#27ae60', label: '✅ Autorizada' },
@@ -24,6 +25,8 @@ export default function TabFacturas({ mobile }) {
   const [modalAnular, setModalAnular] = useState(null); // factura a anular
   const [motivoAnul,  setMotivoAnul]  = useState('');
   const [anulando,    setAnulando]    = useState(false);
+  const [modalAnularNV, setModalAnularNV] = useState(null);
+  const [anulandoNV,    setAnulandoNV]    = useState(false);
   const [msgExito,    setMsgExito]    = useState('');
   const [emitiendoId,     setEmitiendoId]     = useState(null);
   const [errorEmitir,     setErrorEmitir]     = useState({});
@@ -112,6 +115,35 @@ export default function TabFacturas({ mobile }) {
     setMotivoAnul('');
     mostrarExito('✅ Factura anulada con nota de crédito');
     cargarFacturas();
+  }
+
+  async function anularNotaVenta(f) {
+    setAnulandoNV(true);
+    try {
+      await supabase.from('facturas')
+        .update({ estado: 'anulada' })
+        .eq('id', f.id);
+
+      await supabase.from('cuentas_cobrar')
+        .update({ estado: 'anulada' })
+        .eq('factura_id', f.id)
+        .eq('estado', 'pendiente');
+
+      await revertirAsientoNotaVenta({
+        id:             f.id,
+        numero:         f.numero,
+        total:          parseFloat(f.total),
+        cliente_nombre: f.cliente_nombre || 'CONSUMIDOR FINAL',
+        metodo_pago:    f.forma_pago,
+      });
+
+      setModalAnularNV(null);
+      mostrarExito('✅ Nota de venta anulada');
+      cargarFacturas();
+    } catch (e) {
+      alert('Error al anular: ' + e.message);
+    }
+    setAnulandoNV(false);
   }
 
   // ── Emitir borrador al SRI ────────────────────────────────
@@ -374,6 +406,16 @@ export default function TabFacturas({ mobile }) {
                         cursor: 'pointer', fontWeight: 'bold', fontSize: '12px'
                       }}>🚫 Anular</button>
                     )}
+                    {f.tipo === 'nota_venta' && f.estado === 'autorizada' && (
+                      <button
+                        onClick={() => setModalAnularNV(f)}
+                        style={{
+                          background: 'white', color: '#8e44ad',
+                          border: '1.5px solid #8e44ad',
+                          borderRadius: 7, padding: '6px 12px',
+                          cursor: 'pointer', fontWeight: 'bold', fontSize: '12px'
+                        }}>🚫 Anular NV</button>
+                    )}
                   </div>
                 </div>
 
@@ -533,6 +575,53 @@ export default function TabFacturas({ mobile }) {
                   padding: '10px 20px', cursor: anulando ? 'not-allowed' : 'pointer',
                   fontWeight: 'bold'
                 }}>{anulando ? '⏳...' : '🚫 Confirmar anulación'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modalAnularNV && (
+        <div style={{
+          position: 'fixed', inset: 0,
+          background: 'rgba(0,0,0,0.5)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          zIndex: 200, padding: 16
+        }}>
+          <div style={{
+            background: 'white', borderRadius: 14,
+            padding: '24px', maxWidth: 420, width: '100%',
+            boxShadow: '0 8px 40px rgba(0,0,0,0.2)',
+            textAlign: 'center'
+          }}>
+            <div style={{ fontSize: 40, marginBottom: 8 }}>⚠️</div>
+            <div style={{
+              fontWeight: 'bold', fontSize: '16px',
+              color: '#8e44ad', marginBottom: 8
+            }}>¿Anular nota de venta?</div>
+            <div style={{ fontSize: '13px', color: '#555', marginBottom: 6 }}>
+              {modalAnularNV.numero} — {modalAnularNV.cliente_nombre || 'CONSUMIDOR FINAL'}
+            </div>
+            <div style={{ fontSize: '12px', color: '#888', marginBottom: 20 }}>
+              Se revertirá el asiento contable. Esta acción no se puede deshacer.
+            </div>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+              <button
+                onClick={() => setModalAnularNV(null)}
+                disabled={anulandoNV}
+                style={{
+                  background: '#f0f2f5', color: '#555', border: 'none',
+                  borderRadius: 8, padding: '10px 20px',
+                  cursor: anulandoNV ? 'not-allowed' : 'pointer', fontWeight: 'bold'
+                }}>Cancelar</button>
+              <button
+                onClick={() => anularNotaVenta(modalAnularNV)}
+                disabled={anulandoNV}
+                style={{
+                  background: anulandoNV ? '#95a5a6' : '#8e44ad',
+                  color: 'white', border: 'none', borderRadius: 8,
+                  padding: '10px 20px',
+                  cursor: anulandoNV ? 'not-allowed' : 'pointer', fontWeight: 'bold'
+                }}>{anulandoNV ? '⏳ Anulando...' : '🚫 Sí, anular'}</button>
             </div>
           </div>
         </div>
