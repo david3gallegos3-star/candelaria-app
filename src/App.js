@@ -46,6 +46,7 @@ import DispositivoBloqueado      from './components/DispositivoBloqueado';
 import { usePresence }       from './hooks/usePresence';
 import { useNetworkStatus }  from './hooks/useNetworkStatus';
 import OfflineBanner         from './components/OfflineBanner';
+import { prefetchAll }       from './lib/prefetchAll';
 
 // ── EMOJIS_CAT global (compartido con MenuFormulas) ──
 export const EMOJIS_CAT = {};
@@ -294,6 +295,7 @@ function App() {
       const estado = await verificarDispositivo(authUser.id, authRol?.rol);
       if (estado === 'aprobado') {
         await cargarTodo();
+        prefetchAll(); // carga caché offline en segundo plano
         setPantalla('menuPrincipal');
       } else {
         setDispositivoUser(authUser);
@@ -933,6 +935,7 @@ async function confirmarImportacion() {
           const estado = await verificarDispositivo(authUser.id, authRol?.rol);
           if (estado === 'aprobado') {
             await cargarTodo();
+            prefetchAll(); // carga caché offline en segundo plano
             setPantalla('menuPrincipal');
           } else {
             setDispositivoUser(authUser);

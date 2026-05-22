@@ -91,7 +91,23 @@ async function execute(realBuilder, table, state) {
   // ── OFFLINE ──────────────────────────────────────────────
   if (state.type === 'read' || !state.type) {
     const key = cache.makeKey(table, state.filters);
-    const cached = await cache.get(key);
+    let cached = await cache.get(key);
+
+    // Fallback: si no hay caché exacto, usar tabla completa y filtrar en JS
+    if (!cached && Object.keys(state.filters).length > 0) {
+      const fullKey = cache.makeKey(table, {});
+      const full = await cache.get(fullKey);
+      if (full) {
+        return {
+          data:       applyFiltersToData(full.data, state.filters),
+          error:      null,
+          _fromCache: true,
+          _stale:     !!full.stale,
+          _noCache:   false,
+        };
+      }
+    }
+
     return {
       data:        cached?.data ?? [],
       error:       null,
@@ -112,4 +128,23 @@ async function execute(realBuilder, table, state) {
   }
 
   return { data: null, error: null };
+}
+
+// ── Filtrar datos en memoria cuando no hay caché exacto ──
+
+function applyFiltersToData(data, filters) {
+  if (!data) return [];
+  let result = data;
+  for (const [key, val] of Object.entries(filters || {})) {
+    const colonIdx = key.indexOf(':');
+    const op  = key.slice(0, colonIdx);
+    const col = key.slice(colonIdx + 1);
+    if      (op === 'eq')  result = result.filter(r => r[col] === val);
+    else if (op === 'neq') result = result.filter(r => r[col] !== val);
+    else if (op === 'gt')  result = result.filter(r => r[col] > val);
+    else if (op === 'lt')  result = result.filter(r => r[col] < val);
+    else if (op === 'gte') result = result.filter(r => r[col] >= val);
+    else if (op === 'lte') result = result.filter(r => r[col] <= val);
+  }
+  return result;
 }
