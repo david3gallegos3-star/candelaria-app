@@ -275,8 +275,11 @@ function App() {
       .select('*').eq('leida', false)
       .gt('expires_at', ahora)
       .order('created_at', { ascending: false });
-    setNotificaciones(data||[]);
-    setNotifNoLeidas((data||[]).length);
+    const filtered = (data || []).filter(n =>
+      n.tipo !== 'login_usuario' || user.email === 'davidbi.br@gmail.com'
+    );
+    setNotificaciones(filtered);
+    setNotifNoLeidas(filtered.length);
   }
 
   // ── useEffects ────────────────────────────────────────
