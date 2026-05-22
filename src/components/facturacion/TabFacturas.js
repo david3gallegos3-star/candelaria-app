@@ -344,7 +344,6 @@ export default function TabFacturas({ mobile }) {
                       }}>📄 RIDE</a>
                     )}
 
-                    {/* Emitir al SRI: solo facturas normales en borrador, no nota_venta */}
                     {f.estado === 'borrador' && !f._local && f.tipo !== 'nota_venta' && (
                       <button
                         onClick={() => emitirBorrador(f)}
@@ -367,7 +366,6 @@ export default function TabFacturas({ mobile }) {
                       }}>⏳ Se enviará al conectarse</span>
                     )}
 
-                    {/* Anular: solo facturas normales autorizadas, nunca nota_venta */}
                     {f.estado === 'autorizada' && f.tipo !== 'nota_venta' && (
                       <button onClick={() => { setModalAnular(f); setMotivoAnul(''); }} style={{
                         background: 'white', color: '#e74c3c',
