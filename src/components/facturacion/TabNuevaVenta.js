@@ -2,7 +2,7 @@
 // TabNuevaVenta.js
 // Formulario nueva venta + emisión de factura
 // ============================================
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../supabase';
 import { useRealtime } from '../../hooks/useRealtime';
 import { generarAsientoFactura } from '../../utils/asientosContables';
@@ -42,6 +42,18 @@ export default function TabNuevaVenta({ mobile, currentUser }) {
   const [facturaEmitida, setFacturaEmitida] = useState(null);
   const [error,          setError]          = useState('');
   const [errorTipo,      setErrorTipo]      = useState('interno');
+  const [isOnline,       setIsOnline]       = useState(true);
+
+  useEffect(() => {
+    const onOnline  = () => setIsOnline(true);
+    const onOffline = () => setIsOnline(false);
+    window.addEventListener('online',  onOnline);
+    window.addEventListener('offline', onOffline);
+    return () => {
+      window.removeEventListener('online',  onOnline);
+      window.removeEventListener('offline', onOffline);
+    };
+  }, []);
 
   useEffect(() => { cargarDatos(); }, []);
   useRealtime(['clientes', 'config_productos', 'cuentas_cobrar', 'facturas', 'precios_clientes', 'productos'], cargarDatos);
@@ -335,7 +347,7 @@ export default function TabNuevaVenta({ mobile, currentUser }) {
           background: '#fff8f0', border: '1px solid #f39c12', borderRadius: 10,
           padding: '10px 14px', marginBottom: 16, fontSize: '12px', color: '#856404'
         }}>
-          ⚠️ Esta factura está como borrador. Para emitirla al SRI, hazlo desde la pestaña Facturas cuando estés en producción.
+          📶 Sin conexión al momento de emitir. La factura se enviará automáticamente al SRI cuando se restaure el internet.
         </div>
       )}
 
@@ -625,30 +637,26 @@ export default function TabNuevaVenta({ mobile, currentUser }) {
           ))}
         </div>
 
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          {!isOnline && (
+            <span style={{ fontSize: '11px', color: '#f39c12', fontWeight: 'bold' }}>
+              📴 Sin internet — se guardará como borrador
+            </span>
+          )}
           <button
-            onClick={guardarBorrador}
+            onClick={isOnline ? emitirFactura : guardarBorrador}
             disabled={emitiendo || subtotal <= 0}
             style={{
-              background: emitiendo || subtotal <= 0 ? '#95a5a6' : '#f39c12',
-              color: 'white', border: 'none', borderRadius: 10,
-              padding: mobile ? '12px 16px' : '12px 20px',
-              cursor: emitiendo || subtotal <= 0 ? 'not-allowed' : 'pointer',
-              fontWeight: 'bold', fontSize: '13px', whiteSpace: 'nowrap'
-            }}>
-            {emitiendo ? '⏳...' : '💾 Guardar borrador'}
-          </button>
-          <button
-            onClick={emitirFactura}
-            disabled={emitiendo || subtotal <= 0}
-            style={{
-              background: emitiendo || subtotal <= 0 ? '#95a5a6' : '#27ae60',
+              background: emitiendo || subtotal <= 0 ? '#95a5a6'
+                : isOnline ? '#27ae60' : '#f39c12',
               color: 'white', border: 'none', borderRadius: 10,
               padding: mobile ? '12px 20px' : '12px 28px',
               cursor: emitiendo || subtotal <= 0 ? 'not-allowed' : 'pointer',
               fontWeight: 'bold', fontSize: '14px', whiteSpace: 'nowrap'
             }}>
-            {emitiendo ? '⏳ Emitiendo...' : '🧾 Emitir factura'}
+            {emitiendo
+              ? (isOnline ? '⏳ Emitiendo...' : '⏳ Guardando...')
+              : isOnline ? '🧾 Emitir factura' : '💾 Emitir factura'}
           </button>
         </div>
       </div>

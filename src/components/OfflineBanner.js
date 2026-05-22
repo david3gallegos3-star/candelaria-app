@@ -21,11 +21,12 @@ function getMeta(table) {
 export default function OfflineBanner({
   isOnline, queueCount, syncErrors, isSyncing, lastSynced,
   onRetry, onDiscard, onNavigate,
+  borradoresCount = 0, isSyncingBorradores = false, lastBorradorSync = null,
 }) {
-  const [expanded,    setExpanded]    = useState(false);
-  const [showSuccess, setShowSuccess] = useState(false);
+  const [expanded,          setExpanded]          = useState(false);
+  const [showSuccess,       setShowSuccess]       = useState(false);
+  const [showBorrSuccess,   setShowBorrSuccess]   = useState(false);
 
-  // Mostrar mensaje de éxito brevemente al sincronizar
   React.useEffect(() => {
     if (lastSynced) {
       setShowSuccess(true);
@@ -34,16 +35,27 @@ export default function OfflineBanner({
     }
   }, [lastSynced]);
 
-  // No mostrar nada si está online, no hay cola, no hay errores, ni éxito reciente
-  if (isOnline && queueCount === 0 && syncErrors.length === 0 && !showSuccess) return null;
+  React.useEffect(() => {
+    if (lastBorradorSync) {
+      setShowBorrSuccess(true);
+      const t = setTimeout(() => setShowBorrSuccess(false), 6000);
+      return () => clearTimeout(t);
+    }
+  }, [lastBorradorSync]);
+
+  const hasActivity = !isOnline || queueCount > 0 || syncErrors.length > 0
+    || isSyncing || borradoresCount > 0 || isSyncingBorradores
+    || showSuccess || showBorrSuccess;
+
+  if (!hasActivity) return null;
 
   const bgColor = !isOnline
-    ? '#991b1b'           // rojo — offline
-    : isSyncing
-      ? '#92400e'         // amarillo — sincronizando
+    ? '#991b1b'
+    : (isSyncing || isSyncingBorradores)
+      ? '#92400e'
       : syncErrors.length > 0
-        ? '#7c2d12'       // naranja oscuro — errores
-        : '#14532d';      // verde — ok
+        ? '#7c2d12'
+        : '#14532d';
 
   return (
     <div style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9999, fontFamily: 'Arial, sans-serif' }}>
@@ -55,10 +67,18 @@ export default function OfflineBanner({
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
       }}>
         <span>
-          {!isOnline && `🔴 Sin conexión${queueCount > 0 ? ` · ${queueCount} operación${queueCount > 1 ? 'es' : ''} pendiente${queueCount > 1 ? 's' : ''}` : ''}`}
-          {isOnline && isSyncing && `🟡 Sincronizando...`}
-          {isOnline && !isSyncing && syncErrors.length > 0 && `⚠️ ${syncErrors.length} error${syncErrors.length > 1 ? 'es' : ''} al sincronizar`}
-          {isOnline && !isSyncing && syncErrors.length === 0 && showSuccess && `🟢 Sincronizado · ${lastSynced?.count} operación${lastSynced?.count > 1 ? 'es' : ''} enviada${lastSynced?.count > 1 ? 's' : ''}`}
+          {!isOnline && (
+            <>
+              🔴 Sin conexión
+              {queueCount > 0 && ` · ${queueCount} operación${queueCount > 1 ? 'es' : ''} pendiente${queueCount > 1 ? 's' : ''}`}
+              {borradoresCount > 0 && ` · ${borradoresCount} factura${borradoresCount > 1 ? 's' : ''} sin emitir al SRI`}
+            </>
+          )}
+          {isOnline && isSyncingBorradores && `🟡 Emitiendo ${borradoresCount} factura${borradoresCount > 1 ? 's' : ''} al SRI...`}
+          {isOnline && !isSyncingBorradores && isSyncing && `🟡 Sincronizando...`}
+          {isOnline && !isSyncing && !isSyncingBorradores && syncErrors.length > 0 && `⚠️ ${syncErrors.length} error${syncErrors.length > 1 ? 'es' : ''} al sincronizar`}
+          {isOnline && !isSyncing && !isSyncingBorradores && syncErrors.length === 0 && showBorrSuccess && `🟢 ${lastBorradorSync?.count} factura${lastBorradorSync?.count > 1 ? 's' : ''} emitida${lastBorradorSync?.count > 1 ? 's' : ''} al SRI`}
+          {isOnline && !isSyncing && !isSyncingBorradores && syncErrors.length === 0 && !showBorrSuccess && showSuccess && `🟢 Sincronizado · ${lastSynced?.count} operación${lastSynced?.count > 1 ? 'es' : ''} enviada${lastSynced?.count > 1 ? 's' : ''}`}
         </span>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           {syncErrors.length > 0 && (

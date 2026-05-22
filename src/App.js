@@ -100,6 +100,7 @@ function App() {
   const {
     isOnline, queueCount, syncErrors, isSyncing, lastSynced,
     syncNow, retryItem, discardItem,
+    borradoresCount, isSyncingBorradores, lastBorradorSync,
   } = useNetworkStatus();
 
   // ── Notificaciones ────────────────────────────────────
@@ -903,6 +904,9 @@ async function confirmarImportacion() {
       onRetry={retryItem}
       onDiscard={discardItem}
       onNavigate={(destino) => navegarA(destino)}
+      borradoresCount={borradoresCount}
+      isSyncingBorradores={isSyncingBorradores}
+      lastBorradorSync={lastBorradorSync}
     />
   );
 
