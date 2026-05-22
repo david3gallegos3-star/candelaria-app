@@ -18,14 +18,15 @@ export function calcBloques({ bloques, kgIni, precioCarne, precioKgSalmuera, cos
     if (b.tipo !== 'merma') mermaGrupoBase = null; // romper grupo al encontrar bloque no-merma
 
     if (b.tipo === 'inyeccion') {
-      const pct   = parseFloat(b.pct_inj || 0) / 100;
-      const kgSal = kg * pct;
-      const cSal  = kgSal * precioKgSalmuera;
-      costoAcum  += cSal;
+      const pct     = parseFloat(b.pct_inj || 0) / 100;
+      const kgAntes = kg;
+      const kgSal   = kgAntes * pct;
+      const cSal    = kgSal * precioKgSalmuera;
+      costoAcum    += cSal;
       const pctPeso = b.pct_peso_inj != null
         ? (parseFloat(b.pct_peso_inj) || 0) / 100
-        : (esBano ? 0 : 1);
-      kg += kgSal * pctPeso;
+        : 0;
+      kg = kgAntes * (1 + pctPeso);
       pasos.push({ tipo: 'inyeccion', label: `💉 Inyección ${b.pct_inj}%`, kg, costoAcum, kgSal, cSal });
 
     } else if (b.tipo === 'maduracion') {
@@ -390,31 +391,62 @@ export function BloquesDinamicosEditor({
                             </div>
                             <div style={{ marginTop: 4, fontWeight: 700, color: meta.color }}>
                               {(() => {
-                                const pctPesoP = b.pct_peso_inj != null ? (parseFloat(b.pct_peso_inj) || 0) / 100 : (esBano ? 0 : 1);
-                                const kgPreview = kgAntes + kgSal * pctPesoP;
+                                const pctPesoP = b.pct_peso_inj != null ? (parseFloat(b.pct_peso_inj) || 0) / 100 : 0;
+                                const kgPreview = kgAntes * (1 + pctPesoP);
                                 return <>→ <strong style={{ fontSize: 13 }}>{kgPreview.toFixed(3)} kg</strong> total después de inyección</>;
                               })()}
                             </div>
                           </div>
                         )}
-                        <div style={{ marginTop: 8 }}>
-                          <label style={{ fontSize: 11, fontWeight: 600, color: meta.color, display: 'block', marginBottom: 4 }}>
-                            % que agrega peso
-                          </label>
-                          <input
-                            type="text"
-                            inputMode="decimal"
-                            value={b.pct_peso_inj ?? ''}
-                            disabled={!modoEdicion}
-                            placeholder="vacío = auto"
-                            onChange={e => {
-                              const val = e.target.value.replace(',', '.');
-                              updateBloque(b.id, { pct_peso_inj: val === '' ? null : parseFloat(val) || 0 });
-                            }}
-                            style={baseInputStyle({ border: `1.5px solid ${meta.color}` })}
-                          />
-                          <div style={{ fontSize: 10, color: '#888', marginTop: 3 }}>
-                            % de la salmuera que entra a la carne (vacío = 0% INMERSIÓN / 100% CORTES)
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 8 }}>
+                          <div>
+                            <label style={{ fontSize: 11, fontWeight: 600, color: meta.color, display: 'block', marginBottom: 4 }}>
+                              % Retención
+                            </label>
+                            <input
+                              key={b.pct_peso_inj ?? 'null'}
+                              type="text"
+                              inputMode="decimal"
+                              defaultValue={b.pct_peso_inj ?? ''}
+                              disabled={!modoEdicion}
+                              placeholder="ej: 5.74"
+                              onBlur={e => {
+                                const val = e.target.value.replace(/,/g, '.');
+                                updateBloque(b.id, { pct_peso_inj: val.trim() === '' ? null : parseFloat(val) || 0 });
+                              }}
+                              style={baseInputStyle({ border: `1.5px solid ${meta.color}` })}
+                            />
+                            <div style={{ fontSize: 10, color: '#888', marginTop: 3 }}>
+                              % ganancia real sobre peso inicial
+                            </div>
+                          </div>
+                          <div>
+                            <label style={{ fontSize: 11, fontWeight: 600, color: meta.color, display: 'block', marginBottom: 4 }}>
+                              Peso Final Real (kg)
+                            </label>
+                            <input
+                              key={b.pct_peso_inj ?? 'null'}
+                              type="text"
+                              inputMode="decimal"
+                              defaultValue={b.pct_peso_inj != null
+                                ? (kgAntes * (1 + (parseFloat(b.pct_peso_inj) || 0) / 100)).toFixed(3)
+                                : ''}
+                              disabled={!modoEdicion}
+                              placeholder={`ej: ${(kgAntes * 1.05).toFixed(3)}`}
+                              onBlur={e => {
+                                const val = parseFloat(e.target.value.replace(/,/g, '.'));
+                                if (!isNaN(val) && kgAntes > 0) {
+                                  const pct = ((val - kgAntes) / kgAntes) * 100;
+                                  updateBloque(b.id, { pct_peso_inj: parseFloat(pct.toFixed(4)) });
+                                } else if (e.target.value.trim() === '') {
+                                  updateBloque(b.id, { pct_peso_inj: null });
+                                }
+                              }}
+                              style={baseInputStyle({ border: `1.5px solid ${meta.color}` })}
+                            />
+                            <div style={{ fontSize: 10, color: '#888', marginTop: 3 }}>
+                              Peso real salido → calcula % auto
+                            </div>
                           </div>
                         </div>
                       </div>

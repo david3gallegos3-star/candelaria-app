@@ -516,18 +516,17 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion, esBano 
     };
     try {
       const payload = { producto_nombre: producto.nombre, config: newConfig, versiones };
-      console.log('[guardarConfig] upsert payload:', payload);
-      const { data: saved, error } = await supabase.from('vista_horneado_config')
-        .upsert(payload, { onConflict: 'producto_nombre' })
-        .select();
-      console.log('[guardarConfig] result:', { saved, error });
+      const { error } = await supabase.from('vista_horneado_config')
+        .upsert(payload, { onConflict: 'producto_nombre' });
       if (error) throw error;
-      if (!saved || saved.length === 0) throw new Error('El servidor no confirmó el guardado (RLS o constraint)');
       setConfigExiste(true);
+      setGuardando(false);
+      return true;
     } catch (e) {
       alert('Error al guardar: ' + e.message);
+      setGuardando(false);
+      return false;
     }
-    setGuardando(false);
   }
 
   // ── Inicializar flujo dinámico desde config clásica ───────
@@ -572,6 +571,20 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion, esBano 
     setBloqueExpandido(null);
   }
 
+  async function guardarSinSalir() {
+    const mpOldId = mpVinculada?.id ?? null;
+    const mpNewId = editMpSelected?.id ?? null;
+    if (mpNewId !== mpOldId) {
+      await supabase.from('productos')
+        .update({ mp_vinculado_id: mpNewId })
+        .eq('id', producto.id);
+      setMpVinculada(editMpSelected || null);
+    }
+    const ok = await guardarConfig();
+    if (ok) await guardarHistorial();
+    // queda en modo edición
+  }
+
   async function fijarCambios() {
     const mpOldId = mpVinculada?.id ?? null;
     const mpNewId = editMpSelected?.id ?? null;
@@ -581,8 +594,8 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion, esBano 
         .eq('id', producto.id);
       setMpVinculada(editMpSelected || null);
     }
-    await guardarConfig();
-    setModoEdicion(false);
+    const ok = await guardarConfig();
+    if (ok) setModoEdicion(false);
   }
 
   // Mantener refs actualizados en cada render para el auto-save en unmount
@@ -1049,8 +1062,8 @@ export default function VistaCorte({ producto, mobile, onAbrirInyeccion, esBano 
                 style={{ background: guardando ? '#aaa' : '#27ae60', color: 'white', border: 'none', borderRadius: 8, padding: '7px 14px', fontSize: 12, fontWeight: 'bold', cursor: guardando ? 'default' : 'pointer' }}>
                 {guardando ? 'Fijando...' : '🔒 Fijar cambios'}
               </button>
-              <button onClick={guardarHistorial} disabled={autoGuardando}
-                style={{ background: autoGuardando ? '#aaa' : '#e67e22', color: 'white', border: 'none', borderRadius: 8, padding: '7px 14px', fontSize: 12, fontWeight: 'bold', cursor: autoGuardando ? 'default' : 'pointer' }}>
+              <button onClick={guardarSinSalir} disabled={guardando || autoGuardando}
+                style={{ background: (guardando || autoGuardando) ? '#aaa' : '#e67e22', color: 'white', border: 'none', borderRadius: 8, padding: '7px 14px', fontSize: 12, fontWeight: 'bold', cursor: (guardando || autoGuardando) ? 'default' : 'pointer' }}>
                 {autoGuardando ? 'Guardando...' : '📋 Guardar Historial'}
               </button>
             </>)}

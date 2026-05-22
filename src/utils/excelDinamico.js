@@ -64,8 +64,8 @@ export function buildDynamicSheet(prod, config, mpList) {
       if (b.tipo === 'inyeccion') {
         rows.push(R('💉 Inyección', 'Fórmula salmuera','','','','','','', b.formula_salmuera || '—'));
         rows.push(R('💉 Inyección', '% inyección','','','', b.pct_inj || 0,'','',''));
-        if (b.pct_agrega_peso)
-          rows.push(R('💉 Inyección', '% agrega peso','','','', b.pct_agrega_peso,'','','% salmuera que queda en carne'));
+        if (b.pct_peso_inj != null)
+          rows.push(R('💉 Inyección', '% retención','','','', b.pct_peso_inj,'','','% ganancia real sobre peso inicial'));
       } else if (b.tipo === 'maduracion') {
         const mm = b.minutos_mad > 0 ? ` ${b.minutos_mad}m` : '';
         rows.push(R('🧊 Maduración', `Tiempo: ${b.horas_mad || 0}h${mm}`,'','','', b.pct_mad || 0,'','',''));
