@@ -389,23 +389,27 @@ export default function TabNuevaVenta({ mobile, currentUser }) {
     }));
 
     if (!navigator.onLine) {
-      const nvId = `offline-nv-${Date.now()}`;
-      addOfflineBorrador({
-        id: nvId,
-        tipo: 'nota_venta',
-        facturaPayload,
-        detallePayload,
-        clienteData:  clienteObj,
-        formaPago, diasCredito, observaciones,
-        subtotal, iva, total, numero,
-        vendedor: currentUser?.email || '',
-        timestamp: Date.now(),
-      });
-      await supabase.from('config_sistema')
-        .update({ valor: String(secuencialNV + 1), updated_at: new Date().toISOString() })
-        .eq('clave', 'nota_venta_secuencial');
-      setSecuencialNV(prev => prev + 1);
-      setFacturaEmitida({ numero, cliente: clienteObj.nombre, total, esBorrador: true, tipo: 'nota_venta' });
+      try {
+        const nvId = `offline-nv-${Date.now()}`;
+        addOfflineBorrador({
+          id: nvId,
+          tipo: 'nota_venta',
+          facturaPayload,
+          detallePayload,
+          clienteData:  clienteObj,
+          formaPago, diasCredito, observaciones,
+          subtotal, iva, total, numero,
+          vendedor: currentUser?.email || '',
+          timestamp: Date.now(),
+        });
+        await supabase.from('config_sistema')
+          .update({ valor: String(secuencialNV + 1), updated_at: new Date().toISOString() })
+          .eq('clave', 'nota_venta_secuencial');
+        setSecuencialNV(prev => prev + 1);
+        setFacturaEmitida({ numero, cliente: clienteObj.nombre, total, esBorrador: true, tipo: 'nota_venta' });
+      } catch (e) {
+        setError('Error al guardar nota de venta offline: ' + e.message);
+      }
       setEmitiendo(false);
       return;
     }
