@@ -33,6 +33,7 @@ export default function TabNuevaVenta({ mobile, currentUser }) {
   const [precios,    setPrecios]    = useState([]);   // precios_clientes
   const [configPrecios, setConfigPrecios] = useState([]); // config_productos precio_venta_kg
   const [secuencial, setSecuencial] = useState(null);
+  const [secuencialNV, setSecuencialNV] = useState(null);
 
   const [clienteId,     setClienteId]     = useState('consumidor_final');
   const [items,         setItems]         = useState([itemVacio()]);
@@ -62,20 +63,22 @@ export default function TabNuevaVenta({ mobile, currentUser }) {
 
   // ── Cargar datos iniciales ────────────────────────────────
   async function cargarDatos() {
-    const [{ data: cls }, { data: prods }, { data: prec }, { data: cfg }, { data: cfgPrec }] =
+    const [{ data: cls }, { data: prods }, { data: prec }, { data: cfg }, { data: cfgPrec }, { data: cfgNV }] =
       await Promise.all([
         supabase.from('clientes').select('id,nombre,ruc,email,telefono,direccion')
           .not('eliminado', 'eq', true).order('nombre'),
         supabase.from('productos').select('id,nombre').eq('estado', 'ACTIVO').order('nombre'),
         supabase.from('precios_clientes').select('cliente_id,producto_nombre,precio_venta_kg'),
         supabase.from('config_sistema').select('valor').eq('clave', 'factura_secuencial').single(),
-        supabase.from('config_productos').select('producto_nombre,precio_venta_kg')
+        supabase.from('config_productos').select('producto_nombre,precio_venta_kg'),
+        supabase.from('config_sistema').select('valor').eq('clave', 'nota_venta_secuencial').single(),
       ]);
     setClientes(cls   || []);
     setProductos(prods || []);
     setPrecios(prec   || []);
     setConfigPrecios(cfgPrec || []);
-    if (cfg?.valor) setSecuencial(parseInt(cfg.valor));
+    if (cfg?.valor)   setSecuencial(parseInt(cfg.valor));
+    if (cfgNV?.valor) setSecuencialNV(parseInt(cfgNV.valor));
   }
 
   // ── Cliente seleccionado ──────────────────────────────────
@@ -347,6 +350,100 @@ export default function TabNuevaVenta({ mobile, currentUser }) {
     } catch {}
 
     setFacturaEmitida({ numero, cliente: clienteObj.nombre, total, autorizacion: null, esBorrador: true });
+    setEmitiendo(false);
+  }
+
+  // ── Emitir nota de venta interna (sin SRI) ───────────────
+  async function emitirNotaVenta() {
+    setError('');
+    if (!items.some(i => i.producto_nombre && parseFloat(i.cantidad) > 0))
+      return setError('Agrega al menos un producto con cantidad');
+    if (subtotal <= 0)
+      return setError('El subtotal debe ser mayor a 0');
+    if (secuencialNV === null)
+      return setError('No se pudo cargar el número de nota de venta');
+
+    setEmitiendo(true);
+    const itemsValidos = items.filter(i => i.producto_nombre && parseFloat(i.cantidad) > 0);
+    const numero = `NV-001-001-${String(secuencialNV).padStart(9, '0')}`;
+
+    const facturaPayload = {
+      cliente_id:       clienteObj.id,
+      numero,
+      autorizacion_sri: null, datil_id: null, pdf_url: null, xml_url: null,
+      estado:           'autorizada',
+      tipo:             'nota_venta',
+      subtotal, iva, total, porcentaje_iva: 15,
+      forma_pago:       formaPago,
+      dias_credito:     formaPago === 'credito' ? diasCredito : 0,
+      observaciones,
+      vendedor:         currentUser?.email || '',
+      created_by:       currentUser?.email || '',
+    };
+    const detallePayload = itemsValidos.map(it => ({
+      producto_nombre: it.producto_nombre,
+      descripcion:     it.descripcion || it.producto_nombre,
+      cantidad:        parseFloat(it.cantidad),
+      precio_unitario: parseFloat(it.precio_unitario),
+      subtotal:        parseFloat(it.subtotal),
+    }));
+
+    if (!navigator.onLine) {
+      const nvId = `offline-nv-${Date.now()}`;
+      addOfflineBorrador({
+        id: nvId,
+        tipo: 'nota_venta',
+        facturaPayload,
+        detallePayload,
+        clienteData:  clienteObj,
+        formaPago, diasCredito, observaciones,
+        subtotal, iva, total, numero,
+        vendedor: currentUser?.email || '',
+        timestamp: Date.now(),
+      });
+      await supabase.from('config_sistema')
+        .update({ valor: String(secuencialNV + 1), updated_at: new Date().toISOString() })
+        .eq('clave', 'nota_venta_secuencial');
+      setSecuencialNV(prev => prev + 1);
+      setFacturaEmitida({ numero, cliente: clienteObj.nombre, total, esBorrador: true, tipo: 'nota_venta' });
+      setEmitiendo(false);
+      return;
+    }
+
+    try {
+      const { data: factura, error: errF } = await supabaseReal.from('facturas')
+        .insert(facturaPayload).select().single();
+      if (errF) throw errF;
+
+      await supabaseReal.from('facturas_detalle').insert(
+        detallePayload.map(it => ({ ...it, factura_id: factura.id }))
+      );
+
+      if (formaPago === 'credito') {
+        const venc = new Date();
+        venc.setDate(venc.getDate() + diasCredito);
+        await supabase.from('cuentas_cobrar').insert({
+          factura_id: factura.id, cliente_id: clienteObj.id,
+          monto_total: total, monto_cobrado: 0, estado: 'pendiente',
+          fecha_vencimiento: venc.toISOString().split('T')[0]
+        });
+      }
+
+      await supabase.from('config_sistema')
+        .update({ valor: String(secuencialNV + 1), updated_at: new Date().toISOString() })
+        .eq('clave', 'nota_venta_secuencial');
+      setSecuencialNV(prev => prev + 1);
+
+      generarAsientoFactura({
+        id: factura.id, numero, subtotal, iva, total,
+        cliente_nombre: clienteObj.nombre, metodo_pago: formaPago
+      }, 'interno').catch(console.error);
+
+      setFacturaEmitida({ numero, cliente: clienteObj.nombre, total, tipo: 'nota_venta' });
+
+    } catch (e) {
+      setError('Error al registrar nota de venta: ' + e.message);
+    }
     setEmitiendo(false);
   }
 
