@@ -44,6 +44,8 @@ import { useAuth }           from './hooks/useAuth';
 import { verificarDispositivo } from './hooks/useDeviceAuth';
 import DispositivoBloqueado      from './components/DispositivoBloqueado';
 import { usePresence }       from './hooks/usePresence';
+import { useNetworkStatus }  from './hooks/useNetworkStatus';
+import OfflineBanner         from './components/OfflineBanner';
 
 // ── EMOJIS_CAT global (compartido con MenuFormulas) ──
 export const EMOJIS_CAT = {};
@@ -93,6 +95,11 @@ function App() {
   const { presentes: presentesRaw } = usePresence(user, userRol, pantalla);
   // Solo davidbi.br@gmail.com puede ver quién está conectado
   const presentes = user?.email === 'davidbi.br@gmail.com' ? presentesRaw : [];
+
+  const {
+    isOnline, queueCount, syncErrors, isSyncing, lastSynced,
+    syncNow, retryItem, discardItem,
+  } = useNetworkStatus();
 
   // ── Notificaciones ────────────────────────────────────
   const [notificaciones, setNotificaciones] = useState([]);
@@ -271,6 +278,17 @@ function App() {
   }
 
   // ── useEffects ────────────────────────────────────────
+  useEffect(() => {
+    const handler = (e) => {
+      if (queueCount > 0) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [queueCount]);
+
   useEffect(() => {
     checkSession(async (authUser, authRol) => {
       const estado = await verificarDispositivo(authUser.id, authRol?.rol);
@@ -873,6 +891,19 @@ async function confirmarImportacion() {
   //  RENDERS
   // ══════════════════════════════════════════
 
+  const banner = (
+    <OfflineBanner
+      isOnline={isOnline}
+      queueCount={queueCount}
+      syncErrors={syncErrors}
+      isSyncing={isSyncing}
+      lastSynced={lastSynced}
+      onRetry={retryItem}
+      onDiscard={discardItem}
+      onNavigate={(destino) => navegarA(destino)}
+    />
+  );
+
   if (dispositivoEstado === 'pendiente' || dispositivoEstado === 'rechazado') {
     return (
       <DispositivoBloqueado
@@ -892,26 +923,30 @@ async function confirmarImportacion() {
   }
 
   if (pantalla === 'login') return (
-    <LoginScreen
-      email={email}       setEmail={setEmail}
-      password={password} setPassword={setPassword}
-      loading={loading}
-      login={() => login(async (authUser, authRol) => {
-        const estado = await verificarDispositivo(authUser.id, authRol?.rol);
-        if (estado === 'aprobado') {
-          await cargarTodo();
-          setPantalla('menuPrincipal');
-        } else {
-          setDispositivoUser(authUser);
-          setDispositivoRol(authRol);
-          setDispositivoEstado(estado);
-        }
-      })}
-    />
+    <>
+      {banner}
+      <LoginScreen
+        email={email}       setEmail={setEmail}
+        password={password} setPassword={setPassword}
+        loading={loading}
+        login={() => login(async (authUser, authRol) => {
+          const estado = await verificarDispositivo(authUser.id, authRol?.rol);
+          if (estado === 'aprobado') {
+            await cargarTodo();
+            setPantalla('menuPrincipal');
+          } else {
+            setDispositivoUser(authUser);
+            setDispositivoRol(authRol);
+            setDispositivoEstado(estado);
+          }
+        })}
+      />
+    </>
   );
 
   if (pantalla === 'menuPrincipal') return (
     <>
+      {banner}
       <MenuPrincipal
         userRol={userRol}
         navegarA={navegarA}
