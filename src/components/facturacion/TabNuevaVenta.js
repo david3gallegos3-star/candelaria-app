@@ -135,7 +135,7 @@ export default function TabNuevaVenta({ mobile, currentUser }) {
       return setError('No se pudo cargar el número de factura');
 
     if (!navigator.onLine) {
-      return setError('Sin conexión a internet — no se puede emitir al SRI. Guarda como borrador y emite cuando vuelva el internet.');
+      return guardarBorrador();
     }
 
     setEmitiendo(true);
