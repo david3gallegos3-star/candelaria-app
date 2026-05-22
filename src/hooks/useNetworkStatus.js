@@ -75,6 +75,12 @@ export function useNetworkStatus() {
           // Eliminar del store local ahora que está en Supabase
           offlineBorradores.removeBorrador(b.id);
 
+          if (b.tipo === 'nota_venta') {
+            // Nota de venta: ya está autorizada, no necesita ir al SRI
+            emitidos++;
+            continue;
+          }
+
           const secuencial = parseInt(b.numero.split('-').pop(), 10);
           const res = await fetch('/api/emitir-factura', {
             method: 'POST',
