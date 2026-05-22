@@ -2,7 +2,7 @@ import * as queue from './offlineQueue';
 import * as cache from './readCache';
 
 // Estado de conexión sincronizado (no React — módulo puro)
-let _online = navigator.onLine;
+let _online = true;
 window.addEventListener('online',  () => { _online = true;  });
 window.addEventListener('offline', () => { _online = false; });
 

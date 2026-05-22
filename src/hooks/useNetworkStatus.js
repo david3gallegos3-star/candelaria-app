@@ -3,7 +3,7 @@ import { supabaseReal } from '../supabase';
 import * as offlineQueue from '../lib/offlineQueue';
 
 export function useNetworkStatus() {
-  const [isOnline,    setIsOnline]    = useState(navigator.onLine);
+  const [isOnline,    setIsOnline]    = useState(true);
   const [queueCount,  setQueueCount]  = useState(() => offlineQueue.getTotalCount());
   const [syncErrors,  setSyncErrors]  = useState([]);
   const [isSyncing,   setIsSyncing]   = useState(false);
