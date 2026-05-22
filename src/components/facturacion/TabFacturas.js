@@ -5,6 +5,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../supabase';
 import { useRealtime } from '../../hooks/useRealtime';
+import { getBorradores as getLocalBorradores } from '../../lib/offlineBorradores';
 
 const ESTADO_COLOR = {
   autorizada: { bg: '#e8f5e9', color: '#27ae60', label: '✅ Autorizada' },
@@ -38,7 +39,23 @@ export default function TabFacturas({ mobile }) {
       .select('*')
       .is('deleted_at', null)
       .order('created_at', { ascending: false });
-    setFacturas(data || []);
+
+    // Borradores locales (offline) — vienen de localStorage, siempre disponibles
+    const locales = getLocalBorradores().map(b => ({
+      ...b.facturaPayload,
+      id:             b.id,
+      cliente_nombre: b.clienteData?.nombre || 'CONSUMIDOR FINAL',
+      estado:         'borrador',
+      created_at:     new Date(b.timestamp).toISOString(),
+      _local:         true,
+      _detalle:       b.detallePayload,
+    }));
+
+    // Evitar duplicados: quitar locales que ya están en Supabase (mismo numero)
+    const numerosEnSupabase = new Set((data || []).map(f => f.numero));
+    const localesFiltrados = locales.filter(l => !numerosEnSupabase.has(l.numero));
+
+    setFacturas([...localesFiltrados, ...(data || [])]);
     setCargando(false);
   }
 
@@ -48,6 +65,17 @@ export default function TabFacturas({ mobile }) {
     setExpandida(id);
     setDetalle([]);
     setCargandoDetalle(true);
+
+    // Borrador local: leer detalle directo de localStorage (sin red ni cache)
+    const localBorrador = getLocalBorradores().find(b => b.id === id);
+    if (localBorrador) {
+      setDetalle(localBorrador.detallePayload.map((it, i) => ({
+        ...it, id: `${id}-${i}`, factura_id: id
+      })));
+      setCargandoDetalle(false);
+      return;
+    }
+
     const { data } = await supabase.from('facturas_detalle')
       .select('*').eq('factura_id', id).order('id');
     setDetalle(data || []);
@@ -254,6 +282,13 @@ export default function TabFacturas({ mobile }) {
                         background: est.bg, color: est.color,
                         padding: '2px 8px', borderRadius: 8
                       }}>{est.label}</span>
+                      {f._local && (
+                        <span style={{
+                          marginLeft: 6, fontSize: '10px',
+                          background: '#fef3c7', color: '#92400e',
+                          padding: '2px 8px', borderRadius: 8
+                        }}>📴 sin internet</span>
+                      )}
                     </div>
                     <div style={{ fontSize: '12px', color: '#555' }}>
                       👤 {f.cliente_nombre || 'CONSUMIDOR FINAL'}
@@ -299,7 +334,7 @@ export default function TabFacturas({ mobile }) {
                       }}>📄 RIDE</a>
                     )}
 
-                    {f.estado === 'borrador' && (
+                    {f.estado === 'borrador' && !f._local && (
                       <button
                         onClick={() => emitirBorrador(f)}
                         disabled={emitiendoId === f.id}
@@ -312,6 +347,13 @@ export default function TabFacturas({ mobile }) {
                         }}>
                         {emitiendoId === f.id ? '⏳ Emitiendo...' : '📤 Emitir al SRI'}
                       </button>
+                    )}
+                    {f.estado === 'borrador' && f._local && (
+                      <span style={{
+                        fontSize: '11px', color: '#92400e',
+                        padding: '6px 10px', background: '#fef3c7',
+                        borderRadius: 7, fontWeight: 'bold'
+                      }}>⏳ Se enviará al conectarse</span>
                     )}
 
                     {f.estado === 'autorizada' && (
