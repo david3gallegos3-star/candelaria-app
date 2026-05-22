@@ -1,0 +1,115 @@
+import * as queue from './offlineQueue';
+import * as cache from './readCache';
+
+// Estado de conexión sincronizado (no React — módulo puro)
+let _online = navigator.onLine;
+window.addEventListener('online',  () => { _online = true;  });
+window.addEventListener('offline', () => { _online = false; });
+
+export function isOnline() { return _online; }
+
+export function createOfflineClient(realClient) {
+  return new Proxy(realClient, {
+    get(target, prop) {
+      if (prop === 'from') {
+        return (table) => buildOfflineQuery(target.from(table), table);
+      }
+      return Reflect.get(target, prop);
+    },
+  });
+}
+
+// ── Builder proxy ─────────────────────────────────────────
+
+function buildOfflineQuery(realBuilder, table) {
+  const state = {
+    type:      null,   // 'read' | 'write'
+    operation: null,   // 'select' | 'insert' | 'update' | 'delete' | 'upsert'
+    data:      null,
+    filters:   {},
+  };
+  return makeBuilderProxy(realBuilder, table, state);
+}
+
+function makeBuilderProxy(target, table, state) {
+  return new Proxy(target, {
+    get(t, prop) {
+
+      // ── Interceptar ejecución (await / .then()) ──────────
+      if (prop === 'then') {
+        return (resolve, reject) => {
+          execute(t, table, state).then(resolve, reject);
+        };
+      }
+
+      const value = Reflect.get(t, prop);
+      if (typeof value !== 'function') return value;
+
+      // ── Interceptar métodos del builder ─────────────────
+      return (...args) => {
+        trackCall(prop, args, state);
+        const result = value.apply(t, args);
+        // Si el resultado es otro builder (encadenamiento), proxearlo también
+        if (result && typeof result === 'object' && result !== t && typeof result.then === 'function') {
+          return makeBuilderProxy(result, table, state);
+        }
+        return result;
+      };
+    },
+  });
+}
+
+// ── Seguimiento del tipo de operación ────────────────────
+
+function trackCall(prop, args, state) {
+  if (!state.type) {
+    if (prop === 'select')                            { state.type = 'read';  state.operation = 'select'; }
+    if (prop === 'insert')                            { state.type = 'write'; state.operation = 'insert'; state.data = args[0]; }
+    if (prop === 'update')                            { state.type = 'write'; state.operation = 'update'; state.data = args[0]; }
+    if (prop === 'delete')                            { state.type = 'write'; state.operation = 'delete'; }
+    if (prop === 'upsert')                            { state.type = 'write'; state.operation = 'upsert'; state.data = args[0]; }
+  }
+  // Capturar filtros para cache key y replay
+  if (['eq','neq','gt','lt','gte','lte','in','is'].includes(prop)) {
+    state.filters[`${prop}:${args[0]}`] = args[1];
+  }
+}
+
+// ── Ejecución online/offline ──────────────────────────────
+
+async function execute(realBuilder, table, state) {
+  if (_online) {
+    const result = await realBuilder;
+    // Cachear resultado de lecturas
+    if (state.type === 'read' && result?.data) {
+      const key = cache.makeKey(table, state.filters);
+      await cache.set(key, result.data);
+    }
+    return result;
+  }
+
+  // ── OFFLINE ──────────────────────────────────────────────
+  if (state.type === 'read' || !state.type) {
+    const key = cache.makeKey(table, state.filters);
+    const cached = await cache.get(key);
+    return {
+      data:        cached?.data ?? [],
+      error:       null,
+      _fromCache:  true,
+      _stale:      !!cached?.stale,
+      _noCache:    !cached,
+    };
+  }
+
+  if (state.type === 'write') {
+    queue.enqueue({
+      table,
+      operation: state.operation,
+      data:      state.data,
+      filters:   state.filters,
+    });
+    return { data: state.data, error: null, _queued: true };
+  }
+
+  return { data: null, error: null };
+}
