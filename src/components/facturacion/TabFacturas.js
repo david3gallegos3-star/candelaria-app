@@ -24,8 +24,9 @@ export default function TabFacturas({ mobile }) {
   const [motivoAnul,  setMotivoAnul]  = useState('');
   const [anulando,    setAnulando]    = useState(false);
   const [msgExito,    setMsgExito]    = useState('');
-  const [emitiendoId, setEmitiendoId] = useState(null);
-  const [errorEmitir, setErrorEmitir] = useState({});
+  const [emitiendoId,     setEmitiendoId]     = useState(null);
+  const [errorEmitir,     setErrorEmitir]     = useState({});
+  const [cargandoDetalle, setCargandoDetalle] = useState(false);
 
   useEffect(() => { cargarFacturas(); }, []);
   useRealtime(['facturas', 'facturas_detalle'], cargarFacturas);
@@ -46,9 +47,11 @@ export default function TabFacturas({ mobile }) {
     if (expandida === id) { setExpandida(null); setDetalle([]); return; }
     setExpandida(id);
     setDetalle([]);
+    setCargandoDetalle(true);
     const { data } = await supabase.from('facturas_detalle')
       .select('*').eq('factura_id', id).order('id');
     setDetalle(data || []);
+    setCargandoDetalle(false);
   }
 
   // ── Anular factura con nota de crédito ────────────────────
@@ -370,10 +373,14 @@ export default function TabFacturas({ mobile }) {
                         </tr>
                       </thead>
                       <tbody>
-                        {detalle.length === 0 ? (
+                        {cargandoDetalle ? (
                           <tr><td colSpan={4} style={{
                             padding: 12, textAlign: 'center', color: '#aaa'
-                          }}>Cargando...</td></tr>
+                          }}>⏳ Cargando...</td></tr>
+                        ) : detalle.length === 0 ? (
+                          <tr><td colSpan={4} style={{
+                            padding: 12, textAlign: 'center', color: '#aaa'
+                          }}>Sin detalle disponible</td></tr>
                         ) : detalle.map((d, i) => (
                           <tr key={i} style={{
                             background: i % 2 === 0 ? 'white' : '#fafafa',

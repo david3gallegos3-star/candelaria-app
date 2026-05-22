@@ -127,10 +127,14 @@ export function useNetworkStatus() {
 
     const interval = setInterval(refreshQueue, 2000);
 
-    // Contar borradores pendientes al iniciar sesión
+    // Al cargar: contar borradores y auto-emitir si ya hay internet
     supabaseReal.from('facturas')
       .select('id').eq('estado', 'borrador').is('deleted_at', null)
-      .then(({ data }) => setBorradoresCount(data?.length || 0))
+      .then(({ data }) => {
+        const count = data?.length || 0;
+        setBorradoresCount(count);
+        if (count > 0 && navigator.onLine) syncBorradores();
+      })
       .catch(() => {});
 
     return () => {

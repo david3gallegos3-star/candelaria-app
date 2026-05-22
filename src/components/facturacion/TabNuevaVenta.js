@@ -6,6 +6,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../supabase';
 import { useRealtime } from '../../hooks/useRealtime';
 import { generarAsientoFactura } from '../../utils/asientosContables';
+import { get as cacheGet, set as cacheSet, makeKey as cacheMakeKey } from '../../lib/readCache';
 
 const CONSUMIDOR_FINAL = {
   id: null, nombre: 'CONSUMIDOR FINAL',
@@ -296,6 +297,39 @@ export default function TabNuevaVenta({ mobile, currentUser }) {
         id: factura.id, numero, subtotal, iva: 0, total: subtotal,
         cliente_nombre: clienteObj.nombre, metodo_pago: formaPago
       }, 'interno').catch(console.error);
+
+      // Actualizar cache para que el borrador aparezca offline en TabFacturas
+      if (factura?.id) {
+        try {
+          const fKey = cacheMakeKey('facturas', {});
+          const fCached = await cacheGet(fKey);
+          if (fCached) {
+            const newRow = {
+              id: factura.id, numero,
+              cliente_id: clienteObj.id, cliente_nombre: clienteObj.nombre,
+              estado: 'borrador', subtotal, iva, total, porcentaje_iva: 15,
+              forma_pago: formaPago, dias_credito: formaPago === 'credito' ? diasCredito : 0,
+              observaciones, vendedor: currentUser?.email || '',
+              autorizacion_sri: null, datil_id: null, pdf_url: null, xml_url: null,
+              deleted_at: null, created_at: new Date().toISOString(),
+            };
+            await cacheSet(fKey, [newRow, ...(fCached.data || [])]);
+          }
+          const dKey = cacheMakeKey('facturas_detalle', {});
+          const dCached = await cacheGet(dKey);
+          if (dCached) {
+            const newDetails = itemsValidos.map((it, i) => ({
+              id: factura.id * 1000 + i, factura_id: factura.id,
+              producto_nombre: it.producto_nombre,
+              descripcion: it.descripcion || it.producto_nombre,
+              cantidad: parseFloat(it.cantidad),
+              precio_unitario: parseFloat(it.precio_unitario),
+              subtotal: parseFloat(it.subtotal),
+            }));
+            await cacheSet(dKey, [...(dCached.data || []), ...newDetails]);
+          }
+        } catch { /* cache update failed — ignorar */ }
+      }
 
     } catch (e) {
       setError('Error al guardar: ' + e.message);
