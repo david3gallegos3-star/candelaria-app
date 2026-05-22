@@ -120,30 +120,34 @@ export default function TabFacturas({ mobile }) {
   async function anularNotaVenta(f) {
     setAnulandoNV(true);
     try {
-      await supabase.from('facturas')
+      const { error: e1 } = await supabase.from('facturas')
         .update({ estado: 'anulada' })
         .eq('id', f.id);
+      if (e1) throw new Error(e1.message);
 
-      await supabase.from('cuentas_cobrar')
+      const { error: e2 } = await supabase.from('cuentas_cobrar')
         .update({ estado: 'anulada' })
         .eq('factura_id', f.id)
         .eq('estado', 'pendiente');
+      if (e2) throw new Error(e2.message);
 
-      await revertirAsientoNotaVenta({
+      const { error: e3 } = await revertirAsientoNotaVenta({
         id:             f.id,
         numero:         f.numero,
         total:          parseFloat(f.total),
         cliente_nombre: f.cliente_nombre || 'CONSUMIDOR FINAL',
         metodo_pago:    f.forma_pago,
       });
+      if (e3) throw new Error(e3.message);
 
       setModalAnularNV(null);
       mostrarExito('✅ Nota de venta anulada');
       cargarFacturas();
     } catch (e) {
       alert('Error al anular: ' + e.message);
+    } finally {
+      setAnulandoNV(false);
     }
-    setAnulandoNV(false);
   }
 
   // ── Emitir borrador al SRI ────────────────────────────────
