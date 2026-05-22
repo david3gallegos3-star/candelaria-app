@@ -146,6 +146,9 @@ function applyFiltersToData(data, filters) {
     else if (op === 'lt')  result = result.filter(r => r[col] < val);
     else if (op === 'gte') result = result.filter(r => r[col] >= val);
     else if (op === 'lte') result = result.filter(r => r[col] <= val);
+    else if (op === 'is')  result = val === null
+      ? result.filter(r => r[col] === null || r[col] === undefined)
+      : result.filter(r => r[col] !== null && r[col] !== undefined);
   }
   return result;
 }

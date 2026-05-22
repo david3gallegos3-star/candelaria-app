@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabaseReal } from '../supabase';
 import * as offlineQueue from '../lib/offlineQueue';
+import * as offlineBorradores from '../lib/offlineBorradores';
 
 const CONSUMIDOR_FINAL = {
   id: null, nombre: 'CONSUMIDOR FINAL',
@@ -54,19 +55,59 @@ export function useNetworkStatus() {
   // ── Auto-emitir borradores al SRI cuando hay internet ────
   const syncBorradores = useCallback(async () => {
     if (syncingBorradoresRef.current) return;
+    syncingBorradoresRef.current = true;
+    setIsSyncingBorradores(true);
+    let emitidos = 0;
 
     try {
+      // 1. Primero: borradores guardados offline (factura+detalle juntos en localStorage)
+      const locales = offlineBorradores.getBorradores();
+      for (const b of locales) {
+        try {
+          const { data: factura, error: errF } = await supabaseReal.from('facturas')
+            .insert(b.facturaPayload).select().single();
+          if (errF || !factura?.id) continue;
+
+          await supabaseReal.from('facturas_detalle').insert(
+            b.detallePayload.map(it => ({ ...it, factura_id: factura.id }))
+          );
+
+          // Eliminar del store local ahora que está en Supabase
+          offlineBorradores.removeBorrador(b.id);
+
+          const secuencial = parseInt(b.numero.split('-').pop(), 10);
+          const res = await fetch('/api/emitir-factura', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              cliente:       b.clienteData,
+              items:         b.detallePayload,
+              formaPago:     b.formaPago,
+              diasCredito:   b.diasCredito || 0,
+              observaciones: b.observaciones || '',
+              vendedor:      b.vendedor || '',
+              secuencial
+            })
+          });
+          const data = await res.json();
+          if (!data.ok) continue; // quedó en Supabase como borrador, el paso 2 lo emitirá
+
+          await supabaseReal.from('facturas').update({
+            estado: 'autorizada', autorizacion_sri: data.autorizacion,
+            datil_id: data.datil_id, pdf_url: data.pdf_url, xml_url: data.xml_url,
+          }).eq('id', factura.id);
+          emitidos++;
+        } catch { /* continuar */ }
+      }
+
+      // 2. Luego: borradores que ya estaban en Supabase (guardados mientras online)
       const { data: borradores } = await supabaseReal.from('facturas')
         .select('*').eq('estado', 'borrador').is('deleted_at', null);
 
-      if (!borradores?.length) { setBorradoresCount(0); return; }
-      setBorradoresCount(borradores.length);
+      const total = (borradores?.length || 0) + offlineBorradores.getCount();
+      setBorradoresCount(total);
 
-      syncingBorradoresRef.current = true;
-      setIsSyncingBorradores(true);
-      let emitidos = 0;
-
-      for (const f of borradores) {
+      for (const f of (borradores || [])) {
         try {
           const clienteData = f.cliente_id
             ? (await supabaseReal.from('clientes').select('*').eq('id', f.cliente_id).single()).data
@@ -78,17 +119,16 @@ export function useNetworkStatus() {
           if (!detalleData?.length) continue;
 
           const secuencial = parseInt(f.numero.split('-').pop(), 10);
-
           const res = await fetch('/api/emitir-factura', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              cliente:      clienteData,
-              items:        detalleData,
-              formaPago:    f.forma_pago,
-              diasCredito:  f.dias_credito || 0,
+              cliente:       clienteData,
+              items:         detalleData,
+              formaPago:     f.forma_pago,
+              diasCredito:   f.dias_credito || 0,
               observaciones: f.observaciones || '',
-              vendedor:     f.vendedor || '',
+              vendedor:      f.vendedor || '',
               secuencial
             })
           });
@@ -96,18 +136,17 @@ export function useNetworkStatus() {
           if (!data.ok) continue;
 
           await supabaseReal.from('facturas').update({
-            estado:           'autorizada',
-            autorizacion_sri: data.autorizacion,
-            datil_id:         data.datil_id,
-            pdf_url:          data.pdf_url,
-            xml_url:          data.xml_url,
+            estado: 'autorizada', autorizacion_sri: data.autorizacion,
+            datil_id: data.datil_id, pdf_url: data.pdf_url, xml_url: data.xml_url,
           }).eq('id', f.id);
           emitidos++;
-        } catch { /* continuar con el siguiente borrador */ }
+        } catch { /* continuar */ }
       }
 
-      setBorradoresCount(borradores.length - emitidos);
+      const remaining = (borradores?.length || 0) - emitidos + offlineBorradores.getCount();
+      setBorradoresCount(Math.max(0, remaining));
       if (emitidos > 0) setLastBorradorSync({ count: emitidos, time: new Date() });
+
     } catch { /* silencioso */ } finally {
       syncingBorradoresRef.current = false;
       setIsSyncingBorradores(false);
@@ -127,15 +166,21 @@ export function useNetworkStatus() {
 
     const interval = setInterval(refreshQueue, 2000);
 
-    // Al cargar: contar borradores y auto-emitir si ya hay internet
+    // Al cargar: contar borradores (Supabase + locales) y auto-emitir si hay internet
+    const localCount = offlineBorradores.getCount();
+    if (localCount > 0) setBorradoresCount(localCount);
+
     supabaseReal.from('facturas')
       .select('id').eq('estado', 'borrador').is('deleted_at', null)
       .then(({ data }) => {
-        const count = data?.length || 0;
+        const count = (data?.length || 0) + offlineBorradores.getCount();
         setBorradoresCount(count);
         if (count > 0 && navigator.onLine) syncBorradores();
       })
-      .catch(() => {});
+      .catch(() => {
+        // Sin internet al cargar: mostrar al menos los locales
+        setBorradoresCount(offlineBorradores.getCount());
+      });
 
     return () => {
       window.removeEventListener('online',  onOnline);

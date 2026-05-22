@@ -3,10 +3,11 @@
 // Formulario nueva venta + emisión de factura
 // ============================================
 import React, { useState, useEffect, useRef } from 'react';
-import { supabase } from '../../supabase';
+import { supabase, supabaseReal } from '../../supabase';
 import { useRealtime } from '../../hooks/useRealtime';
 import { generarAsientoFactura } from '../../utils/asientosContables';
 import { get as cacheGet, set as cacheSet, makeKey as cacheMakeKey } from '../../lib/readCache';
+import { addBorrador as addOfflineBorrador } from '../../lib/offlineBorradores';
 
 const CONSUMIDOR_FINAL = {
   id: null, nombre: 'CONSUMIDOR FINAL',
@@ -242,98 +243,110 @@ export default function TabNuevaVenta({ mobile, currentUser }) {
     const itemsValidos = items.filter(i => i.producto_nombre && parseFloat(i.cantidad) > 0);
     const numero = `001-001-${String(secuencial).padStart(9, '0')}`;
 
-    try {
-      const { data: factura, error: errF } = await supabase.from('facturas').insert({
-        cliente_id:      clienteObj.id,
-        numero,
-        autorizacion_sri: null,
-        datil_id:         null,
-        pdf_url:          null,
-        xml_url:          null,
-        estado:           'borrador',
-        subtotal,
-        iva,
-        total,
-        porcentaje_iva:   15,
-        forma_pago:       formaPago,
-        dias_credito:     formaPago === 'credito' ? diasCredito : 0,
-        observaciones,
-        vendedor:         currentUser?.email || '',
-        created_by:       currentUser?.email || ''
-      }).select().single();
-      if (errF) throw errF;
+    const facturaPayload = {
+      cliente_id:       clienteObj.id,
+      numero,
+      autorizacion_sri: null, datil_id: null, pdf_url: null, xml_url: null,
+      estado:           'borrador',
+      subtotal, iva, total, porcentaje_iva: 15,
+      forma_pago:       formaPago,
+      dias_credito:     formaPago === 'credito' ? diasCredito : 0,
+      observaciones,
+      vendedor:         currentUser?.email || '',
+      created_by:       currentUser?.email || '',
+    };
+    const detallePayload = itemsValidos.map(it => ({
+      producto_nombre: it.producto_nombre,
+      descripcion:     it.descripcion || it.producto_nombre,
+      cantidad:        parseFloat(it.cantidad),
+      precio_unitario: parseFloat(it.precio_unitario),
+      subtotal:        parseFloat(it.subtotal),
+    }));
 
-      await supabase.from('facturas_detalle').insert(
-        itemsValidos.map(it => ({
-          factura_id:      factura.id,
-          producto_nombre: it.producto_nombre,
-          descripcion:     it.descripcion || it.producto_nombre,
-          cantidad:        parseFloat(it.cantidad),
-          precio_unitario: parseFloat(it.precio_unitario),
-          subtotal:        parseFloat(it.subtotal)
-        }))
-      );
+    let facturaId = null;
+    let savedOnline = false;
 
-      if (formaPago === 'credito') {
-        const venc = new Date();
-        venc.setDate(venc.getDate() + diasCredito);
-        await supabase.from('cuentas_cobrar').insert({
-          factura_id:        factura.id,
-          cliente_id:        clienteObj.id,
-          monto_total:       total,
-          monto_cobrado:     0,
-          estado:            'pendiente',
-          fecha_vencimiento: venc.toISOString().split('T')[0]
-        });
+    if (navigator.onLine) {
+      try {
+        const { data: factura, error: errF } = await supabaseReal.from('facturas')
+          .insert(facturaPayload).select().single();
+        if (errF) throw errF;
+        if (!factura?.id) throw new Error('Sin ID');
+
+        facturaId = factura.id;
+        savedOnline = true;
+
+        await supabaseReal.from('facturas_detalle').insert(
+          detallePayload.map(it => ({ ...it, factura_id: facturaId }))
+        );
+
+        if (formaPago === 'credito') {
+          const venc = new Date();
+          venc.setDate(venc.getDate() + diasCredito);
+          await supabase.from('cuentas_cobrar').insert({
+            factura_id: facturaId, cliente_id: clienteObj.id,
+            monto_total: total, monto_cobrado: 0, estado: 'pendiente',
+            fecha_vencimiento: venc.toISOString().split('T')[0]
+          });
+        }
+
+        generarAsientoFactura({
+          id: facturaId, numero, subtotal, iva: 0, total: subtotal,
+          cliente_nombre: clienteObj.nombre, metodo_pago: formaPago
+        }, 'interno').catch(console.error);
+
+      } catch (e) {
+        // Error real de Supabase (no de red)
+        if (navigator.onLine) {
+          setError('Error al guardar: ' + e.message);
+          setEmitiendo(false);
+          return;
+        }
+        // Cayó la red justo al guardar → tratar como offline
       }
-
-      await supabase.from('config_sistema')
-        .update({ valor: String(secuencial + 1), updated_at: new Date().toISOString() })
-        .eq('clave', 'factura_secuencial');
-
-      setSecuencial(prev => prev + 1);
-      setFacturaEmitida({ numero, cliente: clienteObj.nombre, total, autorizacion: null, esBorrador: true });
-      generarAsientoFactura({
-        id: factura.id, numero, subtotal, iva: 0, total: subtotal,
-        cliente_nombre: clienteObj.nombre, metodo_pago: formaPago
-      }, 'interno').catch(console.error);
-
-      // Actualizar cache para que el borrador aparezca offline en TabFacturas
-      if (factura?.id) {
-        try {
-          const fKey = cacheMakeKey('facturas', {});
-          const fCached = await cacheGet(fKey);
-          if (fCached) {
-            const newRow = {
-              id: factura.id, numero,
-              cliente_id: clienteObj.id, cliente_nombre: clienteObj.nombre,
-              estado: 'borrador', subtotal, iva, total, porcentaje_iva: 15,
-              forma_pago: formaPago, dias_credito: formaPago === 'credito' ? diasCredito : 0,
-              observaciones, vendedor: currentUser?.email || '',
-              autorizacion_sri: null, datil_id: null, pdf_url: null, xml_url: null,
-              deleted_at: null, created_at: new Date().toISOString(),
-            };
-            await cacheSet(fKey, [newRow, ...(fCached.data || [])]);
-          }
-          const dKey = cacheMakeKey('facturas_detalle', {});
-          const dCached = await cacheGet(dKey);
-          if (dCached) {
-            const newDetails = itemsValidos.map((it, i) => ({
-              id: factura.id * 1000 + i, factura_id: factura.id,
-              producto_nombre: it.producto_nombre,
-              descripcion: it.descripcion || it.producto_nombre,
-              cantidad: parseFloat(it.cantidad),
-              precio_unitario: parseFloat(it.precio_unitario),
-              subtotal: parseFloat(it.subtotal),
-            }));
-            await cacheSet(dKey, [...(dCached.data || []), ...newDetails]);
-          }
-        } catch { /* cache update failed — ignorar */ }
-      }
-
-    } catch (e) {
-      setError('Error al guardar: ' + e.message);
     }
+
+    if (!savedOnline) {
+      // Offline: guardar localmente como unidad completa (factura + detalle juntos)
+      facturaId = `offline-${Date.now()}`;
+      addOfflineBorrador({
+        id: facturaId,
+        facturaPayload,
+        detallePayload,
+        clienteData:  clienteObj,
+        formaPago, diasCredito, observaciones,
+        subtotal, iva, total, numero,
+        vendedor: currentUser?.email || '',
+        timestamp: Date.now(),
+      });
+    }
+
+    // Incrementar secuencial (queue-friendly — OK offline)
+    await supabase.from('config_sistema')
+      .update({ valor: String(secuencial + 1), updated_at: new Date().toISOString() })
+      .eq('clave', 'factura_secuencial');
+    setSecuencial(prev => prev + 1);
+
+    // Siempre actualizar cache para ver offline en TabFacturas
+    try {
+      const cacheRow = {
+        ...facturaPayload, id: facturaId,
+        cliente_nombre: clienteObj.nombre,
+        deleted_at: null, created_at: new Date().toISOString(),
+      };
+      const fKey = cacheMakeKey('facturas', {});
+      const fCached = await cacheGet(fKey);
+      await cacheSet(fKey, [cacheRow, ...(fCached?.data || [])]);
+
+      const dKey = cacheMakeKey('facturas_detalle', {});
+      const dCached = await cacheGet(dKey);
+      const cacheDetalle = detallePayload.map((it, i) => ({
+        ...it, id: `${facturaId}-${i}`, factura_id: facturaId,
+      }));
+      await cacheSet(dKey, [...(dCached?.data || []), ...cacheDetalle]);
+    } catch {}
+
+    setFacturaEmitida({ numero, cliente: clienteObj.nombre, total, autorizacion: null, esBorrador: true });
     setEmitiendo(false);
   }
 
