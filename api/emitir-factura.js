@@ -35,12 +35,11 @@ module.exports = async function handler(req, res) {
 
   // Fecha y secuencial
   const fechaHoy      = new Date(Date.now() - 5 * 3600 * 1000).toISOString().split('T')[0]; // UTC-5 Ecuador
-  const secuencialStr = String(secuencial).padStart(9, '0');
 
   const payload = {
     ambiente:       1,   // 1=pruebas · 2=producción
     tipo_emision:   1,
-    secuencial:     secuencialStr,
+    secuencial:     parseInt(secuencial, 10),
     fecha_emision:  fechaHoy,
 
     emisor: {

@@ -37,13 +37,12 @@ module.exports = async function handler(req, res) {
   const iva   = parseFloat((subtotal * 0.15).toFixed(2));
   const total = parseFloat((subtotal + iva).toFixed(2));
 
-  const fechaHoy      = new Date(Date.now() - 5 * 3600 * 1000).toISOString().split('T')[0];
-  const secuencialStr = String(secuencial).padStart(9, '0');
+  const fechaHoy = new Date(Date.now() - 5 * 3600 * 1000).toISOString().split('T')[0];
 
   const payload = {
     ambiente:      1,
     tipo_emision:  1,
-    secuencial:    secuencialStr,
+    secuencial:    parseInt(secuencial, 10),
     fecha_emision: fechaHoy,
 
     emisor: {
