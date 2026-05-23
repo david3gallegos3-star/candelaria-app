@@ -65,6 +65,8 @@ module.exports = async function handler(req, res) {
       },
     },
 
+    moneda: 'USD',
+
     comprador: {
       razon_social:        cliente.nombre || 'CONSUMIDOR FINAL',
       identificacion:      cliente.ruc    || '9999999999999',
@@ -77,7 +79,7 @@ module.exports = async function handler(req, res) {
     documento_modificado: {
       tipo:                '01',
       numero:              numero_factura,
-      fecha_emision:       fecha_emision_factura,
+      fecha_emision:       fecha_emision_factura || fechaHoy,
       numero_autorizacion: autorizacion_sri,
     },
 

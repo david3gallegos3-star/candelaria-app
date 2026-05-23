@@ -265,7 +265,7 @@ export default function TabFacturas({ mobile }) {
           cliente,
           autorizacion_sri:      f.autorizacion_sri,
           numero_factura:        f.numero,
-          fecha_emision_factura: f.created_at?.split('T')[0] || new Date().toISOString().split('T')[0],
+          fecha_emision_factura: (f.created_at || f.fecha_emision || new Date().toISOString()).split('T')[0],
           motivo:                motivoLabel,
           tipo_motivo:           motivoNC,
           items:                 itemsPayload,
