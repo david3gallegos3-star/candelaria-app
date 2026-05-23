@@ -171,19 +171,7 @@ export default function TabFacturas({ mobile }) {
       if (errAsiento) throw new Error(errAsiento.message);
 
       if (accionProdManual === 'inventario') {
-        for (const it of itemsAnulManual.filter(i => parseFloat(i.cantidadReingresar) > 0)) {
-          await supabase.from('inventario_movimientos').insert({
-            materia_prima_id:   null,
-            nombre_mp:          it.descripcion || it.producto_nombre,
-            tipo:               'entrada',
-            kg:                 parseFloat(it.cantidadReingresar),
-            precio_kg_nuevo:    parseFloat(it.precio_unitario) || null,
-            precio_kg_anterior: null,
-            motivo:             `Devolución anulación factura ${f.numero}`,
-            via:                'devolucion_venta',
-            fecha:              new Date().toISOString().split('T')[0],
-          });
-        }
+        mostrarExito('✅ Anulación manual registrada — recuerda reingresar manualmente al inventario los productos devueltos');
       }
 
       if (accionProdManual === 'perdida') {
@@ -316,19 +304,7 @@ export default function TabFacturas({ mobile }) {
       });
 
       if (accionProdNC === 'inventario') {
-        for (const it of itemsAcreditar.filter(i => parseFloat(i.cantidadReingresar) > 0)) {
-          await supabase.from('inventario_movimientos').insert({
-            materia_prima_id:   null,
-            nombre_mp:          it.descripcion || it.producto_nombre,
-            tipo:               'entrada',
-            kg:                 parseFloat(it.cantidadReingresar),
-            precio_kg_nuevo:    parseFloat(it.precio_unitario) || null,
-            precio_kg_anterior: null,
-            motivo:             `Devolución NC ${numero} - Factura ${f.numero}`,
-            via:                'devolucion_venta',
-            fecha:              new Date().toISOString().split('T')[0],
-          });
-        }
+        mostrarExito(`✅ Nota de crédito ${numero} autorizada por el SRI — recuerda reingresar manualmente al inventario los productos devueltos`);
       }
 
       if (accionProdNC === 'perdida') {
