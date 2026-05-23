@@ -70,9 +70,12 @@ export default function MenuContabilidad({ navegarA, onVolver }) {
     try {
       await supabase.from('facturas_detalle').delete().neq('id', '00000000-0000-0000-0000-000000000000');
       await supabase.from('cuentas_cobrar').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      await supabase.from('perdidas').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      await supabase.from('notas_credito').delete().neq('id', '00000000-0000-0000-0000-000000000000');
       await supabase.from('facturas').delete().neq('id', '00000000-0000-0000-0000-000000000000');
       await supabase.from('config_sistema').update({ valor: '1' }).eq('clave', 'factura_secuencial');
-      setMsgFacturas('✓ Facturas borradas y secuencial reiniciado');
+      await supabase.from('config_sistema').update({ valor: '1' }).eq('clave', 'nota_credito_secuencial');
+      setMsgFacturas('✓ Facturas borradas y secuenciales reiniciados');
     } catch (e) {
       setMsgFacturas('Error: ' + e.message);
     }
