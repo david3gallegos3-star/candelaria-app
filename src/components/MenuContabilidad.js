@@ -47,8 +47,6 @@ async function borrarDatosPrueba() {
   for (const t of tablas) {
     await supabase.from(t).delete().neq('id', '00000000-0000-0000-0000-000000000000');
   }
-  await supabase.from('config_sistema')
-    .update({ valor: '1' }).eq('clave', 'factura_secuencial');
   await supabase.from('config_contabilidad')
     .update({ valor: { completado: false, fecha: null, banco: 0, caja: 0, inventario: 0, patrimonio: 0 } })
     .eq('clave', 'asiento_inicial');
@@ -73,9 +71,7 @@ export default function MenuContabilidad({ navegarA, onVolver }) {
       await supabase.from('perdidas').delete().neq('id', '00000000-0000-0000-0000-000000000000');
       await supabase.from('notas_credito').delete().neq('id', '00000000-0000-0000-0000-000000000000');
       await supabase.from('facturas').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-      await supabase.from('config_sistema').update({ valor: '1' }).eq('clave', 'factura_secuencial');
-      await supabase.from('config_sistema').update({ valor: '1' }).eq('clave', 'nota_credito_secuencial');
-      setMsgFacturas('✓ Facturas borradas y secuenciales reiniciados');
+      setMsgFacturas('✓ Facturas de prueba borradas');
     } catch (e) {
       setMsgFacturas('Error: ' + e.message);
     }
