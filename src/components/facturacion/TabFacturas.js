@@ -240,9 +240,12 @@ export default function TabFacturas({ mobile }) {
       const secuencial = parseInt(cfgSeq.valor, 10);
       const numero = `001-001-${String(secuencial).padStart(9, '0')}`;
 
-      const { data: clienteData } = await supabase.from('clientes')
-        .select('*').eq('id', f.cliente_id).single();
-      const cliente = clienteData || { nombre: 'CONSUMIDOR FINAL', ruc: '9999999999999' };
+      let cliente = { nombre: 'CONSUMIDOR FINAL', ruc: '9999999999999' };
+      if (f.cliente_id) {
+        const { data: clienteData } = await supabase.from('clientes')
+          .select('*').eq('id', f.cliente_id).single();
+        if (clienteData) cliente = clienteData;
+      }
 
       const motivoLabel = motivoNC === 'devolucion'   ? 'Devolución de producto'
                         : motivoNC === 'error_precio' ? 'Error en precio del producto'

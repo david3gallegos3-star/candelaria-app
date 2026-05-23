@@ -3,11 +3,6 @@
 
 const DATIL_URL = 'https://link.datil.co/credit-notes/issue';
 
-const TIPO_MOTIVO = {
-  devolucion:   '01',
-  error_precio: '02',
-  otro:         '02',
-};
 
 function tipoIdentificacion(id) {
   if (!id || id === '9999999999999') return '07';
@@ -76,15 +71,12 @@ module.exports = async function handler(req, res) {
       direccion:           cliente.direccion || '',
     },
 
-    documento_modificado: {
-      tipo:                '01',
-      numero:              numero_factura,
-      fecha_emision:       fecha_emision_factura || fechaHoy,
-      numero_autorizacion: autorizacion_sri,
-    },
+    tipo_documento_modificado:             '01',
+    numero_documento_modificado:           numero_factura,
+    fecha_emision_documento_modificado:    fecha_emision_factura || fechaHoy,
+    numero_autorizacion_documento_modificado: autorizacion_sri,
 
     motivo,
-    tipo: TIPO_MOTIVO[tipo_motivo] || '02',
 
     totales: {
       total_sin_impuestos: subtotal,
