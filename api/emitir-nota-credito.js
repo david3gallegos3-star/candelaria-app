@@ -73,7 +73,9 @@ module.exports = async function handler(req, res) {
 
     tipo_documento_modificado:          '01',
     numero_documento_modificado:        numero_factura,
-    fecha_emision_documento_modificado: fecha_emision_factura || fechaHoy,
+    fecha_emision_documento_modificado: (fecha_emision_factura && fecha_emision_factura <= fechaHoy)
+      ? fecha_emision_factura
+      : fechaHoy,
 
     motivo,
 
