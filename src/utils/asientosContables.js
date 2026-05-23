@@ -283,6 +283,32 @@ export async function sincronizarAsientos() {
   return { sincronizados, errores };
 }
 
+export async function revertirAsientoFactura(factura) {
+  const { cuentas, error: errCfg } = await getCuentasModulos();
+  if (errCfg) return { data: null, error: errCfg };
+
+  const fecha = new Date().toISOString().split('T')[0];
+  const cuentaHaber = factura.forma_pago === 'credito'
+    ? cuentas.cxc_id
+    : cuentas.caja_general_id;
+  const descripcion = `Anulación Factura - ${factura.numero} - ${factura.cliente_nombre}`;
+
+  const lineas = [
+    { cuenta_id: cuentas.ventas_gravadas_id, descripcion, debe: factura.subtotal, haber: 0,             orden: 0 },
+    { cuenta_id: cuentas.iva_ventas_id,      descripcion, debe: factura.iva,      haber: 0,             orden: 1 },
+    { cuenta_id: cuentaHaber,                descripcion, debe: 0,                haber: factura.total, orden: 2 },
+  ];
+
+  return insertarAsiento({
+    fecha,
+    descripcion,
+    tipo: 'tributario',
+    origen: 'facturacion',
+    origen_id: factura.id,
+    lineas,
+  });
+}
+
 export async function revertirAsientoNotaVenta(factura) {
   const { cuentas, error: errCfg } = await getCuentasModulos();
   if (errCfg) return { data: null, error: errCfg };
