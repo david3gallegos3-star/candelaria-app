@@ -33,6 +33,7 @@ export default function TabFacturas({ mobile }) {
   const [emitiendoId,     setEmitiendoId]     = useState(null);
   const [errorEmitir,     setErrorEmitir]     = useState({});
   const [cargandoDetalle, setCargandoDetalle] = useState(false);
+  const [notaCredito,     setNotaCredito]     = useState(null);
 
   // ── Nota de venta ──
   const [modalAnularNV, setModalAnularNV] = useState(null);
@@ -85,11 +86,19 @@ export default function TabFacturas({ mobile }) {
   }
 
   // ── Ver detalle ───────────────────────────────────────────
-  async function toggleDetalle(id) {
-    if (expandida === id) { setExpandida(null); setDetalle([]); return; }
+  async function toggleDetalle(id, estado) {
+    if (expandida === id) { setExpandida(null); setDetalle([]); setNotaCredito(null); return; }
     setExpandida(id);
     setDetalle([]);
+    setNotaCredito(null);
     setCargandoDetalle(true);
+
+    if (estado === 'anulada') {
+      const { data: nc } = await supabase.from('notas_credito')
+        .select('numero, autorizacion_sri, pdf_url, xml_url, es_manual, motivo')
+        .eq('factura_id', id).order('created_at', { ascending: false }).limit(1).single();
+      if (nc) setNotaCredito(nc);
+    }
 
     const localBorrador = getLocalBorradores().find(b => b.id === id);
     if (localBorrador) {
@@ -277,6 +286,8 @@ export default function TabFacturas({ mobile }) {
         tipo_motivo:      motivoNC,
         autorizacion_sri: data.autorizacion,
         datil_id:         data.datil_id,
+        pdf_url:          data.pdf_url  || null,
+        xml_url:          data.xml_url  || null,
         accion_producto:  accionProdNC,
         motivo_perdida:   accionProdNC === 'perdida' ? motivoPerdidaNC : null,
         items_nc:         itemsPayload,
@@ -550,7 +561,7 @@ export default function TabFacturas({ mobile }) {
 
                   {/* Botones */}
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    <button onClick={() => toggleDetalle(f.id)} style={{
+                    <button onClick={() => toggleDetalle(f.id, f.estado)} style={{
                       background: abierta ? '#2980b9' : 'white',
                       color:      abierta ? 'white'   : '#2980b9',
                       border: '1.5px solid #2980b9',
@@ -633,6 +644,42 @@ export default function TabFacturas({ mobile }) {
                     {f.autorizacion_sri && (
                       <div style={{ fontSize: '11px', color: '#888', marginBottom: 8, fontFamily: 'monospace' }}>
                         🔑 Auth SRI: {f.autorizacion_sri}
+                      </div>
+                    )}
+
+                    {notaCredito && (
+                      <div style={{
+                        background: '#fef3c7', border: '1px solid #f59e0b',
+                        borderRadius: 8, padding: '8px 12px', marginBottom: 10,
+                        display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+                      }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: '11px', fontWeight: '700', color: '#92400e' }}>
+                            📄 Nota de Crédito {notaCredito.numero}
+                            {notaCredito.es_manual && ' — Anulación manual'}
+                          </div>
+                          {notaCredito.autorizacion_sri && (
+                            <div style={{ fontSize: '10px', color: '#aaa', fontFamily: 'monospace', marginTop: 2 }}>
+                              Auth: {notaCredito.autorizacion_sri}
+                            </div>
+                          )}
+                        </div>
+                        {notaCredito.pdf_url && (
+                          <a href={notaCredito.pdf_url} target="_blank" rel="noreferrer" style={{
+                            background: '#d97706', color: 'white',
+                            border: 'none', borderRadius: 6, padding: '4px 12px',
+                            fontWeight: 'bold', fontSize: '11px',
+                            textDecoration: 'none', display: 'inline-block',
+                          }}>🖨️ RIDE NC</a>
+                        )}
+                        {notaCredito.xml_url && (
+                          <a href={notaCredito.xml_url} target="_blank" rel="noreferrer" style={{
+                            background: 'white', color: '#d97706',
+                            border: '1px solid #d97706', borderRadius: 6, padding: '4px 12px',
+                            fontWeight: 'bold', fontSize: '11px',
+                            textDecoration: 'none', display: 'inline-block',
+                          }}>📎 XML</a>
+                        )}
                       </div>
                     )}
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
