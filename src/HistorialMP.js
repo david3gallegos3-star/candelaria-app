@@ -3,7 +3,7 @@ import { supabase } from './supabase';
 
 const isMobile = () => window.innerWidth < 700;
 
-export default function HistorialMP({ onVolver, onVolverMenu, mostrarExito }) {
+export default function HistorialMP({ onVolver, onVolverMenu, mostrarExito, generarSiguienteId }) {
   const [historial,      setHistorial]      = useState([]);
   const [eliminadas,     setEliminadas]     = useState([]);
   const [cargando,       setCargando]       = useState(false);
@@ -61,14 +61,16 @@ export default function HistorialMP({ onVolver, onVolverMenu, mostrarExito }) {
   async function restaurarMP(mp) {
     if (!window.confirm(`¿Restaurar "${mp.nombre_producto || mp.nombre}"?`)) return;
     setRestaurando(true);
+    const nuevoId = generarSiguienteId ? await generarSiguienteId(mp.categoria) : null;
     await supabase.from('materias_primas').update({
+      ...(nuevoId && { id: nuevoId }),
       eliminado:     false,
       eliminado_at:  null,
       eliminado_por: null,
       estado:        'ACTIVO'
     }).eq('id', mp.id);
     await cargarEliminadas();
-    mostrarExito(`✅ "${mp.nombre_producto || mp.nombre}" restaurada correctamente`);
+    mostrarExito(`✅ "${mp.nombre_producto || mp.nombre}" restaurada con ID ${nuevoId || mp.id}`);
     setRestaurando(false);
   }
 

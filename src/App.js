@@ -1004,6 +1004,7 @@ async function confirmarImportacion() {
       onVolver={volverAtras}
       onVolverMenu={() => setPantalla('menuPrincipal')}
       mostrarExito={mostrarExito}
+      generarSiguienteId={generarSiguienteId}
     />;
 
   if (pantalla === 'produccion')
