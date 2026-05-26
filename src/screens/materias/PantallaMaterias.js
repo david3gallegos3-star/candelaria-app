@@ -205,6 +205,11 @@ function PantallaMaterias({
       }
       if (!window.confirm(mensaje)) return;
 
+      // Nullear referencias en inventario_mp antes de renombrar el ID
+      await supabase.from('inventario_mp')
+        .update({ materia_prima_id: null })
+        .eq('materia_prima_id', id);
+
       // Renombrar el ID para liberar la silla
       const idLibre = `DEL_${id}`;
       await supabase.from('materias_primas').update({
