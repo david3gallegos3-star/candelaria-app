@@ -164,7 +164,7 @@ function App() {
       .like('id', `${prefix}%`);
     const nums = new Set(
       (data || [])
-        .map(d => { const m = (d.id||'').match(/^[A-Za-z]+(\d+)$/); return m ? parseInt(m[1]) : null; })
+        .map(d => { const m = (d.id||'').match(/^([A-Za-z]+)(\d+)$/); return (m && m[1] === prefix) ? parseInt(m[2]) : null; })
         .filter(n => n !== null)
     );
     let next = 1;
