@@ -569,10 +569,6 @@ export default function HistorialMP({ onVolver, onVolverMenu, mostrarExito, gene
                       border:'none', borderRadius:7, cursor:'pointer', fontSize:'12px', fontWeight:'bold'
                     }}>🗑️ Borrar seleccionados ({selEliminadas.size})</button>
                   )}
-                  <button onClick={eliminarTodosElim} style={{
-                    padding:'7px 14px', background:'#922b21', color:'white',
-                    border:'none', borderRadius:7, cursor:'pointer', fontSize:'12px', fontWeight:'bold'
-                  }}>🗑️ Borrar todos ({eliminadas.length})</button>
                 </div>
 
               <div style={{
