@@ -373,8 +373,8 @@ function PantallaMaterias({
               accept=".xlsx,.xlsm" style={{ display:'none' }}
               onChange={subirExcel}
             />
-            <button onClick={() => {
-              const idSugerido = generarSiguienteId(categoriasMp[0]||'');
+            <button onClick={async () => {
+              const idSugerido = await generarSiguienteId(categoriasMp[0]||'');
               setForm({
                 id: idSugerido,
                 categoria: categoriasMp[0]||'',

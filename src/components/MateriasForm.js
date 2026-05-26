@@ -17,9 +17,9 @@ function MateriasForm({ data, setData, categoriasMp, generarSiguienteId, esEdici
         </label>
         <select
           value={data.categoria}
-          onChange={e => {
+          onChange={async e => {
             const nuevaCat = e.target.value;
-            const idSugerido = esEdicion ? data.id : (generarSiguienteId(nuevaCat) || data.id);
+            const idSugerido = esEdicion ? data.id : ((await generarSiguienteId(nuevaCat)) || data.id);
             setData({ ...data, categoria: nuevaCat, id: idSugerido });
           }}
           style={{
@@ -35,12 +35,12 @@ function MateriasForm({ data, setData, categoriasMp, generarSiguienteId, esEdici
       <div style={{ display:'flex', flexDirection:'column', gap:'4px' }}>
         <label style={{ fontSize:'12px', fontWeight:'bold', color:'#555' }}>
           ID
-          {generarSiguienteId(data.categoria) ? (
+          {data.id ? (
             <span style={{
               marginLeft:6, fontSize:'10px',
               color:'#27ae60', fontWeight:'normal'
             }}>
-              ✓ sugerido: {generarSiguienteId(data.categoria)}
+              ✓ sugerido: {data.id}
             </span>
           ) : (
             <span style={{

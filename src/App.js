@@ -150,10 +150,12 @@ function App() {
     setTimeout(() => setMsgExito(''), 5000);
   }
 
-  function generarSiguienteId(categoria) {
-    const mpsCat = materias.filter(m => m.categoria === categoria);
-    if (mpsCat.length === 0) return '';
-    const ids = mpsCat.map(m => m.id).filter(Boolean);
+  async function generarSiguienteId(categoria) {
+    const { data } = await supabase
+      .from('materias_primas')
+      .select('id')
+      .eq('categoria', categoria);
+    const ids = (data || []).map(d => d.id).filter(Boolean);
     if (ids.length === 0) return '';
     const primerID    = ids[0];
     const prefixMatch = primerID.match(/^([A-Za-z]+)(\d+)$/);
