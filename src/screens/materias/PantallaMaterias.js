@@ -191,13 +191,30 @@ function PantallaMaterias({
         alert('⛔ Esta materia prima es del sistema y no puede eliminarse.');
         return;
       }
-      if (!window.confirm('¿Eliminar esta materia prima?')) return;
+
+      // Verificar qué fórmulas usan este MP
+      const { data: usos } = await supabase
+        .from('formulaciones')
+        .select('producto_nombre')
+        .eq('materia_prima_id', id);
+      const formulas = [...new Set((usos || []).map(u => u.producto_nombre))];
+
+      let mensaje = '¿Eliminar esta materia prima?';
+      if (formulas.length > 0) {
+        mensaje = `⚠️ Esta materia prima está en ${formulas.length} fórmula(s):\n\n${formulas.join('\n')}\n\nAl eliminar, esas fórmulas quedarán SIN PRECIO para este ingrediente (en rojo).\n\n¿Continuar?`;
+      }
+      if (!window.confirm(mensaje)) return;
+
+      // Renombrar el ID para liberar la silla
+      const idLibre = `DEL_${id}`;
       await supabase.from('materias_primas').update({
+        id:            idLibre,
         eliminado:     true,
         eliminado_at:  new Date().toISOString(),
         eliminado_por: userRol?.nombre || 'Admin',
         estado:        'INACTIVO'
       }).eq('id', id);
+
       await cargarMaterias();
       mostrarExito('🗑️ Eliminada — recupérala en Historial MP → Eliminadas');
     }

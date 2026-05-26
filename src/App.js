@@ -157,11 +157,11 @@ function App() {
     if (!prefixMatch) return '';
     const prefix    = prefixMatch[1];
     const numDigits = prefixMatch[2].length;
+    // IDs eliminados ahora son DEL_xxx, así que todos los C/A/etc activos están libres o en uso
     const { data } = await supabase
       .from('materias_primas')
       .select('id')
-      .like('id', `${prefix}%`)
-      .eq('eliminado', false);
+      .like('id', `${prefix}%`);
     const nums = new Set(
       (data || [])
         .map(d => { const m = (d.id||'').match(/^[A-Za-z]+(\d+)$/); return m ? parseInt(m[1]) : null; })
