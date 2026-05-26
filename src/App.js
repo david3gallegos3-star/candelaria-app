@@ -160,7 +160,8 @@ function App() {
     const { data } = await supabase
       .from('materias_primas')
       .select('id')
-      .like('id', `${prefix}%`);
+      .like('id', `${prefix}%`)
+      .eq('eliminado', false);
     const nums = new Set(
       (data || [])
         .map(d => { const m = (d.id||'').match(/^[A-Za-z]+(\d+)$/); return m ? parseInt(m[1]) : null; })

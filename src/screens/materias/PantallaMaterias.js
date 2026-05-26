@@ -73,8 +73,9 @@ function PantallaMaterias({
     if (!form.id || !form.nombre)
       return alert('ID y Nombre son obligatorios');
     const precios = calcularPrecios(form.precio_kg);
-    const { error } = await supabase.from('materias_primas').insert([{
-      id:              form.id,
+    let idFinal = form.id;
+    let { error } = await supabase.from('materias_primas').insert([{
+      id:              idFinal,
       categoria:       form.categoria,
       nombre:          form.nombre,
       nombre_producto: form.nombre_producto || form.nombre,
@@ -86,6 +87,24 @@ function PantallaMaterias({
       estado:          form.estado,
       tipo:            form.tipo
     }]);
+    // Si el ID sugerido ya existe como eliminado, buscar el siguiente libre
+    if (error?.code === '23505') {
+      idFinal = await generarSiguienteId(form.categoria);
+      const retry = await supabase.from('materias_primas').insert([{
+        id:              idFinal,
+        categoria:       form.categoria,
+        nombre:          form.nombre,
+        nombre_producto: form.nombre_producto || form.nombre,
+        proveedor:       form.proveedor,
+        precio_kg:       parseFloat(form.precio_kg) || 0,
+        precio_lb:       parseFloat(precios.precio_lb) || 0,
+        precio_gr:       parseFloat(precios.precio_gr) || 0,
+        notas:           form.notas,
+        estado:          form.estado,
+        tipo:            form.tipo
+      }]);
+      error = retry.error;
+    }
     if (error) return alert('Error: ' + error.message);
     setModalAgregar(false);
     setForm({
