@@ -14,6 +14,9 @@ export default function HistorialMP({ onVolver, onVolverMenu, mostrarExito, gene
   const [mobile,         setMobile]         = useState(isMobile());
   const [tab,            setTab]            = useState('historial');
   const [restaurando,    setRestaurando]    = useState(false);
+  const [modalRestaurar, setModalRestaurar] = useState(null);
+  const [formRestaurar,  setFormRestaurar]  = useState({});
+  const [selEliminadas,  setSelEliminadas]  = useState(new Set());
   const [filtros, setFiltros] = useState({
     fechaDes:'', fechaHas:'', categoria:'TODAS', texto:''
   });
@@ -58,19 +61,45 @@ export default function HistorialMP({ onVolver, onVolverMenu, mostrarExito, gene
     setCargando(false);
   }
 
-  async function restaurarMP(mp) {
-    if (!window.confirm(`¿Restaurar "${mp.nombre_producto || mp.nombre}"?`)) return;
+  async function abrirModalRestaurar(mp) {
+    const nuevoId = generarSiguienteId ? await generarSiguienteId(mp.categoria) : mp.id;
+    setFormRestaurar({
+      idOriginal:      mp.id,
+      id:              nuevoId || mp.id,
+      categoria:       mp.categoria,
+      nombre:          mp.nombre,
+      nombre_producto: mp.nombre_producto || mp.nombre,
+      proveedor:       mp.proveedor || '',
+      precio_kg:       mp.precio_kg || '',
+      notas:           mp.notas || '',
+      estado:          'ACTIVO',
+      tipo:            mp.tipo || 'MATERIAS PRIMAS',
+    });
+    setModalRestaurar(mp);
+  }
+
+  async function confirmarRestaurar() {
     setRestaurando(true);
-    const nuevoId = generarSiguienteId ? await generarSiguienteId(mp.categoria) : null;
+    const f = formRestaurar;
+    const kg = parseFloat(f.precio_kg) || 0;
     await supabase.from('materias_primas').update({
-      ...(nuevoId && { id: nuevoId }),
-      eliminado:     false,
-      eliminado_at:  null,
-      eliminado_por: null,
-      estado:        'ACTIVO'
-    }).eq('id', mp.id);
+      id:              f.id,
+      categoria:       f.categoria,
+      nombre:          f.nombre,
+      nombre_producto: f.nombre_producto || f.nombre,
+      proveedor:       f.proveedor,
+      precio_kg:       kg,
+      precio_lb:       kg > 0 ? parseFloat((kg / 2.20462).toFixed(4)) : 0,
+      precio_gr:       kg > 0 ? parseFloat((kg / 1000).toFixed(6))    : 0,
+      notas:           f.notas,
+      estado:          'ACTIVO',
+      eliminado:       false,
+      eliminado_at:    null,
+      eliminado_por:   null,
+    }).eq('id', f.idOriginal);
+    setModalRestaurar(null);
     await cargarEliminadas();
-    mostrarExito(`✅ "${mp.nombre_producto || mp.nombre}" restaurada con ID ${nuevoId || mp.id}`);
+    mostrarExito(`✅ "${f.nombre_producto || f.nombre}" restaurada como ${f.id}`);
     setRestaurando(false);
   }
 
@@ -81,6 +110,25 @@ export default function HistorialMP({ onVolver, onVolverMenu, mostrarExito, gene
     await supabase.from('materias_primas').delete().eq('id', mp.id);
     await cargarEliminadas();
     mostrarExito(`🗑️ "${mp.nombre_producto || mp.nombre}" eliminada permanentemente`);
+  }
+
+  async function eliminarSeleccionadasElim() {
+    if (selEliminadas.size === 0) return;
+    if (!window.confirm(`⚠️ ELIMINAR PERMANENTEMENTE ${selEliminadas.size} materia(s) prima(s)?\n\nEsto NO se puede deshacer.`)) return;
+    await supabase.from('materias_primas').delete().in('id', [...selEliminadas]);
+    setSelEliminadas(new Set());
+    await cargarEliminadas();
+    mostrarExito(`🗑️ ${selEliminadas.size} eliminadas permanentemente`);
+  }
+
+  async function eliminarTodosElim() {
+    if (eliminadas.length === 0) return;
+    if (!window.confirm(`⚠️ ELIMINAR PERMANENTEMENTE las ${eliminadas.length} materias primas eliminadas?\n\nEsto NO se puede deshacer.`)) return;
+    const ids = eliminadas.map(m => m.id);
+    await supabase.from('materias_primas').delete().in('id', ids);
+    setSelEliminadas(new Set());
+    await cargarEliminadas();
+    mostrarExito(`🗑️ Todos los eliminados borrados permanentemente`);
   }
 
   function toggleSel(id) {
@@ -501,11 +549,32 @@ export default function HistorialMP({ onVolver, onVolverMenu, mostrarExito, gene
                 background:'white', borderRadius:'10px'
               }}>
                 <div style={{ fontSize:'48px', marginBottom:'12px' }}>✅</div>
-                <div style={{ fontSize:'14px' }}>
-                  No hay materias primas eliminadas
-                </div>
+                <div style={{ fontSize:'14px' }}>No hay materias primas eliminadas</div>
               </div>
             ) : (
+              <>
+                {/* Barra de acciones masivas */}
+                <div style={{ display:'flex', gap:8, marginBottom:10, flexWrap:'wrap', alignItems:'center' }}>
+                  <button onClick={() => setSelEliminadas(
+                    selEliminadas.size === eliminadas.length ? new Set() : new Set(eliminadas.map(m => m.id))
+                  )} style={{
+                    padding:'7px 14px', background:'#6c757d', color:'white',
+                    border:'none', borderRadius:7, cursor:'pointer', fontSize:'12px', fontWeight:'bold'
+                  }}>
+                    {selEliminadas.size === eliminadas.length ? '✓ Deseleccionar todos' : '☐ Seleccionar todos'}
+                  </button>
+                  {selEliminadas.size > 0 && (
+                    <button onClick={eliminarSeleccionadasElim} style={{
+                      padding:'7px 14px', background:'#e74c3c', color:'white',
+                      border:'none', borderRadius:7, cursor:'pointer', fontSize:'12px', fontWeight:'bold'
+                    }}>🗑️ Borrar seleccionados ({selEliminadas.size})</button>
+                  )}
+                  <button onClick={eliminarTodosElim} style={{
+                    padding:'7px 14px', background:'#922b21', color:'white',
+                    border:'none', borderRadius:7, cursor:'pointer', fontSize:'12px', fontWeight:'bold'
+                  }}>🗑️ Borrar todos ({eliminadas.length})</button>
+                </div>
+
               <div style={{
                 background:'white', borderRadius:'10px',
                 overflow:'hidden', boxShadow:'0 1px 4px rgba(0,0,0,0.06)'
@@ -514,32 +583,33 @@ export default function HistorialMP({ onVolver, onVolverMenu, mostrarExito, gene
                   <table style={{ width:'100%', borderCollapse:'collapse', fontSize:'12px' }}>
                     <thead>
                       <tr style={{ background:'#c0392b', color:'white' }}>
-                        {['ID','CATEGORÍA','NOMBRE','PRECIO/KG',
-                          'ELIMINADA POR','FECHA ELIMINACIÓN','ACCIONES']
+                        <th style={{ padding:'10px', width:36 }}></th>
+                        {['ID','CATEGORÍA','NOMBRE','PRECIO/KG','ELIMINADA POR','FECHA ELIMINACIÓN','ACCIONES']
                           .map(h => (
-                            <th key={h} style={{
-                              padding:'10px', textAlign:'left',
-                              fontSize:'11px', whiteSpace:'nowrap'
-                            }}>{h}</th>
-                          ))
-                        }
+                            <th key={h} style={{ padding:'10px', textAlign:'left', fontSize:'11px', whiteSpace:'nowrap' }}>{h}</th>
+                          ))}
                       </tr>
                     </thead>
                     <tbody>
                       {eliminadas.map((mp, i) => (
                         <tr key={mp.id} style={{
-                          background: i%2===0 ? '#fff5f5' : 'white',
+                          background: selEliminadas.has(mp.id) ? '#fde8e8' : (i%2===0 ? '#fff5f5' : 'white'),
                           borderBottom:'1px solid #f0f0f0'
                         }}>
-                          <td style={{
-                            padding:'9px 10px', fontWeight:'bold', color:'#555'
-                          }}>{mp.id}</td>
+                          <td style={{ padding:'9px 10px', textAlign:'center' }}>
+                            <input type="checkbox" checked={selEliminadas.has(mp.id)}
+                              onChange={() => setSelEliminadas(prev => {
+                                const n = new Set(prev);
+                                n.has(mp.id) ? n.delete(mp.id) : n.add(mp.id);
+                                return n;
+                              })} />
+                          </td>
+                          <td style={{ padding:'9px 10px', fontWeight:'bold', color:'#555' }}>{mp.id}</td>
 
                           <td style={{ padding:'9px 10px' }}>
                             <span style={{
                               background:'#e8f4fd', color:'#1a5276',
-                              padding:'2px 7px', borderRadius:8,
-                              fontSize:'10px', fontWeight:'bold'
+                              padding:'2px 7px', borderRadius:8, fontSize:'10px', fontWeight:'bold'
                             }}>{mp.categoria}</span>
                           </td>
 
@@ -551,9 +621,7 @@ export default function HistorialMP({ onVolver, onVolverMenu, mostrarExito, gene
                             ${parseFloat(mp.precio_kg||0).toFixed(2)}/kg
                           </td>
 
-                          <td style={{ padding:'9px 10px', color:'#888' }}>
-                            {mp.eliminado_por || '—'}
-                          </td>
+                          <td style={{ padding:'9px 10px', color:'#888' }}>{mp.eliminado_por || '—'}</td>
 
                           <td style={{ padding:'9px 10px', color:'#888', whiteSpace:'nowrap' }}>
                             {mp.eliminado_at
@@ -565,22 +633,16 @@ export default function HistorialMP({ onVolver, onVolverMenu, mostrarExito, gene
                           </td>
 
                           <td style={{ padding:'9px 10px', whiteSpace:'nowrap' }}>
-                            <button
-                              onClick={() => restaurarMP(mp)}
-                              disabled={restaurando}
+                            <button onClick={() => abrirModalRestaurar(mp)} disabled={restaurando}
                               style={{
-                                padding:'5px 12px', background:'#27ae60',
-                                color:'white', border:'none', borderRadius:6,
-                                cursor:'pointer', fontSize:'11px',
-                                fontWeight:'bold', marginRight:6
+                                padding:'5px 12px', background:'#27ae60', color:'white',
+                                border:'none', borderRadius:6, cursor:'pointer',
+                                fontSize:'11px', fontWeight:'bold', marginRight:6
                               }}>♻️ Restaurar</button>
-
-                            <button
-                              onClick={() => eliminarDefinitivo(mp)}
+                            <button onClick={() => eliminarDefinitivo(mp)}
                               style={{
-                                padding:'5px 10px', background:'#e74c3c',
-                                color:'white', border:'none', borderRadius:6,
-                                cursor:'pointer', fontSize:'11px'
+                                padding:'5px 10px', background:'#e74c3c', color:'white',
+                                border:'none', borderRadius:6, cursor:'pointer', fontSize:'11px'
                               }}>🗑️ Borrar</button>
                           </td>
                         </tr>
@@ -589,10 +651,109 @@ export default function HistorialMP({ onVolver, onVolverMenu, mostrarExito, gene
                   </table>
                 </div>
               </div>
+              </>
             )}
           </>
         )}
       </div>
+
+      {/* ── MODAL RESTAURAR ── */}
+      {modalRestaurar && (
+        <div style={{
+          position:'fixed', top:0, left:0, right:0, bottom:0,
+          background:'rgba(0,0,0,0.5)', zIndex:1000,
+          display:'flex', alignItems:'center', justifyContent:'center', padding:16
+        }}>
+          <div style={{
+            background:'white', borderRadius:14, padding:24,
+            width:'100%', maxWidth:540, boxShadow:'0 8px 32px rgba(0,0,0,0.2)'
+          }}>
+            <div style={{ fontSize:16, fontWeight:'bold', color:'#1a1a2e', marginBottom:6 }}>
+              ♻️ Restaurar Materia Prima
+            </div>
+            <div style={{ fontSize:12, color:'#888', marginBottom:16 }}>
+              Revisa o edita los datos antes de restaurar. Se asignará el ID disponible.
+            </div>
+
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+              {/* Categoría */}
+              <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
+                <label style={{ fontSize:12, fontWeight:'bold', color:'#555' }}>Categoría</label>
+                <select value={formRestaurar.categoria}
+                  onChange={async e => {
+                    const cat = e.target.value;
+                    const id = generarSiguienteId ? await generarSiguienteId(cat) : formRestaurar.id;
+                    setFormRestaurar(f => ({ ...f, categoria: cat, id: id || f.id }));
+                  }}
+                  style={{ padding:'7px', borderRadius:6, border:'1px solid #ddd', fontSize:13 }}>
+                  {categoriasMp.map(c => <option key={c}>{c}</option>)}
+                </select>
+              </div>
+
+              {/* ID sugerido */}
+              <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
+                <label style={{ fontSize:12, fontWeight:'bold', color:'#555' }}>
+                  ID <span style={{ color:'#27ae60', fontSize:10, fontWeight:'normal' }}>✓ sugerido: {formRestaurar.id}</span>
+                </label>
+                <input value={formRestaurar.id}
+                  onChange={e => setFormRestaurar(f => ({ ...f, id: e.target.value.toUpperCase() }))}
+                  style={{ padding:'7px', borderRadius:6, border:'1.5px solid #3498db', fontSize:13, fontWeight:'bold' }} />
+              </div>
+
+              {/* Nombre */}
+              <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
+                <label style={{ fontSize:12, fontWeight:'bold', color:'#555' }}>Nombre Ingrediente</label>
+                <input value={formRestaurar.nombre}
+                  onChange={e => setFormRestaurar(f => ({ ...f, nombre: e.target.value }))}
+                  style={{ padding:'7px', borderRadius:6, border:'1px solid #ddd', fontSize:13 }} />
+              </div>
+
+              {/* Nombre producto */}
+              <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
+                <label style={{ fontSize:12, fontWeight:'bold', color:'#555' }}>Nombre en Producto</label>
+                <input value={formRestaurar.nombre_producto}
+                  onChange={e => setFormRestaurar(f => ({ ...f, nombre_producto: e.target.value }))}
+                  style={{ padding:'7px', borderRadius:6, border:'1px solid #ddd', fontSize:13 }} />
+              </div>
+
+              {/* Proveedor */}
+              <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
+                <label style={{ fontSize:12, fontWeight:'bold', color:'#555' }}>Proveedor</label>
+                <input value={formRestaurar.proveedor}
+                  onChange={e => setFormRestaurar(f => ({ ...f, proveedor: e.target.value }))}
+                  style={{ padding:'7px', borderRadius:6, border:'1px solid #ddd', fontSize:13 }} />
+              </div>
+
+              {/* Precio KG */}
+              <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
+                <label style={{ fontSize:12, fontWeight:'bold', color:'#3498db' }}>$ / KG</label>
+                <input type="number" value={formRestaurar.precio_kg}
+                  onChange={e => setFormRestaurar(f => ({ ...f, precio_kg: e.target.value }))}
+                  style={{ padding:'7px', borderRadius:6, border:'1.5px solid #3498db', fontSize:13 }} />
+              </div>
+
+              {/* Notas */}
+              <div style={{ display:'flex', flexDirection:'column', gap:4, gridColumn:'1/-1' }}>
+                <label style={{ fontSize:12, fontWeight:'bold', color:'#555' }}>Notas</label>
+                <input value={formRestaurar.notas}
+                  onChange={e => setFormRestaurar(f => ({ ...f, notas: e.target.value }))}
+                  style={{ padding:'7px', borderRadius:6, border:'1px solid #ddd', fontSize:13 }} />
+              </div>
+            </div>
+
+            <div style={{ display:'flex', gap:10, marginTop:20, justifyContent:'flex-end' }}>
+              <button onClick={() => setModalRestaurar(null)} style={{
+                padding:'9px 20px', background:'#f0f0f0', color:'#333',
+                border:'none', borderRadius:8, cursor:'pointer', fontSize:13
+              }}>Cancelar</button>
+              <button onClick={confirmarRestaurar} disabled={restaurando} style={{
+                padding:'9px 20px', background:'#27ae60', color:'white',
+                border:'none', borderRadius:8, cursor:'pointer', fontSize:13, fontWeight:'bold'
+              }}>♻️ Restaurar</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
