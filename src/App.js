@@ -161,15 +161,14 @@ function App() {
       .from('materias_primas')
       .select('id')
       .like('id', `${prefix}%`);
-    let maxNum = 0;
-    (data || []).forEach(d => {
-      const match = (d.id || '').match(/^[A-Za-z]+(\d+)$/);
-      if (match) {
-        const num = parseInt(match[1]);
-        if (num > maxNum) maxNum = num;
-      }
-    });
-    return prefix + String(maxNum + 1).padStart(numDigits, '0');
+    const nums = new Set(
+      (data || [])
+        .map(d => { const m = (d.id||'').match(/^[A-Za-z]+(\d+)$/); return m ? parseInt(m[1]) : null; })
+        .filter(n => n !== null)
+    );
+    let next = 1;
+    while (nums.has(next)) next++;
+    return prefix + String(next).padStart(numDigits, '0');
   }
 
   // ── Carga de datos ────────────────────────────────────
