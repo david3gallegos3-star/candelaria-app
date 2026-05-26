@@ -87,9 +87,18 @@ function PantallaMaterias({
       estado:          form.estado,
       tipo:            form.tipo
     }]);
-    // Si el ID sugerido ya existe como eliminado, buscar el siguiente libre
+    // Si el ID sugerido ya existe (como eliminado), buscar el siguiente libre en TODA la tabla
     if (error?.code === '23505') {
-      idFinal = await generarSiguienteId(form.categoria);
+      const prefM = idFinal.match(/^([A-Za-z]+)(\d+)$/);
+      if (prefM) {
+        const pfx = prefM[1], dig = prefM[2].length;
+        const { data: todos } = await supabase.from('materias_primas').select('id').like('id', `${pfx}%`);
+        const ocupados = new Set(
+          (todos || []).map(d => { const m = (d.id||'').match(/^[A-Za-z]+(\d+)$/); return m ? parseInt(m[1]) : null; }).filter(n => n !== null)
+        );
+        let n = 1; while (ocupados.has(n)) n++;
+        idFinal = pfx + String(n).padStart(dig, '0');
+      }
       const retry = await supabase.from('materias_primas').insert([{
         id:              idFinal,
         categoria:       form.categoria,
