@@ -151,20 +151,19 @@ function App() {
   }
 
   async function generarSiguienteId(categoria) {
-    const { data } = await supabase
-      .from('materias_primas')
-      .select('id')
-      .eq('categoria', categoria);
-    const ids = (data || []).map(d => d.id).filter(Boolean);
-    if (ids.length === 0) return '';
-    const primerID    = ids[0];
-    const prefixMatch = primerID.match(/^([A-Za-z]+)(\d+)$/);
+    const sample = materias.find(m => m.categoria === categoria);
+    if (!sample) return '';
+    const prefixMatch = (sample.id || '').match(/^([A-Za-z]+)(\d+)$/);
     if (!prefixMatch) return '';
     const prefix    = prefixMatch[1];
     const numDigits = prefixMatch[2].length;
+    const { data } = await supabase
+      .from('materias_primas')
+      .select('id')
+      .like('id', `${prefix}%`);
     let maxNum = 0;
-    ids.forEach(id => {
-      const match = id.match(/^[A-Za-z]+(\d+)$/);
+    (data || []).forEach(d => {
+      const match = (d.id || '').match(/^[A-Za-z]+(\d+)$/);
       if (match) {
         const num = parseInt(match[1]);
         if (num > maxNum) maxNum = num;
