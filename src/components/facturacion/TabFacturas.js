@@ -21,7 +21,7 @@ const radioStyle = (activo) => ({
   borderRadius: 8, padding: '8px 10px',
 });
 
-export default function TabFacturas({ mobile }) {
+export default function TabFacturas({ mobile, userRol }) {
 
   const [facturas,    setFacturas]    = useState([]);
   const [cargando,    setCargando]    = useState(true);
@@ -129,6 +129,13 @@ export default function TabFacturas({ mobile }) {
     return data || [];
   }
 
+  async function confirmarAnuladoSRI(facturaId) {
+    const { error } = await supabase.from('facturas')
+      .update({ anulado_sri: true }).eq('id', facturaId);
+    if (error) return alert('Error: ' + error.message);
+    cargarFacturas();
+  }
+
   // ── Anulación manual ──────────────────────────────────────
   async function abrirModalAnulManual(f) {
     setModalAnulManual(f);
@@ -161,7 +168,7 @@ export default function TabFacturas({ mobile }) {
       if (errNC) throw new Error(errNC.message);
 
       const { error: e1 } = await supabase.from('facturas')
-        .update({ estado: 'anulada' }).eq('id', f.id);
+        .update({ estado: 'anulada', anulado_sri: false }).eq('id', f.id);
       if (e1) throw new Error(e1.message);
 
       await supabase.from('cuentas_cobrar')
@@ -529,6 +536,12 @@ export default function TabFacturas({ mobile }) {
                           background: '#f3e5f5', color: '#8e44ad', padding: '2px 8px', borderRadius: 8,
                         }}>📋 Nota de venta</span>
                       )}
+                      {f.estado === 'anulada' && !f.anulado_sri && f.tipo !== 'nota_venta' && (
+                        <span style={{
+                          marginLeft: 6, fontSize: '10px',
+                          background: '#fff3cd', color: '#856404', padding: '2px 8px', borderRadius: 8,
+                        }}>⚠️ SRI pendiente</span>
+                      )}
                       {f._local && (
                         <span style={{
                           marginLeft: 6, fontSize: '10px',
@@ -644,6 +657,38 @@ export default function TabFacturas({ mobile }) {
                     {f.autorizacion_sri && (
                       <div style={{ fontSize: '11px', color: '#888', marginBottom: 8, fontFamily: 'monospace' }}>
                         🔑 Auth SRI: {f.autorizacion_sri}
+                      </div>
+                    )}
+
+                    {f.estado === 'anulada' && f.tipo !== 'nota_venta' && (
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10, flexWrap: 'wrap' }}>
+                        <span style={{
+                          fontSize: '12px', background: '#d4edda', color: '#155724',
+                          padding: '3px 10px', borderRadius: 6, fontWeight: '600',
+                        }}>✅ Anulado en sistema</span>
+                        {f.anulado_sri ? (
+                          <span style={{
+                            fontSize: '12px', background: '#d4edda', color: '#155724',
+                            padding: '3px 10px', borderRadius: 6, fontWeight: '600',
+                          }}>✅ Anulado en SRI</span>
+                        ) : (
+                          <>
+                            <span style={{
+                              fontSize: '12px', background: '#fff3cd', color: '#856404',
+                              padding: '3px 10px', borderRadius: 6, fontWeight: '600',
+                            }}>⚠️ Pendiente confirmar en SRI</span>
+                            {(userRol?.rol === 'admin' || userRol?.rol === 'contador') && (
+                              <button
+                                onClick={() => confirmarAnuladoSRI(f.id)}
+                                style={{
+                                  fontSize: '11px', background: '#27ae60', color: 'white',
+                                  border: 'none', borderRadius: 6, padding: '4px 12px',
+                                  cursor: 'pointer', fontWeight: '600',
+                                }}
+                              >✔ Confirmar en SRI</button>
+                            )}
+                          </>
+                        )}
                       </div>
                     )}
 

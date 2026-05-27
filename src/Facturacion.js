@@ -45,6 +45,7 @@ function Facturacion({ onVolver, onVolverMenu, userRol, currentUser }) {
         {tabActiva === 'facturas' && (
           <TabFacturas
             mobile={mobile}
+            userRol={userRol}
           />
         )}
         {tabActiva === 'cobros'   && (
