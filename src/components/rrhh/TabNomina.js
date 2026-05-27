@@ -42,20 +42,24 @@ function Fila({ label, valor, color = '#333', bold = false }) {
 }
 
 // ── Imprimir Rol de Pago (ventana nueva) ─────────────────────
-function imprimirRol(n, mesLabel, anio) {
-  const sueldoProp   = parseFloat(n.sueldo_prop         || 0);
-  const anticipo     = parseFloat(n.anticipo            || 0);
-  const compras      = parseFloat(n.compras_empresa     || 0);
-  const iessEmp      = parseFloat(n.iess_empleado       || 0);
-  const bonif        = parseFloat(n.bonificacion        || 0);
-  const bonosMens    = parseFloat(n.bonos_mensualizados || 0);
-  const totalExtras  = parseFloat(n.total_extras        || 0);
-  const totalAtrasos = parseFloat(n.total_atrasos       || 0);
-  const horasExtra   = parseFloat(n.horas_extra         || 0);
-  const valHExtra    = parseFloat(n.valor_hora_extra    || 0);
-  const horasAtraso  = parseFloat(n.horas_atraso        || 0);
-  const valHAtraso   = parseFloat(n.valor_hora_atraso   || 0);
-  const iessP        = parseFloat(n.empleados?.porcentaje_iess_empleado || 9.45);
+function imprimirRol(n, mesLabel, anio, movsEmpresa = []) {
+  const sueldoProp = parseFloat(n.sueldo_prop    || 0);
+  const iessEmp    = parseFloat(n.iess_empleado  || 0);
+  const iessP      = parseFloat(n.empleados?.porcentaje_iess_empleado || 9.45);
+
+  const sumaM      = tipo => movsEmpresa.filter(m => m.tipo === tipo).reduce((s, m) => s + parseFloat(m.valor || 0), 0);
+  const anticipo     = parseFloat(sumaM('anticipo').toFixed(2));
+  const compras      = parseFloat(sumaM('compra').toFixed(2));
+  const bonif        = parseFloat(sumaM('bono').toFixed(2));
+  const bonosMens    = parseFloat(sumaM('bono_mensualizado').toFixed(2));
+  const totalExtras  = parseFloat(sumaM('extra').toFixed(2));
+  const totalAtrasos = parseFloat(sumaM('atraso').toFixed(2));
+  const movExtrasP   = movsEmpresa.filter(m => m.tipo === 'extra');
+  const movAtrasosP  = movsEmpresa.filter(m => m.tipo === 'atraso');
+  const horasExtra   = movExtrasP.reduce((s, m)  => s + parseFloat(m.horas || 0), 0);
+  const valHExtra    = movExtrasP[0]  ? parseFloat(movExtrasP[0].valor_hora  || 0) : 0;
+  const horasAtraso  = movAtrasosP.reduce((s, m) => s + parseFloat(m.horas || 0), 0);
+  const valHAtraso   = movAtrasosP[0] ? parseFloat(movAtrasosP[0].valor_hora || 0) : 0;
 
   const subtotalBasicoIngresos  = sueldoProp;
   const subtotalDescuentosBasico = parseFloat((anticipo + compras + iessEmp).toFixed(2));
@@ -485,7 +489,7 @@ export default function TabNomina({ mobile }) {
                           background: '#f0f2f5', border: 'none', borderRadius: '8px',
                           padding: '7px 12px', cursor: 'pointer', fontSize: '12px'
                         }}>🔍 Detalle</button>
-                        <button onClick={() => imprimirRol(nomEmp, MESES[mes], anio)} style={{
+                        <button onClick={() => imprimirRol(nomEmp, MESES[mes], anio, movsEmp(emp.id))} style={{
                           background: '#2c1a4a', color: 'white', border: 'none',
                           borderRadius: '8px', padding: '7px 12px',
                           cursor: 'pointer', fontSize: '12px', fontWeight: 'bold'
@@ -696,18 +700,34 @@ export default function TabNomina({ mobile }) {
 
       {/* ── Modal: Detalle nómina ── */}
       {modalDetalle && (() => {
-        const n   = modalDetalle;
-        const sp  = parseFloat(n.sueldo_prop || 0);
-        const ant = parseFloat(n.anticipo    || 0);
-        const com = parseFloat(n.compras_empresa || 0);
-        const ies = parseFloat(n.iess_empleado  || 0);
-        const bon = parseFloat(n.bonificacion        || 0);
-        const bm  = parseFloat(n.bonos_mensualizados || 0);
-        const tex = parseFloat(n.total_extras  || 0);
-        const tat = parseFloat(n.total_atrasos || 0);
+        const n     = modalDetalle;
+        const empId = n.empleado_id;
+        const sp    = parseFloat(n.sueldo_prop    || 0);
+        const ies   = parseFloat(n.iess_empleado  || 0);
         const iessP = parseFloat(n.empleados?.porcentaje_iess_empleado || 9.45);
+
+        // Leer movimientos en vivo (no el registro guardado que puede estar desactualizado)
+        const movsVivos = movimientos.filter(m => m.empleado_id === empId);
+        const sumaViva  = tipo => movsVivos.filter(m => m.tipo === tipo).reduce((s, m) => s + parseFloat(m.valor || 0), 0);
+        const ant = parseFloat(sumaViva('anticipo').toFixed(2));
+        const com = parseFloat(sumaViva('compra').toFixed(2));
+        const bon = parseFloat(sumaViva('bono').toFixed(2));
+        const bm  = parseFloat(sumaViva('bono_mensualizado').toFixed(2));
+        const tex = parseFloat(sumaViva('extra').toFixed(2));
+        const tat = parseFloat(sumaViva('atraso').toFixed(2));
+
+        const movExtrasV  = movsVivos.filter(m => m.tipo === 'extra');
+        const movAtrasosV = movsVivos.filter(m => m.tipo === 'atraso');
+        const hExtra  = movExtrasV.reduce((s, m)  => s + parseFloat(m.horas || 0), 0);
+        const vhExtra = movExtrasV[0]  ? parseFloat(movExtrasV[0].valor_hora  || 0) : 0;
+        const hAtraso = movAtrasosV.reduce((s, m) => s + parseFloat(m.horas || 0), 0);
+        const vhAtraso= movAtrasosV[0] ? parseFloat(movAtrasosV[0].valor_hora || 0) : 0;
+
         const totalBasico = parseFloat((sp - ant - com - ies).toFixed(2));
         const totalBonos  = parseFloat((bon + bm + tex - tat).toFixed(2));
+        const netoVivo    = parseFloat((totalBasico + totalBonos).toFixed(2));
+
+        const desactualizado = Math.abs(netoVivo - parseFloat(n.sueldo_neto || 0)) > 0.01;
         return (
           <div style={{
             position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)',
@@ -726,7 +746,7 @@ export default function TabNomina({ mobile }) {
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: '8px' }}>
-                  <button onClick={() => imprimirRol(n, MESES[mes], anio)} style={{
+                  <button onClick={() => imprimirRol(n, MESES[mes], anio, movimientos.filter(m => m.empleado_id === n.empleado_id))} style={{
                     background: '#2c1a4a', color: 'white', border: 'none',
                     borderRadius: '8px', padding: '7px 14px',
                     cursor: 'pointer', fontSize: '12px', fontWeight: 'bold'
@@ -739,9 +759,15 @@ export default function TabNomina({ mobile }) {
               </div>
 
               <div style={{ fontWeight: 'bold', fontSize: '15px', color: '#2c1a4a' }}>{n.empleados?.nombre}</div>
-              <div style={{ fontSize: '12px', color: '#888', marginBottom: '16px' }}>
+              <div style={{ fontSize: '12px', color: '#888', marginBottom: desactualizado ? '8px' : '16px' }}>
                 Cédula: {n.empleados?.cedula || '—'} · {n.dias_trabajados} días
               </div>
+              {desactualizado && (
+                <div style={{ background: '#fff3cd', color: '#856404', fontSize: '11px', fontWeight: '600',
+                  padding: '6px 12px', borderRadius: '8px', marginBottom: '12px' }}>
+                  ⚠️ Hay movimientos nuevos — regenera la nómina para actualizar el neto oficial
+                </div>
+              )}
 
               <div style={{ display: 'grid', gridTemplateColumns: mobile ? '1fr' : '1fr 1fr', gap: '14px' }}>
                 {/* Básico */}
@@ -765,8 +791,8 @@ export default function TabNomina({ mobile }) {
                   </div>
                   {bon > 0 && <Fila label="Bonificación"       valor={bon} color="#27ae60" />}
                   {bm  > 0 && <Fila label="Bonos mensualiz."   valor={bm}  color="#27ae60" />}
-                  {tex > 0 && <Fila label={`${n.horas_extra}h Extra × $${parseFloat(n.valor_hora_extra||0).toFixed(2)}`} valor={tex} color="#27ae60" />}
-                  {tat > 0 && <Fila label={`${n.horas_atraso}h Atraso × $${parseFloat(n.valor_hora_atraso||0).toFixed(2)}`} valor={-tat} color="#e74c3c" />}
+                  {tex > 0 && <Fila label={`${hExtra}h Extra × $${vhExtra.toFixed(2)}`} valor={tex} color="#27ae60" />}
+                  {tat > 0 && <Fila label={`${hAtraso}h Atraso × $${vhAtraso.toFixed(2)}`} valor={-tat} color="#e74c3c" />}
                   <div style={{ borderTop: '2px solid #2c1a4a', margin: '8px 0 4px' }} />
                   <Fila label="TOTAL" valor={totalBonos} color="#2c1a4a" bold />
                 </div>
@@ -781,7 +807,7 @@ export default function TabNomina({ mobile }) {
                   NETO TOTAL A PAGAR
                 </div>
                 <div style={{ color: '#a9dfbf', fontWeight: 'bold', fontSize: '24px' }}>
-                  ${parseFloat(n.sueldo_neto || 0).toFixed(2)}
+                  ${netoVivo.toFixed(2)}
                 </div>
               </div>
               <div style={{ marginTop: '8px', fontSize: '11px', color: '#888', textAlign: 'center' }}>
