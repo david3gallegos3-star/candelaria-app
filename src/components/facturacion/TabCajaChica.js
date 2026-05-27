@@ -213,12 +213,16 @@ export default function TabCajaChica({ mobile, currentUser }) {
     rows.push(['','','','Efectivo', n(tEfect)]);
     rows.push([]);
 
-    rows.push(['--- ENTREGAS A ADMINISTRACIÓN ---']);
-    rows.push(['CANTIDAD','RECIBE']);
+    rows.push(['--- DEPÓSITO AL BANCO ---']);
+    rows.push(['MONTO','BANCO / REFERENCIA']);
     entregas.filter(e=>e.cantidad||e.recibe).forEach(e => {
       rows.push([n(e.cantidad), e.recibe||'']);
     });
-    rows.push(['TOTAL ENTREGADO', n(tEntregas)]);
+    rows.push(['TOTAL DEPOSITADO', n(tEntregas)]);
+    rows.push([]);
+    const sobrante = parseFloat(inicial||0) + tEfect - tGastos - tEntregas;
+    rows.push(['SOBRANTE EN CAJA', n(sobrante)]);
+    rows.push(['  (inicial + ef. - gastos - depósito)','']);
     rows.push([]);
     rows.push(['OBSERVACIONES', observaciones||'']);
 
@@ -298,8 +302,8 @@ export default function TabCajaChica({ mobile, currentUser }) {
     <tr><td colspan="4" class="r"><b>TOTAL</b></td><td class="r"><b>${tEfect.toFixed(2)}</b></td></tr>
     </tbody></table>
 
-    <div class="sec">ENTREGA EFECTIVO / ADMINISTRACIÓN</div>
-    <table><thead><tr><th>CANTIDAD</th><th>RECIBE</th><th>FIRMA</th></tr></thead><tbody>
+    <div class="sec">DEPÓSITO AL BANCO</div>
+    <table><thead><tr><th>MONTO</th><th>BANCO / REFERENCIA</th><th>FIRMA</th></tr></thead><tbody>
     ${entregas.filter(e=>e.cantidad||e.recibe).map(e=>`<tr><td class="r">${parseFloat(e.cantidad||0).toFixed(2)}</td><td>${e.recibe||''}</td><td>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</td></tr>`).join('')}
     <tr><td class="r"><b>${tEntregas.toFixed(2)}</b></td><td colspan="2"></td></tr>
     </tbody></table>
@@ -310,7 +314,11 @@ export default function TabCajaChica({ mobile, currentUser }) {
       <div class="tot"><div class="tlbl">TOTAL CHEQUES</div><div class="tval">${tCheq.toFixed(2)}</div></div>
       <div class="tot"><div class="tlbl">CIERRE</div><div class="tval">${parseFloat(cierre||0).toFixed(2)}</div></div>
       <div class="tot"><div class="tlbl">TOTAL EFECTIVO</div><div class="tval">${tEfect.toFixed(2)}</div></div>
-      <div></div>
+      <div class="tot" style="border:2px solid #27ae60;background:${(parseFloat(inicial||0)+tEfect-tGastos-tEntregas)>=0?'#f0fff4':'#fde8e8'}">
+        <div class="tlbl" style="color:${(parseFloat(inicial||0)+tEfect-tGastos-tEntregas)>=0?'#27ae60':'#e74c3c'}">SOBRANTE EN CAJA</div>
+        <div class="tval" style="color:${(parseFloat(inicial||0)+tEfect-tGastos-tEntregas)>=0?'#27ae60':'#e74c3c'}">${(parseFloat(inicial||0)+tEfect-tGastos-tEntregas).toFixed(2)}</div>
+        <div style="font-size:7pt;color:#999">inicial + ef. - gastos - depósito</div>
+      </div>
     </div>
     <div class="obs"><b>OBSERVACIONES:</b> ${observaciones || ''}</div>
     <script>window.onload=function(){window.print();}<\/script>
@@ -670,17 +678,17 @@ export default function TabCajaChica({ mobile, currentUser }) {
         )}
       </div>
 
-      {/* ENTREGAS A ADMINISTRACIÓN */}
+      {/* DEPÓSITO AL BANCO */}
       <div style={{ background:'white', borderRadius:12, padding:'16px', marginBottom:12, boxShadow:'0 2px 8px rgba(0,0,0,0.06)' }}>
         <div style={{ fontWeight:'bold', fontSize:'13px', color:'#1a1a2e', marginBottom:10,
           display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-          📤 ENTREGA EFECTIVO / ADMINISTRACIÓN
+          🏦 DEPÓSITO AL BANCO
           <span style={{ fontSize:'13px', color:'#8e44ad', fontWeight:'bold' }}>Total: ${tEntregas.toFixed(2)}</span>
         </div>
         <table style={{ width:'100%', borderCollapse:'collapse' }}>
           <thead><tr>
-            <th style={{ ...thS, width:160 }}>CANTIDAD ($)</th>
-            <th style={thS}>RECIBE</th>
+            <th style={{ ...thS, width:160 }}>MONTO ($)</th>
+            <th style={thS}>BANCO / REFERENCIA</th>
             <th style={{ ...thS, width:50 }}></th>
           </tr></thead>
           <tbody>
@@ -692,7 +700,7 @@ export default function TabCajaChica({ mobile, currentUser }) {
                 </td>
                 <td style={tdS}>
                   <input value={e.recibe} onChange={ev => updE(i,'recibe',ev.target.value)}
-                    placeholder="Nombre de quien recibe" style={{ ...inp, width:'100%', padding:'4px 8px' }} />
+                    placeholder="Ej: Banco Pichincha, N° depósito..." style={{ ...inp, width:'100%', padding:'4px 8px' }} />
                 </td>
                 <td style={{ ...tdS, textAlign:'center' }}>
                   <button onClick={() => setEntregas(es => es.filter((_,idx) => idx !== i))}
@@ -718,13 +726,17 @@ export default function TabCajaChica({ mobile, currentUser }) {
       </div>
 
       {/* Resumen + Botones */}
+      {(() => {
+        const sobrante = parseFloat(inicial||0) + tEfect - tGastos - tEntregas;
+        const sobraColor = sobrante >= 0 ? '#27ae60' : '#e74c3c';
+        return (
       <div style={{ background:'white', borderRadius:12, padding:'16px', boxShadow:'0 2px 8px rgba(0,0,0,0.06)',
         display:'flex', gap:12, flexWrap:'wrap', alignItems:'center' }}>
         <div style={{ display:'flex', gap:20, flex:1, flexWrap:'wrap' }}>
           {[
-            { label:'COBROS',    val: tCobros,   color:'#27ae60' },
-            { label:'GASTOS',    val: tGastos,   color:'#e74c3c' },
-            { label:'ENTREGADO', val: tEntregas, color:'#8e44ad' },
+            { label:'COBROS EFECTIVO', val: tEfect,    color:'#27ae60' },
+            { label:'GASTOS',          val: tGastos,   color:'#e74c3c' },
+            { label:'DEPÓSITO BANCO',  val: tEntregas, color:'#8e44ad' },
           ].map(x => (
             <div key={x.label} style={{ textAlign:'center' }}>
               <div style={{ fontSize:'10px', color:'#888', fontWeight:700 }}>{x.label}</div>
@@ -736,6 +748,12 @@ export default function TabCajaChica({ mobile, currentUser }) {
             <div style={{ fontSize:'16px', fontWeight:'bold', color:'#1a5276' }}>
               ${parseFloat(inicial||0).toFixed(2)} → ${parseFloat(cierre||0).toFixed(2)}
             </div>
+          </div>
+          <div style={{ textAlign:'center', background: sobrante >= 0 ? '#f0fff4' : '#fde8e8',
+            border: `2px solid ${sobraColor}`, borderRadius:10, padding:'6px 16px' }}>
+            <div style={{ fontSize:'10px', color:sobraColor, fontWeight:700 }}>SOBRANTE EN CAJA</div>
+            <div style={{ fontSize:'22px', fontWeight:'bold', color:sobraColor }}>${sobrante.toFixed(2)}</div>
+            <div style={{ fontSize:'9px', color:'#aaa' }}>inicial + ef. - gastos - depósito</div>
           </div>
         </div>
         <div style={{ display:'flex', gap:8 }}>
@@ -758,6 +776,8 @@ export default function TabCajaChica({ mobile, currentUser }) {
           </button>
         </div>
       </div>
+        );
+      })()}
     </div>
   );
 }
