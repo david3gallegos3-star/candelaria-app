@@ -9,16 +9,33 @@ export function useRealtime(tables, onRefresh) {
 
   useEffect(() => {
     const tablesArr = Array.isArray(tables) ? tables : [tables];
-    const channelName = `rt-${channelCount++}-${[...tablesArr].sort().join('-')}`;
-    const canal = supabase.channel(channelName);
+    let canal = null;
 
-    tablesArr.forEach(table => {
-      canal.on('postgres_changes', { event: '*', schema: 'public', table }, () => {
-        onRefreshRef.current();
+    function suscribir() {
+      if (canal) supabase.removeChannel(canal);
+      const channelName = `rt-${channelCount++}-${[...tablesArr].sort().join('-')}`;
+      canal = supabase.channel(channelName);
+      tablesArr.forEach(table => {
+        canal.on('postgres_changes', { event: '*', schema: 'public', table }, () => {
+          onRefreshRef.current();
+        });
       });
-    });
+      canal.subscribe();
+    }
 
-    canal.subscribe();
-    return () => { supabase.removeChannel(canal); };
+    function alVolverVisible() {
+      if (document.visibilityState === 'visible') {
+        onRefreshRef.current();
+        suscribir();
+      }
+    }
+
+    suscribir();
+    document.addEventListener('visibilitychange', alVolverVisible);
+
+    return () => {
+      document.removeEventListener('visibilitychange', alVolverVisible);
+      if (canal) supabase.removeChannel(canal);
+    };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 }
