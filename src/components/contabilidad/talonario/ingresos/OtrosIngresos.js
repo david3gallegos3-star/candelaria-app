@@ -4,7 +4,7 @@ import { supabase } from '../../../../supabase';
 import { useTalonario } from '../TalonarioContext';
 import { TablaCrud, FORMAS_PAGO } from '../shared/TablaCrud';
 
-const VACIO = { fecha: '', descripcion: '', monto: '', forma_pago: '01', comentario: '' };
+const VACIO = { fecha: '', empresa: '', descripcion: '', monto: '', forma_pago: '01', comentario: '' };
 
 export default function OtrosIngresos() {
   const { mes, año, esAdminContador } = useTalonario();
@@ -27,8 +27,9 @@ export default function OtrosIngresos() {
   async function guardar() {
     if (!form.descripcion || !form.monto) return alert('Descripción y monto son requeridos');
     setGuardando(true);
-    const payload = { mes, año, fecha: form.fecha || null, descripcion: form.descripcion,
-      monto: parseFloat(form.monto), forma_pago: form.forma_pago, comentario: form.comentario || null };
+    const payload = { mes, año, fecha: form.fecha || null, empresa: form.empresa || null,
+      descripcion: form.descripcion, monto: parseFloat(form.monto),
+      forma_pago: form.forma_pago, comentario: form.comentario || null };
     if (form.id) {
       await supabase.from('talonario_otros_ingresos').update(payload).eq('id', form.id);
     } else {
@@ -46,6 +47,7 @@ export default function OtrosIngresos() {
 
   const columnas = [
     { key: 'fecha',       label: 'Fecha' },
+    { key: 'empresa',     label: 'Empresa', render: f => f.empresa || '—' },
     { key: 'descripcion', label: 'Descripción' },
     { key: 'monto',       label: 'Monto', render: f => `$${parseFloat(f.monto||0).toFixed(2)}`, align: 'right' },
     { key: 'forma_pago',  label: 'Forma Pago', render: f => `${f.forma_pago === '01' ? 'Efectivo' : 'Transf./Depósito'} (${f.forma_pago})` },
@@ -75,6 +77,7 @@ export default function OtrosIngresos() {
             </h3>
             {[
               ['fecha',       'Fecha',       'date'],
+              ['empresa',     'Empresa (ej: Candelaria, Otra S.A.)', 'text'],
               ['descripcion', 'Descripción', 'text'],
               ['monto',       'Monto ($)',   'number'],
               ['comentario',  'Comentario',  'text'],
