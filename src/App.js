@@ -22,6 +22,7 @@ import RRHH          from './RRHH';
 import Trazabilidad  from './Trazabilidad';
 import Dashboard     from './Dashboard';
 import LibroDiario   from './LibroDiario';
+import Talonario    from './Talonario';
 import ModoBackup    from './components/ModoBackup';
 import './App.css';
 import html2canvas from 'html2canvas';
@@ -1109,6 +1110,13 @@ if (pantalla === 'conciliacion')
 
 if (pantalla === 'rrhh')
   return <RRHH
+    onVolver={volverAtras}
+    onVolverMenu={() => setPantalla('menuPrincipal')}
+    userRol={userRol}
+  />;
+
+if (pantalla === 'talonario')
+  return <Talonario
     onVolver={volverAtras}
     onVolverMenu={() => setPantalla('menuPrincipal')}
     userRol={userRol}

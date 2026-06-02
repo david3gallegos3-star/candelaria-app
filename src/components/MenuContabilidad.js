@@ -32,6 +32,12 @@ const SUBMODULOS = [
     color: '#3498db', border: 'rgba(52,152,219,0.4)',
     destino: 'clientes',
   },
+  {
+    emoji: '📒', titulo: 'Talonario',
+    desc: 'Resumen mensual de ingresos y egresos',
+    color: '#1a5276', border: 'rgba(26,82,118,0.4)',
+    destino: 'talonario',
+  },
 ];
 
 async function borrarDatosPrueba() {
