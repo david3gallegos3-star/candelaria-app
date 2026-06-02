@@ -1,5 +1,5 @@
 // src/components/contabilidad/talonario/ResumenTalonario.js
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { supabase } from '../../../supabase';
 import { useTalonario } from './TalonarioContext';
 
@@ -13,8 +13,6 @@ export default function ResumenTalonario() {
   const [cargando, setCargando] = useState(false);
   const [saldoBanco, setSaldoBanco] = useState('');
   const [editandoSaldo, setEditandoSaldo] = useState(false);
-  const [cargandoIA, setCargandoIA] = useState(false);
-  const fileRef = useRef(null);
 
   useEffect(() => { cargar(); }, [mes, año]);
 
@@ -75,48 +73,6 @@ export default function ResumenTalonario() {
     setEditandoSaldo(false);
   }
 
-  async function analizarEstado(e) {
-    const file = e.target.files[0];
-    if (!file) return;
-    e.target.value = '';
-    setCargandoIA(true);
-    try {
-      let tipo, contenido;
-      const isPdf = file.name.toLowerCase().endsWith('.pdf');
-      if (isPdf) {
-        const buf = await file.arrayBuffer();
-        const bytes = new Uint8Array(buf);
-        let bin = '';
-        bytes.forEach(b => (bin += String.fromCharCode(b)));
-        contenido = btoa(bin);
-        tipo = 'pdf';
-      } else {
-        const XLSX = await import('xlsx');
-        const buf = await file.arrayBuffer();
-        const wb = XLSX.read(buf, { type: 'array' });
-        contenido = wb.SheetNames.map(n => {
-          const rows = XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, defval: '' });
-          return `=== ${n} ===\n` + rows.map(r => r.join('\t')).join('\n');
-        }).join('\n\n');
-        tipo = 'excel';
-      }
-      const { data, error } = await supabase.functions.invoke('extraer-saldo-banco', {
-        body: { tipo, contenido, nombre: file.name },
-      });
-      if (error) throw new Error(error.message);
-      if (data?.saldo) {
-        setSaldoBanco(data.saldo);
-        setEditandoSaldo(true);
-      } else {
-        alert('La IA no pudo identificar el saldo. Por favor ingrésalo manualmente.');
-        setEditandoSaldo(true);
-      }
-    } catch (err) {
-      alert('Error al analizar: ' + err.message + '\nIngresa el saldo manualmente.');
-      setEditandoSaldo(true);
-    }
-    setCargandoIA(false);
-  }
 
   if (cargando || !datos) return <div style={{ padding: 40, textAlign: 'center', color: '#888' }}>Calculando resumen...</div>;
 
@@ -209,37 +165,22 @@ export default function ResumenTalonario() {
           {titulo('ACTIVOS', '#555')}
           {fila('(+) Cuentas por cobrar', cxcPendiente, '#27ae60')}
 
-          <div style={{ marginTop:10, background:'#1a2a4a', color:'white', padding:'7px 10px', borderRadius:6, fontSize:12 }}>
-            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-              <span>💳 Saldo cuenta corriente</span>
-              {editandoSaldo ? (
-                <div style={{ display:'flex', gap:6 }}>
-                  <input type="number" value={saldoBanco} onChange={e => setSaldoBanco(e.target.value)}
-                    style={{ width:100, padding:'3px 6px', borderRadius:4, border:'none', fontSize:12 }} />
-                  <button onClick={() => guardarSaldo(saldoBanco)}
-                    style={{ background:'#27ae60', color:'white', border:'none', borderRadius:4,
-                      padding:'3px 8px', cursor:'pointer', fontSize:11 }}>✓</button>
-                  <button onClick={() => setEditandoSaldo(false)}
-                    style={{ background:'transparent', color:'#aaa', border:'none',
-                      padding:'3px 4px', cursor:'pointer', fontSize:11 }}>✕</button>
-                </div>
-              ) : (
-                <span onClick={() => esAdminContador && setEditandoSaldo(true)}
-                  style={{ fontWeight:'bold', cursor: esAdminContador ? 'pointer' : 'default' }}>
-                  {saldoBanco ? `$${parseFloat(saldoBanco).toFixed(2)}` : (esAdminContador ? '✏️ Ingresar' : '—')}
-                </span>
-              )}
-            </div>
-            {esAdminContador && (
-              <div style={{ marginTop:6, display:'flex', justifyContent:'flex-end' }}>
-                <input ref={fileRef} type="file" accept=".pdf,.xlsx,.xls,.csv"
-                  style={{ display:'none' }} onChange={analizarEstado} />
-                <button onClick={() => fileRef.current.click()} disabled={cargandoIA}
-                  style={{ background: cargandoIA ? '#555' : '#2980b9', color:'white', border:'none',
-                    borderRadius:4, padding:'4px 10px', cursor: cargandoIA ? 'default' : 'pointer', fontSize:11 }}>
-                  {cargandoIA ? '⏳ Analizando...' : '🤖 Extraer con IA'}
-                </button>
+          <div style={{ marginTop:10, background:'#1a2a4a', color:'white', padding:'7px 10px',
+            borderRadius:6, display:'flex', justifyContent:'space-between', alignItems:'center', fontSize:12 }}>
+            <span>💳 Saldo cuenta corriente</span>
+            {editandoSaldo ? (
+              <div style={{ display:'flex', gap:6 }}>
+                <input type="number" value={saldoBanco} onChange={e => setSaldoBanco(e.target.value)}
+                  style={{ width:100, padding:'3px 6px', borderRadius:4, border:'none', fontSize:12 }} />
+                <button onClick={() => guardarSaldo(saldoBanco)}
+                  style={{ background:'#27ae60', color:'white', border:'none', borderRadius:4,
+                    padding:'3px 8px', cursor:'pointer', fontSize:11 }}>✓</button>
               </div>
+            ) : (
+              <span onClick={() => esAdminContador && setEditandoSaldo(true)}
+                style={{ fontWeight:'bold', cursor: esAdminContador ? 'pointer' : 'default' }}>
+                {saldoBanco ? `$${parseFloat(saldoBanco).toFixed(2)}` : (esAdminContador ? '✏️ Ingresar' : '—')}
+              </span>
             )}
           </div>
         </div>
