@@ -52,11 +52,9 @@ function cuerpoTicket(f, detalle) {
   `;
 }
 
-export function imprimirTicket(factura, detalle) {
-  const cuerpo = cuerpoTicket(factura, detalle);
-  const html = `<!DOCTYPE html><html><head>
+function generarHtml(cuerpo, paraQzTray = false) {
+  return `<!DOCTYPE html><html><head>
     <meta charset="utf-8">
-    <title>Ticket ${factura.numero || ''}</title>
     <style>
       @page { size: 80mm auto; margin: 3mm 4mm; }
       body { font-family: 'Courier New', monospace; width: 72mm; margin: 0; padding: 0; }
@@ -66,11 +64,53 @@ export function imprimirTicket(factura, detalle) {
     <div style="border-top:2px dashed #000;margin:10px 0;text-align:center;font-size:9px;letter-spacing:2px">COPIA CLIENTE</div>
     <div>${cuerpo}</div>
     <div style="border-top:2px dashed #000;margin:10px 0;text-align:center;font-size:9px;letter-spacing:2px">COPIA EMPRESA</div>
-    <script>setTimeout(function(){ window.print(); }, 400);<\/script>
+    ${paraQzTray ? '' : '<script>setTimeout(function(){ window.print(); }, 400);<\/script>'}
   </body></html>`;
+}
 
-  const win = window.open('', '_blank', 'width=380,height=600,left=200,top=100');
-  if (!win) { alert('Permite ventanas emergentes para imprimir el ticket'); return; }
-  win.document.write(html);
-  win.document.close();
+async function imprimirConQzTray(html) {
+  const qz = window.qz;
+  if (!qz) return false;
+
+  try {
+    // Configuración sin certificado (uso local)
+    qz.security.setCertificatePromise((resolve) => resolve());
+    qz.security.setSignatureAlgorithm('SHA512');
+    qz.security.setSignaturePromise(() => (resolve) => resolve());
+
+    if (!qz.websocket.isActive()) {
+      await qz.websocket.connect({ retries: 1, delay: 0.5 });
+    }
+
+    const printer = await qz.printers.getDefault();
+    const config  = qz.configs.create(printer, {
+      size:    { width: 80, height: null },
+      units:   'mm',
+      margins: { top: 3, right: 4, bottom: 3, left: 4 },
+      copies:  1, // El HTML ya incluye las 2 copias
+    });
+
+    await qz.print(config, [{ type: 'html', format: 'plain', data: html }]);
+    return true;
+  } catch (e) {
+    console.warn('QZ Tray no disponible, usando ventana del navegador:', e.message);
+    return false;
+  }
+}
+
+export async function imprimirTicket(factura, detalle) {
+  const cuerpo = cuerpoTicket(factura, detalle);
+
+  // Intentar QZ Tray primero (impresión directa sin diálogo)
+  const htmlQz = generarHtml(cuerpo, true);
+  const usóQz  = await imprimirConQzTray(htmlQz);
+
+  // Fallback: ventana del navegador con window.print()
+  if (!usóQz) {
+    const html = generarHtml(cuerpo, false);
+    const win  = window.open('', '_blank', 'width=380,height=600,left=200,top=100');
+    if (!win) { alert('Permite ventanas emergentes para imprimir el ticket'); return; }
+    win.document.write(html);
+    win.document.close();
+  }
 }
