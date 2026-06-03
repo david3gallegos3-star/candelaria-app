@@ -28,7 +28,7 @@ Reglas importantes:
 - saldo = saldo pendiente total para tarjetas, saldo disponible para cuentas
 - transacciones: EXTRAER CADA FILA del detalle de movimientos — consumos, pagos, diferidos, intereses
 - tipo_transaccion: "consumo" (compras/débitos), "pago" (pagos al banco), "diferido" (cuotas diferidas), "interes" (intereses/cargos financieros), "prestamo" (cuotas de préstamo)
-- Para diferidos/cuotas: incluir cuota_actual y cuota_total si aparecen
+- CUOTAS DE DIFERIDOS (MUY IMPORTANTE): En los estados de cuenta ecuatorianos, las filas con tipo DIF tienen una columna con formato "NN/TT" que indica cuota_actual/cuota_total. Por ejemplo "07/12" significa cuota 7 de 12, "02/03" significa cuota 2 de 3, "02/05" significa cuota 2 de 5. SIEMPRE extraer estos valores para TODAS las filas de tipo DIF/diferido.
 - NO omitir transacciones — incluir todas aunque sean pequeñas
 - Si no identificas un campo, usa null
 
