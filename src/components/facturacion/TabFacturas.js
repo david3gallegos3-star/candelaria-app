@@ -25,8 +25,15 @@ export default function TabFacturas({ mobile, userRol }) {
 
   const [facturas,    setFacturas]    = useState([]);
   const [cargando,    setCargando]    = useState(true);
-  const [filtroTexto, setFiltroTexto] = useState('');
-  const [filtroEstado,setFiltroEstado]= useState('todas');
+  const [filtroEstado,    setFiltroEstado]    = useState('todas');
+  const [filtroModo,      setFiltroModo]      = useState('numero');
+  const [filtroNumero,    setFiltroNumero]    = useState('');
+  const [filtroCliente,   setFiltroCliente]   = useState('');
+  const [filtroVendedor,  setFiltroVendedor]  = useState('');
+  const [filtroDesde,     setFiltroDesde]     = useState('');
+  const [filtroHasta,     setFiltroHasta]     = useState('');
+  const [correoEnvio,     setCorreoEnvio]     = useState({});
+  const [reenviando,      setReenviando]      = useState({});
   const [expandida,   setExpandida]   = useState(null);
   const [detalle,     setDetalle]     = useState([]);
   const [msgExito,    setMsgExito]    = useState('');
@@ -430,14 +437,26 @@ export default function TabFacturas({ mobile, userRol }) {
   }
 
   // ── Filtros ───────────────────────────────────────────────
+  const vendedoresUnicos = [...new Set(
+    facturas.map(f => f.vendedor_nombre || f.vendedor || '').filter(Boolean)
+  )].sort();
+
   const facturasFiltradas = facturas.filter(f => {
-    const textoOk = !filtroTexto ||
-      f.numero?.toLowerCase().includes(filtroTexto.toLowerCase()) ||
-      (f.cliente_nombre || '').toLowerCase().includes(filtroTexto.toLowerCase());
+    let modoOk = true;
+    if (filtroModo === 'numero' && filtroNumero)
+      modoOk = (f.numero || '').toLowerCase().includes(filtroNumero.toLowerCase());
+    else if (filtroModo === 'cliente' && filtroCliente)
+      modoOk = (f.cliente_nombre || '').toLowerCase().includes(filtroCliente.toLowerCase());
+    else if (filtroModo === 'vendedor' && filtroVendedor)
+      modoOk = (f.vendedor_nombre || f.vendedor || '') === filtroVendedor;
+    else if (filtroModo === 'periodo') {
+      const fecha = (f.created_at || '').split('T')[0];
+      modoOk = (!filtroDesde || fecha >= filtroDesde) && (!filtroHasta || fecha <= filtroHasta);
+    }
     const estadoOk = filtroEstado === 'nota_venta'
       ? f.tipo === 'nota_venta'
       : filtroEstado === 'todas' || f.estado === filtroEstado;
-    return textoOk && estadoOk;
+    return modoOk && estadoOk;
   });
 
   const totalFiltrado = facturasFiltradas
@@ -465,33 +484,71 @@ export default function TabFacturas({ mobile, userRol }) {
       <div style={{
         background: 'white', borderRadius: '12px',
         padding: '12px 16px', marginBottom: 14,
-        display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center',
         boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
       }}>
-        <input
-          type="text"
-          value={filtroTexto}
-          onChange={e => setFiltroTexto(e.target.value)}
-          placeholder="🔍 Buscar por número o cliente..."
-          style={{ ...inputStyle, flex: 1, minWidth: 180 }}
-        />
-        <select
-          value={filtroEstado}
-          onChange={e => setFiltroEstado(e.target.value)}
-          style={inputStyle}
-        >
-          <option value="todas">Todas</option>
-          <option value="autorizada">Autorizadas</option>
-          <option value="borrador">Borradores</option>
-          <option value="anulada">Anuladas</option>
-          <option value="nota_venta">Notas de venta</option>
-        </select>
-        <div style={{
-          fontSize: '13px', color: '#555',
-          padding: '8px 12px', background: '#f0f7ff',
-          borderRadius: 8, fontWeight: 'bold', whiteSpace: 'nowrap',
-        }}>
-          {facturasFiltradas.length} facturas · ${totalFiltrado.toFixed(2)}
+        {/* Fila 1: modos radio + estado */}
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
+          {[
+            { id: 'numero',   label: '# Factura' },
+            { id: 'periodo',  label: '📅 Período' },
+            { id: 'cliente',  label: '👤 Cliente' },
+            { id: 'vendedor', label: '🧑‍💼 Vendedor' },
+          ].map(m => (
+            <button key={m.id} onClick={() => setFiltroModo(m.id)} style={{
+              padding: '6px 12px', borderRadius: 7, cursor: 'pointer',
+              fontSize: '12px', fontWeight: 'bold',
+              background: filtroModo === m.id ? '#1a2a4a' : '#f0f2f5',
+              color:      filtroModo === m.id ? 'white'   : '#555',
+              border:     filtroModo === m.id ? '2px solid #1a2a4a' : '2px solid transparent',
+            }}>{m.label}</button>
+          ))}
+          <select value={filtroEstado} onChange={e => setFiltroEstado(e.target.value)}
+            style={{ ...inputStyle, marginLeft: 'auto' }}>
+            <option value="todas">Todas</option>
+            <option value="autorizada">Autorizadas</option>
+            <option value="borrador">Borradores</option>
+            <option value="anulada">Anuladas</option>
+            <option value="nota_venta">Notas de venta</option>
+          </select>
+        </div>
+
+        {/* Fila 2: control según modo */}
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          {filtroModo === 'numero' && (
+            <input type="text" value={filtroNumero}
+              onChange={e => setFiltroNumero(e.target.value)}
+              placeholder="🔍 Nº factura..."
+              style={{ ...inputStyle, flex: 1, minWidth: 180 }} />
+          )}
+          {filtroModo === 'cliente' && (
+            <input type="text" value={filtroCliente}
+              onChange={e => setFiltroCliente(e.target.value)}
+              placeholder="🔍 Nombre del cliente..."
+              style={{ ...inputStyle, flex: 1, minWidth: 180 }} />
+          )}
+          {filtroModo === 'vendedor' && (
+            <select value={filtroVendedor} onChange={e => setFiltroVendedor(e.target.value)}
+              style={{ ...inputStyle, flex: 1 }}>
+              <option value="">— Todos los vendedores —</option>
+              {vendedoresUnicos.map(v => <option key={v} value={v}>{v}</option>)}
+            </select>
+          )}
+          {filtroModo === 'periodo' && (
+            <>
+              <label style={{ fontSize: '12px', color: '#555' }}>Desde</label>
+              <input type="date" value={filtroDesde} onChange={e => setFiltroDesde(e.target.value)}
+                style={inputStyle} />
+              <label style={{ fontSize: '12px', color: '#555' }}>Hasta</label>
+              <input type="date" value={filtroHasta} onChange={e => setFiltroHasta(e.target.value)}
+                style={inputStyle} />
+            </>
+          )}
+          <div style={{
+            fontSize: '13px', color: '#555', padding: '8px 12px',
+            background: '#f0f7ff', borderRadius: 8, fontWeight: 'bold', whiteSpace: 'nowrap',
+          }}>
+            {facturasFiltradas.length} facturas · ${totalFiltrado.toFixed(2)}
+          </div>
         </div>
       </div>
 
