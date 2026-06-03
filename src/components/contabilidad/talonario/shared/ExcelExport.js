@@ -12,9 +12,10 @@ export default function ExcelExport() {
     try {
       const XLSX = await import('xlsx');
 
+      const periodo = `${año}-${String(mes).padStart(2,'0')}`;
       const [
         { data: cobros },
-        { data: gastos },
+        { data: cajas },
         { data: compras },
         { data: pagosB },
         { data: pagosP },
@@ -26,17 +27,23 @@ export default function ExcelExport() {
         { data: cxc },
       ] = await Promise.all([
         supabase.from('cobros').select('fecha,monto,forma_pago,observaciones,clientes(nombre)').gte('fecha',fechaDesde).lte('fecha',fechaHasta).order('fecha'),
-        supabase.from('caja_gastos').select('fecha,concepto,valor,tipo').gte('fecha',fechaDesde).lte('fecha',fechaHasta).order('fecha'),
+        supabase.from('caja_chica').select('id,fecha').gte('fecha',fechaDesde).lte('fecha',fechaHasta).order('fecha'),
         supabase.from('compras').select('fecha,total,tiene_factura,forma_pago,proveedores(nombre)').gte('fecha',fechaDesde).lte('fecha',fechaHasta).order('fecha'),
         supabase.from('talonario_pagos_banco').select('*').eq('mes',mes).eq('año',año).order('fecha'),
         supabase.from('talonario_pagos_personales').select('*').eq('mes',mes).eq('año',año).order('categoria').order('fecha'),
         supabase.from('talonario_otros_ingresos').select('*').eq('mes',mes).eq('año',año).order('fecha'),
         supabase.from('talonario_facturas_personales').select('*').eq('mes',mes).eq('año',año).order('fecha'),
-        supabase.from('nomina').select('sueldo_prop,iess_patronal').eq('periodo',`${año}-${String(mes).padStart(2,'0')}`),
+        supabase.from('nomina').select('sueldo_prop,iess_patronal').eq('periodo', periodo),
         supabase.from('cobros').select('fecha,monto,forma_pago,clientes(nombre)').gte('fecha',fechaDesde).lte('fecha',fechaHasta),
         supabase.from('facturas').select('total').gte('created_at',fechaDesde+'T00:00:00').lte('created_at',fechaHasta+'T23:59:59').neq('estado','anulada'),
         supabase.from('cuentas_cobrar').select('monto_total,monto_cobrado').eq('estado','pendiente'),
       ]);
+
+      const cajaIds = (cajas || []).map(c => c.id);
+      const { data: gastos } = cajaIds.length > 0
+        ? await supabase.from('caja_gastos').select('valor,detalle,caja_id').in('caja_id', cajaIds)
+        : { data: [] };
+      const cajaFechaMap = Object.fromEntries((cajas || []).map(c => [c.id, c.fecha]));
 
       const s = (arr, campo) => (arr||[]).reduce((t,r) => t + parseFloat(r[campo]||0), 0);
       const $ = v => parseFloat((v||0).toFixed(2));
@@ -46,9 +53,9 @@ export default function ExcelExport() {
       const hdr = cols => [cols];
 
       // GASTOS EFECTIVO
-      const gastosRows = hdr(['Fecha','Concepto','Tipo','Monto','Forma Pago'])
-        .concat((gastos||[]).map(r => [r.fecha, r.concepto||'', r.tipo||'', $(r.valor), 'Efectivo (01)']))
-        .concat([['','','','Total', $(s(gastos,'monto'))]]);
+      const gastosRows = hdr(['Fecha','Detalle','Monto','Forma Pago'])
+        .concat((gastos||[]).map(r => [cajaFechaMap[r.caja_id]||'', r.detalle||'', $(r.valor), 'Efectivo (01)']))
+        .concat([['','','Total', $(s(gastos,'valor'))]]);
       XLSX.utils.book_append_sheet(wb, toSheet(gastosRows), 'GASTOS EFECTIVO');
 
       // COBROS EFECTIVO
@@ -96,7 +103,7 @@ export default function ExcelExport() {
       // RESUMEN
       const totalVentas = s(facturas,'total');
       const totalOtrosI = s(otrosI,'monto');
-      const totalGastos = s(gastos,'monto');
+      const totalGastos = s(gastos,'valor');
       const comprasCon  = (compras||[]).filter(c=>c.tiene_factura).reduce((t,r)=>t+$(r.total),0);
       const comprasSin  = (compras||[]).filter(c=>!c.tiene_factura).reduce((t,r)=>t+$(r.total),0);
       const totalSueldos= s(nomina,'sueldo_prop');

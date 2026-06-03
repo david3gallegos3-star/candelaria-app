@@ -18,10 +18,11 @@ export default function ResumenTalonario() {
 
   async function cargar() {
     setCargando(true);
+    const periodo = `${año}-${String(mes).padStart(2,'0')}`;
     const [
       { data: facturas },
       { data: cobros },
-      { data: gastos },
+      { data: cajas },
       { data: compras },
       { data: nomina },
       { data: pagosB },
@@ -32,15 +33,20 @@ export default function ResumenTalonario() {
     ] = await Promise.all([
       supabase.from('facturas').select('total').gte('created_at', fechaDesde + 'T00:00:00').lte('created_at', fechaHasta + 'T23:59:59').neq('estado', 'anulada'),
       supabase.from('cobros').select('monto,forma_pago').gte('fecha', fechaDesde).lte('fecha', fechaHasta),
-      supabase.from('caja_gastos').select('valor').gte('fecha', fechaDesde).lte('fecha', fechaHasta),
+      supabase.from('caja_chica').select('id').gte('fecha', fechaDesde).lte('fecha', fechaHasta),
       supabase.from('compras').select('total,tiene_factura').gte('fecha', fechaDesde).lte('fecha', fechaHasta),
-      supabase.from('nomina').select('sueldo_prop,iess_patronal').eq('periodo', `${año}-${String(mes).padStart(2,'0')}`),
+      supabase.from('nomina').select('sueldo_prop,iess_patronal').eq('periodo', periodo),
       supabase.from('talonario_pagos_banco').select('monto').eq('mes', mes).eq('año', año),
       supabase.from('talonario_pagos_personales').select('monto,categoria').eq('mes', mes).eq('año', año),
       supabase.from('talonario_otros_ingresos').select('monto').eq('mes', mes).eq('año', año),
       supabase.from('cuentas_cobrar').select('monto_total,monto_cobrado').eq('estado', 'pendiente'),
       supabase.from('config_contabilidad').select('valor').eq('clave', `saldo_banco_${año}_${mes}`).single(),
     ]);
+
+    const cajaIds = (cajas || []).map(c => c.id);
+    const { data: gastos } = cajaIds.length > 0
+      ? await supabase.from('caja_gastos').select('valor').in('caja_id', cajaIds)
+      : { data: [] };
 
     const totalVentas    = suma(facturas || [], 'total');
     const totalOtrosI    = suma(otrosI   || [], 'monto');
