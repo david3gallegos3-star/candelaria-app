@@ -143,6 +143,25 @@ export default function TabFacturas({ mobile, userRol }) {
     cargarFacturas();
   }
 
+  // ── Reenviar factura por correo ───────────────────────────
+  async function reenviarCorreo(facturaId, datil_id, emailDestino) {
+    setReenviando(prev => ({ ...prev, [facturaId]: true }));
+    try {
+      const res = await fetch('/api/reenviar-factura', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ datil_id, email: emailDestino || undefined }),
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || 'Error al reenviar');
+      mostrarExito('✅ Correo reenviado correctamente');
+      setCorreoEnvio(prev => ({ ...prev, [facturaId]: '' }));
+    } catch (e) {
+      alert('Error: ' + e.message);
+    }
+    setReenviando(prev => ({ ...prev, [facturaId]: false }));
+  }
+
   // ── Anulación manual ──────────────────────────────────────
   async function abrirModalAnulManual(f) {
     setModalAnulManual(f);
@@ -571,9 +590,12 @@ export default function TabFacturas({ mobile, userRol }) {
             const abierta = expandida === f.id;
             return (
               <div key={f.id} style={{
-                background: 'white', borderRadius: 12,
+                background: f.estado === 'anulada' ? '#fde8e8'
+                          : f.estado === 'borrador' ? '#fef9e7' : 'white',
+                borderRadius: 12,
                 boxShadow: '0 2px 8px rgba(0,0,0,0.06)', overflow: 'hidden',
-                border: abierta ? '2px solid #2980b9' : '2px solid transparent',
+                border: abierta ? '2px solid #2980b9'
+                      : f.estado === 'anulada' ? '2px solid #e74c3c' : '2px solid transparent',
               }}>
                 <div style={{
                   padding: mobile ? '12px' : '12px 16px',
@@ -819,6 +841,42 @@ export default function TabFacturas({ mobile, userRol }) {
                         TOTAL: ${parseFloat(f.total).toFixed(2)}
                       </span>
                     </div>
+                    {/* Acciones de correo para facturas autorizadas con datil_id */}
+                    {f.estado === 'autorizada' && f.datil_id && (
+                      <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                        <button
+                          onClick={() => reenviarCorreo(f.id, f.datil_id)}
+                          disabled={reenviando[f.id]}
+                          style={{
+                            background: reenviando[f.id] ? '#95a5a6' : '#2980b9',
+                            color: 'white', border: 'none', borderRadius: 7,
+                            padding: '6px 12px', cursor: reenviando[f.id] ? 'not-allowed' : 'pointer',
+                            fontWeight: 'bold', fontSize: '12px',
+                          }}>
+                          {reenviando[f.id] ? '⏳ Enviando...' : '✉️ Reenviar correo'}
+                        </button>
+                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                          <input
+                            type="email"
+                            value={correoEnvio[f.id] || ''}
+                            onChange={e => setCorreoEnvio(prev => ({ ...prev, [f.id]: e.target.value }))}
+                            placeholder="otro@correo.com"
+                            style={{ padding: '6px 10px', borderRadius: 7, border: '1.5px solid #ddd', fontSize: '12px', width: 180 }}
+                          />
+                          <button
+                            onClick={() => reenviarCorreo(f.id, f.datil_id, correoEnvio[f.id])}
+                            disabled={!correoEnvio[f.id] || reenviando[f.id]}
+                            style={{
+                              background: (!correoEnvio[f.id] || reenviando[f.id]) ? '#95a5a6' : '#27ae60',
+                              color: 'white', border: 'none', borderRadius: 7,
+                              padding: '6px 12px', cursor: (!correoEnvio[f.id] || reenviando[f.id]) ? 'not-allowed' : 'pointer',
+                              fontWeight: 'bold', fontSize: '12px',
+                            }}>
+                            ✉️ Enviar a este correo
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
