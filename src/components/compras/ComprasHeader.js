@@ -12,7 +12,8 @@ const TABS = [
 
 export default function ComprasHeader({
   mobile, tabActiva, setTabActiva,
-  onVolver, onVolverMenu
+  onVolver, onVolverMenu,
+  onSubirFacturas, onSubirPersonales
 }) {
   const btnBase = {
     border: 'none', borderRadius: '8px', cursor: 'pointer',
@@ -54,6 +55,18 @@ export default function ComprasHeader({
           }}>
             🛒 Compras
           </div>
+          <button onClick={onSubirFacturas} style={{
+            ...btnBase,
+            background: 'rgba(255,255,255,0.15)', color: 'white',
+            padding: mobile ? '6px 8px' : '6px 12px',
+            border: '1px solid rgba(255,255,255,0.3)', fontSize: '11px',
+          }}>📎 Subir facturas</button>
+          <button onClick={onSubirPersonales} style={{
+            ...btnBase,
+            background: 'rgba(255,200,100,0.2)', color: '#ffd580',
+            padding: mobile ? '6px 8px' : '6px 12px',
+            border: '1px solid rgba(255,200,100,0.4)', fontSize: '11px',
+          }}>📄 Facturas personales</button>
         </div>
       </div>
 

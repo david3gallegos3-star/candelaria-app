@@ -7,11 +7,14 @@ import ComprasHeader         from './components/compras/ComprasHeader';
 import TabIngresoCompra      from './components/compras/TabIngresoCompra';
 import TabProveedores        from './components/compras/TabProveedores';
 import TabPagosUnificado     from './components/compras/TabPagosUnificado';
+import SubirFacturas from './components/compras/SubirFacturas';
 
 function Compras({ onVolver, onVolverMenu, userRol, currentUser }) {
 
   const [tabActiva, setTabActiva] = useState('nueva');
   const [mobile,    setMobile]    = useState(window.innerWidth < 768);
+  const [showSubir,     setShowSubir]     = useState(false);
+  const [subirPersonal, setSubirPersonal] = useState(false);
 
   useEffect(() => {
     const fn = () => setMobile(window.innerWidth < 768);
@@ -32,6 +35,8 @@ function Compras({ onVolver, onVolverMenu, userRol, currentUser }) {
         setTabActiva={setTabActiva}
         onVolver={onVolver}
         onVolverMenu={onVolverMenu}
+        onSubirFacturas={() => { setSubirPersonal(false); setShowSubir(true); }}
+        onSubirPersonales={() => { setSubirPersonal(true);  setShowSubir(true); }}
       />
 
       <div style={{ padding: mobile ? '12px' : '16px 20px' }}>
@@ -52,6 +57,12 @@ function Compras({ onVolver, onVolverMenu, userRol, currentUser }) {
           />
         )}
       </div>
+      {showSubir && (
+        <SubirFacturas
+          esPersonal={subirPersonal}
+          onClose={() => setShowSubir(false)}
+        />
+      )}
     </div>
   );
 }
