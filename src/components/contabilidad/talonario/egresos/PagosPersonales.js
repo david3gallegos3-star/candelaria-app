@@ -5,14 +5,71 @@ import { useTalonario } from '../TalonarioContext';
 import { TablaCrud, FORMAS_PAGO } from '../shared/TablaCrud';
 
 const CATEGORIAS = [
-  { value: 'prestamos',      label: '🏦 Préstamos' },
-  { value: 'tarjetas',       label: '💳 Tarjetas' },
+  { value: 'prestamos',       label: '🏦 Préstamos' },
+  { value: 'tarjetas',        label: '💳 Tarjetas' },
   { value: 'gastos_personal', label: '👤 Gastos Personales' },
-  { value: 'otros',          label: '📋 Otros' },
+  { value: 'otros',           label: '📋 Otros' },
+];
+
+// Las 3 secciones del Excel
+const SECCIONES = [
+  {
+    titulo: '🏦 Pagos Préstamo y Tarjeta',
+    cats:   ['prestamos', 'tarjetas'],
+    color:  '#1a5276',
+  },
+  {
+    titulo: '👤 Pagos Gastos Personales',
+    cats:   ['gastos_personal'],
+    color:  '#6c3483',
+  },
+  {
+    titulo: '📋 Otros Pagos Personales',
+    cats:   ['otros'],
+    color:  '#117a65',
+  },
 ];
 
 const VACIO = { fecha: '', beneficiario: '', concepto: '', monto: '',
   categoria: 'prestamos', forma_pago: '20', comentario: '' };
+
+function SeccionPagos({ titulo, color, filas, busqueda, columnas, cargando,
+  esAdminContador, onAgregar, onEditar, onEliminar }) {
+
+  const filasFiltradas = busqueda
+    ? filas.filter(f =>
+        (f.beneficiario || '').toLowerCase().includes(busqueda.toLowerCase()) ||
+        (f.concepto     || '').toLowerCase().includes(busqueda.toLowerCase()) ||
+        (f.comentario   || '').toLowerCase().includes(busqueda.toLowerCase()))
+    : filas;
+
+  const total = filasFiltradas.reduce((s, f) => s + parseFloat(f.monto || 0), 0);
+
+  return (
+    <div style={{ marginBottom: 20 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        background: color, color: 'white', borderRadius: '8px 8px 0 0',
+        padding: '8px 14px', fontSize: 13, fontWeight: 'bold' }}>
+        <span>{titulo}</span>
+        <span>TOTAL: ${total.toFixed(2)}</span>
+      </div>
+      <div style={{ background: 'white', borderRadius: '0 0 8px 8px',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.06)', overflow: 'hidden' }}>
+        <TablaCrud
+          titulo=""
+          filas={filasFiltradas}
+          columnas={columnas}
+          campoMonto="monto"
+          cargando={cargando}
+          esAdminContador={esAdminContador}
+          onAgregar={onAgregar}
+          onEditar={onEditar}
+          onEliminar={onEliminar}
+        />
+      </div>
+    </div>
+  );
+}
 
 export default function PagosPersonales() {
   const { mes, año, esAdminContador } = useTalonario();
@@ -20,6 +77,7 @@ export default function PagosPersonales() {
   const [cargando,  setCargando]  = useState(false);
   const [form,      setForm]      = useState(null);
   const [guardando, setGuardando] = useState(false);
+  const [busqueda,  setBusqueda]  = useState('');
 
   async function cargar() {
     setCargando(true);
@@ -66,84 +124,48 @@ export default function PagosPersonales() {
     { key: 'comentario',   label: 'Comentario' },
   ];
 
-  const [busqueda,   setBusqueda]   = useState('');
-  const [filtroDesde, setFiltroDesde] = useState('');
-  const [filtroHasta, setFiltroHasta] = useState('');
-  const [filtrocat,   setFiltrocat]   = useState('');
-
-  const filasFiltradas = filas.filter(f => {
-    const txt = busqueda.toLowerCase();
-    const matchTxt = !busqueda ||
-      (f.beneficiario || '').toLowerCase().includes(txt) ||
-      (f.concepto     || '').toLowerCase().includes(txt) ||
-      (f.comentario   || '').toLowerCase().includes(txt);
-    const matchDesde = !filtroDesde || (f.fecha || '') >= filtroDesde;
-    const matchHasta = !filtroHasta || (f.fecha || '') <= filtroHasta;
-    const matchCat   = !filtrocat  || f.categoria === filtrocat;
-    return matchTxt && matchDesde && matchHasta && matchCat;
-  });
-
-  const totales = CATEGORIAS.map(cat => ({
-    ...cat,
-    total: filasFiltradas.filter(f => f.categoria === cat.value).reduce((s, f) => s + parseFloat(f.monto || 0), 0),
-  }));
-
-  const inputStyle = { padding: '7px 10px', borderRadius: 7, border: '1.5px solid #ddd', fontSize: 12 };
+  const totalGeneral = filas.reduce((s, f) => s + parseFloat(f.monto || 0), 0);
 
   return (
     <>
-      {/* Filtros */}
-      <div style={{ background: 'white', borderRadius: 10, padding: '12px 14px',
-        marginBottom: 12, boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
-        display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+      {/* Buscador + total */}
+      <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
         <input
-          type="text" placeholder="🔍 Buscar banco, tarjeta, concepto..."
+          type="text" placeholder="🔍 Buscar beneficiario, concepto, banco..."
           value={busqueda} onChange={e => setBusqueda(e.target.value)}
-          style={{ ...inputStyle, flex: 1, minWidth: 180 }} />
-        <select value={filtrocat} onChange={e => setFiltrocat(e.target.value)} style={inputStyle}>
-          <option value="">Todas las categorías</option>
-          {CATEGORIAS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-        </select>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <label style={{ fontSize: 11, color: '#888' }}>Desde</label>
-          <input type="date" value={filtroDesde} onChange={e => setFiltroDesde(e.target.value)} style={inputStyle} />
-          <label style={{ fontSize: 11, color: '#888' }}>Hasta</label>
-          <input type="date" value={filtroHasta} onChange={e => setFiltroHasta(e.target.value)} style={inputStyle} />
+          style={{ flex: 1, minWidth: 200, padding: '8px 12px', borderRadius: 8,
+            border: '1.5px solid #ddd', fontSize: 13 }} />
+        <div style={{ background: 'white', borderRadius: 8, padding: '8px 14px',
+          boxShadow: '0 1px 4px rgba(0,0,0,0.08)', fontWeight: 'bold', fontSize: 13, color: '#1a5276' }}>
+          TOTAL: ${totalGeneral.toFixed(2)}
         </div>
-        {(busqueda || filtroDesde || filtroHasta || filtrocat) && (
-          <button onClick={() => { setBusqueda(''); setFiltroDesde(''); setFiltroHasta(''); setFiltrocat(''); }}
-            style={{ padding: '6px 10px', borderRadius: 7, border: '1px solid #ddd',
-              background: '#f5f5f5', cursor: 'pointer', fontSize: 11, color: '#555' }}>
-            ✕ Limpiar
+        {esAdminContador && (
+          <button onClick={() => setForm({ ...VACIO })}
+            style={{ background: '#27ae60', color: 'white', border: 'none',
+              borderRadius: 8, padding: '8px 16px', cursor: 'pointer', fontWeight: 'bold', fontSize: 13 }}>
+            + Agregar
           </button>
         )}
       </div>
 
-      <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
-        {totales.map(cat => (
-          <div key={cat.value} onClick={() => setFiltrocat(filtrocat === cat.value ? '' : cat.value)}
-            style={{ background: filtrocat === cat.value ? '#fde8e8' : 'white',
-              borderRadius: 8, padding: '10px 14px', cursor: 'pointer',
-              boxShadow: '0 1px 4px rgba(0,0,0,0.08)', minWidth: 140,
-              border: filtrocat === cat.value ? '2px solid #e74c3c' : '2px solid transparent' }}>
-            <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>{cat.label}</div>
-            <div style={{ fontSize: 15, fontWeight: 'bold', color: '#e74c3c' }}>${cat.total.toFixed(2)}</div>
-          </div>
-        ))}
-      </div>
+      {/* 3 secciones */}
+      {SECCIONES.map(sec => (
+        <SeccionPagos
+          key={sec.titulo}
+          titulo={sec.titulo}
+          color={sec.color}
+          filas={filas.filter(f => sec.cats.includes(f.categoria))}
+          busqueda={busqueda}
+          columnas={columnas}
+          cargando={cargando}
+          esAdminContador={esAdminContador}
+          onAgregar={() => setForm({ ...VACIO, categoria: sec.cats[0] })}
+          onEditar={f => setForm({ ...f })}
+          onEliminar={eliminar}
+        />
+      ))}
 
-      <TablaCrud
-        titulo="👤 Pagos Personales"
-        filas={filasFiltradas}
-        columnas={columnas}
-        campoMonto="monto"
-        cargando={cargando}
-        esAdminContador={esAdminContador}
-        onAgregar={() => setForm({ ...VACIO })}
-        onEditar={f => setForm({ ...f })}
-        onEliminar={eliminar}
-      />
-
+      {/* Modal */}
       {form && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
           display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
@@ -181,10 +203,11 @@ export default function PagosPersonales() {
             </div>
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
               <button onClick={() => setForm(null)}
-                style={{ padding: '8px 20px', borderRadius: 6, border: '1px solid #ddd', background: 'white', cursor: 'pointer', fontSize: 13 }}>Cancelar</button>
+                style={{ padding: '8px 20px', borderRadius: 6, border: '1px solid #ddd',
+                  background: 'white', cursor: 'pointer', fontSize: 13 }}>Cancelar</button>
               <button onClick={guardar} disabled={guardando}
                 style={{ padding: '8px 20px', borderRadius: 6, border: 'none',
-                  background: '#e74c3c', color: 'white', cursor: 'pointer', fontSize: 13 }}>
+                  background: '#27ae60', color: 'white', cursor: 'pointer', fontSize: 13 }}>
                 {guardando ? 'Guardando...' : 'Guardar'}
               </button>
             </div>
