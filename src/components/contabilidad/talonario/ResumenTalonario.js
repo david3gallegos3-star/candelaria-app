@@ -30,11 +30,11 @@ export default function ResumenTalonario() {
       { data: cxc },
       { data: config },
     ] = await Promise.all([
-      supabase.from('facturas').select('total').gte('fecha_emision', fechaDesde).lte('fecha_emision', fechaHasta).neq('estado', 'anulada'),
+      supabase.from('facturas').select('total').gte('created_at', fechaDesde + 'T00:00:00').lte('created_at', fechaHasta + 'T23:59:59').neq('estado', 'anulada'),
       supabase.from('cobros').select('monto,forma_pago').gte('fecha', fechaDesde).lte('fecha', fechaHasta),
-      supabase.from('caja_gastos').select('monto').gte('fecha', fechaDesde).lte('fecha', fechaHasta),
+      supabase.from('caja_gastos').select('valor').gte('fecha', fechaDesde).lte('fecha', fechaHasta),
       supabase.from('compras').select('total,tiene_factura').gte('fecha', fechaDesde).lte('fecha', fechaHasta),
-      supabase.from('nomina').select('sueldo_prop,iess_patronal').eq('mes', mes).eq('año', año),
+      supabase.from('nomina').select('sueldo_prop,iess_patronal').eq('periodo', `${año}-${String(mes).padStart(2,'0')}`),
       supabase.from('talonario_pagos_banco').select('monto').eq('mes', mes).eq('año', año),
       supabase.from('talonario_pagos_personales').select('monto,categoria').eq('mes', mes).eq('año', año),
       supabase.from('talonario_otros_ingresos').select('monto').eq('mes', mes).eq('año', año),
@@ -44,7 +44,7 @@ export default function ResumenTalonario() {
 
     const totalVentas    = suma(facturas || [], 'total');
     const totalOtrosI    = suma(otrosI   || [], 'monto');
-    const totalGastos    = suma(gastos   || [], 'monto');
+    const totalGastos    = suma(gastos   || [], 'valor');
     const comprasCon     = (compras || []).filter(c =>  c.tiene_factura).reduce((s,c) => s + parseFloat(c.total||0), 0);
     const comprasSin     = (compras || []).filter(c => !c.tiene_factura).reduce((s,c) => s + parseFloat(c.total||0), 0);
     const totalSueldos   = suma(nomina   || [], 'sueldo_prop');
