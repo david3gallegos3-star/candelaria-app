@@ -136,9 +136,11 @@ Deno.serve(async (req) => {
     const desde = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000)
       .toISOString().replace(/\.\d{3}Z$/, 'Z');
 
-    // Sin $orderby — no es compatible con $filter sin headers especiales
+    // ConsistencyLevel: eventual + $count=true permite usar $filter con $orderby
     const graphUrl = `https://graph.microsoft.com/v1.0/me/messages` +
       `?$filter=${encodeURIComponent(`receivedDateTime ge ${desde}`)}` +
+      `&$orderby=${encodeURIComponent('receivedDateTime desc')}` +
+      `&$count=true` +
       `&$top=50&$select=id,subject,receivedDateTime,body,hasAttachments`;
 
     const emailsRes = await fetch(graphUrl, {
