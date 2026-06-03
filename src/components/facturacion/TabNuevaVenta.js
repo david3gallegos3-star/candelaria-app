@@ -26,7 +26,7 @@ const itemVacio = () => ({
   cantidad: '', precio_unitario: '', subtotal: 0
 });
 
-export default function TabNuevaVenta({ mobile, currentUser }) {
+export default function TabNuevaVenta({ mobile, currentUser, userRol }) {
 
   const [clientes,   setClientes]   = useState([]);
   const [productos,  setProductos]  = useState([]);
@@ -125,9 +125,10 @@ export default function TabNuevaVenta({ mobile, currentUser }) {
   function eliminarItem(idx)  { setItems(prev => prev.filter((_, i) => i !== idx)); }
 
   // ── Totales ───────────────────────────────────────────────
-  const subtotal = items.reduce((s, i) => s + (parseFloat(i.subtotal) || 0), 0);
-  const iva      = parseFloat((subtotal * 0.15).toFixed(2));
-  const total    = parseFloat((subtotal + iva).toFixed(2));
+  const subtotal       = items.reduce((s, i) => s + (parseFloat(i.subtotal) || 0), 0);
+  const iva            = parseFloat((subtotal * 0.15).toFixed(2));
+  const total          = parseFloat((subtotal + iva).toFixed(2));
+  const articulosCount = items.filter(i => i.producto_nombre && parseFloat(i.cantidad) > 0).length;
 
   // ── Emitir factura ────────────────────────────────────────
   async function emitirFactura() {
@@ -183,6 +184,7 @@ export default function TabNuevaVenta({ mobile, currentUser }) {
         dias_credito:     formaPago === 'credito' ? diasCredito : 0,
         observaciones,
         vendedor:         currentUser?.email || '',
+        vendedor_nombre:  userRol?.nombre    || '',
         created_by:       currentUser?.email || ''
       }).select().single();
       if (errF) throw errF;
@@ -256,6 +258,7 @@ export default function TabNuevaVenta({ mobile, currentUser }) {
       dias_credito:     formaPago === 'credito' ? diasCredito : 0,
       observaciones,
       vendedor:         currentUser?.email || '',
+      vendedor_nombre:  userRol?.nombre    || '',
       created_by:       currentUser?.email || '',
     };
     const detallePayload = itemsValidos.map(it => ({
@@ -378,6 +381,7 @@ export default function TabNuevaVenta({ mobile, currentUser }) {
       dias_credito:     formaPago === 'credito' ? diasCredito : 0,
       observaciones,
       vendedor:         currentUser?.email || '',
+      vendedor_nombre:  userRol?.nombre    || '',
       created_by:       currentUser?.email || '',
     };
     const detallePayload = itemsValidos.map(it => ({
@@ -794,19 +798,28 @@ export default function TabNuevaVenta({ mobile, currentUser }) {
         display: 'flex', justifyContent: 'space-between',
         alignItems: 'center', flexWrap: 'wrap', gap: 12
       }}>
-        <div style={{ display: 'flex', gap: mobile ? 16 : 24 }}>
-          {[
-            ['SUBTOTAL', `$${subtotal.toFixed(2)}`, '#aed6f1'],
-            ['IVA 15%',  `$${iva.toFixed(2)}`,      '#f9e79f'],
-            ['TOTAL',    `$${total.toFixed(2)}`,     '#a9dfbf'],
-          ].map(([l, v, col]) => (
-            <div key={l} style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: '9px', color: '#aaa', fontWeight: 700 }}>{l}</div>
-              <div style={{ fontSize: mobile ? '15px' : '18px', fontWeight: 'bold', color: col }}>
-                {v}
-              </div>
+        <div style={{ display: 'flex', gap: mobile ? 16 : 24, alignItems: 'flex-end' }}>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: '9px', color: '#aaa', fontWeight: 700 }}>SUBTOTAL</div>
+            <div style={{ fontSize: mobile ? '13px' : '15px', fontWeight: 'bold', color: '#aed6f1' }}>
+              ${subtotal.toFixed(2)}
             </div>
-          ))}
+          </div>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: '9px', color: '#aaa', fontWeight: 700 }}>IVA 15%</div>
+            <div style={{ fontSize: mobile ? '13px' : '15px', fontWeight: 'bold', color: '#f9e79f' }}>
+              ${iva.toFixed(2)}
+            </div>
+          </div>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: '10px', color: '#a9dfbf', fontWeight: 700 }}>TOTAL</div>
+            <div style={{ fontSize: mobile ? '24px' : '32px', fontWeight: 'bold', color: 'white', lineHeight: 1 }}>
+              ${total.toFixed(2)}
+            </div>
+            <div style={{ fontSize: '10px', color: '#aaa', marginTop: 2 }}>
+              {articulosCount} artículo{articulosCount !== 1 ? 's' : ''}
+            </div>
+          </div>
         </div>
 
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
