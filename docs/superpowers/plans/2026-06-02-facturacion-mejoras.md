@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Agregar búsqueda avanzada con filtros radio en TabFacturas, filas rojas para anuladas, botones Reenviar/PDF/Otro correo, panel de totales mejorado en nueva venta, y guardar nombre del vendedor en la factura.
+**Goal:** Agregar búsqueda avanzada con filtros radio en TabFacturas, filas rojas para anuladas, botones Reenviar/PDF/Otro correo/Reimprimir, impresión automática de 2 copias en ticket térmico 80mm, panel de totales mejorado en nueva venta, y guardar nombre del vendedor en la factura.
 
-**Architecture:** Modificaciones directas a 3 archivos existentes (TabFacturas.js, TabNuevaVenta.js, Facturacion.js) + nueva ruta API para reenvío por correo. Sin nuevos componentes. Migración SQL mínima (1 columna).
+**Architecture:** Modificaciones directas a 3 archivos existentes (TabFacturas.js, TabNuevaVenta.js, Facturacion.js) + nueva utilidad imprimirTicket.js + nueva ruta API para reenvío por correo. Migración SQL mínima (1 columna).
 
 **Tech Stack:** React (hooks, inline styles), Supabase, Dátil API (X-Key / X-Password), Vercel Serverless Functions
 
@@ -18,7 +18,9 @@
 | `src/Facturacion.js` | Modificar | Pasar `userRol` a TabNuevaVenta |
 | `src/components/facturacion/TabNuevaVenta.js` | Modificar | Guardar vendedor_nombre + totales mejorados |
 | `api/reenviar-factura.js` | Crear | Reenviar email vía Dátil API |
-| `src/components/facturacion/TabFacturas.js` | Modificar | Filtros radio + filas rojas + botones acción |
+| `src/utils/imprimirTicket.js` | Crear | Genera ticket 80mm y abre ventana de impresión (2 copias) |
+| `src/components/facturacion/TabNuevaVenta.js` | Modificar (adicional) | Auto-imprimir 2 copias al emitir factura/NV |
+| `src/components/facturacion/TabFacturas.js` | Modificar | Filtros radio + filas rojas + botones acción + Reimprimir |
 
 ---
 
@@ -603,6 +605,228 @@ git commit -m "feat(facturacion): filas rojas anuladas + reenviar correo + envia
 
 ---
 
+## Task 8: Ticket de impresión térmica 80mm — 2 copias automáticas
+
+**Files:**
+- Create: `src/utils/imprimirTicket.js`
+- Modify: `src/components/facturacion/TabNuevaVenta.js`
+- Modify: `src/components/facturacion/TabFacturas.js`
+
+La utilidad `imprimirTicket(factura, detalle)` abre una nueva ventana con el ticket formateado para papel 80mm, con 2 copias (cliente + empresa), y llama `window.print()` automáticamente.
+
+- [ ] **Step 1: Crear src/utils/imprimirTicket.js**
+
+```javascript
+// src/utils/imprimirTicket.js
+const EMPRESA  = 'EMBUTIDOS Y JAMONES CANDELARIA';
+const RUC      = '1002345351001';
+const DIRECCION = 'Ibarra, Imbabura, Ecuador';
+
+function cuerpoTicket(f, detalle) {
+  const fecha = new Date(f.created_at || new Date())
+    .toLocaleString('es-EC', { timeZone: 'America/Guayaquil',
+      day:'2-digit', month:'2-digit', year:'numeric',
+      hour:'2-digit', minute:'2-digit' });
+
+  const filas = (detalle || []).map(d =>
+    `<tr>
+      <td style="padding:1px 0;max-width:110px;word-wrap:break-word">${d.descripcion || d.producto_nombre}</td>
+      <td style="padding:1px 3px;text-align:right;white-space:nowrap">${parseFloat(d.cantidad||0).toFixed(3)}</td>
+      <td style="padding:1px 3px;text-align:right;white-space:nowrap">$${parseFloat(d.precio_unitario||0).toFixed(4)}</td>
+      <td style="padding:1px 0;text-align:right;white-space:nowrap">$${parseFloat(d.subtotal||0).toFixed(2)}</td>
+    </tr>`
+  ).join('');
+
+  return `
+    <div style="text-align:center;font-weight:bold;font-size:13px;margin-bottom:3px">${EMPRESA}</div>
+    <div style="text-align:center;font-size:10px">RUC: ${RUC}</div>
+    <div style="text-align:center;font-size:10px">${DIRECCION}</div>
+    <div style="border-top:1px dashed #000;margin:5px 0"></div>
+    <div style="font-size:11px"><b>${f.tipo === 'nota_venta' ? 'NOTA DE VENTA' : 'FACTURA'}:</b> ${f.numero || ''}</div>
+    <div style="font-size:10px">Fecha: ${fecha}</div>
+    <div style="font-size:10px">Cliente: ${f.cliente_nombre || f.cliente || 'CONSUMIDOR FINAL'}</div>
+    <div style="font-size:10px">Vendedor: ${f.vendedor_nombre || f.vendedor || ''}</div>
+    <div style="font-size:10px">Pago: ${f.forma_pago || ''}</div>
+    <div style="border-top:1px dashed #000;margin:5px 0"></div>
+    <table style="width:100%;font-size:10px;border-collapse:collapse">
+      <thead>
+        <tr style="border-bottom:1px solid #000">
+          <th style="text-align:left;padding:1px 0">PRODUCTO</th>
+          <th style="text-align:right;padding:1px 3px">KG</th>
+          <th style="text-align:right;padding:1px 3px">P/KG</th>
+          <th style="text-align:right;padding:1px 0">TOTAL</th>
+        </tr>
+      </thead>
+      <tbody>${filas}</tbody>
+    </table>
+    <div style="border-top:1px dashed #000;margin:5px 0"></div>
+    <div style="display:flex;justify-content:space-between;font-size:11px"><span>Subtotal:</span><span>$${parseFloat(f.subtotal||0).toFixed(2)}</span></div>
+    <div style="display:flex;justify-content:space-between;font-size:11px"><span>IVA 15%:</span><span>$${parseFloat(f.iva||0).toFixed(2)}</span></div>
+    <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:bold;margin-top:3px"><span>TOTAL:</span><span>$${parseFloat(f.total||0).toFixed(2)}</span></div>
+    ${f.autorizacion_sri
+      ? `<div style="font-size:8px;margin-top:5px;word-break:break-all">Auth SRI: ${f.autorizacion_sri}</div>`
+      : ''}
+    <div style="border-top:1px dashed #000;margin:5px 0"></div>
+    <div style="text-align:center;font-size:10px">¡Gracias por su compra!</div>
+  `;
+}
+
+export function imprimirTicket(factura, detalle) {
+  const cuerpo = cuerpoTicket(factura, detalle);
+  const html = `<!DOCTYPE html><html><head>
+    <meta charset="utf-8">
+    <title>Ticket ${factura.numero || ''}</title>
+    <style>
+      @page { size: 80mm auto; margin: 3mm 4mm; }
+      body { font-family: 'Courier New', monospace; width: 72mm; margin: 0; padding: 0; }
+    </style>
+  </head><body>
+    <div>${cuerpo}</div>
+    <div style="border-top:2px dashed #000;margin:10px 0;text-align:center;font-size:9px;letter-spacing:2px">COPIA CLIENTE</div>
+    <div>${cuerpo}</div>
+    <div style="border-top:2px dashed #000;margin:10px 0;text-align:center;font-size:9px;letter-spacing:2px">COPIA EMPRESA</div>
+    <script>setTimeout(function(){ window.print(); }, 400);<\/script>
+  </body></html>`;
+
+  const win = window.open('', '_blank', 'width=380,height=600,left=200,top=100');
+  if (!win) { alert('Permite ventanas emergentes para imprimir el ticket'); return; }
+  win.document.write(html);
+  win.document.close();
+}
+```
+
+- [ ] **Step 2: Auto-imprimir en TabNuevaVenta al emitir factura electrónica**
+
+En `src/components/facturacion/TabNuevaVenta.js`, agregar el import al inicio del archivo (después de los demás imports):
+
+```javascript
+import { imprimirTicket } from '../../utils/imprimirTicket';
+```
+
+Dentro de la función `emitirFactura`, buscar la línea donde se llama `setFacturaEmitida`:
+```javascript
+      setSecuencial(prev => prev + 1);
+      setFacturaEmitida({ ...data, numero, cliente: clienteObj.nombre, total });
+```
+
+Reemplazar por:
+```javascript
+      setSecuencial(prev => prev + 1);
+      const facturaParaTicket = {
+        ...factura,
+        numero,
+        cliente_nombre:  clienteObj.nombre,
+        vendedor_nombre: userRol?.nombre || '',
+        forma_pago:      formaPago,
+      };
+      imprimirTicket(facturaParaTicket, itemsValidos);
+      setFacturaEmitida({ ...data, numero, cliente: clienteObj.nombre, total });
+```
+
+- [ ] **Step 3: Auto-imprimir en guardarBorrador**
+
+Dentro de `guardarBorrador`, buscar:
+```javascript
+    setFacturaEmitida({ numero, cliente: clienteObj.nombre, total, autorizacion: null, esBorrador: true });
+    setEmitiendo(false);
+```
+
+Reemplazar por:
+```javascript
+    const facturaParaTicketB = {
+      id: facturaId, numero, estado: 'borrador',
+      cliente_nombre: clienteObj.nombre, vendedor_nombre: userRol?.nombre || '',
+      forma_pago: formaPago, subtotal, iva, total,
+      created_at: new Date().toISOString(),
+    };
+    imprimirTicket(facturaParaTicketB, items.filter(i => i.producto_nombre && parseFloat(i.cantidad) > 0));
+    setFacturaEmitida({ numero, cliente: clienteObj.nombre, total, autorizacion: null, esBorrador: true });
+    setEmitiendo(false);
+```
+
+- [ ] **Step 4: Auto-imprimir en emitirNotaVenta**
+
+Dentro de `emitirNotaVenta`, en el bloque online, buscar:
+```javascript
+      setFacturaEmitida({ numero, cliente: clienteObj.nombre, total, tipo: 'nota_venta' });
+```
+
+Reemplazar por:
+```javascript
+      const facturaParaTicketNV = {
+        id: factura.id, numero, estado: 'autorizada', tipo: 'nota_venta',
+        cliente_nombre: clienteObj.nombre, vendedor_nombre: userRol?.nombre || '',
+        forma_pago: formaPago, subtotal, iva, total,
+        created_at: new Date().toISOString(),
+      };
+      imprimirTicket(facturaParaTicketNV, itemsValidos);
+      setFacturaEmitida({ numero, cliente: clienteObj.nombre, total, tipo: 'nota_venta' });
+```
+
+Y en el bloque offline de `emitirNotaVenta`, buscar:
+```javascript
+        setFacturaEmitida({ numero, cliente: clienteObj.nombre, total, esBorrador: true, tipo: 'nota_venta' });
+```
+
+Reemplazar por:
+```javascript
+        const facturaParaTicketNVOff = {
+          numero, estado: 'borrador', tipo: 'nota_venta',
+          cliente_nombre: clienteObj.nombre, vendedor_nombre: userRol?.nombre || '',
+          forma_pago: formaPago, subtotal, iva, total,
+          created_at: new Date().toISOString(),
+        };
+        imprimirTicket(facturaParaTicketNVOff, itemsValidos);
+        setFacturaEmitida({ numero, cliente: clienteObj.nombre, total, esBorrador: true, tipo: 'nota_venta' });
+```
+
+- [ ] **Step 5: Agregar botón Reimprimir en TabFacturas**
+
+En `src/components/facturacion/TabFacturas.js`, agregar el import al inicio:
+
+```javascript
+import { imprimirTicket } from '../../utils/imprimirTicket';
+```
+
+Agregar la función `reimprimir` después de `confirmarAnuladoSRI`:
+
+```javascript
+  // ── Reimprimir ticket ─────────────────────────────────────
+  async function reimprimir(f) {
+    const { data } = await supabase.from('facturas_detalle')
+      .select('*').eq('factura_id', f.id).order('id');
+    imprimirTicket(f, data || []);
+  }
+```
+
+Dentro de los botones de cada factura (después del botón "👁 Ver", línea ~583), agregar:
+
+```javascript
+                    <button onClick={() => reimprimir(f)} style={{
+                      background: 'white', color: '#555',
+                      border: '1.5px solid #aaa', borderRadius: 7,
+                      padding: '6px 12px', cursor: 'pointer',
+                      fontWeight: 'bold', fontSize: '12px',
+                    }}>🖨️ Reimprimir</button>
+```
+
+- [ ] **Step 6: Build y verificar**
+
+```bash
+npm run build 2>&1 | grep -i "error\|compiled"
+```
+
+Esperado: `Compiled successfully.`
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add src/utils/imprimirTicket.js src/components/facturacion/TabNuevaVenta.js src/components/facturacion/TabFacturas.js
+git commit -m "feat(facturacion): ticket térmico 80mm — 2 copias auto al emitir + botón reimprimir"
+```
+
+---
+
 ## Task 7: Push y verificación final
 
 - [ ] **Step 1: Push**
@@ -623,6 +847,8 @@ Una vez desplegado, verificar manualmente:
    - Debajo del total: "1 artículo"
 3. Emitir una factura de prueba como borrador (sin conexión SRI)
    - En Supabase, verificar que la fila tiene `vendedor_nombre` con el nombre correcto
+4. Al emitir: debe aparecer automáticamente la ventana de impresión con 2 copias (ticket 80mm)
+5. En TabFacturas: botón "🖨️ Reimprimir" → debe abrir la misma ventana de impresión
 
 ---
 
@@ -638,6 +864,8 @@ Una vez desplegado, verificar manualmente:
 - ✅ Panel totales mejorado con TOTAL grande → Task 3 Step 6
 - ✅ Artículos count → Task 3 Steps 2 + 6
 - ✅ vendedor_nombre en facturas → Task 1 (SQL) + Task 3 Steps 3-5
+- ✅ Ticket térmico 80mm 2 copias auto → Task 8 Steps 1-4
+- ✅ Botón Reimprimir en facturas existentes → Task 8 Step 5
 
 **Consistencia de nombres:**
 - `filtroModo`, `filtroNumero`, `filtroCliente`, `filtroVendedor`, `filtroDesde`, `filtroHasta` — definidos en Task 5 Step 1, usados en Step 2 y 3 ✅
