@@ -66,17 +66,66 @@ export default function PagosPersonales() {
     { key: 'comentario',   label: 'Comentario' },
   ];
 
+  const [busqueda,   setBusqueda]   = useState('');
+  const [filtroDesde, setFiltroDesde] = useState('');
+  const [filtroHasta, setFiltroHasta] = useState('');
+  const [filtrocat,   setFiltrocat]   = useState('');
+
+  const filasFiltradas = filas.filter(f => {
+    const txt = busqueda.toLowerCase();
+    const matchTxt = !busqueda ||
+      (f.beneficiario || '').toLowerCase().includes(txt) ||
+      (f.concepto     || '').toLowerCase().includes(txt) ||
+      (f.comentario   || '').toLowerCase().includes(txt);
+    const matchDesde = !filtroDesde || (f.fecha || '') >= filtroDesde;
+    const matchHasta = !filtroHasta || (f.fecha || '') <= filtroHasta;
+    const matchCat   = !filtrocat  || f.categoria === filtrocat;
+    return matchTxt && matchDesde && matchHasta && matchCat;
+  });
+
   const totales = CATEGORIAS.map(cat => ({
     ...cat,
-    total: filas.filter(f => f.categoria === cat.value).reduce((s, f) => s + parseFloat(f.monto || 0), 0),
+    total: filasFiltradas.filter(f => f.categoria === cat.value).reduce((s, f) => s + parseFloat(f.monto || 0), 0),
   }));
+
+  const inputStyle = { padding: '7px 10px', borderRadius: 7, border: '1.5px solid #ddd', fontSize: 12 };
 
   return (
     <>
+      {/* Filtros */}
+      <div style={{ background: 'white', borderRadius: 10, padding: '12px 14px',
+        marginBottom: 12, boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
+        display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+        <input
+          type="text" placeholder="🔍 Buscar banco, tarjeta, concepto..."
+          value={busqueda} onChange={e => setBusqueda(e.target.value)}
+          style={{ ...inputStyle, flex: 1, minWidth: 180 }} />
+        <select value={filtrocat} onChange={e => setFiltrocat(e.target.value)} style={inputStyle}>
+          <option value="">Todas las categorías</option>
+          {CATEGORIAS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+        </select>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <label style={{ fontSize: 11, color: '#888' }}>Desde</label>
+          <input type="date" value={filtroDesde} onChange={e => setFiltroDesde(e.target.value)} style={inputStyle} />
+          <label style={{ fontSize: 11, color: '#888' }}>Hasta</label>
+          <input type="date" value={filtroHasta} onChange={e => setFiltroHasta(e.target.value)} style={inputStyle} />
+        </div>
+        {(busqueda || filtroDesde || filtroHasta || filtrocat) && (
+          <button onClick={() => { setBusqueda(''); setFiltroDesde(''); setFiltroHasta(''); setFiltrocat(''); }}
+            style={{ padding: '6px 10px', borderRadius: 7, border: '1px solid #ddd',
+              background: '#f5f5f5', cursor: 'pointer', fontSize: 11, color: '#555' }}>
+            ✕ Limpiar
+          </button>
+        )}
+      </div>
+
       <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
         {totales.map(cat => (
-          <div key={cat.value} style={{ background: 'white', borderRadius: 8, padding: '10px 14px',
-            boxShadow: '0 1px 4px rgba(0,0,0,0.08)', minWidth: 140 }}>
+          <div key={cat.value} onClick={() => setFiltrocat(filtrocat === cat.value ? '' : cat.value)}
+            style={{ background: filtrocat === cat.value ? '#fde8e8' : 'white',
+              borderRadius: 8, padding: '10px 14px', cursor: 'pointer',
+              boxShadow: '0 1px 4px rgba(0,0,0,0.08)', minWidth: 140,
+              border: filtrocat === cat.value ? '2px solid #e74c3c' : '2px solid transparent' }}>
             <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>{cat.label}</div>
             <div style={{ fontSize: 15, fontWeight: 'bold', color: '#e74c3c' }}>${cat.total.toFixed(2)}</div>
           </div>
@@ -85,7 +134,7 @@ export default function PagosPersonales() {
 
       <TablaCrud
         titulo="👤 Pagos Personales"
-        filas={filas}
+        filas={filasFiltradas}
         columnas={columnas}
         campoMonto="monto"
         cargando={cargando}
