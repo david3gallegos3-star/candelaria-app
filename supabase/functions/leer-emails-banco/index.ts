@@ -133,21 +133,26 @@ Deno.serve(async (req) => {
         { status: 401, headers: { ...cors, 'Content-Type': 'application/json' } });
     }
 
-    const desde = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000).toISOString();
-    const keywordFilter = BANK_KEYWORDS
-      .map(k => `contains(subject,'${k}')`)
-      .join(' or ');
+    const desde = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000)
+      .toISOString().replace(/\.\d{3}Z$/, 'Z');
 
+    const filterParam = encodeURIComponent(`receivedDateTime ge ${desde}`);
     const graphUrl = `https://graph.microsoft.com/v1.0/me/messages?` +
-      `$filter=receivedDateTime ge ${desde} and (${keywordFilter})` +
-      `&$top=30&$select=id,subject,receivedDateTime,body,hasAttachments` +
-      `&$orderby=receivedDateTime desc`;
+      `$filter=${filterParam}` +
+      `&$top=50&$select=id,subject,receivedDateTime,body,hasAttachments` +
+      `&$orderby=${encodeURIComponent('receivedDateTime desc')}`;
 
     const emailsRes = await fetch(graphUrl, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     const emailsData = await emailsRes.json();
-    const emails = emailsData.value || [];
+
+    // Filtrar localmente por palabras clave (insensible a mayúsculas)
+    const allEmails = emailsData.value || [];
+    const emails = allEmails.filter((email: any) => {
+      const subject = (email.subject || '').toLowerCase();
+      return BANK_KEYWORDS.some(k => subject.includes(k.toLowerCase()));
+    });
 
     const { data: existing } = await supabase
       .from('bank_statements')
