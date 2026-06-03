@@ -136,23 +136,32 @@ Deno.serve(async (req) => {
     const desde = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000)
       .toISOString().replace(/\.\d{3}Z$/, 'Z');
 
-    const filterParam = encodeURIComponent(`receivedDateTime ge ${desde}`);
-    const graphUrl = `https://graph.microsoft.com/v1.0/me/messages?` +
-      `$filter=${filterParam}` +
-      `&$top=50&$select=id,subject,receivedDateTime,body,hasAttachments` +
-      `&$orderby=${encodeURIComponent('receivedDateTime desc')}`;
+    // Sin $orderby — no es compatible con $filter sin headers especiales
+    const graphUrl = `https://graph.microsoft.com/v1.0/me/messages` +
+      `?$filter=${encodeURIComponent(`receivedDateTime ge ${desde}`)}` +
+      `&$top=50&$select=id,subject,receivedDateTime,body,hasAttachments`;
 
     const emailsRes = await fetch(graphUrl, {
-      headers: { Authorization: `Bearer ${accessToken}` },
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'ConsistencyLevel': 'eventual',
+      },
     });
     const emailsData = await emailsRes.json();
 
+    // Si Graph API retornó error, loguearlo y continuar con array vacío
+    if (emailsData.error) {
+      console.error('Graph API error:', JSON.stringify(emailsData.error));
+    }
+
     // Filtrar localmente por palabras clave (insensible a mayúsculas)
     const allEmails = emailsData.value || [];
+    console.log(`Graph API: ${allEmails.length} emails encontrados en últimos 45 días`);
     const emails = allEmails.filter((email: any) => {
       const subject = (email.subject || '').toLowerCase();
       return BANK_KEYWORDS.some(k => subject.includes(k.toLowerCase()));
     });
+    console.log(`Emails con palabras clave bancarias: ${emails.length}`);
 
     const { data: existing } = await supabase
       .from('bank_statements')
