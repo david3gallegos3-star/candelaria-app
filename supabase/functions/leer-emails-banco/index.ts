@@ -21,41 +21,61 @@ const BANK_KEYWORDS = [
 
 const EXTRACTION_PROMPT = `Eres un experto en estados de cuenta bancarios de Ecuador (Banco Pichincha, Produbanco, Banco Guayaquil, Banco del Pacífico, Banco Internacional, Banco Bolivariano, Diners Club, etc.).
 
-Analiza este contenido de email/estado de cuenta y extrae los datos en JSON estricto.
+Analiza este estado de cuenta y extrae TODOS los datos incluyendo CADA transacción individual.
 
-Reglas:
-- periodo_mes y periodo_año se refieren al MES DEL ESTADO, no la fecha de envío del email
-- saldo: para cuentas corrientes/ahorros es el saldo disponible; para tarjetas es el saldo pendiente a pagar
-- Para cuotas: cuota_actual=3, cuota_total=12 significa "cuota 3 de 12"
-- Si no puedes identificar un campo con certeza, usa null
+Reglas importantes:
+- periodo_mes y periodo_año = MES DEL ESTADO (no fecha de envío)
+- saldo = saldo pendiente total para tarjetas, saldo disponible para cuentas
+- transacciones: EXTRAER CADA FILA del detalle de movimientos — consumos, pagos, diferidos, intereses
+- tipo_transaccion: "consumo" (compras/débitos), "pago" (pagos al banco), "diferido" (cuotas diferidas), "interes" (intereses/cargos financieros), "prestamo" (cuotas de préstamo)
+- Para diferidos/cuotas: incluir cuota_actual y cuota_total si aparecen
+- NO omitir transacciones — incluir todas aunque sean pequeñas
+- Si no identificas un campo, usa null
 
 Responde SOLO con este JSON (sin markdown, sin texto adicional):
 {
   "es_estado_cuenta": true,
-  "banco": "nombre exacto del banco o emisor",
-  "tipo_cuenta": "corriente",
-  "red_tarjeta": null,
-  "ultimos4": null,
-  "periodo_mes": 6,
+  "banco": "Banco del Pacífico",
+  "tipo_cuenta": "tarjeta_credito",
+  "red_tarjeta": "Visa",
+  "ultimos4": "0806",
+  "periodo_mes": 5,
   "periodo_año": 2026,
-  "saldo": 1234.56,
-  "fecha_corte": null,
-  "fecha_pago": null,
-  "cargos": [
+  "saldo": 776.92,
+  "fecha_corte": "22/05/2026",
+  "fecha_pago": "08/06/2026",
+  "transacciones": [
     {
-      "fecha": "01/06/2026",
-      "descripcion": "descripcion del cargo",
-      "monto": 99.99,
+      "fecha": "01/05/2026",
+      "descripcion": "BODEGA DEPORTIVA CAYAMBE",
+      "monto": 72.00,
+      "tipo_transaccion": "consumo",
       "cuota_actual": null,
       "cuota_total": null
+    },
+    {
+      "fecha": "04/05/2026",
+      "descripcion": "SU PAGO PAGO DIRECTO BDP",
+      "monto": 150.00,
+      "tipo_transaccion": "pago",
+      "cuota_actual": null,
+      "cuota_total": null
+    },
+    {
+      "fecha": "08/04/2026",
+      "descripcion": "DIFERIDO CONSUMOS WEB",
+      "monto": 30.78,
+      "tipo_transaccion": "diferido",
+      "cuota_actual": 2,
+      "cuota_total": 5
     }
   ]
 }
 
-tipo_cuenta puede ser: "corriente" | "ahorros" | "tarjeta_credito"
-red_tarjeta puede ser: "Visa" | "Mastercard" | "Diners" | "American Express" | null
+tipo_cuenta: "corriente" | "ahorros" | "tarjeta_credito"
+red_tarjeta: "Visa" | "Mastercard" | "Diners" | "American Express" | null
 
-Si no es un estado de cuenta bancario, responde: {"es_estado_cuenta": false}`;
+Si no es estado de cuenta bancario: {"es_estado_cuenta": false}`;
 
 async function getValidAccessToken(userId: string): Promise<string | null> {
   const { data: token } = await supabase
@@ -210,21 +230,26 @@ Deno.serve(async (req) => {
 
       let extracted: any = null;
       try {
-        const bodyContent = email.body?.content || '';
-        extracted = await extractWithClaude(bodyContent, false);
-
-        if (extracted?.es_estado_cuenta && !extracted.saldo && email.hasAttachments) {
+        // Siempre intentar PDF primero — tiene el detalle completo de transacciones
+        if (email.hasAttachments) {
           const attachRes = await fetch(
             `https://graph.microsoft.com/v1.0/me/messages/${email.id}/attachments`,
             { headers: { Authorization: `Bearer ${accessToken}` } }
           );
           const attachData = await attachRes.json();
           const pdf = (attachData.value || []).find((a: any) =>
-            a.contentType === 'application/pdf' || a.name?.endsWith('.pdf')
+            a.contentType === 'application/pdf' || a.name?.toLowerCase().endsWith('.pdf')
           );
           if (pdf?.contentBytes) {
             extracted = await extractWithClaude('', true, pdf.contentBytes);
+            console.log(`PDF procesado: ${pdf.name}, transacciones: ${extracted?.transacciones?.length || 0}`);
           }
+        }
+
+        // Fallback al cuerpo del email si no hay PDF o falló
+        if (!extracted?.es_estado_cuenta) {
+          const bodyContent = email.body?.content || '';
+          extracted = await extractWithClaude(bodyContent, false);
         }
       } catch (e) {
         console.error('Error extracting email', email.id, e);

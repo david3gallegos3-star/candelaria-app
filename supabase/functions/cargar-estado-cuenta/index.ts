@@ -11,6 +11,26 @@ const cors = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+function parseFecha(f: string | null): string | null {
+  if (!f) return null;
+  // DD/MM/YYYY → YYYY-MM-DD
+  const parts = f.split('/');
+  if (parts.length === 3) return `${parts[2]}-${parts[1]}-${parts[0]}`;
+  return f;
+}
+
+function categoriaDeTransaccion(tipo: string, tipoCuenta: string): string {
+  if (tipoCuenta === 'tarjeta_credito') {
+    if (tipo === 'pago') return null as any; // pagos al banco no se cargan como gasto
+    return 'tarjetas';
+  }
+  if (tipoCuenta === 'corriente' || tipoCuenta === 'ahorros') {
+    if (tipo === 'prestamo') return 'prestamos';
+    return 'gastos_personal';
+  }
+  return 'otros';
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
 
@@ -30,7 +50,9 @@ Deno.serve(async (req) => {
     const mes = stmt.periodo_mes;
     const año = stmt.periodo_año;
     const datos = stmt.datos_json || {};
+    const comentarioBase = `${stmt.banco}${stmt.red_tarjeta ? ` ${stmt.red_tarjeta}` : ''}${stmt.ultimos4 ? ` ****${stmt.ultimos4}` : ''}`;
 
+    // 1. Cuentas corrientes/ahorros → guardar saldo
     if (stmt.tipo_cuenta === 'corriente' || stmt.tipo_cuenta === 'ahorros') {
       await supabase.from('config_contabilidad').upsert(
         { clave: `saldo_banco_${año}_${mes}`, valor: { saldo: String(stmt.saldo || 0) } },
@@ -38,30 +60,43 @@ Deno.serve(async (req) => {
       );
     }
 
-    if (stmt.tipo_cuenta === 'tarjeta_credito') {
-      const cargos = datos.cargos || [];
-      if (cargos.length > 0) {
-        const rows = cargos.map((c: any) => ({
-          mes, año,
-          fecha:        c.fecha ? c.fecha.split('/').reverse().join('-') : null,
-          beneficiario: stmt.banco,
-          concepto:     c.cuota_actual
-            ? `${c.descripcion} (Cuota ${c.cuota_actual}/${c.cuota_total})`
-            : c.descripcion,
-          monto:        parseFloat(c.monto) || 0,
-          categoria:    'tarjetas',
-          forma_pago:   '19',
-          comentario:   `${stmt.banco} ${stmt.red_tarjeta || ''} ****${stmt.ultimos4 || ''}`.trim(),
-        }));
-        await supabase.from('talonario_pagos_personales').insert(rows);
+    // 2. Insertar cada transacción individual en talonario_pagos_personales
+    const transacciones = datos.transacciones || datos.cargos || [];
+    const rows: any[] = [];
+
+    for (const t of transacciones) {
+      const categoria = categoriaDeTransaccion(t.tipo_transaccion || 'consumo', stmt.tipo_cuenta);
+
+      // No cargar pagos al banco como gasto (solo consumos/diferidos/intereses/prestamos)
+      if (!categoria) continue;
+
+      let concepto = t.descripcion || '';
+      if (t.cuota_actual && t.cuota_total) {
+        concepto += ` (Cuota ${t.cuota_actual}/${t.cuota_total})`;
       }
+
+      rows.push({
+        mes, año,
+        fecha:        parseFecha(t.fecha),
+        beneficiario: t.descripcion || stmt.banco,
+        concepto,
+        monto:        parseFloat(t.monto) || 0,
+        categoria,
+        forma_pago:   stmt.tipo_cuenta === 'tarjeta_credito' ? '19' : '20',
+        comentario:   comentarioBase,
+      });
     }
 
+    if (rows.length > 0) {
+      await supabase.from('talonario_pagos_personales').insert(rows);
+    }
+
+    // 3. Marcar como cargado
     await supabase.from('bank_statements')
       .update({ estado: 'cargado' })
       .eq('id', statementId);
 
-    return new Response(JSON.stringify({ ok: true }),
+    return new Response(JSON.stringify({ ok: true, transacciones_cargadas: rows.length }),
       { headers: { ...cors, 'Content-Type': 'application/json' } });
 
   } catch (e: any) {
