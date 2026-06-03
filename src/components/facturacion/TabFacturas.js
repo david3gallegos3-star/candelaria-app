@@ -7,6 +7,7 @@ import { supabase } from '../../supabase';
 import { useRealtime } from '../../hooks/useRealtime';
 import { getBorradores as getLocalBorradores } from '../../lib/offlineBorradores';
 import { revertirAsientoNotaVenta, revertirAsientoFactura } from '../../utils/asientosContables';
+import { imprimirTicket } from '../../utils/imprimirTicket';
 
 const ESTADO_COLOR = {
   autorizada: { bg: '#e8f5e9', color: '#27ae60', label: '✅ Autorizada' },
@@ -141,6 +142,13 @@ export default function TabFacturas({ mobile, userRol }) {
       .update({ anulado_sri: true }).eq('id', facturaId);
     if (error) return alert('Error: ' + error.message);
     cargarFacturas();
+  }
+
+  // ── Reimprimir ticket ─────────────────────────────────────
+  async function reimprimir(f) {
+    const { data } = await supabase.from('facturas_detalle')
+      .select('*').eq('factura_id', f.id).order('id');
+    imprimirTicket(f, data || []);
   }
 
   // ── Reenviar factura por correo ───────────────────────────
@@ -660,6 +668,12 @@ export default function TabFacturas({ mobile, userRol }) {
                       borderRadius: 7, padding: '6px 12px',
                       cursor: 'pointer', fontWeight: 'bold', fontSize: '12px',
                     }}>{abierta ? '▲ Cerrar' : '👁 Ver'}</button>
+                    <button onClick={() => reimprimir(f)} style={{
+                      background: 'white', color: '#555',
+                      border: '1.5px solid #aaa', borderRadius: 7,
+                      padding: '6px 12px', cursor: 'pointer',
+                      fontWeight: 'bold', fontSize: '12px',
+                    }}>🖨️ Reimprimir</button>
 
                     {f.pdf_url && (
                       <a href={f.pdf_url} target="_blank" rel="noreferrer" style={{

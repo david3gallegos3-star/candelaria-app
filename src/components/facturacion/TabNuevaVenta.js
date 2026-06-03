@@ -8,6 +8,7 @@ import { useRealtime } from '../../hooks/useRealtime';
 import { generarAsientoFactura } from '../../utils/asientosContables';
 import { get as cacheGet, set as cacheSet, makeKey as cacheMakeKey } from '../../lib/readCache';
 import { addBorrador as addOfflineBorrador } from '../../lib/offlineBorradores';
+import { imprimirTicket } from '../../utils/imprimirTicket';
 
 const CONSUMIDOR_FINAL = {
   id: null, nombre: 'CONSUMIDOR FINAL',
@@ -221,6 +222,14 @@ export default function TabNuevaVenta({ mobile, currentUser, userRol }) {
         .eq('clave', 'factura_secuencial');
 
       setSecuencial(prev => prev + 1);
+      const facturaParaTicket = {
+        ...factura,
+        numero,
+        cliente_nombre:  clienteObj.nombre,
+        vendedor_nombre: userRol?.nombre || '',
+        forma_pago:      formaPago,
+      };
+      imprimirTicket(facturaParaTicket, itemsValidos);
       setFacturaEmitida({ ...data, numero, cliente: clienteObj.nombre, total });
       generarAsientoFactura({
         id: factura.id, numero, subtotal, iva, total,
@@ -352,6 +361,13 @@ export default function TabNuevaVenta({ mobile, currentUser, userRol }) {
       await cacheSet(dKey, [...(dCached?.data || []), ...cacheDetalle]);
     } catch {}
 
+    const facturaParaTicketB = {
+      id: facturaId, numero, estado: 'borrador',
+      cliente_nombre: clienteObj.nombre, vendedor_nombre: userRol?.nombre || '',
+      forma_pago: formaPago, subtotal, iva, total,
+      created_at: new Date().toISOString(),
+    };
+    imprimirTicket(facturaParaTicketB, items.filter(i => i.producto_nombre && parseFloat(i.cantidad) > 0));
     setFacturaEmitida({ numero, cliente: clienteObj.nombre, total, autorizacion: null, esBorrador: true });
     setEmitiendo(false);
   }
@@ -410,6 +426,13 @@ export default function TabNuevaVenta({ mobile, currentUser, userRol }) {
           .update({ valor: String(secuencialNV + 1), updated_at: new Date().toISOString() })
           .eq('clave', 'nota_venta_secuencial');
         setSecuencialNV(prev => prev + 1);
+        const facturaParaTicketNVOff = {
+          numero, estado: 'borrador', tipo: 'nota_venta',
+          cliente_nombre: clienteObj.nombre, vendedor_nombre: userRol?.nombre || '',
+          forma_pago: formaPago, subtotal, iva, total,
+          created_at: new Date().toISOString(),
+        };
+        imprimirTicket(facturaParaTicketNVOff, itemsValidos);
         setFacturaEmitida({ numero, cliente: clienteObj.nombre, total, esBorrador: true, tipo: 'nota_venta' });
       } catch (e) {
         setError('Error al guardar nota de venta offline: ' + e.message);
@@ -447,6 +470,13 @@ export default function TabNuevaVenta({ mobile, currentUser, userRol }) {
         cliente_nombre: clienteObj.nombre, metodo_pago: formaPago
       }, 'interno').catch(console.error);
 
+      const facturaParaTicketNV = {
+        id: factura.id, numero, estado: 'autorizada', tipo: 'nota_venta',
+        cliente_nombre: clienteObj.nombre, vendedor_nombre: userRol?.nombre || '',
+        forma_pago: formaPago, subtotal, iva, total,
+        created_at: new Date().toISOString(),
+      };
+      imprimirTicket(facturaParaTicketNV, itemsValidos);
       setFacturaEmitida({ numero, cliente: clienteObj.nombre, total, tipo: 'nota_venta' });
 
     } catch (e) {
