@@ -6,30 +6,49 @@ import { TablaLectura } from '../shared/TablaLectura';
 
 export default function GastosEfectivo() {
   const { fechaDesde, fechaHasta } = useTalonario();
-  const [filas, setFilas] = useState([]);
+  const [filas,    setFilas]    = useState([]);
   const [cargando, setCargando] = useState(false);
 
   useEffect(() => {
     async function cargar() {
       setCargando(true);
-      const { data } = await supabase
-        .from('caja_gastos')
-        .select('id, fecha, concepto, monto, tipo')
+      // caja_gastos no tiene fecha — la fecha está en caja_chica
+      const { data: cajas } = await supabase
+        .from('caja_chica')
+        .select('id, fecha')
         .gte('fecha', fechaDesde)
         .lte('fecha', fechaHasta)
         .order('fecha');
-      setFilas(data || []);
+
+      const cajaIds = (cajas || []).map(c => c.id);
+      if (!cajaIds.length) {
+        setFilas([]);
+        setCargando(false);
+        return;
+      }
+
+      const { data: gastos } = await supabase
+        .from('caja_gastos')
+        .select('id, caja_id, proveedor, detalle, valor')
+        .in('caja_id', cajaIds);
+
+      const fechaMap = Object.fromEntries((cajas || []).map(c => [c.id, c.fecha]));
+      const merged = (gastos || [])
+        .map(g => ({ ...g, fecha: fechaMap[g.caja_id] || '' }))
+        .sort((a, b) => a.fecha.localeCompare(b.fecha));
+
+      setFilas(merged);
       setCargando(false);
     }
     cargar();
   }, [fechaDesde, fechaHasta]);
 
   const columnas = [
-    { key: 'fecha',   label: 'Fecha' },
-    { key: 'concepto',label: 'Concepto' },
-    { key: 'tipo',    label: 'Tipo' },
-    { key: 'monto',   label: 'Monto', render: f => `$${parseFloat(f.monto||0).toFixed(2)}`, align: 'right' },
-    { key: 'fp',      label: 'Forma Pago', render: () => 'Efectivo (01)' },
+    { key: 'fecha',     label: 'Fecha' },
+    { key: 'proveedor', label: 'Proveedor', render: f => f.proveedor || '—' },
+    { key: 'detalle',   label: 'Detalle',   render: f => f.detalle   || '—' },
+    { key: 'valor',     label: 'Monto', render: f => `$${parseFloat(f.valor||0).toFixed(2)}`, align: 'right' },
+    { key: 'fp',        label: 'Forma Pago', render: () => 'Efectivo (01)' },
   ];
 
   return (
@@ -38,7 +57,7 @@ export default function GastosEfectivo() {
       filas={filas}
       columnas={columnas}
       cargando={cargando}
-      campoMonto="monto"
+      campoMonto="valor"
     />
   );
 }
