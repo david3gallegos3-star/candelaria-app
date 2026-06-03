@@ -92,6 +92,19 @@ async function getValidAccessToken(userId: string): Promise<string | null> {
   return newTokens.access_token;
 }
 
+function stripHtml(html: string): string {
+  return html
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 async function extractWithClaude(content: string, isPdf: boolean, pdfBase64?: string): Promise<any> {
   let messages: any[];
 
@@ -104,9 +117,10 @@ async function extractWithClaude(content: string, isPdf: boolean, pdfBase64?: st
       ],
     }];
   } else {
+    const cleanContent = stripHtml(content);
     messages = [{
       role: 'user',
-      content: `${EXTRACTION_PROMPT}\n\nContenido del email:\n${content.slice(0, 8000)}`,
+      content: `${EXTRACTION_PROMPT}\n\nContenido del email:\n${cleanContent.slice(0, 8000)}`,
     }];
   }
 
@@ -117,7 +131,10 @@ async function extractWithClaude(content: string, isPdf: boolean, pdfBase64?: st
   });
 
   const texto = resp.content[0].text.trim();
-  return JSON.parse(texto);
+  // Extraer JSON aunque Claude agregue texto extra
+  const jsonMatch = texto.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error(`Claude no retornó JSON: ${texto.slice(0, 200)}`);
+  return JSON.parse(jsonMatch[0]);
 }
 
 Deno.serve(async (req) => {
