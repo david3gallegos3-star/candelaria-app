@@ -28,6 +28,7 @@ export default function TabIngresoCompra({ mobile, currentUser, userRol }) {
   const [proveedorId,  setProveedorId]  = useState('');
   const [fecha,        setFecha]        = useState(new Date().toISOString().split('T')[0]);
   const [tieneFactura,    setTieneFactura]    = useState(false);
+  const [esPersonal,      setEsPersonal]      = useState(false);
   const [numFactura,      setNumFactura]      = useState('');
   const [autorizacionSri, setAutorizacionSri] = useState('');
   const [fechaEmision,    setFechaEmision]    = useState('');
@@ -123,6 +124,7 @@ export default function TabIngresoCompra({ mobile, currentUser, userRol }) {
         proveedor_nombre: proveedor?.nombre || '',
         fecha,
         tiene_factura:      tieneFactura,
+        es_personal:        esPersonal,
         numero_factura:     tieneFactura ? (numFactura || null) : null,
         autorizacion_sri:   tieneFactura && autorizacionSri ? autorizacionSri : null,
         fecha_emision:      tieneFactura && fechaEmision ? fechaEmision : null,
@@ -394,6 +396,19 @@ export default function TabIngresoCompra({ mobile, currentUser, userRol }) {
             />
             <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#555' }}>
               Tiene factura
+            </span>
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer',
+            background: esPersonal ? '#fff3e0' : 'transparent',
+            padding: '4px 10px', borderRadius: 8,
+            border: esPersonal ? '1.5px solid #e67e22' : '1.5px solid transparent' }}>
+            <input
+              type="checkbox" checked={esPersonal}
+              onChange={e => setEsPersonal(e.target.checked)}
+              style={{ width: 16, height: 16 }}
+            />
+            <span style={{ fontSize: '13px', fontWeight: 'bold', color: esPersonal ? '#e67e22' : '#555' }}>
+              📄 Compra personal (a mi nombre)
             </span>
           </label>
           {tieneFactura && (

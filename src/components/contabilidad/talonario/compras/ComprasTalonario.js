@@ -20,6 +20,7 @@ export default function ComprasTalonario() {
         .select('id, fecha, total, tiene_factura, forma_pago, numero_factura, proveedores(nombre)')
         .gte('fecha', fechaDesde)
         .lte('fecha', fechaHasta)
+        .neq('es_personal', true)
         .order('fecha');
       setFilas(data || []);
       setCargando(false);

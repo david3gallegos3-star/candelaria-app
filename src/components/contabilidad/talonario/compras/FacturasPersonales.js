@@ -15,10 +15,32 @@ export default function FacturasPersonales() {
 
   async function cargar() {
     setCargando(true);
-    const { data } = await supabase
-      .from('talonario_facturas_personales')
-      .select('*').eq('mes', mes).eq('año', año).order('fecha');
-    setFilas(data || []);
+    const fechaDesde = `${año}-${String(mes).padStart(2,'0')}-01`;
+    const fechaHasta = `${año}-${String(mes).padStart(2,'0')}-${new Date(año, mes, 0).getDate()}`;
+
+    const [{ data: manuales }, { data: deCompras }] = await Promise.all([
+      supabase.from('talonario_facturas_personales')
+        .select('*').eq('mes', mes).eq('año', año).order('fecha'),
+      supabase.from('compras')
+        .select('id, fecha, proveedor_nombre, total, tiene_factura, numero_factura, forma_pago')
+        .eq('es_personal', true)
+        .gte('fecha', fechaDesde).lte('fecha', fechaHasta).order('fecha'),
+    ]);
+
+    // Unificar: marcar las de compras con _fuente para no editarlas
+    const deComprasNorm = (deCompras || []).map(c => ({
+      id:           `compra_${c.id}`,
+      fecha:        c.fecha,
+      proveedor:    c.proveedor_nombre,
+      descripcion:  c.numero_factura ? `Factura ${c.numero_factura}` : 'Compra personal',
+      monto:        parseFloat(c.total || 0),
+      tiene_factura: c.tiene_factura,
+      forma_pago:   c.forma_pago || '20',
+      comentario:   'Registrada en módulo Compras',
+      _readOnly:    true,
+    }));
+
+    setFilas([...(manuales || []), ...deComprasNorm]);
     setCargando(false);
   }
 
