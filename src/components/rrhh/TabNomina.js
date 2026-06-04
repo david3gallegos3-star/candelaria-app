@@ -47,7 +47,9 @@ function imprimirRol(n, mesLabel, anio, movsEmpresa = []) {
   const iessEmp    = parseFloat(n.iess_empleado  || 0);
   const iessP      = parseFloat(n.empleados?.porcentaje_iess_empleado || 9.45);
 
-  const sumaM      = tipo => movsEmpresa.filter(m => m.tipo === tipo).reduce((s, m) => s + parseFloat(m.valor || 0), 0);
+  const sumaM      = tipo => movsEmpresa
+    .filter(m => m.tipo === tipo && (m.tipo !== 'compra' || m.activo !== false))
+    .reduce((s, m) => s + parseFloat(m.valor || 0), 0);
   const anticipo     = parseFloat(sumaM('anticipo').toFixed(2));
   const compras      = parseFloat(sumaM('compra').toFixed(2));
   const bonif        = parseFloat(sumaM('bono').toFixed(2));
@@ -355,7 +357,7 @@ export default function TabNomina({ mobile }) {
         .map(m => m.cxc_id);
       for (const id of cxcIds) {
         const { data: cxcRow } = await supabase
-          .from('cuentas_cobrar').select('monto_total').eq('id', id).single();
+          .from('cuentas_cobrar').select('monto_total').eq('id', id).maybeSingle();
         if (cxcRow) {
           await supabase.from('cuentas_cobrar')
             .update({ estado: 'pagada', monto_cobrado: cxcRow.monto_total })
@@ -808,7 +810,9 @@ export default function TabNomina({ mobile }) {
 
         // Leer movimientos en vivo (no el registro guardado que puede estar desactualizado)
         const movsVivos = movimientos.filter(m => m.empleado_id === empId);
-        const sumaViva  = tipo => movsVivos.filter(m => m.tipo === tipo).reduce((s, m) => s + parseFloat(m.valor || 0), 0);
+        const sumaViva  = tipo => movsVivos
+          .filter(m => m.tipo === tipo && (m.tipo !== 'compra' || m.activo !== false))
+          .reduce((s, m) => s + parseFloat(m.valor || 0), 0);
         const ant = parseFloat(sumaViva('anticipo').toFixed(2));
         const com = parseFloat(sumaViva('compra').toFixed(2));
         const bon = parseFloat(sumaViva('bono').toFixed(2));
