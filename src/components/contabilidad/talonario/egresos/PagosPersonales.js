@@ -11,30 +11,17 @@ const CATEGORIAS = [
   { value: 'otros',           label: '📋 Otros' },
 ];
 
-// Las 3 secciones del Excel
 const SECCIONES = [
-  {
-    titulo: '🏦 Pagos Préstamo y Tarjeta',
-    cats:   ['prestamos', 'tarjetas'],
-    color:  '#1a5276',
-  },
-  {
-    titulo: '👤 Pagos Gastos Personales',
-    cats:   ['gastos_personal'],
-    color:  '#6c3483',
-  },
-  {
-    titulo: '📋 Otros Pagos Personales',
-    cats:   ['otros'],
-    color:  '#117a65',
-  },
+  { titulo: '🏦 Pagos Préstamo y Tarjeta', cats: ['prestamos', 'tarjetas'], color: '#1a5276' },
+  { titulo: '👤 Pagos Gastos Personales',  cats: ['gastos_personal'],       color: '#6c3483' },
+  { titulo: '📋 Otros Pagos Personales',   cats: ['otros'],                 color: '#117a65' },
 ];
 
 const VACIO = { fecha: '', beneficiario: '', concepto: '', monto: '',
   categoria: 'prestamos', forma_pago: '20', comentario: '' };
 
 function SeccionPagos({ titulo, color, filas, busqueda, columnas, cargando,
-  esAdminContador, onAgregar, onEditar, onEliminar }) {
+  esAdminContador, onAgregar, onEditar, onEliminar, seleccionados, onToggleTodos }) {
 
   const filasFiltradas = busqueda
     ? filas.filter(f =>
@@ -44,13 +31,27 @@ function SeccionPagos({ titulo, color, filas, busqueda, columnas, cargando,
     : filas;
 
   const total = filasFiltradas.reduce((s, f) => s + parseFloat(f.monto || 0), 0);
+  const todosSelec = filasFiltradas.length > 0 && filasFiltradas.every(f => seleccionados.has(f.id));
+  const algunoSelec = filasFiltradas.some(f => seleccionados.has(f.id));
 
   return (
     <div style={{ marginBottom: 20 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         background: color, color: 'white', borderRadius: '8px 8px 0 0',
         padding: '8px 14px', fontSize: 13, fontWeight: 'bold' }}>
-        <span>{titulo}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {esAdminContador && (
+            <input
+              type="checkbox"
+              checked={todosSelec}
+              ref={el => { if (el) el.indeterminate = algunoSelec && !todosSelec; }}
+              onChange={() => onToggleTodos(filasFiltradas)}
+              style={{ cursor: 'pointer', width: 15, height: 15 }}
+              title={todosSelec ? 'Deseleccionar todos' : 'Seleccionar todos'}
+            />
+          )}
+          <span>{titulo}</span>
+        </div>
         <span>TOTAL: ${total.toFixed(2)}</span>
       </div>
       <div style={{ background: 'white', borderRadius: '0 0 8px 8px',
@@ -73,11 +74,13 @@ function SeccionPagos({ titulo, color, filas, busqueda, columnas, cargando,
 
 export default function PagosPersonales() {
   const { mes, año, esAdminContador } = useTalonario();
-  const [filas,     setFilas]     = useState([]);
-  const [cargando,  setCargando]  = useState(false);
-  const [form,      setForm]      = useState(null);
-  const [guardando, setGuardando] = useState(false);
-  const [busqueda,  setBusqueda]  = useState('');
+  const [filas,         setFilas]         = useState([]);
+  const [cargando,      setCargando]      = useState(false);
+  const [form,          setForm]          = useState(null);
+  const [guardando,     setGuardando]     = useState(false);
+  const [busqueda,      setBusqueda]      = useState('');
+  const [seleccionados, setSeleccionados] = useState(new Set());
+  const [eliminando,    setEliminando]    = useState(false);
 
   async function cargar() {
     setCargando(true);
@@ -85,10 +88,42 @@ export default function PagosPersonales() {
       .from('talonario_pagos_personales')
       .select('*').eq('mes', mes).eq('año', año).order('categoria').order('fecha');
     setFilas(data || []);
+    setSeleccionados(new Set());
     setCargando(false);
   }
 
   useEffect(() => { cargar(); }, [mes, año]);
+
+  function toggleSeleccion(id) {
+    setSeleccionados(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  function toggleTodos(filasSec) {
+    const ids = filasSec.map(f => f.id);
+    const todosSelec = ids.every(id => seleccionados.has(id));
+    setSeleccionados(prev => {
+      const next = new Set(prev);
+      if (todosSelec) {
+        ids.forEach(id => next.delete(id));
+      } else {
+        ids.forEach(id => next.add(id));
+      }
+      return next;
+    });
+  }
+
+  async function eliminarSeleccionados() {
+    if (seleccionados.size === 0) return;
+    if (!window.confirm(`¿Eliminar ${seleccionados.size} registro(s) seleccionado(s)?`)) return;
+    setEliminando(true);
+    await supabase.from('talonario_pagos_personales').delete().in('id', [...seleccionados]);
+    setEliminando(false);
+    cargar();
+  }
 
   async function guardar() {
     if (!form.concepto || !form.monto) return alert('Concepto y monto son requeridos');
@@ -112,6 +147,19 @@ export default function PagosPersonales() {
   }
 
   const columnas = [
+    ...(esAdminContador ? [{
+      key: '_sel',
+      label: '',
+      render: f => (
+        <input
+          type="checkbox"
+          checked={seleccionados.has(f.id)}
+          onChange={() => toggleSeleccion(f.id)}
+          style={{ cursor: 'pointer' }}
+          onClick={e => e.stopPropagation()}
+        />
+      ),
+    }] : []),
     { key: 'fecha',        label: 'Fecha' },
     { key: 'categoria',    label: 'Categoría', render: f => CATEGORIAS.find(c => c.value === f.categoria)?.label || f.categoria },
     { key: 'beneficiario', label: 'Beneficiario' },
@@ -128,7 +176,6 @@ export default function PagosPersonales() {
 
   return (
     <>
-      {/* Buscador + total */}
       <div style={{ display: 'flex', gap: 10, marginBottom: 16, alignItems: 'center', flexWrap: 'wrap' }}>
         <input
           type="text" placeholder="🔍 Buscar beneficiario, concepto, banco..."
@@ -139,6 +186,14 @@ export default function PagosPersonales() {
           boxShadow: '0 1px 4px rgba(0,0,0,0.08)', fontWeight: 'bold', fontSize: 13, color: '#1a5276' }}>
           TOTAL: ${totalGeneral.toFixed(2)}
         </div>
+        {esAdminContador && seleccionados.size > 0 && (
+          <button onClick={eliminarSeleccionados} disabled={eliminando}
+            style={{ background: eliminando ? '#95a5a6' : '#e74c3c', color: 'white', border: 'none',
+              borderRadius: 8, padding: '8px 16px', cursor: eliminando ? 'not-allowed' : 'pointer',
+              fontWeight: 'bold', fontSize: 13 }}>
+            {eliminando ? '⏳ Eliminando...' : `🗑️ Eliminar ${seleccionados.size} seleccionado(s)`}
+          </button>
+        )}
         {esAdminContador && (
           <button onClick={() => setForm({ ...VACIO })}
             style={{ background: '#27ae60', color: 'white', border: 'none',
@@ -148,7 +203,6 @@ export default function PagosPersonales() {
         )}
       </div>
 
-      {/* 3 secciones */}
       {SECCIONES.map(sec => (
         <SeccionPagos
           key={sec.titulo}
@@ -162,10 +216,11 @@ export default function PagosPersonales() {
           onAgregar={() => setForm({ ...VACIO, categoria: sec.cats[0] })}
           onEditar={f => setForm({ ...f })}
           onEliminar={eliminar}
+          seleccionados={seleccionados}
+          onToggleTodos={toggleTodos}
         />
       ))}
 
-      {/* Modal */}
       {form && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
           display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
