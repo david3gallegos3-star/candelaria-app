@@ -39,7 +39,7 @@ export default function ResumenTalonario() {
       supabase.from('talonario_pagos_banco').select('monto').eq('mes', mes).eq('año', año),
       supabase.from('talonario_pagos_personales').select('monto,categoria').eq('mes', mes).eq('año', año),
       supabase.from('talonario_otros_ingresos').select('monto').eq('mes', mes).eq('año', año),
-      supabase.from('cuentas_cobrar').select('monto_total,monto_cobrado').eq('estado', 'pendiente'),
+      supabase.from('cuentas_cobrar').select('monto_total,monto_cobrado').in('estado', ['pendiente', 'parcial']),
       supabase.from('config_contabilidad').select('valor').eq('clave', `saldo_banco_${año}_${mes}`).maybeSingle(),
     ]);
 
