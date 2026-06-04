@@ -35,7 +35,10 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
 
   try {
-    const { statementId, userId } = await req.json();
+    const { statementId, userId, categorias } = await req.json();
+    const catMap = new Map<number, 'personal' | 'empresa'>(
+      (categorias || []).map((c: any) => [c.index, c.destino])
+    );
 
     const { data: stmt, error: stmtErr } = await supabase
       .from('bank_statements')
@@ -59,35 +62,52 @@ Deno.serve(async (req) => {
       );
     }
 
-    // 2. Insertar cada transacción individual en talonario_pagos_personales
+    // 2. Insertar cada transacción individual, ruteando por destino
     const transacciones = datos.transacciones || datos.cargos || [];
-    const rows: any[] = [];
+    const personalRows: any[] = [];
+    const empresaRows: any[] = [];
 
-    for (const t of transacciones) {
+    for (let i = 0; i < transacciones.length; i++) {
+      const t = transacciones[i];
       const categoria = categoriaDeTransaccion(t.tipo_transaccion || 'consumo', stmt.tipo_cuenta);
+      if (!categoria) continue; // skip pagos al banco
 
-      // No cargar pagos al banco como gasto (solo consumos/diferidos/intereses/prestamos)
-      if (!categoria) continue;
+      const destino = catMap.size > 0 ? (catMap.get(i) || 'personal') : 'personal';
 
       let concepto = t.descripcion || '';
       if (t.cuota_actual && t.cuota_total) {
         concepto += ` (Cuota ${t.cuota_actual}/${t.cuota_total})`;
       }
 
-      rows.push({
-        mes, año,
-        fecha:        parseFecha(t.fecha),
-        beneficiario: t.descripcion || stmt.banco,
-        concepto,
-        monto:        parseFloat(t.monto) || 0,
-        categoria,
-        forma_pago:   stmt.tipo_cuenta === 'tarjeta_credito' ? '19' : '20',
-        comentario:   comentarioBase,
-      });
+      if (destino === 'empresa') {
+        empresaRows.push({
+          mes, año,
+          fecha:        parseFecha(t.fecha),
+          beneficiario: t.descripcion || stmt.banco,
+          concepto,
+          monto:        parseFloat(t.monto) || 0,
+          forma_pago:   stmt.tipo_cuenta === 'tarjeta_credito' ? '19' : '20',
+          comentario:   comentarioBase,
+        });
+      } else {
+        personalRows.push({
+          mes, año,
+          fecha:        parseFecha(t.fecha),
+          beneficiario: t.descripcion || stmt.banco,
+          concepto,
+          monto:        parseFloat(t.monto) || 0,
+          categoria,
+          forma_pago:   stmt.tipo_cuenta === 'tarjeta_credito' ? '19' : '20',
+          comentario:   comentarioBase,
+        });
+      }
     }
 
-    if (rows.length > 0) {
-      await supabase.from('talonario_pagos_personales').insert(rows);
+    if (personalRows.length > 0) {
+      await supabase.from('talonario_pagos_personales').insert(personalRows);
+    }
+    if (empresaRows.length > 0) {
+      await supabase.from('talonario_pagos_banco').insert(empresaRows);
     }
 
     // 3. Marcar como cargado
@@ -95,7 +115,12 @@ Deno.serve(async (req) => {
       .update({ estado: 'cargado' })
       .eq('id', statementId);
 
-    return new Response(JSON.stringify({ ok: true, transacciones_cargadas: rows.length }),
+    return new Response(JSON.stringify({
+      ok: true,
+      transacciones_cargadas: personalRows.length + empresaRows.length,
+      personal: personalRows.length,
+      empresa: empresaRows.length,
+    }),
       { headers: { ...cors, 'Content-Type': 'application/json' } });
 
   } catch (e: any) {
