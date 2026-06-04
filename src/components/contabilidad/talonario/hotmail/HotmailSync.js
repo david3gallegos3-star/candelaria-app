@@ -82,7 +82,6 @@ function TarjetaEstado({ stmt, onCargar, cargando }) {
 
 export default function HotmailSync() {
   const { mes, año } = useTalonario();
-  const [user,          setUser]          = useState(null);
   const [tokenInfo,     setTokenInfo]     = useState(null);
   const [cargandoInfo,  setCargandoInfo]  = useState(true);
   const [sincronizando, setSincronizando] = useState(false);
@@ -90,51 +89,47 @@ export default function HotmailSync() {
   const [msgSync,       setMsgSync]       = useState('');
   const [cargando,      setCargando]      = useState(null);
 
-  useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      setUser(data.user);
-      if (data.user) cargarToken(data.user.id);
-      else setCargandoInfo(false);
-    });
-  }, []);
+  useEffect(() => { cargarToken(); }, []);
 
-  async function cargarToken(userId) {
+  async function cargarToken() {
     setCargandoInfo(true);
     const { data } = await supabase.from('ms_tokens')
-      .select('email, expires_at').eq('user_id', userId).single();
+      .select('email, expires_at, user_id').limit(1).maybeSingle();
     setTokenInfo(data || null);
-    if (data) await cargarPendientes(userId);
+    if (data) await cargarPendientes();
     setCargandoInfo(false);
   }
 
-  async function cargarPendientes(userId) {
+  async function cargarPendientes() {
     const { data } = await supabase.from('bank_statements')
-      .select('*').eq('user_id', userId)
+      .select('*')
       .eq('estado', 'procesado')
       .order('created_at', { ascending: false });
     setStatements(data || []);
   }
 
   function conectarHotmail() {
-    if (!user) return;
-    window.location.href = `/api/auth/microsoft?userId=${user.id}`;
+    supabase.auth.getUser().then(({ data }) => {
+      const uid = data?.user?.id || 'global';
+      window.location.href = `/api/auth/microsoft?userId=${uid}`;
+    });
   }
 
   async function desconectar() {
-    if (!user) return;
     if (!window.confirm('¿Desconectar Hotmail? Se borrarán los tokens guardados.')) return;
-    await supabase.from('ms_tokens').delete().eq('user_id', user.id);
+    const { data: tok } = await supabase.from('ms_tokens').select('user_id').limit(1).maybeSingle();
+    if (tok) await supabase.from('ms_tokens').delete().eq('user_id', tok.user_id);
     setTokenInfo(null);
     setStatements([]);
   }
 
   async function sincronizar() {
-    if (!user) return;
+    if (!tokenInfo) return;
     setSincronizando(true);
     setMsgSync('');
     try {
       const { data, error } = await supabase.functions.invoke('leer-emails-banco', {
-        body: { userId: user.id },
+        body: { userId: tokenInfo.user_id },
       });
       if (error) throw new Error(error.message);
       if (data.total === 0) {
@@ -150,11 +145,10 @@ export default function HotmailSync() {
   }
 
   async function cargarAlTalonario(statementId) {
-    if (!user) return;
     setCargando(statementId);
     try {
       const { error } = await supabase.functions.invoke('cargar-estado-cuenta', {
-        body: { statementId, userId: user.id },
+        body: { statementId, userId: tokenInfo?.user_id },
       });
       if (error) throw new Error(error.message);
       setStatements(prev =>

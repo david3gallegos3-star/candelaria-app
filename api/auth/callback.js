@@ -43,14 +43,18 @@ module.exports = async function handler(req, res) {
 
     const expiresAt = new Date(Date.now() + (tokens.expires_in || 3600) * 1000).toISOString();
 
-    const { error: dbErr } = await supabase.from('ms_tokens').upsert({
+    // Eliminar token existente antes de insertar (un solo token global para toda la app)
+    const { data: existing } = await supabase.from('ms_tokens').select('user_id').limit(1).maybeSingle();
+    if (existing) await supabase.from('ms_tokens').delete().eq('user_id', existing.user_id);
+
+    const { error: dbErr } = await supabase.from('ms_tokens').insert({
       user_id:       userId,
       email,
       access_token:  tokens.access_token,
       refresh_token: tokens.refresh_token,
       expires_at:    expiresAt,
       updated_at:    new Date().toISOString(),
-    }, { onConflict: 'user_id' });
+    });
 
     if (dbErr) throw new Error(dbErr.message);
 

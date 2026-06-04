@@ -41,7 +41,6 @@ Deno.serve(async (req) => {
       .from('bank_statements')
       .select('*')
       .eq('id', statementId)
-      .eq('user_id', userId)
       .single();
 
     if (stmtErr || !stmt) throw new Error('Estado de cuenta no encontrado');

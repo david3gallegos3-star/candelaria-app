@@ -77,13 +77,13 @@ red_tarjeta: "Visa" | "Mastercard" | "Diners" | "American Express" | null
 
 Si no es estado de cuenta bancario: {"es_estado_cuenta": false}`;
 
-async function getValidAccessToken(userId: string): Promise<string | null> {
+async function getValidAccessToken(): Promise<{ accessToken: string; userId: string } | null> {
   const { data: token } = await supabase
-    .from('ms_tokens').select('*').eq('user_id', userId).single();
+    .from('ms_tokens').select('*').limit(1).maybeSingle();
   if (!token) return null;
 
   if (new Date(token.expires_at) > new Date(Date.now() + 5 * 60 * 1000)) {
-    return token.access_token;
+    return { accessToken: token.access_token, userId: token.user_id };
   }
 
   const res = await fetch('https://login.microsoftonline.com/consumers/oauth2/v2.0/token', {
@@ -107,9 +107,9 @@ async function getValidAccessToken(userId: string): Promise<string | null> {
     refresh_token: newTokens.refresh_token || token.refresh_token,
     expires_at:    expiresAt,
     updated_at:    new Date().toISOString(),
-  }).eq('user_id', userId);
+  }).eq('user_id', token.user_id);
 
-  return newTokens.access_token;
+  return { accessToken: newTokens.access_token, userId: token.user_id };
 }
 
 function stripHtml(html: string): string {
@@ -161,14 +161,12 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
 
   try {
-    const { userId } = await req.json();
-    if (!userId) throw new Error('userId requerido');
-
-    const accessToken = await getValidAccessToken(userId);
-    if (!accessToken) {
+    const tokenResult = await getValidAccessToken();
+    if (!tokenResult) {
       return new Response(JSON.stringify({ error: 'no_token', message: 'Hotmail no conectado' }),
         { status: 401, headers: { ...cors, 'Content-Type': 'application/json' } });
     }
+    const { accessToken, userId } = tokenResult;
 
     const desde = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000)
       .toISOString().replace(/\.\d{3}Z$/, 'Z');
@@ -204,8 +202,7 @@ Deno.serve(async (req) => {
 
     const { data: existing } = await supabase
       .from('bank_statements')
-      .select('ms_email_id, banco, ultimos4, periodo_mes, periodo_año, estado')
-      .eq('user_id', userId);
+      .select('ms_email_id, banco, ultimos4, periodo_mes, periodo_año, estado');
 
     const processedEmailIds = new Set((existing || []).map((s: any) => s.ms_email_id));
     const loadedKeys = new Set(
@@ -222,7 +219,7 @@ Deno.serve(async (req) => {
         const stmt = (existing || []).find((s: any) => s.ms_email_id === email.id);
         if (stmt && stmt.estado === 'procesado') {
           const { data: fullStmt } = await supabase
-            .from('bank_statements').select('*').eq('ms_email_id', email.id).eq('user_id', userId).single();
+            .from('bank_statements').select('*').eq('ms_email_id', email.id).single();
           if (fullStmt) pendientes.push(fullStmt);
         }
         continue;
