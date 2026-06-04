@@ -81,7 +81,7 @@ function TarjetaEstado({ stmt, onCargar, cargando }) {
 }
 
 export default function HotmailSync() {
-  const { mes, año } = useTalonario();
+  const { mes, año, MESES } = useTalonario();
   const [tokenInfo,     setTokenInfo]     = useState(null);
   const [cargandoInfo,  setCargandoInfo]  = useState(true);
   const [sincronizando, setSincronizando] = useState(false);
@@ -90,6 +90,7 @@ export default function HotmailSync() {
   const [cargando,      setCargando]      = useState(null);
 
   useEffect(() => { cargarToken(); }, []);
+  useEffect(() => { if (tokenInfo) cargarPendientes(); }, [mes, año]);
 
   async function cargarToken() {
     setCargandoInfo(true);
@@ -104,6 +105,8 @@ export default function HotmailSync() {
     const { data } = await supabase.from('bank_statements')
       .select('*')
       .eq('estado', 'procesado')
+      .eq('periodo_mes', mes)
+      .eq('periodo_año', año)
       .order('created_at', { ascending: false });
     setStatements(data || []);
   }
@@ -129,7 +132,7 @@ export default function HotmailSync() {
     setMsgSync('');
     try {
       const { data, error } = await supabase.functions.invoke('leer-emails-banco', {
-        body: { userId: tokenInfo.user_id },
+        body: { userId: tokenInfo.user_id, mes, año },
       });
       if (error) throw new Error(error.message);
       if (data.total === 0) {
@@ -209,7 +212,7 @@ export default function HotmailSync() {
                 padding: '8px 16px', cursor: sincronizando ? 'not-allowed' : 'pointer',
                 fontWeight: 'bold', fontSize: 12,
               }}>
-                {sincronizando ? '⏳ Sincronizando...' : '🔄 Sincronizar estados de cuenta'}
+                {sincronizando ? '⏳ Sincronizando...' : `🔄 Sincronizar ${MESES[mes - 1]} ${año}`}
               </button>
               <button onClick={desconectar} style={{
                 background: 'white', color: '#e74c3c',
