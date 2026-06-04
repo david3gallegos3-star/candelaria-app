@@ -73,10 +73,24 @@ async function imprimirConQzTray(html) {
   if (!qz) return false;
 
   try {
-    // Configuración sin certificado (uso local)
-    qz.security.setCertificatePromise((resolve) => resolve());
+    // Certificado firmado — permite recordar permisos en QZ Tray
+    qz.security.setCertificatePromise((resolve, reject) => {
+      fetch('/qz-certificate.pem')
+        .then(r => r.text())
+        .then(resolve)
+        .catch(reject);
+    });
     qz.security.setSignatureAlgorithm('SHA512');
-    qz.security.setSignaturePromise(() => (resolve) => resolve());
+    qz.security.setSignaturePromise((toSign) => (resolve, reject) => {
+      fetch('/api/qz-sign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ toSign }),
+      })
+        .then(r => r.json())
+        .then(d => resolve(d.signature))
+        .catch(reject);
+    });
 
     if (!qz.websocket.isActive()) {
       await qz.websocket.connect({ retries: 1, delay: 0.5 });
