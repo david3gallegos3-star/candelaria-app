@@ -157,10 +157,25 @@ async function extractWithClaude(content: string, isPdf: boolean, pdfBase64?: st
   return JSON.parse(jsonMatch[0]);
 }
 
+function calcularRango(mes: number, año: number): { desde: string; hasta: string } {
+  const primerDia = new Date(año, mes - 1, 1);
+  const desde = new Date(primerDia);
+  desde.setDate(desde.getDate() - 30);
+  const hasta = new Date(año, mes, 0, 23, 59, 59);
+  return {
+    desde: desde.toISOString().replace(/\.\d{3}Z$/, 'Z'),
+    hasta: hasta.toISOString().replace(/\.\d{3}Z$/, 'Z'),
+  };
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
 
   try {
+    const { userId: _userId, mes, año } = await req.json();
+    if (!mes || !año) throw new Error('mes y año requeridos');
+    const { desde, hasta } = calcularRango(mes, año);
+
     const tokenResult = await getValidAccessToken();
     if (!tokenResult) {
       return new Response(JSON.stringify({ error: 'no_token', message: 'Hotmail no conectado' }),
@@ -168,12 +183,9 @@ Deno.serve(async (req) => {
     }
     const { accessToken, userId } = tokenResult;
 
-    const desde = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000)
-      .toISOString().replace(/\.\d{3}Z$/, 'Z');
-
     // ConsistencyLevel: eventual + $count=true permite usar $filter con $orderby
     const graphUrl = `https://graph.microsoft.com/v1.0/me/messages` +
-      `?$filter=${encodeURIComponent(`receivedDateTime ge ${desde}`)}` +
+      `?$filter=${encodeURIComponent(`receivedDateTime ge ${desde} and receivedDateTime le ${hasta}`)}` +
       `&$orderby=${encodeURIComponent('receivedDateTime desc')}` +
       `&$count=true` +
       `&$top=50&$select=id,subject,receivedDateTime,body,hasAttachments`;
@@ -193,18 +205,24 @@ Deno.serve(async (req) => {
 
     // Filtrar localmente por palabras clave (insensible a mayúsculas)
     const allEmails = emailsData.value || [];
-    console.log(`Graph API: ${allEmails.length} emails encontrados en últimos 45 días`);
+    console.log(`Graph API: ${allEmails.length} emails encontrados para ${mes}/${año}`);
     const emails = allEmails.filter((email: any) => {
       const subject = (email.subject || '').toLowerCase();
       return BANK_KEYWORDS.some(k => subject.includes(k.toLowerCase()));
     });
     console.log(`Emails con palabras clave bancarias: ${emails.length}`);
 
+    const { data: allProcessed } = await supabase
+      .from('bank_statements')
+      .select('ms_email_id');
+
     const { data: existing } = await supabase
       .from('bank_statements')
-      .select('ms_email_id, banco, ultimos4, periodo_mes, periodo_año, estado');
+      .select('ms_email_id, banco, ultimos4, periodo_mes, periodo_año, estado')
+      .eq('periodo_mes', mes)
+      .eq('periodo_año', año);
 
-    const processedEmailIds = new Set((existing || []).map((s: any) => s.ms_email_id));
+    const processedEmailIds = new Set((allProcessed || []).map((s: any) => s.ms_email_id));
     const loadedKeys = new Set(
       (existing || [])
         .filter((s: any) => s.estado === 'cargado')
@@ -254,6 +272,11 @@ Deno.serve(async (req) => {
       }
 
       if (!extracted?.es_estado_cuenta) continue;
+
+      if (extracted.periodo_mes !== mes || extracted.periodo_año !== año) {
+        console.log(`Email período ${extracted.periodo_mes}/${extracted.periodo_año} — no coincide con ${mes}/${año}, omitiendo`);
+        continue;
+      }
 
       const dupKey = `${extracted.banco}_${extracted.ultimos4}_${extracted.periodo_mes}_${extracted.periodo_año}`;
       if (loadedKeys.has(dupKey)) continue;
