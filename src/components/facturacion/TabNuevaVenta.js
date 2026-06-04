@@ -124,9 +124,10 @@ export default function TabNuevaVenta({ mobile, currentUser, userRol }) {
   // ── Precio automático al elegir producto ─────────────────
   function precioAutomatico(productoNombre) {
     // 1. Precio específico del cliente seleccionado
-    if (clienteId !== 'consumidor_final') {
+    const idParaPrecio = clienteObj?.id;
+    if (idParaPrecio) {
       const p = precios.find(p =>
-        p.cliente_id === clienteId &&
+        p.cliente_id === idParaPrecio &&
         p.producto_nombre === productoNombre
       );
       if (p) return String(parseFloat(p.precio_venta_kg).toFixed(2));
@@ -525,6 +526,8 @@ export default function TabNuevaVenta({ mobile, currentUser, userRol }) {
     setObservaciones('');
     setFormaPago('efectivo');
     setClienteId('consumidor_final');
+    setClienteEsEmpleado(false);
+    setEmpleadoSeleccionado(null);
     setError(''); setErrorTipo('interno');
   }
 
