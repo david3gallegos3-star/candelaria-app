@@ -3,7 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { supabase } from '../../../../supabase';
 import { useTalonario } from '../TalonarioContext';
 
-function TarjetaEstado({ stmt, onCargar, cargando }) {
+function TarjetaEstado({ stmt, onVerTransacciones }) {
   const d = stmt.datos_json || {};
   const esTarjeta = stmt.tipo_cuenta === 'tarjeta_credito';
   const meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
@@ -62,14 +62,12 @@ function TarjetaEstado({ stmt, onCargar, cargando }) {
       )}
 
       {stmt.estado !== 'cargado' ? (
-        <button onClick={() => onCargar(stmt.id)} disabled={cargando === stmt.id} style={{
+        <button onClick={() => onVerTransacciones(stmt)} style={{
           marginTop: 10, width: '100%',
-          background: cargando === stmt.id ? '#95a5a6' : '#27ae60',
-          color: 'white', border: 'none', borderRadius: 8,
-          padding: '8px 0', cursor: cargando === stmt.id ? 'not-allowed' : 'pointer',
-          fontWeight: 'bold', fontSize: 12,
+          background: '#2980b9', color: 'white', border: 'none', borderRadius: 8,
+          padding: '8px 0', cursor: 'pointer', fontWeight: 'bold', fontSize: 12,
         }}>
-          {cargando === stmt.id ? '⏳ Cargando...' : '✅ Cargar al Talonario'}
+          👁 Ver transacciones y categorizar
         </button>
       ) : (
         <div style={{ marginTop: 10, textAlign: 'center', fontSize: 12, color: '#27ae60', fontWeight: 'bold' }}>
@@ -88,6 +86,9 @@ export default function HotmailSync() {
   const [statements,    setStatements]    = useState([]);
   const [msgSync,       setMsgSync]       = useState('');
   const [cargando,      setCargando]      = useState(null);
+  const [modalStmt,   setModalStmt]   = useState(null);
+  const [categorias,  setCategorias]  = useState({});
+  const [cargandoMod, setCargandoMod] = useState(false);
 
   useEffect(() => { cargarToken(); }, []);
   useEffect(() => { if (tokenInfo) cargarPendientes(); }, [mes, año]);
@@ -163,6 +164,36 @@ export default function HotmailSync() {
     setCargando(null);
   }
 
+  function abrirModal(stmt) {
+    const txs = (stmt.datos_json?.transacciones || stmt.datos_json?.cargos || [])
+      .filter(t => t.tipo_transaccion !== 'pago');
+    const cats = {};
+    txs.forEach((t, i) => {
+      cats[i] = t.tipo_transaccion === 'prestamo' ? 'empresa' : 'personal';
+    });
+    setCategorias(cats);
+    setModalStmt(stmt);
+  }
+
+  async function cargarConCategorias() {
+    if (!modalStmt) return;
+    setCargandoMod(true);
+    const txs = (modalStmt.datos_json?.transacciones || modalStmt.datos_json?.cargos || [])
+      .filter(t => t.tipo_transaccion !== 'pago');
+    const categoriasArray = txs.map((_, i) => ({ index: i, destino: categorias[i] || 'personal' }));
+    try {
+      const { error } = await supabase.functions.invoke('cargar-estado-cuenta', {
+        body: { statementId: modalStmt.id, userId: tokenInfo?.user_id, categorias: categoriasArray },
+      });
+      if (error) throw new Error(error.message);
+      setStatements(prev => prev.map(s => s.id === modalStmt.id ? { ...s, estado: 'cargado' } : s));
+      setModalStmt(null);
+    } catch (e) {
+      alert('Error al cargar: ' + e.message);
+    }
+    setCargandoMod(false);
+  }
+
   async function cargarTodos() {
     const pendientes = statements.filter(s => s.estado !== 'cargado');
     for (const s of pendientes) {
@@ -173,6 +204,11 @@ export default function HotmailSync() {
   if (cargandoInfo) return (
     <div style={{ padding: 40, textAlign: 'center', color: '#888' }}>Cargando...</div>
   );
+
+  const modalTxs = modalStmt
+    ? (modalStmt.datos_json?.transacciones || modalStmt.datos_json?.cargos || [])
+        .filter(t => t.tipo_transaccion !== 'pago')
+    : [];
 
   return (
     <div style={{ maxWidth: 700, margin: '0 auto' }}>
@@ -243,19 +279,94 @@ export default function HotmailSync() {
             <div style={{ fontWeight: 'bold', fontSize: 14, color: '#1a2a4a' }}>
               Estados de cuenta encontrados ({statements.length})
             </div>
-            {statements.some(s => s.estado !== 'cargado') && (
-              <button onClick={cargarTodos} style={{
-                background: '#27ae60', color: 'white', border: 'none',
-                borderRadius: 8, padding: '8px 16px', cursor: 'pointer',
-                fontWeight: 'bold', fontSize: 12,
-              }}>
-                ✅ Cargar todos al Talonario
-              </button>
-            )}
           </div>
           {statements.map(stmt => (
-            <TarjetaEstado key={stmt.id} stmt={stmt} onCargar={cargarAlTalonario} cargando={cargando} />
+            <TarjetaEstado key={stmt.id} stmt={stmt} onVerTransacciones={abrirModal} />
           ))}
+        </div>
+      )}
+
+      {modalStmt && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0,0,0,0.5)', zIndex: 1000,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+        }}>
+          <div style={{
+            background: 'white', borderRadius: 12, padding: 20,
+            width: '100%', maxWidth: 620, maxHeight: '85vh',
+            display: 'flex', flexDirection: 'column',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
+          }}>
+            <div style={{ fontWeight: 'bold', fontSize: 15, color: '#1a2a4a', marginBottom: 4 }}>
+              {modalStmt.banco}{modalStmt.red_tarjeta ? ` — ${modalStmt.red_tarjeta}` : ''}
+              {modalStmt.ultimos4 ? ` ****${modalStmt.ultimos4}` : ''}
+            </div>
+            <div style={{ fontSize: 12, color: '#888', marginBottom: 12 }}>
+              {modalTxs.length} transacciones · Elige destino por cada una
+            </div>
+
+            <div style={{ overflowY: 'auto', flex: 1, marginBottom: 12 }}>
+              {modalTxs.map((t, i) => (
+                <div key={i} style={{
+                  display: 'flex', alignItems: 'center', gap: 10,
+                  padding: '8px 0', borderBottom: '1px solid #f0f0f0',
+                }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, color: '#222' }}>
+                      {t.descripcion}
+                      {t.cuota_actual ? ` (${t.cuota_actual}/${t.cuota_total})` : ''}
+                    </div>
+                    <div style={{ fontSize: 11, color: '#888', marginTop: 2 }}>
+                      {t.fecha} · <strong style={{ color: '#e74c3c' }}>${parseFloat(t.monto || 0).toFixed(2)}</strong>
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                    <button
+                      onClick={() => setCategorias(prev => ({ ...prev, [i]: 'personal' }))}
+                      style={{
+                        background: categorias[i] !== 'empresa' ? '#2980b9' : '#eee',
+                        color: categorias[i] !== 'empresa' ? 'white' : '#555',
+                        border: 'none', borderRadius: 6, padding: '4px 10px',
+                        fontSize: 11, cursor: 'pointer', fontWeight: 'bold',
+                      }}
+                    >Personal</button>
+                    <button
+                      onClick={() => setCategorias(prev => ({ ...prev, [i]: 'empresa' }))}
+                      style={{
+                        background: categorias[i] === 'empresa' ? '#27ae60' : '#eee',
+                        color: categorias[i] === 'empresa' ? 'white' : '#555',
+                        border: 'none', borderRadius: 6, padding: '4px 10px',
+                        fontSize: 11, cursor: 'pointer', fontWeight: 'bold',
+                      }}
+                    >Empresa</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button
+                onClick={() => setModalStmt(null)}
+                style={{
+                  background: 'white', color: '#555', border: '1.5px solid #ddd',
+                  borderRadius: 8, padding: '8px 16px', cursor: 'pointer', fontSize: 12,
+                }}
+              >Cancelar</button>
+              <button
+                onClick={cargarConCategorias}
+                disabled={cargandoMod}
+                style={{
+                  background: cargandoMod ? '#95a5a6' : '#27ae60',
+                  color: 'white', border: 'none', borderRadius: 8,
+                  padding: '8px 20px', cursor: cargandoMod ? 'not-allowed' : 'pointer',
+                  fontWeight: 'bold', fontSize: 12,
+                }}
+              >
+                {cargandoMod ? '⏳ Cargando...' : '✅ Cargar seleccionadas'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
