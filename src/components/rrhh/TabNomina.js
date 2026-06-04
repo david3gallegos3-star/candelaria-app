@@ -352,6 +352,17 @@ export default function TabNomina({ mobile }) {
     if (error) {
       alert('Error al generar: ' + error.message);
     } else {
+      // Reset todas las CxC del periodo a pendiente antes de re-marcar
+      const todosCxcIds = movimientos
+        .filter(m => m.tipo === 'compra' && m.cxc_id)
+        .map(m => m.cxc_id);
+      for (const id of todosCxcIds) {
+        await supabase.from('cuentas_cobrar')
+          .update({ estado: 'pendiente', monto_cobrado: 0 })
+          .eq('id', id);
+      }
+
+      // Marcar como pagadas solo las compras activas
       const cxcIds = movimientos
         .filter(m => m.tipo === 'compra' && m.activo !== false && m.cxc_id)
         .map(m => m.cxc_id);
