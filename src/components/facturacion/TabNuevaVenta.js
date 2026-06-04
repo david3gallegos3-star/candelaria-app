@@ -16,10 +16,11 @@ const CONSUMIDOR_FINAL = {
 };
 
 const FORMAS_PAGO = [
-  { value: 'efectivo',      label: '💵 Efectivo'      },
-  { value: 'transferencia', label: '🏦 Transferencia'  },
-  { value: 'cheque',        label: '📝 Cheque'         },
-  { value: 'credito',       label: '📅 Crédito'        },
+  { value: 'efectivo',        label: '💵 Efectivo'        },
+  { value: 'transferencia',   label: '🏦 Transferencia'   },
+  { value: 'cheque',          label: '📝 Cheque'           },
+  { value: 'credito',         label: '📅 Crédito'          },
+  { value: 'credito_nomina',  label: '🛒 Crédito nómina'  },
 ];
 
 const itemVacio = () => ({
@@ -30,6 +31,9 @@ const itemVacio = () => ({
 export default function TabNuevaVenta({ mobile, currentUser, userRol }) {
 
   const [clientes,   setClientes]   = useState([]);
+  const [empleados,  setEmpleados]  = useState([]);
+  const [clienteEsEmpleado, setClienteEsEmpleado] = useState(false);
+  const [empleadoSeleccionado, setEmpleadoSeleccionado] = useState(null);
   const [productos,  setProductos]  = useState([]);
   const [precios,    setPrecios]    = useState([]);   // precios_clientes
   const [configPrecios, setConfigPrecios] = useState([]); // config_productos precio_venta_kg
@@ -64,10 +68,11 @@ export default function TabNuevaVenta({ mobile, currentUser, userRol }) {
 
   // ── Cargar datos iniciales ────────────────────────────────
   async function cargarDatos() {
-    const [{ data: cls }, { data: prods }, { data: prec }, { data: cfg }, { data: cfgPrec }, { data: cfgNV }] =
+    const [{ data: cls }, { data: emps }, { data: prods }, { data: prec }, { data: cfg }, { data: cfgPrec }, { data: cfgNV }] =
       await Promise.all([
-        supabase.from('clientes').select('id,nombre,ruc,email,telefono,direccion')
+        supabase.from('clientes').select('id,nombre,ruc,email,telefono,direccion,empleado_id')
           .not('eliminado', 'eq', true).order('nombre'),
+        supabase.from('empleados').select('id,nombre,cedula').eq('activo', true).order('nombre'),
         supabase.from('productos').select('id,nombre').eq('estado', 'ACTIVO').order('nombre'),
         supabase.from('precios_clientes').select('cliente_id,producto_nombre,precio_venta_kg'),
         supabase.from('config_sistema').select('valor').eq('clave', 'factura_secuencial').single(),
@@ -75,6 +80,7 @@ export default function TabNuevaVenta({ mobile, currentUser, userRol }) {
         supabase.from('config_sistema').select('valor').eq('clave', 'nota_venta_secuencial').single(),
       ]);
     setClientes(cls   || []);
+    setEmpleados(emps || []);
     setProductos(prods || []);
     setPrecios(prec   || []);
     setConfigPrecios(cfgPrec || []);
@@ -83,9 +89,37 @@ export default function TabNuevaVenta({ mobile, currentUser, userRol }) {
   }
 
   // ── Cliente seleccionado ──────────────────────────────────
-  const clienteObj = clienteId === 'consumidor_final'
-    ? CONSUMIDOR_FINAL
-    : clientes.find(c => c.id === clienteId) || CONSUMIDOR_FINAL;
+  const clienteObj = (() => {
+    if (clienteId === 'consumidor_final') return CONSUMIDOR_FINAL;
+    if (clienteId?.startsWith('emp_')) {
+      const emp = empleados.find(e => e.id === clienteId.replace('emp_', ''));
+      if (!emp) return CONSUMIDOR_FINAL;
+      const clienteVinculado = clientes.find(c => c.empleado_id === emp.id);
+      return clienteVinculado || {
+        id: null, nombre: emp.nombre,
+        ruc: emp.cedula || '9999999999999',
+        email: '', telefono: '', direccion: '',
+        _esEmpleadoSinCliente: true, _empleadoId: emp.id
+      };
+    }
+    return clientes.find(c => c.id === clienteId) || CONSUMIDOR_FINAL;
+  })();
+
+  function seleccionarCliente(valor) {
+    if (valor.startsWith('emp_')) {
+      const empId = valor.replace('emp_', '');
+      const emp   = empleados.find(e => e.id === empId);
+      setClienteEsEmpleado(true);
+      setEmpleadoSeleccionado(emp || null);
+      setFormaPago('credito_nomina');
+      setClienteId(valor);
+    } else {
+      setClienteEsEmpleado(false);
+      setEmpleadoSeleccionado(null);
+      if (formaPago === 'credito_nomina') setFormaPago('efectivo');
+      setClienteId(valor);
+    }
+  }
 
   // ── Precio automático al elegir producto ─────────────────
   function precioAutomatico(productoNombre) {
@@ -642,15 +676,24 @@ export default function TabNuevaVenta({ mobile, currentUser, userRol }) {
         </div>
         <select
           value={clienteId}
-          onChange={e => setClienteId(e.target.value)}
+          onChange={e => seleccionarCliente(e.target.value)}
           style={{ ...inputStyle, maxWidth: 400 }}
         >
           <option value="consumidor_final">CONSUMIDOR FINAL</option>
-          {clientes.map(c => (
-            <option key={c.id} value={c.id}>
-              {c.nombre} {c.ruc ? `— ${c.ruc}` : ''}
-            </option>
-          ))}
+          <optgroup label="── Clientes ──">
+            {clientes.map(c => (
+              <option key={c.id} value={c.id}>{c.nombre}</option>
+            ))}
+          </optgroup>
+          {empleados.length > 0 && (
+            <optgroup label="── Empleados ──">
+              {empleados.map(e => (
+                <option key={`emp_${e.id}`} value={`emp_${e.id}`}>
+                  {e.nombre} [Empleado]
+                </option>
+              ))}
+            </optgroup>
+          )}
         </select>
         {clienteId !== 'consumidor_final' && clienteObj.email && (
           <div style={{ fontSize: '12px', color: '#888', marginTop: 6 }}>
@@ -776,7 +819,9 @@ export default function TabNuevaVenta({ mobile, currentUser, userRol }) {
           💳 Forma de pago
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
-          {FORMAS_PAGO.map(f => (
+          {FORMAS_PAGO.filter(f =>
+            f.value !== 'credito_nomina' || clienteEsEmpleado
+          ).map(f => (
             <button key={f.value}
               onClick={() => setFormaPago(f.value)}
               style={{
