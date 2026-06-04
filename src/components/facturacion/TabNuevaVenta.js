@@ -166,6 +166,45 @@ export default function TabNuevaVenta({ mobile, currentUser, userRol }) {
   const total          = parseFloat((subtotal + iva).toFixed(2));
   const articulosCount = items.filter(i => i.producto_nombre && parseFloat(i.cantidad) > 0).length;
 
+  // ── Helpers crédito nómina ────────────────────────────────
+  async function resolverOCrearClienteEmpleado(empleadoId, empleadoNombre, empleadoCedula) {
+    const { data: existente } = await supabase
+      .from('clientes')
+      .select('id')
+      .eq('empleado_id', empleadoId)
+      .maybeSingle();
+    if (existente) return existente.id;
+
+    const { data: nuevo } = await supabase.from('clientes').insert({
+      nombre:      empleadoNombre,
+      ruc:         empleadoCedula || '9999999999999',
+      empleado_id: empleadoId,
+      eliminado:   false,
+    }).select('id').single();
+    return nuevo.id;
+  }
+
+  function ultimoDiaMes() {
+    const hoy = new Date();
+    return new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0)
+      .toISOString().split('T')[0];
+  }
+
+  async function crearMovimientoNomina(empleadoId, valorTotal, numeroDoc, cxcId) {
+    const hoy     = new Date();
+    const periodo = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}`;
+    await supabase.from('nomina_movimientos').insert({
+      empleado_id: empleadoId,
+      periodo,
+      tipo:        'compra',
+      valor:       valorTotal,
+      descripcion: numeroDoc,
+      cxc_id:      cxcId,
+      activo:      true,
+      fecha:       hoy.toISOString().split('T')[0],
+    });
+  }
+
   // ── Emitir factura ────────────────────────────────────────
   async function emitirFactura() {
     setError('');
@@ -237,18 +276,37 @@ export default function TabNuevaVenta({ mobile, currentUser, userRol }) {
         }))
       );
 
-      // 4. Si es crédito → crear cuenta x cobrar
-      if (formaPago === 'credito') {
-        const venc = new Date();
-        venc.setDate(venc.getDate() + diasCredito);
-        await supabase.from('cuentas_cobrar').insert({
+      // 4. CxC para crédito normal o crédito nómina
+      if (formaPago === 'credito' || formaPago === 'credito_nomina') {
+        let clienteIdParaCxC = clienteObj.id;
+
+        if (formaPago === 'credito_nomina' && empleadoSeleccionado) {
+          clienteIdParaCxC = await resolverOCrearClienteEmpleado(
+            empleadoSeleccionado.id,
+            empleadoSeleccionado.nombre,
+            empleadoSeleccionado.cedula
+          );
+          if (!clienteObj.id) {
+            await supabase.from('facturas').update({ cliente_id: clienteIdParaCxC }).eq('id', factura.id);
+          }
+        }
+
+        const venc = formaPago === 'credito_nomina'
+          ? ultimoDiaMes()
+          : (() => { const v = new Date(); v.setDate(v.getDate() + diasCredito); return v.toISOString().split('T')[0]; })();
+
+        const { data: cxc } = await supabase.from('cuentas_cobrar').insert({
           factura_id:        factura.id,
-          cliente_id:        clienteObj.id,
+          cliente_id:        clienteIdParaCxC,
           monto_total:       total,
           monto_cobrado:     0,
           estado:            'pendiente',
-          fecha_vencimiento: venc.toISOString().split('T')[0]
-        });
+          fecha_vencimiento: venc,
+        }).select('id').single();
+
+        if (formaPago === 'credito_nomina' && empleadoSeleccionado && cxc) {
+          await crearMovimientoNomina(empleadoSeleccionado.id, total, numero, cxc.id);
+        }
       }
 
       // 5. Incrementar secuencial
@@ -330,14 +388,33 @@ export default function TabNuevaVenta({ mobile, currentUser, userRol }) {
           detallePayload.map(it => ({ ...it, factura_id: facturaId }))
         );
 
-        if (formaPago === 'credito') {
-          const venc = new Date();
-          venc.setDate(venc.getDate() + diasCredito);
-          await supabase.from('cuentas_cobrar').insert({
-            factura_id: facturaId, cliente_id: clienteObj.id,
+        if (formaPago === 'credito' || formaPago === 'credito_nomina') {
+          let clienteIdParaCxC = clienteObj.id;
+
+          if (formaPago === 'credito_nomina' && empleadoSeleccionado) {
+            clienteIdParaCxC = await resolverOCrearClienteEmpleado(
+              empleadoSeleccionado.id,
+              empleadoSeleccionado.nombre,
+              empleadoSeleccionado.cedula
+            );
+            if (!clienteObj.id) {
+              await supabase.from('facturas').update({ cliente_id: clienteIdParaCxC }).eq('id', facturaId);
+            }
+          }
+
+          const venc = formaPago === 'credito_nomina'
+            ? ultimoDiaMes()
+            : (() => { const v = new Date(); v.setDate(v.getDate() + diasCredito); return v.toISOString().split('T')[0]; })();
+
+          const { data: cxc } = await supabase.from('cuentas_cobrar').insert({
+            factura_id: facturaId, cliente_id: clienteIdParaCxC,
             monto_total: total, monto_cobrado: 0, estado: 'pendiente',
-            fecha_vencimiento: venc.toISOString().split('T')[0]
-          });
+            fecha_vencimiento: venc,
+          }).select('id').single();
+
+          if (formaPago === 'credito_nomina' && empleadoSeleccionado && cxc) {
+            await crearMovimientoNomina(empleadoSeleccionado.id, total, numero, cxc.id);
+          }
         }
 
         generarAsientoFactura({
@@ -485,14 +562,33 @@ export default function TabNuevaVenta({ mobile, currentUser, userRol }) {
         detallePayload.map(it => ({ ...it, factura_id: factura.id }))
       );
 
-      if (formaPago === 'credito') {
-        const venc = new Date();
-        venc.setDate(venc.getDate() + diasCredito);
-        await supabase.from('cuentas_cobrar').insert({
-          factura_id: factura.id, cliente_id: clienteObj.id,
+      if (formaPago === 'credito' || formaPago === 'credito_nomina') {
+        let clienteIdParaCxC = clienteObj.id;
+
+        if (formaPago === 'credito_nomina' && empleadoSeleccionado) {
+          clienteIdParaCxC = await resolverOCrearClienteEmpleado(
+            empleadoSeleccionado.id,
+            empleadoSeleccionado.nombre,
+            empleadoSeleccionado.cedula
+          );
+          if (!clienteObj.id) {
+            await supabase.from('facturas').update({ cliente_id: clienteIdParaCxC }).eq('id', factura.id);
+          }
+        }
+
+        const venc = formaPago === 'credito_nomina'
+          ? ultimoDiaMes()
+          : (() => { const v = new Date(); v.setDate(v.getDate() + diasCredito); return v.toISOString().split('T')[0]; })();
+
+        const { data: cxc } = await supabase.from('cuentas_cobrar').insert({
+          factura_id: factura.id, cliente_id: clienteIdParaCxC,
           monto_total: total, monto_cobrado: 0, estado: 'pendiente',
-          fecha_vencimiento: venc.toISOString().split('T')[0]
-        });
+          fecha_vencimiento: venc,
+        }).select('id').single();
+
+        if (formaPago === 'credito_nomina' && empleadoSeleccionado && cxc) {
+          await crearMovimientoNomina(empleadoSeleccionado.id, total, numero, cxc.id);
+        }
       }
 
       await supabase.from('config_sistema')
