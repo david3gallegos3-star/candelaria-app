@@ -175,12 +175,13 @@ export default function TabNuevaVenta({ mobile, currentUser, userRol }) {
       .maybeSingle();
     if (existente) return existente.id;
 
-    const { data: nuevo } = await supabase.from('clientes').insert({
+    const { data: nuevo, error: errC } = await supabase.from('clientes').insert({
       nombre:      empleadoNombre,
       ruc:         empleadoCedula || '9999999999999',
       empleado_id: empleadoId,
       eliminado:   false,
     }).select('id').single();
+    if (errC) throw errC;
     return nuevo.id;
   }
 
@@ -193,7 +194,7 @@ export default function TabNuevaVenta({ mobile, currentUser, userRol }) {
   async function crearMovimientoNomina(empleadoId, valorTotal, numeroDoc, cxcId) {
     const hoy     = new Date();
     const periodo = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}`;
-    await supabase.from('nomina_movimientos').insert({
+    const { error: errNom } = await supabase.from('nomina_movimientos').insert({
       empleado_id: empleadoId,
       periodo,
       tipo:        'compra',
@@ -203,6 +204,7 @@ export default function TabNuevaVenta({ mobile, currentUser, userRol }) {
       activo:      true,
       fecha:       hoy.toISOString().split('T')[0],
     });
+    if (errNom) throw errNom;
   }
 
   // ── Emitir factura ────────────────────────────────────────
@@ -398,7 +400,7 @@ export default function TabNuevaVenta({ mobile, currentUser, userRol }) {
               empleadoSeleccionado.cedula
             );
             if (!clienteObj.id) {
-              await supabase.from('facturas').update({ cliente_id: clienteIdParaCxC }).eq('id', facturaId);
+              await supabaseReal.from('facturas').update({ cliente_id: clienteIdParaCxC }).eq('id', facturaId);
             }
           }
 
@@ -406,7 +408,7 @@ export default function TabNuevaVenta({ mobile, currentUser, userRol }) {
             ? ultimoDiaMes()
             : (() => { const v = new Date(); v.setDate(v.getDate() + diasCredito); return v.toISOString().split('T')[0]; })();
 
-          const { data: cxc } = await supabase.from('cuentas_cobrar').insert({
+          const { data: cxc } = await supabaseReal.from('cuentas_cobrar').insert({
             factura_id: facturaId, cliente_id: clienteIdParaCxC,
             monto_total: total, monto_cobrado: 0, estado: 'pendiente',
             fecha_vencimiento: venc,
