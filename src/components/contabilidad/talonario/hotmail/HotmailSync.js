@@ -85,7 +85,6 @@ export default function HotmailSync() {
   const [sincronizando, setSincronizando] = useState(false);
   const [statements,    setStatements]    = useState([]);
   const [msgSync,       setMsgSync]       = useState('');
-  const [cargando,      setCargando]      = useState(null);
   const [modalStmt,   setModalStmt]   = useState(null);
   const [categorias,  setCategorias]  = useState({});
   const [cargandoMod, setCargandoMod] = useState(false);
@@ -148,22 +147,6 @@ export default function HotmailSync() {
     setSincronizando(false);
   }
 
-  async function cargarAlTalonario(statementId) {
-    setCargando(statementId);
-    try {
-      const { error } = await supabase.functions.invoke('cargar-estado-cuenta', {
-        body: { statementId, userId: tokenInfo?.user_id },
-      });
-      if (error) throw new Error(error.message);
-      setStatements(prev =>
-        prev.map(s => s.id === statementId ? { ...s, estado: 'cargado' } : s)
-      );
-    } catch (e) {
-      alert('Error al cargar: ' + e.message);
-    }
-    setCargando(null);
-  }
-
   function abrirModal(stmt) {
     const txs = (stmt.datos_json?.transacciones || stmt.datos_json?.cargos || [])
       .filter(t => t.tipo_transaccion !== 'pago');
@@ -192,13 +175,6 @@ export default function HotmailSync() {
       alert('Error al cargar: ' + e.message);
     }
     setCargandoMod(false);
-  }
-
-  async function cargarTodos() {
-    const pendientes = statements.filter(s => s.estado !== 'cargado');
-    for (const s of pendientes) {
-      await cargarAlTalonario(s.id);
-    }
   }
 
   if (cargandoInfo) return (
