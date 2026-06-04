@@ -199,6 +199,7 @@ export default function TabNomina({ mobile }) {
   const [yaGenerada,   setYaGenerada]   = useState(false);
   const [modalDetalle, setModalDetalle] = useState(null);
   const [modalMov,     setModalMov]     = useState(null);
+  const [modalFactura, setModalFactura] = useState(null);
   const [diasMap,      setDiasMap]      = useState({});
 
   // Form movimiento
@@ -236,7 +237,9 @@ export default function TabNomina({ mobile }) {
 
   // ── Helpers movimientos ──────────────────────────────────
   const movsEmp    = empId => movimientos.filter(m => m.empleado_id === empId);
-  const sumaMov    = (empId, tipo) => movsEmp(empId).filter(m => m.tipo === tipo).reduce((s, m) => s + parseFloat(m.valor || 0), 0);
+  const sumaMov    = (empId, tipo) => movsEmp(empId)
+    .filter(m => m.tipo === tipo && (m.tipo !== 'compra' || m.activo !== false))
+    .reduce((s, m) => s + parseFloat(m.valor || 0), 0);
 
   // ── Agregar movimiento ───────────────────────────────────
   async function agregarMovimiento() {
@@ -262,6 +265,23 @@ export default function TabNomina({ mobile }) {
     await cargar();
   }
 
+  async function toggleActivoMov(mov) {
+    await supabase.from('nomina_movimientos')
+      .update({ activo: !mov.activo })
+      .eq('id', mov.id);
+    await cargar();
+  }
+
+  async function verFacturaMov(mov) {
+    if (!mov.cxc_id) return;
+    const { data: cxc } = await supabase
+      .from('cuentas_cobrar')
+      .select('factura_id, monto_total, estado, fecha_vencimiento, facturas(numero, total, estado, tipo, created_at)')
+      .eq('id', mov.cxc_id)
+      .maybeSingle();
+    if (cxc) setModalFactura(cxc);
+  }
+
   // ── Generar nómina ───────────────────────────────────────
   async function generarNomina() {
     if (yaGenerada && !window.confirm(`Ya existe nómina para ${MESES[mes]} ${anio}. ¿Regenerar?`)) return;
@@ -277,7 +297,12 @@ export default function TabNomina({ mobile }) {
       const iessPat    = emp.afiliado_iess ? parseFloat((sueldoProp * pPat).toFixed(2)) : 0;
 
       const anticipo      = parseFloat(sumaMov(emp.id, 'anticipo').toFixed(2));
-      const comprasEmp    = parseFloat(sumaMov(emp.id, 'compra').toFixed(2));
+      const comprasEmp    = parseFloat(
+        movsEmp(emp.id)
+          .filter(m => m.tipo === 'compra' && m.activo !== false)
+          .reduce((s, m) => s + parseFloat(m.valor || 0), 0)
+          .toFixed(2)
+      );
       const bonif         = parseFloat(sumaMov(emp.id, 'bono').toFixed(2));
       const bonosMens     = parseFloat(sumaMov(emp.id, 'bono_mensualizado').toFixed(2));
       const totalExtras   = parseFloat(sumaMov(emp.id, 'extra').toFixed(2));
@@ -322,8 +347,23 @@ export default function TabNomina({ mobile }) {
     });
 
     const { error } = await supabase.from('nomina').insert(rows);
-    if (error) alert('Error al generar: ' + error.message);
-    else await cargar();
+    if (error) {
+      alert('Error al generar: ' + error.message);
+    } else {
+      const cxcIds = movimientos
+        .filter(m => m.tipo === 'compra' && m.activo !== false && m.cxc_id)
+        .map(m => m.cxc_id);
+      for (const id of cxcIds) {
+        const { data: cxcRow } = await supabase
+          .from('cuentas_cobrar').select('monto_total').eq('id', id).single();
+        if (cxcRow) {
+          await supabase.from('cuentas_cobrar')
+            .update({ estado: 'pagada', monto_cobrado: cxcRow.monto_total })
+            .eq('id', id);
+        }
+      }
+      await cargar();
+    }
     setGenerando(false);
   }
 
@@ -641,28 +681,56 @@ export default function TabNomina({ mobile }) {
               <>
                 {movsEmp(modalMov.id).map(mov => {
                   const t = TIPOS_MOV.find(x => x.value === mov.tipo) || TIPOS_MOV[0];
+                  const esCompra = mov.tipo === 'compra';
+                  const activo   = mov.activo !== false;
                   return (
                     <div key={mov.id} style={{
                       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                       padding: '9px 12px', borderRadius: '8px', marginBottom: '6px',
-                      background: '#f8f9fa', borderLeft: `3px solid ${t.color}`
+                      background: esCompra && !activo ? '#fafafa' : '#f8f9fa',
+                      borderLeft: `3px solid ${activo ? t.color : '#ccc'}`,
+                      opacity: esCompra && !activo ? 0.6 : 1,
                     }}>
-                      <div>
-                        <span style={{ fontWeight: 'bold', fontSize: '12px', color: t.color }}>{t.label}</span>
-                        {mov.descripcion && (
-                          <span style={{ fontSize: '11px', color: '#888', marginLeft: '8px' }}>{mov.descripcion}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        {esCompra && (
+                          <input
+                            type="checkbox"
+                            checked={activo}
+                            onChange={() => toggleActivoMov(mov)}
+                            style={{ cursor: 'pointer', width: 15, height: 15 }}
+                            title={activo ? 'Desactivar (no descontar este mes)' : 'Activar (descontar este mes)'}
+                          />
                         )}
-                        {mov.horas > 0 && (
-                          <span style={{ fontSize: '11px', color: '#888', marginLeft: '8px' }}>
-                            {mov.horas}h × ${parseFloat(mov.valor_hora||0).toFixed(2)}
+                        <div>
+                          <span style={{ fontWeight: 'bold', fontSize: '12px', color: activo ? t.color : '#aaa' }}>
+                            {t.label}
                           </span>
-                        )}
-                        <span style={{ fontSize: '11px', color: '#bbb', marginLeft: '8px' }}>{mov.fecha}</span>
+                          {mov.descripcion && (
+                            <span style={{ fontSize: '11px', color: '#888', marginLeft: '8px' }}>{mov.descripcion}</span>
+                          )}
+                          {mov.horas > 0 && (
+                            <span style={{ fontSize: '11px', color: '#888', marginLeft: '8px' }}>
+                              {mov.horas}h × ${parseFloat(mov.valor_hora || 0).toFixed(2)}
+                            </span>
+                          )}
+                          <span style={{ fontSize: '11px', color: '#bbb', marginLeft: '8px' }}>{mov.fecha}</span>
+                        </div>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <span style={{ fontWeight: 'bold', color: t.color }}>
-                          ${parseFloat(mov.valor||0).toFixed(2)}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontWeight: 'bold', color: activo ? t.color : '#aaa' }}>
+                          ${parseFloat(mov.valor || 0).toFixed(2)}
                         </span>
+                        {esCompra && mov.cxc_id && (
+                          <button
+                            onClick={() => verFacturaMov(mov)}
+                            title="Ver factura"
+                            style={{
+                              background: 'none', border: 'none',
+                              color: '#2980b9', cursor: 'pointer', fontSize: '15px', padding: 0
+                            }}>
+                            🧾
+                          </button>
+                        )}
                         <button onClick={() => eliminarMov(mov.id)} style={{
                           background: 'none', border: 'none',
                           color: '#e74c3c', cursor: 'pointer', fontSize: '16px'
@@ -694,6 +762,38 @@ export default function TabNomina({ mobile }) {
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {modalFactura && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999
+        }} onClick={() => setModalFactura(null)}>
+          <div style={{
+            background: 'white', borderRadius: '14px',
+            padding: '24px', maxWidth: 360, width: '90%',
+            boxShadow: '0 8px 30px rgba(0,0,0,0.2)'
+          }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontWeight: 'bold', fontSize: '16px', marginBottom: 12, color: '#2c1a4a' }}>
+              🧾 Factura vinculada
+            </div>
+            <div style={{ fontSize: '13px', color: '#555', lineHeight: '1.8' }}>
+              <div><b>Número:</b> {modalFactura.facturas?.numero || '—'}</div>
+              <div><b>Total:</b> ${parseFloat(modalFactura.monto_total || 0).toFixed(2)}</div>
+              <div><b>Estado CxC:</b> {modalFactura.estado}</div>
+              <div><b>Vencimiento:</b> {modalFactura.fecha_vencimiento}</div>
+              <div><b>Estado factura:</b> {modalFactura.facturas?.estado || '—'}</div>
+              <div><b>Tipo:</b> {modalFactura.facturas?.tipo === 'nota_venta' ? 'Nota de venta' : 'Factura'}</div>
+            </div>
+            <button onClick={() => setModalFactura(null)} style={{
+              marginTop: 16, background: '#2c1a4a', color: 'white',
+              border: 'none', borderRadius: 8, padding: '8px 20px',
+              cursor: 'pointer', fontWeight: 'bold', fontSize: '13px'
+            }}>
+              Cerrar
+            </button>
           </div>
         </div>
       )}
