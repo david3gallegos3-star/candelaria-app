@@ -37,6 +37,13 @@ export default function TabCajaChica({ mobile, currentUser }) {
   useRealtime(['caja_chica', 'caja_entregas', 'caja_gastos', 'cobros', 'compras'], cargarDia);
   useEffect(() => { if (vista === 'mes') cargarMes(); }, [vista, mesSel]);
 
+  // Guardar borrador en localStorage cada vez que cambia algo
+  useEffect(() => {
+    if (guardadoHoy) return;
+    const draft = { responsable, inicial, cierre, observaciones, gastos, entregas };
+    localStorage.setItem(`caja_draft_${fecha}`, JSON.stringify(draft));
+  }, [responsable, inicial, cierre, observaciones, gastos, entregas, fecha, guardadoHoy]);
+
   async function cargarProveedores() {
     const [{ data: provs }, { data: historial }] = await Promise.all([
       supabase.from('proveedores').select('nombre, ruc').order('nombre'),
@@ -74,14 +81,29 @@ export default function TabCajaChica({ mobile, currentUser }) {
       setEntregas(e?.length ? e : [fEntrega()]);
     } else {
       setCajaId(null);
+      setGuardadoHoy(false);
+
+      // Restaurar borrador si existe
+      const draftRaw = localStorage.getItem(`caja_draft_${fecha}`);
+      if (draftRaw) {
+        try {
+          const draft = JSON.parse(draftRaw);
+          setResponsable(draft.responsable || '');
+          setInicial(draft.inicial || '');
+          setCierre(draft.cierre || '');
+          setObservaciones(draft.observaciones || '');
+          setGastos(draft.gastos?.length ? draft.gastos : [fGasto()]);
+          setEntregas(draft.entregas?.length ? draft.entregas : [fEntrega()]);
+          return;
+        } catch {}
+      }
+
+      // Sin borrador: limpiar y cargar cierre del día anterior como inicial
       setResponsable('');
       setCierre('');
       setObservaciones('');
       setGastos([fGasto()]);
       setEntregas([fEntrega()]);
-      setGuardadoHoy(false);
-
-      // Cargar cierre del día anterior como inicial
       const { data: anterior } = await supabase
         .from('caja_chica')
         .select('caja_cierre')
@@ -200,7 +222,8 @@ export default function TabCajaChica({ mobile, currentUser }) {
       }
     }).catch(console.error);
 
-    // Resetear formulario — inicial = cierre guardado
+    // Borrar borrador y resetear formulario — inicial = cierre guardado
+    localStorage.removeItem(`caja_draft_${fecha}`);
     setInicial(cierreGuardado);
     setCierre('');
     setObservaciones('');
