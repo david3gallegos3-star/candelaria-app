@@ -19,6 +19,12 @@ function validarPartidaDoble(lineas) {
   return null;
 }
 
+function cuentaCashOrBank(formaPago, cuentas) {
+  if (!formaPago || formaPago === 'efectivo') return cuentas.caja_chica_id;
+  if (formaPago === 'credito')               return cuentas.cxc_id;
+  return cuentas.banco_id; // transferencia, cheque, deposito
+}
+
 async function insertarAsiento({ fecha, descripcion, tipo, origen, origen_id, lineas }) {
   const errorCuadre = validarPartidaDoble(lineas);
   if (errorCuadre) return { data: null, error: errorCuadre };
@@ -47,7 +53,7 @@ export async function generarAsientoFactura(factura, tipo) {
   if (errCfg) return { data: null, error: errCfg };
 
   const fecha = new Date().toISOString().split('T')[0];
-  const cuentaDebe = factura.metodo_pago === 'credito' ? cuentas.cxc_id : cuentas.caja_general_id;
+  const cuentaDebe = cuentaCashOrBank(factura.metodo_pago, cuentas);
   const descripcionCab = `Venta - ${factura.numero} - ${factura.cliente_nombre}`;
 
   let lineas;
@@ -81,7 +87,11 @@ export async function generarAsientoCompra(compra) {
 
   const fecha = new Date().toISOString().split('T')[0];
   const descripcionCab = `Compra MP - ${compra.proveedor_nombre}`;
-  const cuentaHaber = compra.forma_pago === 'credito' ? cuentas.cxp_id : cuentas.banco_id;
+  const cuentaHaber = compra.forma_pago === 'credito'
+    ? cuentas.cxp_id
+    : compra.forma_pago === 'efectivo'
+      ? cuentas.caja_chica_id
+      : cuentas.banco_id;
 
   const lineas = [
     { cuenta_id: cuentas.inventario_mp_id, descripcion: descripcionCab, debe: compra.subtotal, haber: 0, orden: 0 },
@@ -103,7 +113,7 @@ export async function generarAsientoCompra(compra) {
   });
 }
 
-export async function generarAsientoNomina(nomina) {
+export async function generarAsientoNomina(nomina, formaPago = 'transferencia') {
   const { cuentas, error: errCfg } = await getCuentasModulos();
   if (errCfg) return { data: null, error: errCfg };
 
@@ -113,7 +123,8 @@ export async function generarAsientoNomina(nomina) {
   const descA = `Nómina - ${nomina.periodo} - Pago sueldos`;
   const lineasA = [
     { cuenta_id: cuentas.sueldos_id, descripcion: descA, debe: nomina.total_sueldos, haber: 0, orden: 0 },
-    { cuenta_id: cuentas.banco_id, descripcion: descA, debe: 0, haber: nomina.total_pagar, orden: 1 },
+    { cuenta_id: formaPago === 'efectivo' ? cuentas.caja_chica_id : cuentas.banco_id,
+      descripcion: descA, debe: 0, haber: nomina.total_pagar, orden: 1 },
   ];
   if (diferencia > 0.01) {
     lineasA.push({ cuenta_id: cuentas.sueldos_pagar_id, descripcion: descA, debe: 0, haber: diferencia, orden: 2 });
@@ -161,8 +172,8 @@ export async function generarAsientoCierre(cierre, caja_chica_id) {
   const lineas = [];
 
   if (cierre.total_ingresos > 0) {
-    lineas.push({ cuenta_id: caja_chica_id, descripcion: descripcionCab, debe: cierre.total_ingresos, haber: 0, orden: 0 });
-    lineas.push({ cuenta_id: cuentas.caja_general_id, descripcion: descripcionCab, debe: 0, haber: cierre.total_ingresos, orden: 1 });
+    lineas.push({ cuenta_id: cuentas.caja_chica_id, descripcion: descripcionCab, debe: cierre.total_ingresos, haber: 0, orden: 0 });
+    lineas.push({ cuenta_id: cuentas.ventas_internas_id, descripcion: descripcionCab, debe: 0, haber: cierre.total_ingresos, orden: 1 });
   }
 
   if (cierre.total_gastos > 0) {
@@ -191,7 +202,7 @@ export async function generarAsientoInicial(config) {
   const descripcionCab = 'Asiento Inicial - Saldos apertura';
   const lineas = [
     { cuenta_id: cuentas.banco_id, descripcion: descripcionCab, debe: config.banco, haber: 0, orden: 0 },
-    { cuenta_id: cuentas.caja_general_id, descripcion: descripcionCab, debe: config.caja, haber: 0, orden: 1 },
+    { cuenta_id: cuentas.caja_chica_id, descripcion: descripcionCab, debe: config.caja, haber: 0, orden: 1 },
     { cuenta_id: cuentas.inventario_mp_id, descripcion: descripcionCab, debe: config.inventario, haber: 0, orden: 2 },
     { cuenta_id: cuentas.capital_id, descripcion: descripcionCab, debe: 0, haber: config.patrimonio, orden: 3 },
   ];
@@ -222,6 +233,30 @@ export async function generarAsientoInicial(config) {
     });
 
   return resultado;
+}
+
+export async function generarAsientoCobro(cobro) {
+  const { cuentas, error: errCfg } = await getCuentasModulos();
+  if (errCfg) return { data: null, error: errCfg };
+
+  const cuentaDebe = cobro.forma_pago === 'efectivo'
+    ? cuentas.caja_chica_id
+    : cuentas.banco_id;
+
+  const descripcion = `Cobro CxC - ${cobro.forma_pago || 'efectivo'}`;
+  const lineas = [
+    { cuenta_id: cuentaDebe,     descripcion, debe: cobro.monto, haber: 0,           orden: 0 },
+    { cuenta_id: cuentas.cxc_id, descripcion, debe: 0,           haber: cobro.monto, orden: 1 },
+  ];
+
+  return insertarAsiento({
+    fecha:       cobro.fecha,
+    descripcion,
+    tipo:        'interno',
+    origen:      'cobros',
+    origen_id:   cobro.id,
+    lineas,
+  });
 }
 
 export async function sincronizarAsientos() {
@@ -288,9 +323,7 @@ export async function revertirAsientoFactura(factura) {
   if (errCfg) return { data: null, error: errCfg };
 
   const fecha = new Date().toISOString().split('T')[0];
-  const cuentaHaber = factura.forma_pago === 'credito'
-    ? cuentas.cxc_id
-    : cuentas.caja_general_id;
+  const cuentaHaber = cuentaCashOrBank(factura.forma_pago, cuentas);
   const descripcion = `Anulación Factura - ${factura.numero} - ${factura.cliente_nombre}`;
 
   const lineas = [
@@ -314,9 +347,7 @@ export async function revertirAsientoNotaVenta(factura) {
   if (errCfg) return { data: null, error: errCfg };
 
   const fecha = new Date().toISOString().split('T')[0];
-  const cuentaDebe = factura.metodo_pago === 'credito'
-    ? cuentas.cxc_id
-    : cuentas.caja_general_id;
+  const cuentaDebe = cuentaCashOrBank(factura.metodo_pago, cuentas);
   const descripcion = `Anulación NV - ${factura.numero} - ${factura.cliente_nombre}`;
 
   const lineas = [
