@@ -21,7 +21,7 @@ function ultimoDiaMes(mes, año) {
   return new Date(año, mes, 0).toISOString().split('T')[0];
 }
 
-export default function TabReportes({ onVolver }) {
+export default function TabReportes({ onVolver, onVolverMenu }) {
   const hoy = new Date();
   const [reporteActivo, setReporteActivo] = useState('estado_resultados');
   const [modoFiltro,    setModoFiltro]    = useState('mes');
@@ -64,6 +64,13 @@ export default function TabReportes({ onVolver }) {
 
       <div className="no-print">
         <div style={{ display:'flex', gap:10, marginBottom:16, alignItems:'center', flexWrap:'wrap' }}>
+          {onVolverMenu && (
+            <button onClick={onVolverMenu} style={{ background:'#1a2a4a', color:'#ffd700',
+              border:'1px solid rgba(255,200,0,0.4)', borderRadius:8,
+              padding:'8px 14px', cursor:'pointer', fontSize:13, fontWeight:'bold' }}>
+              🏠 Menú
+            </button>
+          )}
           {onVolver && (
             <button onClick={onVolver} style={{ background:'#f0f2f5', border:'none',
               borderRadius:8, padding:'8px 14px', cursor:'pointer', fontSize:13 }}>

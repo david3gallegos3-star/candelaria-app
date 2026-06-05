@@ -12,6 +12,7 @@ export default function ClientesHeader({
   abrirModalCliente,
   abrirModalPrecio,
   onVolverMenu,
+  onVolver,
 }) {
   return (
     <div style={{
@@ -34,6 +35,13 @@ export default function ClientesHeader({
             borderRadius:'8px', cursor:'pointer',
             fontSize:'12px', fontWeight:'bold'
           }}>🏠 Menú</button>
+          <button onClick={onVolver} style={{
+            background:'rgba(255,255,255,0.15)',
+            border:'1px solid rgba(255,255,255,0.3)',
+            color:'white', padding:'7px 10px',
+            borderRadius:'8px', cursor:'pointer',
+            fontSize:'12px', fontWeight:'bold'
+          }}>← Volver</button>
 
           <div>
             <div style={{

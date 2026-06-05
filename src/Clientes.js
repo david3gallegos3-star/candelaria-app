@@ -31,6 +31,7 @@ function Clientes({ onVolver, onVolverMenu, userRol, currentUser }) {
         abrirModalCliente={c.abrirModalCliente}
         abrirModalPrecio={c.abrirModalPrecio}
         onVolverMenu={onVolverMenu}
+        onVolver={onVolver}
       />
 
       {/* Mensaje éxito */}

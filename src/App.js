@@ -1138,7 +1138,10 @@ if (pantalla === 'dashboard')
   />;
 
 if (pantalla === 'reportesContables')
-  return <TabReportes onVolver={() => navegarA('menuPrincipal')} />;
+  return <TabReportes
+    onVolver={() => navegarA('contabilidad')}
+    onVolverMenu={() => setPantalla('menuPrincipal')}
+  />;
 
   if (pantalla === 'formulacion' && productoActivo) return (
     <>
