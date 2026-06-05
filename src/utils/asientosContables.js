@@ -55,19 +55,22 @@ export async function generarAsientoFactura(factura, tipo) {
   const fecha = new Date().toISOString().split('T')[0];
   const cuentaDebe = cuentaCashOrBank(factura.metodo_pago, cuentas);
   const descripcionCab = `Venta - ${factura.numero} - ${factura.cliente_nombre}`;
+  const labelCobro = factura.metodo_pago === 'efectivo' ? 'Caja Chica'
+    : factura.metodo_pago === 'credito' ? 'CxC Clientes'
+    : 'Banco';
 
   let lineas;
 
   if (tipo === 'interno') {
     lineas = [
-      { cuenta_id: cuentaDebe, descripcion: descripcionCab, debe: factura.total, haber: 0, orden: 0 },
-      { cuenta_id: cuentas.ventas_internas_id, descripcion: descripcionCab, debe: 0, haber: factura.total, orden: 1 },
+      { cuenta_id: cuentaDebe, descripcion: `${labelCobro} — ${factura.numero}`, debe: factura.total, haber: 0, orden: 0 },
+      { cuenta_id: cuentas.ventas_internas_id, descripcion: `Ventas — ${factura.numero} — ${factura.cliente_nombre}`, debe: 0, haber: factura.total, orden: 1 },
     ];
   } else {
     lineas = [
-      { cuenta_id: cuentaDebe, descripcion: descripcionCab, debe: factura.total, haber: 0, orden: 0 },
-      { cuenta_id: cuentas.ventas_gravadas_id, descripcion: descripcionCab, debe: 0, haber: factura.subtotal, orden: 1 },
-      { cuenta_id: cuentas.iva_ventas_id, descripcion: descripcionCab, debe: 0, haber: factura.iva, orden: 2 },
+      { cuenta_id: cuentaDebe, descripcion: `${labelCobro} — ${factura.numero}`, debe: factura.total, haber: 0, orden: 0 },
+      { cuenta_id: cuentas.ventas_gravadas_id, descripcion: `Ventas — ${factura.numero} — ${factura.cliente_nombre}`, debe: 0, haber: factura.subtotal, orden: 1 },
+      { cuenta_id: cuentas.iva_ventas_id, descripcion: `IVA Ventas — ${factura.numero}`, debe: 0, haber: factura.iva, orden: 2 },
     ];
   }
 
@@ -93,15 +96,19 @@ export async function generarAsientoCompra(compra) {
       ? cuentas.caja_chica_id
       : cuentas.banco_id;
 
+  const labelPago = compra.forma_pago === 'efectivo' ? 'Caja Chica'
+    : compra.forma_pago === 'credito' ? 'Proveedores (crédito)'
+    : 'Banco';
+
   const lineas = [
-    { cuenta_id: cuentas.inventario_mp_id, descripcion: descripcionCab, debe: compra.subtotal, haber: 0, orden: 0 },
+    { cuenta_id: cuentas.inventario_mp_id, descripcion: `Inventario MP — ${compra.proveedor_nombre}`, debe: compra.subtotal, haber: 0, orden: 0 },
   ];
 
   if (compra.iva > 0) {
-    lineas.push({ cuenta_id: cuentas.iva_compras_id, descripcion: descripcionCab, debe: compra.iva, haber: 0, orden: 1 });
+    lineas.push({ cuenta_id: cuentas.iva_compras_id, descripcion: `IVA Compras — ${compra.proveedor_nombre}`, debe: compra.iva, haber: 0, orden: 1 });
   }
 
-  lineas.push({ cuenta_id: cuentaHaber, descripcion: descripcionCab, debe: 0, haber: compra.total, orden: lineas.length });
+  lineas.push({ cuenta_id: cuentaHaber, descripcion: `${labelPago} — ${compra.proveedor_nombre}`, debe: 0, haber: compra.total, orden: lineas.length });
 
   return insertarAsiento({
     fecha,
@@ -121,13 +128,14 @@ export async function generarAsientoNomina(nomina, formaPago = 'transferencia') 
   const diferencia = nomina.total_sueldos - nomina.total_pagar;
 
   const descA = `Nómina - ${nomina.periodo} - Pago sueldos`;
+  const labelPagoNom = formaPago === 'efectivo' ? 'Caja Chica' : 'Banco';
   const lineasA = [
-    { cuenta_id: cuentas.sueldos_id, descripcion: descA, debe: nomina.total_sueldos, haber: 0, orden: 0 },
+    { cuenta_id: cuentas.sueldos_id, descripcion: `Gasto Sueldos — ${nomina.periodo}`, debe: nomina.total_sueldos, haber: 0, orden: 0 },
     { cuenta_id: formaPago === 'efectivo' ? cuentas.caja_chica_id : cuentas.banco_id,
-      descripcion: descA, debe: 0, haber: nomina.total_pagar, orden: 1 },
+      descripcion: `Pago nómina (${labelPagoNom}) — ${nomina.periodo}`, debe: 0, haber: nomina.total_pagar, orden: 1 },
   ];
   if (diferencia > 0.01) {
-    lineasA.push({ cuenta_id: cuentas.sueldos_pagar_id, descripcion: descA, debe: 0, haber: diferencia, orden: 2 });
+    lineasA.push({ cuenta_id: cuentas.sueldos_pagar_id, descripcion: `Descuentos retenidos — ${nomina.periodo}`, debe: 0, haber: diferencia, orden: 2 });
   }
 
   const { data: dataA, error: errA } = await insertarAsiento({
@@ -142,8 +150,8 @@ export async function generarAsientoNomina(nomina, formaPago = 'transferencia') 
 
   const descB = `Nómina - ${nomina.periodo} - IESS Patronal`;
   const lineasB = [
-    { cuenta_id: cuentas.iess_patronal_id, descripcion: descB, debe: nomina.total_iess_patronal, haber: 0, orden: 0 },
-    { cuenta_id: cuentas.iess_pagar_id, descripcion: descB, debe: 0, haber: nomina.total_iess_patronal, orden: 1 },
+    { cuenta_id: cuentas.iess_patronal_id, descripcion: `Gasto IESS Patronal — ${nomina.periodo}`, debe: nomina.total_iess_patronal, haber: 0, orden: 0 },
+    { cuenta_id: cuentas.iess_pagar_id, descripcion: `IESS por Pagar — ${nomina.periodo}`, debe: 0, haber: nomina.total_iess_patronal, orden: 1 },
   ];
 
   const { data: dataB, error: errB } = await insertarAsiento({
