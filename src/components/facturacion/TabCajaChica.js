@@ -21,7 +21,7 @@ export default function TabCajaChica({ mobile, currentUser }) {
   const [entregas,     setEntregas]     = useState([fEntrega()]);
   const [cobros,       setCobros]       = useState([]);
   const [guardando,    setGuardando]    = useState(false);
-  const [msgExito,     setMsgExito]     = useState('');
+  const [guardadoHoy,  setGuardadoHoy]  = useState(false);
   const [mesSel,       setMesSel]       = useState(hoy.slice(0, 7));
   const [datosMes,     setDatosMes]     = useState([]);
 
@@ -47,6 +47,7 @@ export default function TabCajaChica({ mobile, currentUser }) {
       setInicial(caja.caja_inicial || '');
       setCierre(caja.caja_cierre || '');
       setObservaciones(caja.observaciones || '');
+      setGuardadoHoy(false);
 
       const { data: g } = await supabase
         .from('caja_gastos').select('*').eq('caja_id', caja.id).order('orden');
@@ -60,11 +61,21 @@ export default function TabCajaChica({ mobile, currentUser }) {
     } else {
       setCajaId(null);
       setResponsable('');
-      setInicial('');
       setCierre('');
       setObservaciones('');
       setGastos([fGasto()]);
       setEntregas([fEntrega()]);
+      setGuardadoHoy(false);
+
+      // Cargar cierre del día anterior como inicial
+      const { data: anterior } = await supabase
+        .from('caja_chica')
+        .select('caja_cierre')
+        .lt('fecha', fecha)
+        .order('fecha', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      setInicial(anterior?.caja_cierre || '');
     }
 
     const { data: c } = await supabase
@@ -162,20 +173,26 @@ export default function TabCajaChica({ mobile, currentUser }) {
       })));
     }
 
+    const cierreGuardado = parseFloat(cierre) || 0;
     setGuardando(false);
     getCuentasModulos().then(({ cuentas }) => {
       if (cuentas?.caja_chica_id) {
         generarAsientoCierre({
-          id,
-          fecha,
+          id, fecha,
           total_ingresos: parseFloat(inicial) || 0,
           total_gastos: tGastos,
-          saldo_final: parseFloat(cierre) || 0
+          saldo_final: cierreGuardado,
         }, cuentas.caja_chica_id).catch(console.error);
       }
     }).catch(console.error);
-    setMsgExito('✅ Caja guardada correctamente');
-    setTimeout(() => setMsgExito(''), 3000);
+
+    // Resetear formulario — inicial = cierre guardado
+    setInicial(cierreGuardado);
+    setCierre('');
+    setObservaciones('');
+    setGastos([fGasto()]);
+    setEntregas([fEntrega()]);
+    setGuardadoHoy(true);
   }
 
   function descargarDiaCSV() {
@@ -494,19 +511,20 @@ export default function TabCajaChica({ mobile, currentUser }) {
   // ── VISTA DÍA ─────────────────────────────────────────────
   return (
     <div>
-      {msgExito && (
-        <div style={{ background:'#d4edda', color:'#155724', padding:'10px 14px', borderRadius:8, marginBottom:12, fontWeight:'bold' }}>
-          {msgExito}
-        </div>
-      )}
 
       {/* Selector de fecha */}
       <div style={{ background:'white', borderRadius:12, padding:'12px 16px', marginBottom:12,
         display:'flex', gap:10, flexWrap:'wrap', alignItems:'center', boxShadow:'0 2px 8px rgba(0,0,0,0.06)' }}>
         <span style={{ fontWeight:'bold', color:'#555', fontSize:'12px' }}>📅 Fecha:</span>
         <input type="date" value={fecha} onChange={e => setFecha(e.target.value)} style={inp} />
-        {cajaId && <span style={{ fontSize:'11px', color:'#27ae60', fontWeight:'bold' }}>✅ Caja registrada</span>}
-        {!cajaId && <span style={{ fontSize:'11px', color:'#e67e22', fontWeight:'bold' }}>⚠️ Sin registrar</span>}
+        {guardadoHoy
+          ? <span style={{ fontSize:'12px', color:'#27ae60', fontWeight:'bold', background:'#f0fff4', padding:'5px 12px', borderRadius:8, border:'1px solid #27ae60' }}>
+              ✅ Caja del día guardada · puedes revisarla en Ver mes
+            </span>
+          : cajaId
+            ? <span style={{ fontSize:'11px', color:'#27ae60', fontWeight:'bold' }}>✅ Caja registrada</span>
+            : <span style={{ fontSize:'11px', color:'#e67e22', fontWeight:'bold' }}>⚠️ Sin registrar</span>
+        }
         <button onClick={() => { setVista('mes'); cargarMes(); }}
           style={{ marginLeft:'auto', padding:'7px 16px', borderRadius:8, border:'none',
             background:'#1a2a4a', color:'white', cursor:'pointer', fontWeight:'bold', fontSize:'12px' }}>
@@ -776,13 +794,15 @@ export default function TabCajaChica({ mobile, currentUser }) {
               color:'white', cursor:'pointer', fontWeight:'bold', fontSize:'13px' }}>
             🖨️ Imprimir
           </button>
-          <button onClick={guardar} disabled={guardando}
-            style={{ padding:'10px 28px', borderRadius:8, border:'none',
-              background: guardando ? '#95a5a6' : '#27ae60',
-              color:'white', cursor: guardando ? 'not-allowed' : 'pointer',
-              fontWeight:'bold', fontSize:'13px' }}>
-            {guardando ? '⏳...' : '💾 Guardar'}
-          </button>
+          {!guardadoHoy && (
+            <button onClick={guardar} disabled={guardando}
+              style={{ padding:'10px 28px', borderRadius:8, border:'none',
+                background: guardando ? '#95a5a6' : '#27ae60',
+                color:'white', cursor: guardando ? 'not-allowed' : 'pointer',
+                fontWeight:'bold', fontSize:'13px' }}>
+              {guardando ? '⏳...' : '💾 Guardar'}
+            </button>
+          )}
         </div>
       </div>
         );
