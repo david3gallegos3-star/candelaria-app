@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { supabase } from '../supabase';
-import { supabaseBackup } from '../supabaseBackup';
+import { supabaseReal } from '../supabase';
 import * as XLSX from 'xlsx';
 import { buildDynamicSheet, computePasos } from '../utils/excelDinamico';
 
@@ -25,36 +24,41 @@ const TABLAS_BACKUP = [
   'vista_horneado_config',
 ];
 
+const BUCKET  = 'backups';
+const ARCHIVO = 'candelaria_backup.json';
+
 export default function ModoBackup({ onVolver }) {
-  const [estado, setEstado] = useState('idle');
-  const [progreso, setProgreso] = useState({ actual: '', porcentaje: 0 });
-  const [mensaje, setMensaje] = useState('');
-  const [resumen, setResumen] = useState(null);
-  const [verResumen, setVerResumen] = useState(false);
+  const [estado,    setEstado]    = useState('idle');
+  const [progreso,  setProgreso]  = useState({ actual: '', porcentaje: 0 });
+  const [mensaje,   setMensaje]   = useState('');
+  const [resumen,   setResumen]   = useState(null);
+  const [verResumen,setVerResumen]= useState(false);
 
   async function hacerBackup() {
     if (!window.confirm(
-      '💾 ¿Hacer Backup ahora?\n\nSe copiarán todos los datos de Fórmulas, Producción e Inventario al proyecto de respaldo.\n\nLos datos anteriores del respaldo serán reemplazados.'
+      '💾 ¿Hacer Backup ahora?\n\nSe copiarán todos los datos de Fórmulas, Producción e Inventario al Storage de respaldo.\n\nEl backup anterior será reemplazado.'
     )) return;
 
     setEstado('cargando');
     setMensaje('');
     try {
+      const backup = { timestamp: new Date().toISOString(), tablas: {} };
+
       for (let i = 0; i < TABLAS_BACKUP.length; i++) {
         const tabla = TABLAS_BACKUP[i];
-        setProgreso({ actual: tabla, porcentaje: Math.round((i / TABLAS_BACKUP.length) * 100) });
-
-        const { data, error } = await supabase.from(tabla).select('*');
+        setProgreso({ actual: tabla, porcentaje: Math.round((i / TABLAS_BACKUP.length) * 90) });
+        const { data, error } = await supabaseReal.from(tabla).select('*');
         if (error) throw new Error(`Error leyendo ${tabla}: ${error.message}`);
-
-        const { error: errB } = await supabaseBackup.from('backup_datos').upsert({
-          tabla,
-          datos: data || [],
-          registros: (data || []).length,
-          updated_at: new Date().toISOString(),
-        }, { onConflict: 'tabla' });
-        if (errB) throw new Error(`Error guardando ${tabla}: ${errB.message}`);
+        backup.tablas[tabla] = data || [];
       }
+
+      setProgreso({ actual: 'Subiendo backup...', porcentaje: 95 });
+      const blob = new Blob([JSON.stringify(backup)], { type: 'application/json' });
+      const { error: errUp } = await supabaseReal.storage
+        .from(BUCKET)
+        .upload(ARCHIVO, blob, { upsert: true, contentType: 'application/json' });
+      if (errUp) throw new Error('Error subiendo backup: ' + errUp.message);
+
       setProgreso({ actual: '', porcentaje: 100 });
       setEstado('exito');
       setMensaje(`✓ Backup completado — ${TABLAS_BACKUP.length} tablas respaldadas`);
@@ -73,27 +77,52 @@ export default function ModoBackup({ onVolver }) {
     setEstado('cargando');
     setMensaje('');
     try {
-      setProgreso({ actual: 'Leyendo respaldo...', porcentaje: 5 });
-      const { data: backups, error: errB } = await supabaseBackup.from('backup_datos').select('*');
-      if (errB) throw new Error('Error leyendo respaldo: ' + errB.message);
-      if (!backups || backups.length === 0) throw new Error('No hay backup disponible. Haz un backup primero.');
+      setProgreso({ actual: 'Descargando backup...', porcentaje: 5 });
+      const { data: blob, error: errDl } = await supabaseReal.storage
+        .from(BUCKET)
+        .download(ARCHIVO);
+      if (errDl) throw new Error('No se pudo descargar el backup: ' + errDl.message);
+
+      const texto  = await blob.text();
+      const backup = JSON.parse(texto);
+      if (!backup.tablas) throw new Error('Archivo de backup inválido.');
 
       for (let i = 0; i < TABLAS_BACKUP.length; i++) {
         const tabla = TABLAS_BACKUP[i];
         setProgreso({ actual: tabla, porcentaje: Math.round(5 + (i / TABLAS_BACKUP.length) * 95) });
-
-        const fila = backups.find(b => b.tabla === tabla);
-        if (!fila || !fila.datos || fila.datos.length === 0) continue;
-
-        const { error: errU } = await supabase.from(tabla).upsert(fila.datos);
-        if (errU) console.warn(`Advertencia restaurando ${tabla}: ${errU.message}`);
+        const rows = backup.tablas[tabla];
+        if (!rows || rows.length === 0) continue;
+        const { error } = await supabaseReal.from(tabla).upsert(rows);
+        if (error) console.warn(`Advertencia restaurando ${tabla}: ${error.message}`);
       }
+
       setProgreso({ actual: '', porcentaje: 100 });
       setEstado('exito');
       setMensaje('✓ Datos restaurados correctamente desde el último backup');
     } catch (e) {
       setEstado('error');
       setMensaje('Error: ' + e.message);
+    }
+  }
+
+  async function cargarResumen() {
+    setVerResumen(true);
+    setResumen(null);
+    try {
+      const { data: blob, error } = await supabaseReal.storage
+        .from(BUCKET)
+        .download(ARCHIVO);
+      if (error) { setResumen([]); return; }
+
+      const backup = JSON.parse(await blob.text());
+      const filas = TABLAS_BACKUP.map(tabla => ({
+        tabla,
+        registros: (backup.tablas[tabla] || []).length,
+        updated_at: backup.timestamp,
+      }));
+      setResumen(filas);
+    } catch {
+      setResumen([]);
     }
   }
 
@@ -113,29 +142,20 @@ export default function ModoBackup({ onVolver }) {
         { data: vhConfigs },
         { data: deshueseConfigs },
       ] = await Promise.all([
-        supabase.from('productos').select('*').eq('eliminado', false).order('categoria,nombre'),
-        supabase.from('formulaciones').select('*').order('orden'),
-        supabase.from('config_productos').select('*'),
-        supabase.from('materias_primas').select('*'),
-        supabase.from('cif_items').select('*'),
-        supabase.from('costos_mod_cif').select('*').single(),
-        supabase.from('vista_horneado_config').select('*'),
-        supabase.from('deshuese_config').select('*'),
+        supabaseReal.from('productos').select('*').eq('eliminado', false).order('categoria,nombre'),
+        supabaseReal.from('formulaciones').select('*').order('orden'),
+        supabaseReal.from('config_productos').select('*'),
+        supabaseReal.from('materias_primas').select('*'),
+        supabaseReal.from('cif_items').select('*'),
+        supabaseReal.from('costos_mod_cif').select('*').single(),
+        supabaseReal.from('vista_horneado_config').select('*'),
+        supabaseReal.from('deshuese_config').select('*'),
       ]);
 
-      const mpList = mps || [];
+      const mpList       = mps || [];
       const produccionKg = cifCfg?.produccion_kg || 13600;
-      const agua = (cifItems || []).find(c => c.detalle?.toLowerCase().includes('agua'));
-      const precioAgua = agua ? (parseFloat(agua.valor_mes) || 0) / produccionKg : 0;
-
-      function getPrecioKg(fila) {
-        const mp = mpList.find(m => m.id === fila.materia_prima_id);
-        if (mp) {
-          if (mp.categoria?.toUpperCase().includes('AGUA')) return precioAgua;
-          return parseFloat(mp.precio_kg) || 0;
-        }
-        return 0;
-      }
+      const agua         = (cifItems || []).find(c => c.detalle?.toLowerCase().includes('agua'));
+      const precioAgua   = agua ? (parseFloat(agua.valor_mes) || 0) / produccionKg : 0;
 
       const wb = XLSX.utils.book_new();
       setProgreso({ actual: 'Generando hojas...', porcentaje: 35 });
@@ -143,10 +163,7 @@ export default function ModoBackup({ onVolver }) {
       const prodList = productos || [];
       for (let pi = 0; pi < prodList.length; pi++) {
         const prod = prodList[pi];
-        setProgreso({
-          actual: prod.nombre,
-          porcentaje: Math.round(35 + (pi / prodList.length) * 60),
-        });
+        setProgreso({ actual: prod.nombre, porcentaje: Math.round(35 + (pi / prodList.length) * 60) });
 
         const nombreLow = (prod.nombre || '').toLowerCase().trim();
         const vhRow = (vhConfigs || []).find(v =>
@@ -162,7 +179,6 @@ export default function ModoBackup({ onVolver }) {
         if (isDynamic) {
           let cfgHijo = vhRow.config;
           if (vhRow.config?.tipo === 'hijo') {
-            // Buscar el padre en deshuese_config para obtener el costo live de la bifurcación
             const dCfg = (deshueseConfigs || []).find(d =>
               (d.corte_hijo || '').toLowerCase().trim() === nombreLow
             );
@@ -198,12 +214,11 @@ export default function ModoBackup({ onVolver }) {
         XLSX.utils.book_append_sheet(wb, ws, sheetName);
       }
 
-      const hoy = new Date();
-      const dd = String(hoy.getDate()).padStart(2, '0');
-      const mm = String(hoy.getMonth() + 1).padStart(2, '0');
+      const hoy  = new Date();
+      const dd   = String(hoy.getDate()).padStart(2, '0');
+      const mm   = String(hoy.getMonth() + 1).padStart(2, '0');
       const yyyy = hoy.getFullYear();
-      const fecha = `${dd}-${mm}-${yyyy}`;
-      XLSX.writeFile(wb, `Respaldo Fórmulas ${fecha}.xlsx`);
+      XLSX.writeFile(wb, `Respaldo Fórmulas ${dd}-${mm}-${yyyy}.xlsx`);
       setProgreso({ actual: '', porcentaje: 100 });
       setEstado('exito');
       setMensaje(`✓ Excel descargado — ${prodList.length} productos`);
@@ -211,16 +226,6 @@ export default function ModoBackup({ onVolver }) {
       setEstado('error');
       setMensaje('Error: ' + e.message);
     }
-  }
-
-  async function cargarResumen() {
-    setVerResumen(true);
-    setResumen(null);
-    const { data } = await supabaseBackup
-      .from('backup_datos')
-      .select('tabla, registros, updated_at')
-      .order('tabla');
-    setResumen(data || []);
   }
 
   const cargando = estado === 'cargando';
@@ -251,36 +256,28 @@ export default function ModoBackup({ onVolver }) {
             <div style={{ color: '#fbbf24', fontSize: '16px', fontWeight: 'bold', marginBottom: '4px' }}>
               📥 Descargar Excel
             </div>
-            <div style={{ color: '#888', fontSize: '12px' }}>
-              Todas las fórmulas — una hoja por producto
-            </div>
+            <div style={{ color: '#888', fontSize: '12px' }}>Todas las fórmulas — una hoja por producto</div>
           </button>
 
           <button onClick={hacerBackup} disabled={cargando} style={btnStyle('#27ae60', 'rgba(39,174,96,0.5)', cargando)}>
             <div style={{ color: '#4ade80', fontSize: '16px', fontWeight: 'bold', marginBottom: '4px' }}>
               💾 Hacer Backup
             </div>
-            <div style={{ color: '#888', fontSize: '12px' }}>
-              Copia todos los datos al proyecto de respaldo
-            </div>
+            <div style={{ color: '#888', fontSize: '12px' }}>Copia todos los datos al Storage de respaldo</div>
           </button>
 
           <button onClick={cargarResumen} disabled={cargando} style={btnStyle('#8e44ad', 'rgba(142,68,173,0.5)', cargando)}>
             <div style={{ color: '#c084fc', fontSize: '16px', fontWeight: 'bold', marginBottom: '4px' }}>
               📋 Ver contenido del Backup
             </div>
-            <div style={{ color: '#888', fontSize: '12px' }}>
-              Tablas guardadas, registros y fecha del último backup
-            </div>
+            <div style={{ color: '#888', fontSize: '12px' }}>Tablas guardadas, registros y fecha del último backup</div>
           </button>
 
           <button onClick={restaurar} disabled={cargando} style={btnStyle('#2980b9', 'rgba(41,128,185,0.5)', cargando)}>
             <div style={{ color: '#60a5fa', fontSize: '16px', fontWeight: 'bold', marginBottom: '4px' }}>
               🔄 Restaurar desde Backup
             </div>
-            <div style={{ color: '#888', fontSize: '12px' }}>
-              Reemplaza datos actuales con el último backup
-            </div>
+            <div style={{ color: '#888', fontSize: '12px' }}>Reemplaza datos actuales con el último backup</div>
           </button>
         </div>
 
@@ -291,26 +288,20 @@ export default function ModoBackup({ onVolver }) {
             borderRadius: '12px', padding: '16px', marginBottom: '20px',
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-              <div style={{ color: '#c084fc', fontWeight: 'bold', fontSize: '14px' }}>
-                📦 Contenido del Backup
-              </div>
+              <div style={{ color: '#c084fc', fontWeight: 'bold', fontSize: '14px' }}>📦 Contenido del Backup</div>
               <button onClick={() => setVerResumen(false)} style={{
-                background: 'none', border: 'none', color: '#888',
-                cursor: 'pointer', fontSize: '16px', lineHeight: 1,
+                background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: '16px',
               }}>✕</button>
             </div>
 
             {resumen === null ? (
-              <div style={{ textAlign: 'center', color: '#888', fontSize: '13px', padding: '12px' }}>
-                ⏳ Cargando...
-              </div>
+              <div style={{ textAlign: 'center', color: '#888', fontSize: '13px', padding: '12px' }}>⏳ Cargando...</div>
             ) : resumen.length === 0 ? (
               <div style={{ textAlign: 'center', color: '#f87171', fontSize: '13px', padding: '12px' }}>
                 No hay backup guardado todavía
               </div>
             ) : (
               <>
-                {/* Fecha del backup */}
                 {resumen[0]?.updated_at && (
                   <div style={{ color: '#7fb3d3', fontSize: '11px', marginBottom: '10px', textAlign: 'center' }}>
                     Último backup: {new Date(resumen[0].updated_at).toLocaleString('es-EC', {
@@ -320,22 +311,17 @@ export default function ModoBackup({ onVolver }) {
                   </div>
                 )}
 
-                {/* Resumen destacado: productos y fórmulas */}
                 {(() => {
                   const rProds = resumen.find(r => r.tabla === 'productos');
                   const rForms = resumen.find(r => r.tabla === 'formulaciones');
                   return (
-                    <div style={{
-                      display: 'flex', gap: '8px', marginBottom: '12px',
-                    }}>
+                    <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
                       <div style={{
                         flex: 1, background: 'rgba(74,222,128,0.08)',
                         border: '1px solid rgba(74,222,128,0.3)',
                         borderRadius: '10px', padding: '10px', textAlign: 'center',
                       }}>
-                        <div style={{ color: '#4ade80', fontSize: '22px', fontWeight: 'bold' }}>
-                          {rProds?.registros ?? '—'}
-                        </div>
+                        <div style={{ color: '#4ade80', fontSize: '22px', fontWeight: 'bold' }}>{rProds?.registros ?? '—'}</div>
                         <div style={{ color: '#888', fontSize: '11px' }}>Productos</div>
                       </div>
                       <div style={{
@@ -343,28 +329,22 @@ export default function ModoBackup({ onVolver }) {
                         border: '1px solid rgba(251,191,36,0.3)',
                         borderRadius: '10px', padding: '10px', textAlign: 'center',
                       }}>
-                        <div style={{ color: '#fbbf24', fontSize: '22px', fontWeight: 'bold' }}>
-                          {rForms?.registros ?? '—'}
-                        </div>
+                        <div style={{ color: '#fbbf24', fontSize: '22px', fontWeight: 'bold' }}>{rForms?.registros ?? '—'}</div>
                         <div style={{ color: '#888', fontSize: '11px' }}>Fórmulas guardadas</div>
                       </div>
                     </div>
                   );
                 })()}
 
-                {/* Lista de todas las tablas */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                   {resumen.map(r => (
                     <div key={r.tabla} style={{
                       display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                      padding: '7px 10px',
-                      background: 'rgba(255,255,255,0.04)',
-                      borderRadius: '8px',
+                      padding: '7px 10px', background: 'rgba(255,255,255,0.04)', borderRadius: '8px',
                     }}>
                       <span style={{ color: '#ccc', fontSize: '12px' }}>{r.tabla}</span>
                       <span style={{
-                        color: r.registros > 0 ? '#4ade80' : '#888',
-                        fontSize: '12px', fontWeight: 'bold',
+                        color: r.registros > 0 ? '#4ade80' : '#888', fontSize: '12px', fontWeight: 'bold',
                         background: r.registros > 0 ? 'rgba(74,222,128,0.1)' : 'rgba(255,255,255,0.05)',
                         padding: '2px 8px', borderRadius: '6px',
                       }}>
@@ -374,7 +354,6 @@ export default function ModoBackup({ onVolver }) {
                   ))}
                 </div>
 
-                {/* Total */}
                 <div style={{
                   marginTop: '10px', paddingTop: '10px',
                   borderTop: '1px solid rgba(255,255,255,0.1)',
@@ -414,11 +393,9 @@ export default function ModoBackup({ onVolver }) {
 
         <div style={{ textAlign: 'center' }}>
           <button onClick={onVolver} disabled={cargando} style={{
-            background: 'rgba(255,255,255,0.08)',
-            border: '1px solid rgba(255,255,255,0.2)',
-            color: 'white', borderRadius: '10px',
-            padding: '10px 28px', cursor: cargando ? 'default' : 'pointer',
-            fontSize: '13px', fontWeight: 'bold',
+            background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.2)',
+            color: 'white', borderRadius: '10px', padding: '10px 28px',
+            cursor: cargando ? 'default' : 'pointer', fontSize: '13px', fontWeight: 'bold',
           }}>
             ← Volver al menú
           </button>
@@ -429,7 +406,6 @@ export default function ModoBackup({ onVolver }) {
   );
 }
 
-// ── Hoja estándar (embutidos, salchichas, etc.) ───────────────────────────────
 function buildStandardSheet(prod, ings, cfg, mpList, precioAgua) {
   const ingMP = ings.filter(f => f.seccion === 'MP');
   const ingAD = ings.filter(f => f.seccion === 'AD');
@@ -452,47 +428,47 @@ function buildStandardSheet(prod, ings, cfg, mpList, precioAgua) {
     return 0;
   }
 
-  const totalCrudoG = ings.reduce((s, f) => s + (parseFloat(f.gramos) || 0), 0);
-  const totalKg = totalCrudoG / 1000;
-  const merma = parseFloat(cfg.merma) || 0.07;
-  const margen = parseFloat(cfg.margen) || 0.15;
-  const modCif = parseFloat(cfg.mod_cif_kg) || 0;
-  const empPrecio = parseFloat(cfg.empaque_precio_kg) || 0;
-  const empCantidad = parseFloat(cfg.empaque_cantidad) || 0;
-  const costoEmpKg = totalKg > 0 ? (empPrecio * empCantidad) / totalKg : 0;
-  const hiloPrecio = parseFloat(cfg.hilo_precio_kg) || 0;
-  const hiloKg = parseFloat(cfg.hilo_kg) || 0;
-  const costoHiloKg = totalKg > 0 ? (hiloPrecio * hiloKg) / totalKg : 0;
+  const totalCrudoG  = ings.reduce((s, f) => s + (parseFloat(f.gramos) || 0), 0);
+  const totalKg      = totalCrudoG / 1000;
+  const merma        = parseFloat(cfg.merma) || 0.07;
+  const margen       = parseFloat(cfg.margen) || 0.15;
+  const modCif       = parseFloat(cfg.mod_cif_kg) || 0;
+  const empPrecio    = parseFloat(cfg.empaque_precio_kg) || 0;
+  const empCantidad  = parseFloat(cfg.empaque_cantidad) || 0;
+  const costoEmpKg   = totalKg > 0 ? (empPrecio * empCantidad) / totalKg : 0;
+  const hiloPrecio   = parseFloat(cfg.hilo_precio_kg) || 0;
+  const hiloKg       = parseFloat(cfg.hilo_kg) || 0;
+  const costoHiloKg  = totalKg > 0 ? (hiloPrecio * hiloKg) / totalKg : 0;
   const totalCostoMP = ings.reduce((s, f) => s + (parseFloat(f.gramos) / 1000) * getPrecio(f), 0);
-  const costoMPkg = totalKg > 0 ? totalCostoMP / totalKg : 0;
-  const costoConMerma = (1 - merma) > 0 ? costoMPkg / (1 - merma) : 0;
-  const costoTotalKg = costoConMerma + modCif + costoEmpKg + costoHiloKg;
-  const precioVentaKg = margen < 1 ? costoTotalKg / (1 - margen) : 0;
+  const costoMPkg    = totalKg > 0 ? totalCostoMP / totalKg : 0;
+  const costoConMerma  = (1 - merma) > 0 ? costoMPkg / (1 - merma) : 0;
+  const costoTotalKg   = costoConMerma + modCif + costoEmpKg + costoHiloKg;
+  const precioVentaKg  = margen < 1 ? costoTotalKg / (1 - margen) : 0;
 
   const totMP = {
     gramos: ingMP.reduce((s, f) => s + (parseFloat(f.gramos) || 0), 0),
-    costo: ingMP.reduce((s, f) => s + (parseFloat(f.gramos) / 1000) * getPrecio(f), 0),
+    costo:  ingMP.reduce((s, f) => s + (parseFloat(f.gramos) / 1000) * getPrecio(f), 0),
   };
   const totAD = {
     gramos: ingAD.reduce((s, f) => s + (parseFloat(f.gramos) || 0), 0),
-    costo: ingAD.reduce((s, f) => s + (parseFloat(f.gramos) / 1000) * getPrecio(f), 0),
+    costo:  ingAD.reduce((s, f) => s + (parseFloat(f.gramos) / 1000) * getPrecio(f), 0),
   };
 
   const C = (sec, det, g, k, pct, pkg, costo, nota) => ({
     'SECCIÓN': sec, 'DETALLE': det,
-    'GRAMOS': g !== '' ? Math.round(g) : '',
-    'KILOS': k !== '' ? parseFloat(parseFloat(k).toFixed(3)) : '',
+    'GRAMOS':  g !== '' ? Math.round(g) : '',
+    'KILOS':   k !== '' ? parseFloat(parseFloat(k).toFixed(3)) : '',
     '% TOTAL': pct !== '' ? parseFloat(parseFloat(pct).toFixed(2)) : '',
-    '$/KG': pkg !== '' ? parseFloat(parseFloat(pkg).toFixed(4)) : '',
+    '$/KG':    pkg !== '' ? parseFloat(parseFloat(pkg).toFixed(4)) : '',
     'COSTO $': costo !== '' ? parseFloat(parseFloat(costo).toFixed(4)) : '',
-    'NOTA': nota || '',
+    'NOTA':    nota || '',
   });
-  const E = () => C('', '', '', '', '', '', '', '');
+  const E   = () => C('', '', '', '', '', '', '', '');
   const SEP = (t) => C(`── ${t} ──`, '', '', '', '', '', '', '');
 
   const mapIng = (ing, sec) => {
-    const g = parseFloat(ing.gramos) || 0;
-    const p = getPrecio(ing);
+    const g    = parseFloat(ing.gramos) || 0;
+    const p    = getPrecio(ing);
     const spec = ing.especificacion?.trim();
     return C(sec, ing.ingrediente_nombre + (spec ? ` (${spec})` : ''), g, g / 1000,
       totalCrudoG > 0 ? (g / totalCrudoG) * 100 : 0, p, (g / 1000) * p, ing.nota_cambio || '');
@@ -515,15 +491,15 @@ function buildStandardSheet(prod, ings, cfg, mpList, precioAgua) {
     C('TOTAL CRUDO', '', totalCrudoG, totalKg, 100, '', totalCostoMP, ''),
     E(),
     SEP('COSTOS Y AJUSTES'),
-    C('COSTOS', 'Merma %',            '', '', (merma * 100).toFixed(1) + '%', '', '', ''),
-    C('COSTOS', 'Margen ganancia %',  '', '', (margen * 100).toFixed(1) + '%', '', '', ''),
-    C('COSTOS', 'MOD+CIF $/kg',       '', '', '', modCif, '', ''),
-    C('COSTOS', 'Costo MP/kg',        '', '', '', costoMPkg, '', ''),
-    C('COSTOS', 'Con merma',          '', '', '', costoConMerma, '', ''),
-    C('COSTOS', 'Empaques/kg',        '', '', '', costoEmpKg, '', ''),
-    C('COSTOS', 'Amarre/kg',          '', '', '', costoHiloKg, '', ''),
-    C('COSTOS', 'COSTO TOTAL/KG',     '', '', '', costoTotalKg, '', ''),
-    C('COSTOS', 'PRECIO VENTA/KG',    '', '', '', precioVentaKg, '', ''),
+    C('COSTOS', 'Merma %',           '', '', (merma * 100).toFixed(1) + '%', '', '', ''),
+    C('COSTOS', 'Margen ganancia %', '', '', (margen * 100).toFixed(1) + '%', '', '', ''),
+    C('COSTOS', 'MOD+CIF $/kg',      '', '', '', modCif, '', ''),
+    C('COSTOS', 'Costo MP/kg',       '', '', '', costoMPkg, '', ''),
+    C('COSTOS', 'Con merma',         '', '', '', costoConMerma, '', ''),
+    C('COSTOS', 'Empaques/kg',       '', '', '', costoEmpKg, '', ''),
+    C('COSTOS', 'Amarre/kg',         '', '', '', costoHiloKg, '', ''),
+    C('COSTOS', 'COSTO TOTAL/KG',    '', '', '', costoTotalKg, '', ''),
+    C('COSTOS', 'PRECIO VENTA/KG',   '', '', '', precioVentaKg, '', ''),
     E(),
     SEP('EMPAQUE Y AMARRE'),
     C('EMPAQUE', 'Tripa/Empaque',     '', '', '', '', '', cfg.empaque_nombre || '—'),
@@ -561,7 +537,6 @@ function buildStandardSheet(prod, ings, cfg, mpList, precioAgua) {
   const colWidths = [{ wch: 22 }, { wch: 35 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 25 }];
   return [rows, colWidths];
 }
-
 
 function btnStyle(color, border, disabled) {
   return {
