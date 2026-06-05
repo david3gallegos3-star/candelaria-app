@@ -396,13 +396,18 @@ export default function TabNomina({ mobile }) {
     }).eq('id', id);
     const row = nomina.find(n => n.id === id);
     if (row) {
-      generarAsientoNomina({
+      const result = await generarAsientoNomina({
         id: row.id,
         periodo: row.periodo,
         total_sueldos: row.sueldo_prop || 0,
         total_iess_patronal: row.iess_patronal || 0,
         total_pagar: row.sueldo_neto || 0,
-      }, formaPago).catch(console.error);
+      }, formaPago);
+      if (result.error) {
+        const msg = typeof result.error === 'string' ? result.error : result.error.message;
+        console.error('Error asiento nómina:', result.error);
+        alert('Pago registrado, pero error al crear asiento contable: ' + msg);
+      }
     }
     setModalPago(null);
     await cargar();
