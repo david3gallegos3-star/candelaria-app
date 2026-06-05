@@ -123,19 +123,20 @@ export default function MenuContabilidad({ navegarA, onVolver }) {
     setBorrandoTodo(true);
     setMsgTodo('');
     try {
+      // Orden crítico: tablas hijas antes que padres (foreign keys)
       const tablas = [
         'libro_diario_detalle', 'libro_diario',
         'nomina_movimientos', 'nomina',
         'bank_statements',
-        'facturas_detalle', 'cuentas_cobrar', 'perdidas', 'notas_credito', 'facturas',
-        'compras_detalle', 'compras',
-        'caja_gastos', 'caja_entregas', 'cobros', 'caja_chica',
-        'cuentas_pagar',
+        'cobros', 'facturas_detalle', 'cuentas_cobrar', 'perdidas', 'notas_credito', 'facturas',
+        'pagos_compras', 'compras_detalle', 'cuentas_pagar', 'compras',
+        'caja_gastos', 'caja_entregas', 'caja_chica',
         'talonario_pagos_banco', 'talonario_pagos_personales', 'talonario_otros_ingresos',
         'clientes', 'empleados', 'proveedores',
       ];
       for (const t of tablas) {
-        await supabase.from(t).delete().neq('id', '00000000-0000-0000-0000-000000000000');
+        const { error } = await supabase.from(t).delete().neq('id', '00000000-0000-0000-0000-000000000000');
+        if (error) throw new Error(`Error borrando ${t}: ${error.message}`);
       }
       await supabase.from('config_contabilidad')
         .update({ valor: { completado: false, fecha: null, banco: 0, caja: 0, inventario: 0, patrimonio: 0 } })
