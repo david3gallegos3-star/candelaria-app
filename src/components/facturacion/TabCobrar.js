@@ -5,6 +5,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../supabase';
 import { useRealtime } from '../../hooks/useRealtime';
+import { generarAsientoCobro } from '../../utils/asientosContables';
 
 const ESTADO_COLOR = {
   pendiente: { bg: '#fef9e7', color: '#f39c12', label: '⏳ Pendiente' },
@@ -106,7 +107,7 @@ export default function TabCobrar({ mobile, currentUser }) {
     setRegistrando(true);
 
     // Insertar cobro
-    await supabase.from('cobros').insert({
+    const { data: cobroData, error: errCobro } = await supabase.from('cobros').insert({
       cuenta_cobrar_id: cuenta.id,
       factura_id:       cuenta.factura_id,
       cliente_id:       cuenta.cliente_id,
@@ -116,7 +117,16 @@ export default function TabCobrar({ mobile, currentUser }) {
       observaciones:    obsCobo,
       registrado_por:   currentUser?.email || '',
       referencia_pago:  ['transferencia', 'cheque', 'deposito'].includes(formaCobro) ? referenciaCobro || null : null,
-    });
+    }).select('id, monto, forma_pago, fecha').single();
+
+    if (!errCobro && cobroData) {
+      generarAsientoCobro({
+        id:         cobroData.id,
+        monto:      parseFloat(cobroData.monto),
+        forma_pago: cobroData.forma_pago,
+        fecha:      cobroData.fecha,
+      }).catch(e => console.error('Error asiento cobro:', e));
+    }
 
     // Actualizar monto cobrado y estado
     const nuevoCobrado = parseFloat(cuenta.monto_cobrado) + monto;
