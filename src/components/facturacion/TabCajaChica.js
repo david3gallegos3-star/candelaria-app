@@ -2,7 +2,7 @@
 // TabCajaChica.js
 // Caja diaria — Gastos, Cobros, Entregas
 // ============================================
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '../../supabase';
 import { useRealtime } from '../../hooks/useRealtime';
 import { generarAsientoCierre, getCuentasModulos } from '../../utils/asientosContables';
@@ -26,23 +26,24 @@ export default function TabCajaChica({ mobile, currentUser }) {
   const [datosMes,     setDatosMes]     = useState([]);
   const [provSugs,     setProvSugs]     = useState([]);
   const [provFoco,     setProvFoco]     = useState(null);
+  const listo = useRef(false); // true solo después de que cargarDia terminó
 
   function fGasto() {
     return { proveedor:'', detalle:'', valor:'', ruc:'', numero_factura:'', pendiente_compra:false, expandido:false };
   }
   function fEntrega() { return { cantidad:'', recibe:'' }; }
 
-  useEffect(() => { cargarDia(); }, [fecha]);
+  useEffect(() => { listo.current = false; cargarDia(); }, [fecha]);
   useEffect(() => { cargarProveedores(); }, []);
   useRealtime(['caja_chica', 'caja_entregas', 'caja_gastos', 'cobros', 'compras'], cargarDia);
   useEffect(() => { if (vista === 'mes') cargarMes(); }, [vista, mesSel]);
 
-  // Guardar borrador en localStorage cada vez que cambia algo
+  // Autosave — solo después de que cargarDia terminó (evita sobrescribir el borrador al montar)
   useEffect(() => {
-    if (guardadoHoy) return;
+    if (!listo.current || guardadoHoy) return;
     const draft = { responsable, inicial, cierre, observaciones, gastos, entregas };
     localStorage.setItem(`caja_draft_${fecha}`, JSON.stringify(draft));
-  }, [responsable, inicial, cierre, observaciones, gastos, entregas, fecha, guardadoHoy]);
+  }, [responsable, inicial, cierre, observaciones, gastos, entregas, guardadoHoy]);
 
   async function cargarProveedores() {
     const [{ data: provs }, { data: historial }] = await Promise.all([
@@ -119,6 +120,7 @@ export default function TabCajaChica({ mobile, currentUser }) {
       .select('*, facturas(numero), clientes(nombre)')
       .eq('fecha', fecha);
     setCobros(c || []);
+    listo.current = true;
   }
 
   async function cargarMes() {
