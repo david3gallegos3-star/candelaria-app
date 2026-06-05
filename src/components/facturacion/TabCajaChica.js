@@ -823,10 +823,11 @@ export default function TabCajaChica({ mobile, currentUser }) {
 
       {/* Resumen + Botones */}
       {(() => {
-        const cajaEsperada = parseFloat(inicial||0) + tEfect - tGastos - tEntregas;
-        const descuadre   = parseFloat(cierre||0) - cajaEsperada;
-        const cuadra      = Math.abs(descuadre) < 0.005;
-        const descColor   = cuadra ? '#27ae60' : '#e74c3c';
+        const cajaEsperada    = parseFloat(inicial||0) + tEfect - tGastos - tEntregas;
+        const cierreIngresado = cierre !== '' && cierre !== null;
+        const descuadre       = parseFloat(cierre||0) - cajaEsperada;
+        const cuadra          = cierreIngresado && Math.abs(descuadre) < 0.005;
+        const descColor       = !cierreIngresado ? '#e67e22' : cuadra ? '#27ae60' : '#e74c3c';
         return (
       <div style={{ background:'white', borderRadius:12, padding:'16px', boxShadow:'0 2px 8px rgba(0,0,0,0.06)',
         display:'flex', gap:12, flexWrap:'wrap', alignItems:'center' }}>
@@ -847,15 +848,20 @@ export default function TabCajaChica({ mobile, currentUser }) {
               ${parseFloat(inicial||0).toFixed(2)} → ${parseFloat(cierre||0).toFixed(2)}
             </div>
           </div>
-          <div style={{ textAlign:'center', background: cuadra ? '#f0fff4' : '#fde8e8',
+          <div style={{ textAlign:'center',
+            background: !cierreIngresado ? '#fff8f0' : cuadra ? '#f0fff4' : '#fde8e8',
             border: `2px solid ${descColor}`, borderRadius:10, padding:'6px 16px' }}>
             <div style={{ fontSize:'10px', color:descColor, fontWeight:700 }}>
-              {cuadra ? '✓ CUADRA' : 'DESCUADRE'}
+              {!cierreIngresado ? '⏳ PENDIENTE' : cuadra ? '✓ CUADRA' : 'DESCUADRE'}
             </div>
             <div style={{ fontSize:'22px', fontWeight:'bold', color:descColor }}>
-              {cuadra ? '$0.00' : `${descuadre > 0 ? '+' : ''}$${descuadre.toFixed(2)}`}
+              {!cierreIngresado
+                ? `$${cajaEsperada.toFixed(2)}`
+                : cuadra ? '$0.00' : `${descuadre > 0 ? '+' : ''}$${descuadre.toFixed(2)}`}
             </div>
-            <div style={{ fontSize:'9px', color:'#aaa' }}>cierre - esperado</div>
+            <div style={{ fontSize:'9px', color:'#aaa' }}>
+              {!cierreIngresado ? 'esperado en caja' : 'cierre - esperado'}
+            </div>
           </div>
         </div>
         <div style={{ display:'flex', gap:8 }}>
