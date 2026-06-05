@@ -24,6 +24,8 @@ export default function TabCajaChica({ mobile, currentUser }) {
   const [guardadoHoy,  setGuardadoHoy]  = useState(false);
   const [mesSel,       setMesSel]       = useState(hoy.slice(0, 7));
   const [datosMes,     setDatosMes]     = useState([]);
+  const [provSugs,     setProvSugs]     = useState([]);
+  const [provFoco,     setProvFoco]     = useState(null);
 
   function fGasto() {
     return { proveedor:'', detalle:'', valor:'', ruc:'', numero_factura:'', pendiente_compra:false, expandido:false };
@@ -31,8 +33,20 @@ export default function TabCajaChica({ mobile, currentUser }) {
   function fEntrega() { return { cantidad:'', recibe:'' }; }
 
   useEffect(() => { cargarDia(); }, [fecha]);
+  useEffect(() => { cargarProveedores(); }, []);
   useRealtime(['caja_chica', 'caja_entregas', 'caja_gastos', 'cobros', 'compras'], cargarDia);
   useEffect(() => { if (vista === 'mes') cargarMes(); }, [vista, mesSel]);
+
+  async function cargarProveedores() {
+    const [{ data: provs }, { data: historial }] = await Promise.all([
+      supabase.from('proveedores').select('nombre, ruc').order('nombre'),
+      supabase.from('caja_gastos').select('proveedor, ruc').not('proveedor', 'is', null),
+    ]);
+    const mapa = {};
+    (provs || []).forEach(p => { if (p.nombre) mapa[p.nombre.toLowerCase()] = { nombre: p.nombre, ruc: p.ruc || '' }; });
+    (historial || []).forEach(h => { if (h.proveedor && !mapa[h.proveedor.toLowerCase()]) mapa[h.proveedor.toLowerCase()] = { nombre: h.proveedor, ruc: h.ruc || '' }; });
+    setProvSugs(Object.values(mapa).sort((a, b) => a.nombre.localeCompare(b.nombre)));
+  }
 
   async function cargarDia() {
     const { data: caja } = await supabase
@@ -575,9 +589,45 @@ export default function TabCajaChica({ mobile, currentUser }) {
             {gastos.map((g, i) => (
               <React.Fragment key={i}>
                 <tr>
-                  <td style={tdS}>
-                    <input value={g.proveedor} onChange={e => updG(i,'proveedor',e.target.value)}
-                      placeholder="Proveedor" style={{ ...inp, width:'100%', padding:'4px 8px' }} />
+                  <td style={{ ...tdS, position:'relative' }}>
+                    <input
+                      value={g.proveedor}
+                      onChange={e => { updG(i,'proveedor',e.target.value); setProvFoco(i); }}
+                      onFocus={() => setProvFoco(i)}
+                      onBlur={() => setTimeout(() => setProvFoco(null), 150)}
+                      placeholder="Proveedor"
+                      style={{ ...inp, width:'100%', padding:'4px 8px' }}
+                      autoComplete="off"
+                    />
+                    {provFoco === i && g.proveedor.length > 0 && (() => {
+                      const filtrados = provSugs.filter(p =>
+                        p.nombre.toLowerCase().includes(g.proveedor.toLowerCase())
+                      ).slice(0, 6);
+                      if (!filtrados.length) return null;
+                      return (
+                        <div style={{ position:'absolute', top:'100%', left:0, right:0, zIndex:200,
+                          background:'white', border:'1px solid #ddd', borderRadius:8,
+                          boxShadow:'0 4px 12px rgba(0,0,0,0.12)', maxHeight:180, overflowY:'auto' }}>
+                          {filtrados.map((p, idx) => (
+                            <div key={idx}
+                              onMouseDown={() => {
+                                updG(i, 'proveedor', p.nombre);
+                                if (p.ruc) updG(i, 'ruc', p.ruc);
+                                setProvFoco(null);
+                              }}
+                              style={{ padding:'7px 12px', cursor:'pointer', fontSize:'12px',
+                                borderBottom:'1px solid #f0f0f0', color:'#333',
+                                display:'flex', justifyContent:'space-between', alignItems:'center' }}
+                              onMouseEnter={e => e.currentTarget.style.background='#f0f7ff'}
+                              onMouseLeave={e => e.currentTarget.style.background='white'}
+                            >
+                              <span>{p.nombre}</span>
+                              {p.ruc && <span style={{ fontSize:'10px', color:'#888' }}>{p.ruc}</span>}
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })()}
                   </td>
                   <td style={tdS}>
                     <input value={g.detalle} onChange={e => updG(i,'detalle',e.target.value)}
