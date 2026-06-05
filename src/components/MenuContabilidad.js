@@ -116,7 +116,7 @@ export default function MenuContabilidad({ navegarA, onVolver }) {
   }
 
   async function handleBorrarTodo() {
-    const ok = window.confirm('⚠️ ¿Borrar ABSOLUTAMENTE TODOS los datos de prueba?\n\nIncluye: libro diario, facturas, compras, nómina, caja chica, hotmail, clientes, empleados, proveedores y más.\n\nEsta acción NO se puede deshacer.');
+    const ok = window.confirm('⚠️ ¿Borrar ABSOLUTAMENTE TODOS los datos de prueba?\n\nIncluye: libro diario, facturas, compras, nómina, caja chica, estados de cuenta, clientes, empleados, proveedores y más.\n\nEsta acción NO se puede deshacer.');
     if (!ok) return;
     const ok2 = window.confirm('¿Confirmas? Se borrarán TODOS los registros de prueba.');
     if (!ok2) return;
@@ -126,13 +126,12 @@ export default function MenuContabilidad({ navegarA, onVolver }) {
       const tablas = [
         'libro_diario_detalle', 'libro_diario',
         'nomina_movimientos', 'nomina',
-        'bank_statements', 'ms_tokens',
+        'bank_statements',
         'facturas_detalle', 'cuentas_cobrar', 'perdidas', 'notas_credito', 'facturas',
         'compras_detalle', 'compras',
         'caja_gastos', 'caja_entregas', 'cobros', 'caja_chica',
         'cuentas_pagar',
         'talonario_pagos_banco', 'talonario_pagos_personales', 'talonario_otros_ingresos',
-        'bank_statements',
         'clientes', 'empleados', 'proveedores',
       ];
       for (const t of tablas) {
