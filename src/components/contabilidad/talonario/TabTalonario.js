@@ -58,11 +58,13 @@ export default function TabTalonario({ onVolver, onVolverMenu }) {
                     display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <button onClick={onVolverMenu} style={{
           background:'rgba(255,200,0,0.25)', border:'1px solid rgba(255,200,0,0.4)',
-          color:'#ffd700', padding:'6px 10px', borderRadius:8, cursor:'pointer',
+          color:'#ffd700', padding:'7px 12px', borderRadius:8, cursor:'pointer',
           fontSize:12, fontWeight:'bold'
         }}>🏠 Menú</button>
-        <button onClick={onVolver} style={{ background: 'none', border: 'none',
-          color: 'white', cursor: 'pointer', fontSize: 18 }}>← Volver</button>
+        <button onClick={onVolver} style={{
+          background:'rgba(255,255,255,0.15)', border:'1px solid rgba(255,255,255,0.25)',
+          color:'white', padding:'7px 14px', borderRadius:8, cursor:'pointer', fontSize:12
+        }}>← Volver</button>
         <span style={{ fontWeight: 'bold', fontSize: 15 }}>📒 TALONARIO</span>
 
         {/* Selector mes/año */}

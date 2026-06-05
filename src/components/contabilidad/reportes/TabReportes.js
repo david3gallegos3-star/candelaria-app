@@ -72,8 +72,8 @@ export default function TabReportes({ onVolver, onVolverMenu }) {
             </button>
           )}
           {onVolver && (
-            <button onClick={onVolver} style={{ background:'#f0f2f5', border:'none',
-              borderRadius:8, padding:'8px 14px', cursor:'pointer', fontSize:13 }}>
+            <button onClick={onVolver} style={{ background:'#f0f2f5', border:'1px solid #ddd',
+              borderRadius:8, padding:'7px 14px', cursor:'pointer', fontSize:13, color:'#333' }}>
               ← Volver
             </button>
           )}
