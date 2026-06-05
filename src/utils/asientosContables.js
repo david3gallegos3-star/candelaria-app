@@ -253,7 +253,7 @@ export async function generarAsientoCobro(cobro) {
     fecha:       cobro.fecha,
     descripcion,
     tipo:        'interno',
-    origen:      'cobros',
+    origen:      'manual',
     origen_id:   cobro.id,
     lineas,
   });
