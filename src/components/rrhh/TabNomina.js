@@ -202,6 +202,7 @@ export default function TabNomina({ mobile }) {
   const [modalDetalle, setModalDetalle] = useState(null);
   const [modalMov,     setModalMov]     = useState(null);
   const [modalFactura, setModalFactura] = useState(null);
+  const [modalPago,    setModalPago]    = useState(null); // { id, formaPago, referencia }
   const [diasMap,      setDiasMap]      = useState({});
 
   // Form movimiento
@@ -380,8 +381,19 @@ export default function TabNomina({ mobile }) {
     setGenerando(false);
   }
 
-  async function marcarPagado(id) {
-    await supabase.from('nomina').update({ estado: 'pagado', fecha_pago: now.toISOString().slice(0, 10) }).eq('id', id);
+  function marcarPagado(id) {
+    setModalPago({ id, formaPago: 'transferencia', referencia: '' });
+  }
+
+  async function confirmarPago() {
+    if (!modalPago) return;
+    const { id, formaPago, referencia } = modalPago;
+    await supabase.from('nomina').update({
+      estado: 'pagado',
+      fecha_pago: now.toISOString().slice(0, 10),
+      forma_pago: formaPago,
+      referencia_pago: ['transferencia', 'cheque'].includes(formaPago) ? referencia || null : null,
+    }).eq('id', id);
     const row = nomina.find(n => n.id === id);
     if (row) {
       generarAsientoNomina({
@@ -389,9 +401,10 @@ export default function TabNomina({ mobile }) {
         periodo: row.periodo,
         total_sueldos: row.sueldo_prop || 0,
         total_iess_patronal: row.iess_patronal || 0,
-        total_pagar: row.sueldo_neto || 0
-      }).catch(console.error);
+        total_pagar: row.sueldo_neto || 0,
+      }, formaPago).catch(console.error);
     }
+    setModalPago(null);
     await cargar();
   }
 
@@ -932,6 +945,67 @@ export default function TabNomina({ mobile }) {
           </div>
         );
       })()}
+
+      {modalPago && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000 }}>
+          <div style={{ background: 'white', borderRadius: 12, padding: 24, width: 360, maxWidth: '95vw' }}>
+            <div style={{ fontWeight: 'bold', fontSize: 15, marginBottom: 16 }}>
+              Registrar pago de nómina
+            </div>
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ fontSize: 12, color: '#555', display: 'block', marginBottom: 6 }}>
+                Forma de pago
+              </label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                {[
+                  { value: 'transferencia', label: '🏦 Transferencia' },
+                  { value: 'cheque',        label: '📄 Cheque' },
+                  { value: 'efectivo',      label: '💵 Efectivo' },
+                ].map(op => (
+                  <button key={op.value}
+                    onClick={() => setModalPago(p => ({ ...p, formaPago: op.value }))}
+                    style={{
+                      flex: 1, padding: '8px 4px', borderRadius: 8, border: 'none',
+                      background: modalPago.formaPago === op.value ? '#1a2a4a' : '#f0f2f5',
+                      color: modalPago.formaPago === op.value ? 'white' : '#555',
+                      cursor: 'pointer', fontSize: 12, fontWeight: 'bold',
+                    }}>
+                    {op.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {['transferencia', 'cheque'].includes(modalPago.formaPago) && (
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ fontSize: 12, color: '#555', display: 'block', marginBottom: 4 }}>
+                  Nº Transacción / Cheque (opcional)
+                </label>
+                <input
+                  type="text"
+                  value={modalPago.referencia}
+                  onChange={e => setModalPago(p => ({ ...p, referencia: e.target.value }))}
+                  placeholder="Ej: 00123456"
+                  style={{ width: '100%', padding: '7px 10px', borderRadius: 6,
+                    border: '1px solid #ddd', fontSize: 13, boxSizing: 'border-box' }}
+                />
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button onClick={() => setModalPago(null)}
+                style={{ padding: '8px 20px', borderRadius: 6, border: '1px solid #ddd',
+                  background: 'white', cursor: 'pointer', fontSize: 13 }}>
+                Cancelar
+              </button>
+              <button onClick={confirmarPago}
+                style={{ padding: '8px 20px', borderRadius: 6, border: 'none',
+                  background: '#27ae60', color: 'white', cursor: 'pointer', fontSize: 13 }}>
+                Confirmar pago
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
