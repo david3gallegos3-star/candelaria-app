@@ -211,14 +211,21 @@ export default function TabCajaChica({ mobile, currentUser }) {
       })));
 
       for (const g of gastosOk.filter(g => g.pendiente_compra && g.proveedor)) {
+        const total = parseFloat(g.valor) || 0;
         await supabase.from('compras').insert({
-          proveedor_nombre: g.proveedor,
-          proveedor_ruc:    g.ruc || '',
-          numero_factura:   g.numero_factura || '',
-          subtotal:         parseFloat(g.valor) || 0,
-          descuento: 0, iva: 0,
-          total:            parseFloat(g.valor) || 0,
-          fecha, estado: 'pendiente', origen: 'caja_chica'
+          proveedor_nombre:  g.proveedor,
+          proveedor_ruc:     g.ruc     || null,
+          numero_factura:    g.numero_factura || null,
+          fecha,
+          tiene_factura:     !!(g.numero_factura),
+          recordar_factura:  !(g.numero_factura),
+          subtotal:          total,
+          descuento:         null,
+          iva:               0,
+          total,
+          estado:            'pendiente',
+          origen:            'caja_chica',
+          es_personal:       false,
         });
       }
     }
