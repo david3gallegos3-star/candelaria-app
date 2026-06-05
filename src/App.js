@@ -23,6 +23,7 @@ import Trazabilidad  from './Trazabilidad';
 import Dashboard     from './Dashboard';
 import LibroDiario   from './LibroDiario';
 import Talonario    from './Talonario';
+import TabReportes  from './components/contabilidad/reportes/TabReportes';
 import ModoBackup    from './components/ModoBackup';
 import './App.css';
 import html2canvas from 'html2canvas';
@@ -1135,6 +1136,9 @@ if (pantalla === 'dashboard')
     onVolverMenu={() => setPantalla('menuPrincipal')}
     userRol={userRol}
   />;
+
+if (pantalla === 'reportesContables')
+  return <TabReportes onVolver={() => navegarA('menuPrincipal')} />;
 
   if (pantalla === 'formulacion' && productoActivo) return (
     <>

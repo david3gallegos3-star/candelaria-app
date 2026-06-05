@@ -38,6 +38,12 @@ const SUBMODULOS = [
     color: '#1a5276', border: 'rgba(26,82,118,0.4)',
     destino: 'talonario',
   },
+  {
+    emoji: '📊', titulo: 'Reportes Contables',
+    desc: 'Balance, resultados y reportes financieros',
+    color: '#1e6b3e', border: 'rgba(30,107,62,0.4)',
+    destino: 'reportesContables',
+  },
 ];
 
 async function borrarDatosPrueba() {
