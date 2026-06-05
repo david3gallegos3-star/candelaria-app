@@ -24,6 +24,7 @@ import Dashboard     from './Dashboard';
 import LibroDiario   from './LibroDiario';
 import Talonario    from './Talonario';
 import TabReportes  from './components/contabilidad/reportes/TabReportes';
+import TabCajaChica from './components/facturacion/TabCajaChica';
 import ModoBackup    from './components/ModoBackup';
 import './App.css';
 import html2canvas from 'html2canvas';
@@ -1142,6 +1143,28 @@ if (pantalla === 'reportesContables')
     onVolver={() => navegarA('contabilidad')}
     onVolverMenu={() => setPantalla('menuPrincipal')}
   />;
+
+if (pantalla === 'cajaChica')
+  return (
+    <div style={{ minHeight:'100vh', background:'#f0f2f5', fontFamily:'"Segoe UI",system-ui,sans-serif' }}>
+      <div style={{ background:'linear-gradient(135deg,#1a2a4a,#1e3a6e)', padding:'12px 20px',
+        position:'sticky', top:0, zIndex:100, boxShadow:'0 2px 12px rgba(0,0,0,0.3)',
+        display:'flex', alignItems:'center', gap:10 }}>
+        <button onClick={() => navegarA('contabilidad')} style={{
+          background:'rgba(255,200,0,0.25)', border:'1px solid rgba(255,200,0,0.4)',
+          color:'#ffd700', padding:'7px 12px', borderRadius:8, cursor:'pointer',
+          fontSize:12, fontWeight:'bold' }}>🏠 Menú</button>
+        <button onClick={volverAtras} style={{
+          background:'rgba(255,255,255,0.15)', border:'1px solid rgba(255,255,255,0.25)',
+          color:'white', padding:'7px 14px', borderRadius:8, cursor:'pointer', fontSize:12
+        }}>← Volver</button>
+        <span style={{ color:'white', fontWeight:'bold', fontSize:16 }}>🏧 Caja Chica</span>
+      </div>
+      <div style={{ padding:'16px 20px' }}>
+        <TabCajaChica currentUser={user} />
+      </div>
+    </div>
+  );
 
   if (pantalla === 'formulacion' && productoActivo) return (
     <>

@@ -9,31 +9,7 @@ const SUBMODULOS = [
     destino: 'libroDiario',
   },
   {
-    emoji: '🧾', titulo: 'Facturación',
-    desc: 'Ventas, SRI, cobros',
-    color: '#2980b9', border: 'rgba(41,128,185,0.4)',
-    destino: 'facturacion',
-  },
-  {
-    emoji: '👥', titulo: 'RRHH',
-    desc: 'Empleados, nómina, IESS',
-    color: '#4a2c7a', border: 'rgba(74,44,122,0.4)',
-    destino: 'rrhh',
-  },
-  {
-    emoji: '🛒', titulo: 'Compras',
-    desc: 'Proveedores, ingresos, pagos',
-    color: '#1a5276', border: 'rgba(26,82,118,0.4)',
-    destino: 'compras',
-  },
-  {
-    emoji: '👥', titulo: 'Clientes',
-    desc: 'Precios y alertas de margen',
-    color: '#3498db', border: 'rgba(52,152,219,0.4)',
-    destino: 'clientes',
-  },
-  {
-    emoji: '📒', titulo: 'Talonario',
+    emoji: '📓', titulo: 'Talonario',
     desc: 'Resumen mensual de ingresos y egresos',
     color: '#1a5276', border: 'rgba(26,82,118,0.4)',
     destino: 'talonario',
@@ -43,6 +19,36 @@ const SUBMODULOS = [
     desc: 'Balance, resultados y reportes financieros',
     color: '#1e6b3e', border: 'rgba(30,107,62,0.4)',
     destino: 'reportesContables',
+  },
+  {
+    emoji: '🏧', titulo: 'Caja Chica',
+    desc: 'Caja diaria, gastos, cobros y cierre',
+    color: '#7d3c98', border: 'rgba(125,60,152,0.4)',
+    destino: 'cajaChica',
+  },
+  {
+    emoji: '🧾', titulo: 'Facturación',
+    desc: 'Ventas, SRI, cobros',
+    color: '#2980b9', border: 'rgba(41,128,185,0.4)',
+    destino: 'facturacion',
+  },
+  {
+    emoji: '🛒', titulo: 'Compras',
+    desc: 'Proveedores, ingresos, pagos',
+    color: '#1a5276', border: 'rgba(26,82,118,0.4)',
+    destino: 'compras',
+  },
+  {
+    emoji: '👥', titulo: 'RRHH',
+    desc: 'Empleados, nómina, IESS',
+    color: '#4a2c7a', border: 'rgba(74,44,122,0.4)',
+    destino: 'rrhh',
+  },
+  {
+    emoji: '👥', titulo: 'Clientes',
+    desc: 'Precios y alertas de margen',
+    color: '#3498db', border: 'rgba(52,152,219,0.4)',
+    destino: 'clientes',
   },
 ];
 
