@@ -1,18 +1,7 @@
-// ============================================
-// TabCobrar.js
-// Cuentas por cobrar — registrar cobros
-// ============================================
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../supabase';
 import { useRealtime } from '../../hooks/useRealtime';
 import { generarAsientoCobro } from '../../utils/asientosContables';
-
-const ESTADO_COLOR = {
-  pendiente: { bg: '#fef9e7', color: '#f39c12', label: '⏳ Pendiente' },
-  parcial:   { bg: '#e8f4fd', color: '#2980b9', label: '💧 Parcial'   },
-  cobrada:   { bg: '#e8f5e9', color: '#27ae60', label: '✅ Cobrada'    },
-  anulada:   { bg: '#fde8e8', color: '#e74c3c', label: '❌ Anulada'    },
-};
 
 const FORMAS_COBRO = [
   { value: 'efectivo',      label: '💵 Efectivo'     },
@@ -20,82 +9,60 @@ const FORMAS_COBRO = [
   { value: 'cheque',        label: '📝 Cheque'        },
 ];
 
-export default function TabCobrar({ mobile, currentUser }) {
+function diasRestantes(fechaVenc) {
+  if (!fechaVenc) return null;
+  const hoy  = new Date(); hoy.setHours(0,0,0,0);
+  const venc = new Date(fechaVenc + 'T00:00:00');
+  return Math.round((venc - hoy) / 86400000);
+}
 
-  const [cuentas,      setCuentas]      = useState([]);
-  const [cargando,     setCargando]     = useState(true);
-  const [filtroEstado, setFiltroEstado] = useState('todas');
-  const [busqueda,     setBusqueda]     = useState('');
-  const [modalCobro,   setModalCobro]   = useState(null); // cuenta seleccionada
-  const [montoCobro,   setMontoCobro]   = useState('');
-  const [formaCobro,   setFormaCobro]   = useState('efectivo');
-  const [referenciaCobro, setReferenciaCobro] = useState('');
-  const [obsCobo,      setObsCobro]     = useState('');
-  const [registrando,  setRegistrando]  = useState(false);
-  const [msgExito,     setMsgExito]     = useState('');
+function badgeVenc(dias) {
+  if (dias === null) return null;
+  if (dias < 0)  return { label: `Vencida ${Math.abs(dias)}d`, bg: '#e74c3c', color: 'white' };
+  if (dias === 0) return { label: 'Vence hoy',                  bg: '#e74c3c', color: 'white' };
+  if (dias <= 5)  return { label: `${dias}d`,                   bg: '#f39c12', color: 'white' };
+  return               { label: `${dias}d`,                     bg: '#27ae60', color: 'white' };
+}
+
+const ESTADO_INFO = {
+  pendiente: { label: 'Pendiente', bg: '#fef9e7', color: '#f39c12' },
+  parcial:   { label: 'Parcial',   bg: '#e8f4fd', color: '#2980b9' },
+  cobrada:   { label: 'Cobrada',   bg: '#e8f5e9', color: '#27ae60' },
+  anulada:   { label: 'Anulada',   bg: '#fde8e8', color: '#e74c3c' },
+};
+
+const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+
+export default function TabCobrar({ mobile, currentUser }) {
+  const [cuentas,          setCuentas]          = useState([]);
+  const [cargando,         setCargando]         = useState(true);
+  const [filtroEstado,     setFiltroEstado]     = useState('todas');
+  const [filtroDesde,      setFiltroDesde]      = useState('');
+  const [filtroHasta,      setFiltroHasta]      = useState('');
+  const [filtroForma,      setFiltroForma]      = useState('todas');
+  const [busqueda,         setBusqueda]         = useState('');
+  const [modalCobro,       setModalCobro]       = useState(null);
+  const [montoCobro,       setMontoCobro]       = useState('');
+  const [formaCobro,       setFormaCobro]       = useState('efectivo');
+  const [referenciaCobro,  setReferenciaCobro]  = useState('');
+  const [obsCobo,          setObsCobro]         = useState('');
+  const [registrando,      setRegistrando]      = useState(false);
+  const [msgExito,         setMsgExito]         = useState('');
 
   useEffect(() => { cargarCuentas(); }, []);
   useRealtime(['cuentas_cobrar', 'cobros'], cargarCuentas);
 
-  // ── Cargar cuentas ────────────────────────────────────────
   async function cargarCuentas() {
     setCargando(true);
     const { data } = await supabase
       .from('cuentas_cobrar')
-      .select(`
-        *,
-        facturas ( numero, cliente_id, forma_pago ),
-        cobros ( fecha, monto )
-      `)
+      .select('*, facturas(numero, cliente_id, forma_pago), cobros(fecha, monto, forma_pago)')
       .is('deleted_at', null)
       .order('fecha_vencimiento', { ascending: true });
     setCuentas(data || []);
     setCargando(false);
   }
 
-  // ── Descargar CSV ─────────────────────────────────────────
-  function descargarCSV() {
-    function num(v) { return parseFloat(v || 0).toFixed(2).replace('.', ','); }
-    function fecha(f) {
-      if (!f) return '';
-      const [y, m, d] = f.split('-');
-      return `${parseInt(d)}/${parseInt(m)}/${y}`;
-    }
-
-    const SEP = ';';
-    const enc = ['forma_pago', 'nombre_cliente', 'valor_cuenta', 'valor_pago', 'fecha_pago', 'pendiente', 'valor_pendiente'];
-    const filas = [];
-
-    // Exportar solo lo que está filtrado
-    cuentasFiltradas.forEach(c => {
-      const cobrosOrdenados = (c.cobros || []).sort((a, b) => b.fecha.localeCompare(a.fecha));
-      const fechaPago = cobrosOrdenados.length > 0 ? cobrosOrdenados[0].fecha : (c.fecha_vencimiento || '');
-      const esPendiente = c.estado === 'pendiente' || c.estado === 'parcial';
-      const valorPendiente = esPendiente
-        ? num(parseFloat(c.monto_total || 0) - parseFloat(c.monto_cobrado || 0))
-        : '';
-      filas.push([
-        (c.facturas?.forma_pago || '').toUpperCase(),
-        c.cliente_nombre || '',
-        num(c.monto_total),
-        num(c.monto_cobrado),
-        fecha(fechaPago),
-        esPendiente ? 'PENDIENTE' : '',
-        valorPendiente
-      ]);
-    });
-
-    const csv = [`sep=${SEP}`, enc.join(SEP), ...filas.map(f => f.join(SEP))].join('\n');
-    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `cuentas_cobrar_${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  // ── Registrar cobro ───────────────────────────────────────
   async function registrarCobro() {
     const monto = parseFloat(montoCobro);
     if (!monto || monto <= 0) return alert('Ingresa un monto válido');
@@ -106,7 +73,6 @@ export default function TabCobrar({ mobile, currentUser }) {
 
     setRegistrando(true);
 
-    // Insertar cobro
     const { data: cobroData, error: errCobro } = await supabase.from('cobros').insert({
       cuenta_cobrar_id: cuenta.id,
       factura_id:       cuenta.factura_id,
@@ -121,236 +87,268 @@ export default function TabCobrar({ mobile, currentUser }) {
 
     if (!errCobro && cobroData) {
       generarAsientoCobro({
-        id:         cobroData.id,
-        monto:      parseFloat(cobroData.monto),
-        forma_pago: cobroData.forma_pago,
-        fecha:      cobroData.fecha,
+        id: cobroData.id, monto: parseFloat(cobroData.monto),
+        forma_pago: cobroData.forma_pago, fecha: cobroData.fecha,
       }).catch(e => console.error('Error asiento cobro:', e));
     }
 
-    // Actualizar monto cobrado y estado
     const nuevoCobrado = parseFloat(cuenta.monto_cobrado) + monto;
-    const nuevoEstado  = nuevoCobrado >= parseFloat(cuenta.monto_total) - 0.01
-      ? 'cobrada' : 'parcial';
-
-    await supabase.from('cuentas_cobrar')
-      .update({ monto_cobrado: nuevoCobrado, estado: nuevoEstado })
-      .eq('id', cuenta.id);
+    const nuevoEstado  = nuevoCobrado >= parseFloat(cuenta.monto_total) - 0.01 ? 'cobrada' : 'parcial';
+    await supabase.from('cuentas_cobrar').update({ monto_cobrado: nuevoCobrado, estado: nuevoEstado }).eq('id', cuenta.id);
 
     setRegistrando(false);
     setModalCobro(null);
     setMontoCobro('');
     setObsCobro('');
     setReferenciaCobro('');
-    mostrarExito(`✅ Cobro de $${monto.toFixed(2)} registrado`);
+    setMsgExito(`✅ Cobro de $${monto.toFixed(2)} registrado`);
+    setTimeout(() => setMsgExito(''), 4000);
     cargarCuentas();
   }
 
-  function mostrarExito(msg) {
-    setMsgExito(msg);
-    setTimeout(() => setMsgExito(''), 4000);
+  function descargarCSV() {
+    const num = v => parseFloat(v || 0).toFixed(2).replace('.', ',');
+    const fecha = f => { if (!f) return ''; const [y,m,d] = f.split('-'); return `${+d}/${+m}/${y}`; };
+    const SEP = ';';
+    const enc = ['forma_pago','nombre_cliente','valor_cuenta','valor_cobrado','pendiente'];
+    const filas = cuentasFiltradas.map(c => [
+      (c.facturas?.forma_pago || '').toUpperCase(),
+      c.cliente_nombre || '',
+      num(c.monto_total),
+      num(c.monto_cobrado),
+      c.estado !== 'cobrada' ? num(parseFloat(c.monto_total) - parseFloat(c.monto_cobrado)) : '0',
+    ]);
+    const csv = [`sep=${SEP}`, enc.join(SEP), ...filas.map(f => f.join(SEP))].join('\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url;
+    a.download = `cobros_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click(); URL.revokeObjectURL(url);
   }
 
-  // ── Filtros ───────────────────────────────────────────────
-  const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  // ── KPIs ─────────────────────────────────────────────────────
+  const totalPorCobrar = cuentas
+    .filter(c => c.estado === 'pendiente' || c.estado === 'parcial')
+    .reduce((s, c) => s + parseFloat(c.monto_total) - parseFloat(c.monto_cobrado), 0);
+
+  const totalVencido = cuentas
+    .filter(c => (c.estado === 'pendiente' || c.estado === 'parcial') && diasRestantes(c.fecha_vencimiento) < 0)
+    .reduce((s, c) => s + parseFloat(c.monto_total) - parseFloat(c.monto_cobrado), 0);
+
+  const cuentasAbiertas = cuentas.filter(c => c.estado === 'pendiente' || c.estado === 'parcial').length;
+
+  // ── Filtros ───────────────────────────────────────────────────
   const cuentasFiltradas = cuentas.filter(c => {
+    const dias = diasRestantes(c.fecha_vencimiento);
     const estadoOk =
-      filtroEstado === 'porCobrar' ? (c.estado === 'pendiente' || c.estado === 'parcial') :
-      filtroEstado === 'todas'     ? c.estado !== 'anulada' :
-      c.estado === filtroEstado;
+      filtroEstado === 'porCobrar' ? c.estado === 'pendiente' || c.estado === 'parcial' :
+      filtroEstado === 'vencidas'  ? (c.estado === 'pendiente' || c.estado === 'parcial') && dias !== null && dias < 0 :
+      filtroEstado === 'cobradas'  ? c.estado === 'cobrada' :
+      c.estado !== 'anulada';
+    const desdeOk = !filtroDesde || (c.fecha_vencimiento || '') >= filtroDesde;
+    const hastaOk = !filtroHasta || (c.fecha_vencimiento || '') <= filtroHasta;
+    const formaOk = filtroForma === 'todas' || c.facturas?.forma_pago === filtroForma;
     const txt = norm(busqueda);
-    const busOk = !txt ||
-      norm(c.cliente_nombre).includes(txt) ||
-      norm(c.facturas?.numero).includes(txt);
-    return estadoOk && busOk;
+    const busOk = !txt || norm(c.cliente_nombre).includes(txt) || norm(c.facturas?.numero).includes(txt);
+    return estadoOk && desdeOk && hastaOk && formaOk && busOk;
   });
 
-  const totalPendiente = cuentas
-    .filter(c => c.estado === 'pendiente' || c.estado === 'parcial')
-    .reduce((s, c) => s + (parseFloat(c.monto_total) - parseFloat(c.monto_cobrado)), 0);
+  const $ = v => `$${parseFloat(v || 0).toFixed(2)}`;
 
-  // Días vencidos
-  function diasVencimiento(fechaVenc) {
-    if (!fechaVenc) return null;
-    const hoy  = new Date(); hoy.setHours(0,0,0,0);
-    const venc = new Date(fechaVenc + 'T00:00:00');
-    return Math.round((venc - hoy) / (1000 * 60 * 60 * 24));
-  }
+  const kpiCard = (label, valor, color, prefix = '$') => (
+    <div style={{ background: 'white', borderRadius: 10, padding: '14px 20px',
+      boxShadow: '0 1px 6px rgba(0,0,0,0.08)', textAlign: 'center', flex: 1, minWidth: 120 }}>
+      <div style={{ fontSize: 11, color: '#888', fontWeight: 700, marginBottom: 4 }}>{label}</div>
+      <div style={{ fontSize: 20, fontWeight: 'bold', color }}>{prefix === '$' ? $(valor) : valor}</div>
+    </div>
+  );
 
-  const inputStyle = {
-    padding: '8px 12px', borderRadius: '8px',
-    border: '1.5px solid #ddd', fontSize: '13px',
-    outline: 'none', width: '100%', boxSizing: 'border-box'
-  };
+  const btnFiltro = (k, label) => (
+    <button key={k} onClick={() => setFiltroEstado(k)} style={{
+      padding: '8px 16px', borderRadius: 20, border: 'none', cursor: 'pointer',
+      fontWeight: 'bold', fontSize: 12,
+      background: filtroEstado === k ? '#1a3a2a' : '#f0f2f5',
+      color:      filtroEstado === k ? 'white'   : '#555',
+      boxShadow:  filtroEstado === k ? '0 2px 6px rgba(0,0,0,0.15)' : 'none',
+    }}>{label}</button>
+  );
 
   return (
     <div>
-
-      {/* Éxito */}
       {msgExito && (
-        <div style={{
-          background: '#d4edda', color: '#155724',
-          padding: '10px 14px', borderRadius: 8,
-          marginBottom: 12, fontWeight: 'bold', fontSize: '13px'
-        }}>{msgExito}</div>
+        <div style={{ background: '#d4edda', color: '#155724', padding: '10px 14px',
+          borderRadius: 8, marginBottom: 12, fontWeight: 'bold', fontSize: 13 }}>
+          {msgExito}
+        </div>
       )}
 
-      {/* Resumen + filtros */}
-      <div style={{
-        background: 'white', borderRadius: '12px',
-        padding: '12px 16px', marginBottom: 14,
-        display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.06)'
-      }}>
-        {/* Total por cobrar */}
-        <div style={{
-          background: '#fef9e7', borderRadius: 8,
-          padding: '8px 14px', textAlign: 'center'
-        }}>
-          <div style={{ fontSize: '10px', color: '#888', fontWeight: 700 }}>
-            TOTAL POR COBRAR
-          </div>
-          <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#f39c12' }}>
-            ${totalPendiente.toFixed(2)}
-          </div>
-        </div>
-
-        {/* Buscador */}
-        <input
-          type="text"
-          value={busqueda}
-          onChange={e => setBusqueda(e.target.value)}
-          placeholder="🔍 Buscar cliente o factura..."
-          style={{
-            padding: '7px 12px', borderRadius: 8, border: '1.5px solid #ddd',
-            fontSize: '13px', outline: 'none', flex: 1, minWidth: 180
-          }}
-        />
-
-        {/* Filtro estado */}
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          {[
-            { value: 'porCobrar', label: '⏳ Por cobrar' },
-            { value: 'cobrada',   label: '✅ Cobradas'   },
-            { value: 'todas',     label: 'Todas'         },
-          ].map(op => (
-            <button key={op.value}
-              onClick={() => setFiltroEstado(op.value)}
-              style={{
-                padding: '7px 14px', borderRadius: 8, cursor: 'pointer',
-                fontWeight: 'bold', fontSize: '12px', border: 'none',
-                background: filtroEstado === op.value ? '#2980b9' : '#f0f2f5',
-                color:      filtroEstado === op.value ? 'white'   : '#555',
-              }}>{op.label}</button>
-          ))}
-        </div>
-
-        {/* Descargar CSV */}
-        <button
-          onClick={descargarCSV}
-          style={{
-            marginLeft: 'auto', padding: '7px 16px', borderRadius: 8,
-            cursor: 'pointer', fontWeight: 'bold', fontSize: '12px',
-            border: 'none', background: '#1a5276', color: 'white'
-          }}>📥 Descargar CSV</button>
+      {/* KPI cards */}
+      <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+        {kpiCard('TOTAL POR COBRAR', totalPorCobrar, '#2980b9')}
+        {kpiCard('TOTAL VENCIDO',    totalVencido,   '#e74c3c')}
+        {kpiCard('CUENTAS ABIERTAS', cuentasAbiertas, '#f39c12', '')}
       </div>
+
+      {/* Filtros */}
+      <div style={{ background: 'white', borderRadius: 10, padding: '14px 16px',
+        boxShadow: '0 1px 4px rgba(0,0,0,0.08)', marginBottom: 16 }}>
+
+        {/* Botones estado */}
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+          {btnFiltro('porCobrar', '⏳ Por cobrar')}
+          {btnFiltro('vencidas',  '🚨 Vencidas'  )}
+          {btnFiltro('cobradas',  '✅ Cobradas'   )}
+          {btnFiltro('todas',     '📋 Todas'      )}
+        </div>
+
+        {/* Filtros secundarios */}
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: 11, color: '#888', whiteSpace: 'nowrap' }}>Vence desde</span>
+            <input type="date" value={filtroDesde} onChange={e => setFiltroDesde(e.target.value)}
+              style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #ddd', fontSize: 12 }} />
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: 11, color: '#888' }}>hasta</span>
+            <input type="date" value={filtroHasta} onChange={e => setFiltroHasta(e.target.value)}
+              style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #ddd', fontSize: 12 }} />
+          </div>
+          <select value={filtroForma} onChange={e => setFiltroForma(e.target.value)}
+            style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid #ddd', fontSize: 12 }}>
+            <option value="todas">Todas las formas</option>
+            <option value="efectivo">Efectivo</option>
+            <option value="transferencia">Transferencia</option>
+            <option value="cheque">Cheque</option>
+            <option value="credito">Crédito</option>
+          </select>
+          <input type="text" value={busqueda} onChange={e => setBusqueda(e.target.value)}
+            placeholder="🔍 Buscar cliente o factura..."
+            style={{ flex: 1, minWidth: 180, padding: '7px 12px', borderRadius: 6,
+              border: '1px solid #ddd', fontSize: 13 }} />
+          <button onClick={descargarCSV}
+            style={{ padding: '7px 14px', borderRadius: 6, border: 'none',
+              background: '#1a5276', color: 'white', fontWeight: 'bold', fontSize: 12, cursor: 'pointer' }}>
+            📥 CSV
+          </button>
+        </div>
+      </div>
+
+      {/* Totales fila */}
+      {cuentasFiltradas.length > 0 && (
+        <div style={{ fontSize: 12, color: '#555', marginBottom: 10, paddingLeft: 4 }}>
+          <b>{cuentasFiltradas.length}</b> cuenta(s) ·{' '}
+          Total: <b style={{ color: '#1a5276' }}>{$(cuentasFiltradas.reduce((s,c) => s + parseFloat(c.monto_total || 0), 0))}</b>{' '}
+          · Cobrado: <b style={{ color: '#27ae60' }}>{$(cuentasFiltradas.reduce((s,c) => s + parseFloat(c.monto_cobrado || 0), 0))}</b>{' '}
+          · Pendiente: <b style={{ color: '#e74c3c' }}>{$(cuentasFiltradas.reduce((s,c) => s + parseFloat(c.monto_total || 0) - parseFloat(c.monto_cobrado || 0), 0))}</b>
+        </div>
+      )}
 
       {/* Lista */}
       {cargando ? (
-        <div style={{ textAlign: 'center', padding: 40, color: '#888' }}>
-          ⏳ Cargando...
-        </div>
+        <div style={{ textAlign: 'center', padding: 40, color: '#888' }}>⏳ Cargando...</div>
       ) : cuentasFiltradas.length === 0 ? (
-        <div style={{
-          textAlign: 'center', padding: 40,
-          background: 'white', borderRadius: 12, color: '#aaa'
-        }}>
+        <div style={{ textAlign: 'center', padding: 40, background: 'white', borderRadius: 12, color: '#aaa' }}>
           <div style={{ fontSize: 40, marginBottom: 8 }}>💰</div>
           <div style={{ fontWeight: 'bold' }}>Sin cuentas en este estado</div>
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {cuentasFiltradas.map(c => {
-            const est       = ESTADO_COLOR[c.estado] || ESTADO_COLOR.pendiente;
+            const dias    = diasRestantes(c.fecha_vencimiento);
+            const cobrado = c.estado !== 'cobrada';
+            const badge   = cobrado ? badgeVenc(dias) : null;
+            const est     = ESTADO_INFO[c.estado] || ESTADO_INFO.pendiente;
             const pendiente = parseFloat(c.monto_total) - parseFloat(c.monto_cobrado);
-            const diasRest  = diasVencimiento(c.fecha_vencimiento);
-            const vencida   = diasRest !== null && diasRest < 0 && c.estado !== 'cobrada';
+            const hayPendiente = c.estado === 'pendiente' || c.estado === 'parcial';
 
             return (
               <div key={c.id} style={{
-                background: vencida ? '#fff8f8' : 'white',
-                borderRadius: 12,
-                border: `2px solid ${vencida ? '#e74c3c' : '#e0e0e0'}`,
-                padding: mobile ? '12px' : '14px 16px',
-                display: 'flex', alignItems: 'center',
-                flexWrap: 'wrap', gap: 10,
-                boxShadow: '0 2px 8px rgba(0,0,0,0.04)'
+                background: 'white', borderRadius: 10,
+                border: `1.5px solid ${badge && dias < 0 ? '#e74c3c' : '#e0e0e0'}`,
+                padding: '14px 16px',
+                boxShadow: '0 1px 6px rgba(0,0,0,0.06)',
               }}>
-
-                {/* Info */}
-                <div style={{ flex: 1, minWidth: 160 }}>
-                  <div style={{
-                    fontWeight: 'bold', color: '#1a1a2e',
-                    fontSize: '14px', marginBottom: 3
-                  }}>
-                    {c.facturas?.numero || '—'}
-                    <span style={{
-                      marginLeft: 8, fontSize: '10px',
-                      background: est.bg, color: est.color,
-                      padding: '2px 8px', borderRadius: 8
-                    }}>{est.label}</span>
-                    {vencida && (
-                      <span style={{
-                        marginLeft: 6, fontSize: '10px',
-                        background: '#fde8e8', color: '#e74c3c',
-                        padding: '2px 8px', borderRadius: 8
-                      }}>🔴 VENCIDA {Math.abs(diasRest)}d</span>
-                    )}
-                  </div>
-                  <div style={{ fontSize: '12px', color: '#555' }}>
-                    👤 {c.cliente_nombre || '—'}
-                  </div>
-                  <div style={{ fontSize: '11px', color: '#aaa', marginTop: 2 }}>
-                    Vence: {c.fecha_vencimiento || '—'}
-                    {diasRest !== null && !vencida && c.estado !== 'cobrada' && (
-                      <span style={{ color: diasRest <= 5 ? '#e74c3c' : '#888' }}>
-                        {' '}({diasRest}d restantes)
+                {/* Fila superior */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8 }}>
+                  <div style={{ flex: 1 }}>
+                    {/* Número factura + badges */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>
+                      <span style={{ fontWeight: 'bold', fontSize: 14, color: '#1a2a4a' }}>
+                        {c.facturas?.numero || '—'}
                       </span>
+                      <span style={{ fontSize: 10, background: est.bg, color: est.color,
+                        padding: '2px 8px', borderRadius: 6, fontWeight: 'bold' }}>
+                        {est.label}
+                      </span>
+                      {badge && (
+                        <span style={{ fontSize: 10, background: badge.bg, color: badge.color,
+                          padding: '2px 8px', borderRadius: 6, fontWeight: 'bold' }}>
+                          {badge.label}
+                        </span>
+                      )}
+                    </div>
+                    {/* Cliente */}
+                    <div style={{ fontSize: 13, color: '#444', marginBottom: 2 }}>
+                      👤 {c.cliente_nombre || '—'}
+                    </div>
+                    {/* Vencimiento */}
+                    <div style={{ fontSize: 11, color: '#888' }}>
+                      Vence: {c.fecha_vencimiento || '—'}
+                      {dias !== null && !badge && (
+                        <span style={{ color: dias <= 5 ? '#f39c12' : '#aaa' }}> · {dias}d restantes</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Montos */}
+                  <div style={{ textAlign: 'right', minWidth: 120 }}>
+                    <div style={{ fontSize: 20, fontWeight: 'bold', color: '#1a2a4a' }}>
+                      {$(c.monto_total)}
+                    </div>
+                    {parseFloat(c.monto_cobrado) > 0 && (
+                      <div style={{ fontSize: 12, color: '#27ae60' }}>
+                        cobrado: {$(c.monto_cobrado)}
+                      </div>
+                    )}
+                    {hayPendiente && (
+                      <div style={{ fontSize: 12, color: '#e74c3c', fontWeight: 'bold' }}>
+                        pendiente: {$(pendiente)}
+                      </div>
                     )}
                   </div>
                 </div>
 
-                {/* Montos */}
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#1a5276' }}>
-                    ${parseFloat(c.monto_total).toFixed(2)}
+                {/* Cobros registrados */}
+                {(c.cobros || []).length > 0 && (
+                  <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid #f0f0f0' }}>
+                    <div style={{ fontSize: 10, fontWeight: 'bold', color: '#888', marginBottom: 4 }}>
+                      COBROS REGISTRADOS:
+                    </div>
+                    {(c.cobros || []).sort((a,b) => b.fecha.localeCompare(a.fecha)).map((p, i) => (
+                      <div key={i} style={{ display: 'flex', gap: 8, fontSize: 12, color: '#27ae60', marginBottom: 2 }}>
+                        <span style={{ fontWeight: 'bold' }}>{$(p.monto)}</span>
+                        <span style={{ color: '#888' }}>🏦 {p.forma_pago}</span>
+                        <span style={{ color: '#aaa' }}>📅 {p.fecha}</span>
+                      </div>
+                    ))}
                   </div>
-                  {parseFloat(c.monto_cobrado) > 0 && (
-                    <div style={{ fontSize: '12px', color: '#27ae60' }}>
-                      cobrado: ${parseFloat(c.monto_cobrado).toFixed(2)}
-                    </div>
-                  )}
-                  {c.estado !== 'cobrada' && c.estado !== 'anulada' && (
-                    <div style={{ fontSize: '12px', color: '#e74c3c', fontWeight: 'bold' }}>
-                      pendiente: ${pendiente.toFixed(2)}
-                    </div>
-                  )}
-                </div>
+                )}
 
                 {/* Botón cobrar */}
-                {(c.estado === 'pendiente' || c.estado === 'parcial') && (
-                  <button
-                    onClick={() => {
+                {hayPendiente && (
+                  <div style={{ marginTop: 10 }}>
+                    <button onClick={() => {
                       setModalCobro(c);
                       setMontoCobro(pendiente.toFixed(2));
                       setFormaCobro('efectivo');
                       setObsCobro('');
-                    }}
-                    style={{
+                      setReferenciaCobro('');
+                    }} style={{
                       background: '#27ae60', color: 'white', border: 'none',
-                      borderRadius: 8, padding: '8px 16px',
-                      cursor: 'pointer', fontWeight: 'bold', fontSize: '13px'
+                      borderRadius: 8, padding: '8px 18px',
+                      cursor: 'pointer', fontWeight: 'bold', fontSize: 13,
                     }}>💵 Registrar cobro</button>
+                  </div>
                 )}
               </div>
             );
@@ -360,109 +358,78 @@ export default function TabCobrar({ mobile, currentUser }) {
 
       {/* Modal registrar cobro */}
       {modalCobro && (
-        <div style={{
-          position: 'fixed', inset: 0,
-          background: 'rgba(0,0,0,0.5)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          zIndex: 200, padding: 16
-        }}>
-          <div style={{
-            background: 'white', borderRadius: 14,
-            padding: '24px', maxWidth: 400, width: '100%',
-            boxShadow: '0 8px 40px rgba(0,0,0,0.2)'
-          }}>
-            <div style={{
-              fontWeight: 'bold', fontSize: '16px',
-              color: '#1a1a2e', marginBottom: 4
-            }}>💵 Registrar cobro</div>
-            <div style={{ fontSize: '13px', color: '#555', marginBottom: 16 }}>
-              {modalCobro.facturas?.numero} —{' '}
-              Pendiente: <b>${(parseFloat(modalCobro.monto_total) - parseFloat(modalCobro.monto_cobrado)).toFixed(2)}</b>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: 16 }}>
+          <div style={{ background: 'white', borderRadius: 14, padding: 24,
+            maxWidth: 400, width: '100%', boxShadow: '0 8px 40px rgba(0,0,0,0.2)' }}>
+            <div style={{ fontWeight: 'bold', fontSize: 16, color: '#1a1a2e', marginBottom: 4 }}>
+              💵 Registrar cobro
+            </div>
+            <div style={{ fontSize: 13, color: '#555', marginBottom: 16 }}>
+              {modalCobro.facturas?.numero} — Pendiente:{' '}
+              <b>${(parseFloat(modalCobro.monto_total) - parseFloat(modalCobro.monto_cobrado)).toFixed(2)}</b>
             </div>
 
-            {/* Monto */}
             <div style={{ marginBottom: 12 }}>
-              <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#555', display: 'block', marginBottom: 4 }}>
+              <label style={{ fontSize: 11, fontWeight: 'bold', color: '#555', display: 'block', marginBottom: 4 }}>
                 Monto a cobrar ($)
               </label>
-              <input
-                type="number" min="0.01" step="0.01"
-                value={montoCobro}
-                onChange={e => setMontoCobro(e.target.value)}
-                style={inputStyle}
-                autoFocus
-              />
+              <input type="number" min="0.01" step="0.01" value={montoCobro}
+                onChange={e => setMontoCobro(e.target.value)} autoFocus
+                style={{ width: '100%', padding: '8px 12px', borderRadius: 8,
+                  border: '1.5px solid #ddd', fontSize: 13, boxSizing: 'border-box' }} />
             </div>
 
-            {/* Forma de cobro */}
             <div style={{ marginBottom: 12 }}>
-              <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#555', display: 'block', marginBottom: 6 }}>
+              <label style={{ fontSize: 11, fontWeight: 'bold', color: '#555', display: 'block', marginBottom: 6 }}>
                 Forma de cobro
               </label>
               <div style={{ display: 'flex', gap: 6 }}>
                 {FORMAS_COBRO.map(f => (
-                  <button key={f.value}
-                    onClick={() => setFormaCobro(f.value)}
-                    style={{
-                      flex: 1, padding: '8px 4px', borderRadius: 8,
-                      cursor: 'pointer', fontWeight: 'bold', fontSize: '12px',
-                      border: 'none',
-                      background: formaCobro === f.value ? '#27ae60' : '#f0f2f5',
-                      color:      formaCobro === f.value ? 'white'   : '#555',
-                    }}>{f.label}</button>
+                  <button key={f.value} onClick={() => setFormaCobro(f.value)} style={{
+                    flex: 1, padding: '8px 4px', borderRadius: 8, cursor: 'pointer',
+                    fontWeight: 'bold', fontSize: 12, border: 'none',
+                    background: formaCobro === f.value ? '#27ae60' : '#f0f2f5',
+                    color:      formaCobro === f.value ? 'white'   : '#555',
+                  }}>{f.label}</button>
                 ))}
               </div>
             </div>
 
-            {/* Referencia pago */}
             {['transferencia', 'cheque', 'deposito'].includes(formaCobro) && (
-              <div style={{ marginTop: 8, marginBottom: 12 }}>
-                <label style={{ fontSize: 12, color: '#555', display: 'block', marginBottom: 4 }}>
+              <div style={{ marginBottom: 12 }}>
+                <label style={{ fontSize: 11, color: '#555', display: 'block', marginBottom: 4 }}>
                   Nº Transacción / Depósito (opcional)
                 </label>
-                <input
-                  type="text"
-                  value={referenciaCobro}
-                  onChange={e => setReferenciaCobro(e.target.value)}
-                  placeholder="Ej: 00123456"
+                <input type="text" value={referenciaCobro}
+                  onChange={e => setReferenciaCobro(e.target.value)} placeholder="Ej: 00123456"
                   style={{ width: '100%', padding: '7px 10px', borderRadius: 6,
-                    border: '1px solid #ddd', fontSize: 13, boxSizing: 'border-box' }}
-                />
+                    border: '1px solid #ddd', fontSize: 13, boxSizing: 'border-box' }} />
               </div>
             )}
 
-            {/* Observaciones */}
             <div style={{ marginBottom: 20 }}>
-              <label style={{ fontSize: '11px', fontWeight: 'bold', color: '#555', display: 'block', marginBottom: 4 }}>
+              <label style={{ fontSize: 11, fontWeight: 'bold', color: '#555', display: 'block', marginBottom: 4 }}>
                 Observaciones (opcional)
               </label>
-              <input
-                type="text"
-                value={obsCobo}
-                onChange={e => setObsCobro(e.target.value)}
+              <input type="text" value={obsCobo} onChange={e => setObsCobro(e.target.value)}
                 placeholder="Ej: Cheque #001, transferencia banco..."
-                style={inputStyle}
-              />
+                style={{ width: '100%', padding: '8px 12px', borderRadius: 8,
+                  border: '1.5px solid #ddd', fontSize: 13, boxSizing: 'border-box' }} />
             </div>
 
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-              <button
-                onClick={() => setModalCobro(null)}
-                style={{
-                  background: '#f0f2f5', color: '#555', border: 'none',
-                  borderRadius: 8, padding: '10px 20px',
-                  cursor: 'pointer', fontWeight: 'bold'
-                }}>Cancelar</button>
-              <button
-                onClick={registrarCobro}
-                disabled={registrando || !montoCobro}
-                style={{
-                  background: registrando ? '#95a5a6' : '#27ae60',
-                  color: 'white', border: 'none', borderRadius: 8,
-                  padding: '10px 20px',
-                  cursor: registrando ? 'not-allowed' : 'pointer',
-                  fontWeight: 'bold'
-                }}>{registrando ? '⏳...' : '✅ Confirmar cobro'}</button>
+              <button onClick={() => setModalCobro(null)}
+                style={{ background: '#f0f2f5', color: '#555', border: 'none',
+                  borderRadius: 8, padding: '10px 20px', cursor: 'pointer', fontWeight: 'bold' }}>
+                Cancelar
+              </button>
+              <button onClick={registrarCobro} disabled={registrando || !montoCobro}
+                style={{ background: registrando ? '#95a5a6' : '#27ae60', color: 'white',
+                  border: 'none', borderRadius: 8, padding: '10px 20px',
+                  cursor: registrando ? 'not-allowed' : 'pointer', fontWeight: 'bold' }}>
+                {registrando ? '⏳...' : '✅ Confirmar cobro'}
+              </button>
             </div>
           </div>
         </div>
