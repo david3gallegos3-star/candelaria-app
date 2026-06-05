@@ -532,6 +532,9 @@ export default function TabCajaChica({ mobile, currentUser }) {
           <label style={{ fontSize:'11px', fontWeight:'bold', color:'#e74c3c', display:'block', marginBottom:4 }}>CAJA CIERRE ($)</label>
           <input type="number" value={cierre} onChange={e => setCierre(e.target.value)}
             placeholder="0.00" style={{ ...inp, width:'100%', borderColor:'#e74c3c' }} />
+          <div style={{ marginTop:5, fontSize:'11px', color:'#2980b9', fontWeight:'bold' }}>
+            Esperado: ${(parseFloat(inicial||0) + tEfect - tGastos - tEntregas).toFixed(2)}
+          </div>
         </div>
       </div>
 
@@ -727,8 +730,10 @@ export default function TabCajaChica({ mobile, currentUser }) {
 
       {/* Resumen + Botones */}
       {(() => {
-        const sobrante = parseFloat(inicial||0) + tEfect - tGastos - tEntregas;
-        const sobraColor = sobrante >= 0 ? '#27ae60' : '#e74c3c';
+        const cajaEsperada = parseFloat(inicial||0) + tEfect - tGastos - tEntregas;
+        const descuadre   = parseFloat(cierre||0) - cajaEsperada;
+        const cuadra      = Math.abs(descuadre) < 0.005;
+        const descColor   = cuadra ? '#27ae60' : '#e74c3c';
         return (
       <div style={{ background:'white', borderRadius:12, padding:'16px', boxShadow:'0 2px 8px rgba(0,0,0,0.06)',
         display:'flex', gap:12, flexWrap:'wrap', alignItems:'center' }}>
@@ -749,11 +754,15 @@ export default function TabCajaChica({ mobile, currentUser }) {
               ${parseFloat(inicial||0).toFixed(2)} → ${parseFloat(cierre||0).toFixed(2)}
             </div>
           </div>
-          <div style={{ textAlign:'center', background: sobrante >= 0 ? '#f0fff4' : '#fde8e8',
-            border: `2px solid ${sobraColor}`, borderRadius:10, padding:'6px 16px' }}>
-            <div style={{ fontSize:'10px', color:sobraColor, fontWeight:700 }}>SOBRANTE EN CAJA</div>
-            <div style={{ fontSize:'22px', fontWeight:'bold', color:sobraColor }}>${sobrante.toFixed(2)}</div>
-            <div style={{ fontSize:'9px', color:'#aaa' }}>inicial + ef. - gastos - depósito</div>
+          <div style={{ textAlign:'center', background: cuadra ? '#f0fff4' : '#fde8e8',
+            border: `2px solid ${descColor}`, borderRadius:10, padding:'6px 16px' }}>
+            <div style={{ fontSize:'10px', color:descColor, fontWeight:700 }}>
+              {cuadra ? '✓ CUADRA' : 'DESCUADRE'}
+            </div>
+            <div style={{ fontSize:'22px', fontWeight:'bold', color:descColor }}>
+              {cuadra ? '$0.00' : `${descuadre > 0 ? '+' : ''}$${descuadre.toFixed(2)}`}
+            </div>
+            <div style={{ fontSize:'9px', color:'#aaa' }}>cierre - esperado</div>
           </div>
         </div>
         <div style={{ display:'flex', gap:8 }}>
