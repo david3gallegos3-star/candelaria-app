@@ -44,6 +44,7 @@ export default function TabIngresoCompra({ mobile, currentUser, userRol }) {
   const [numRetencion,    setNumRetencion]    = useState('');
   const [xmlContent,      setXmlContent]      = useState('');
   const [formaPago,    setFormaPago]    = useState('efectivo');
+  const [referenciaPago, setReferenciaPago] = useState('');
   const [diasCredito,  setDiasCredito]  = useState(30);
   const [notas,        setNotas]        = useState('');
   const [items,        setItems]        = useState([itemVacio()]);
@@ -143,6 +144,7 @@ export default function TabIngresoCompra({ mobile, currentUser, userRol }) {
         num_retencion:      tieneRetencion && numRetencion ? numRetencion : null,
         neto_pagar:         tieneRetencion ? netoPagar : null,
         forma_pago:       formaPago,
+        referencia_pago:  ['transferencia', 'cheque', 'deposito'].includes(formaPago) ? referenciaPago || null : null,
         dias_credito:     formaPago === 'credito' ? diasCredito : 0,
         estado:           formaPago === 'credito' ? 'pendiente' : 'pagada',
         notas,
@@ -254,6 +256,7 @@ export default function TabIngresoCompra({ mobile, currentUser, userRol }) {
       setNumRetencion('');
       setXmlContent('');
       setFormaPago('efectivo');
+      setReferenciaPago('');
       setNotas('');
       mostrarExito(`✅ Compra registrada — ${itemsValidos.length} material(es), $${total.toFixed(2)} — inventario actualizado`);
       cargarDatos(); // recargar stocks
@@ -746,6 +749,21 @@ export default function TabIngresoCompra({ mobile, currentUser, userRol }) {
               }}>{f.label}</button>
           ))}
         </div>
+        {['transferencia', 'cheque', 'deposito'].includes(formaPago) && (
+          <div style={{ marginTop: 10 }}>
+            <label style={{ fontSize: 12, color: '#555', display: 'block', marginBottom: 4 }}>
+              Nº Transacción / Depósito (opcional)
+            </label>
+            <input
+              type="text"
+              value={referenciaPago}
+              onChange={e => setReferenciaPago(e.target.value)}
+              placeholder="Ej: 00123456"
+              style={{ width: '100%', padding: '7px 10px', borderRadius: 6,
+                border: '1px solid #ddd', fontSize: 13, boxSizing: 'border-box' }}
+            />
+          </div>
+        )}
         {formaPago === 'credito' && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <label style={{ ...labelStyle, margin: 0 }}>Días de crédito:</label>
