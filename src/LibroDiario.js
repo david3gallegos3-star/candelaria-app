@@ -22,15 +22,14 @@ export default function LibroDiario({ onVolver, onVolverMenu, userRol, currentUs
     const desde = periodo + '-01';
     const [y, m] = periodo.split('-').map(Number);
     const hasta = new Date(y, m, 0).toISOString().split('T')[0]; // último día real del mes
-    console.log('LibroDiario query:', { desde, hasta });
     const { data, error } = await supabase
       .from('libro_diario')
-      .select('id, fecha, descripcion, origen, estado')
+      .select('*, libro_diario_detalle(*, cuentas_contables!cuenta_id(codigo, nombre, tipo))')
       .gte('fecha', desde).lte('fecha', hasta)
       .neq('estado', 'eliminado')
       .order('fecha').order('created_at');
 
-    console.log('LibroDiario result:', { count: data?.length, error });
+    if (error) console.error('Error libro_diario:', error);
     const lista = data || [];
     setAsientos(lista);
 
