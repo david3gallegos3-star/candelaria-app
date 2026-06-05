@@ -46,6 +46,8 @@ export default function TabNuevaVenta({ mobile, currentUser, userRol }) {
   const [diasCredito,   setDiasCredito]   = useState(30);
   const [observaciones, setObservaciones] = useState('');
 
+  const [referenciaPago, setReferenciaPago] = useState('');
+
   const [emitiendo,      setEmitiendo]      = useState(false);
   const [facturaEmitida, setFacturaEmitida] = useState(null);
   const [error,          setError]          = useState('');
@@ -260,6 +262,7 @@ export default function TabNuevaVenta({ mobile, currentUser, userRol }) {
         forma_pago:       formaPago,
         dias_credito:     formaPago === 'credito' ? diasCredito : 0,
         observaciones,
+        referencia_pago:  ['transferencia', 'cheque', 'deposito'].includes(formaPago) ? referenciaPago || null : null,
         vendedor:         currentUser?.email || '',
         vendedor_nombre:  userRol?.nombre    || '',
         created_by:       currentUser?.email || ''
@@ -362,6 +365,7 @@ export default function TabNuevaVenta({ mobile, currentUser, userRol }) {
       forma_pago:       formaPago,
       dias_credito:     formaPago === 'credito' ? diasCredito : 0,
       observaciones,
+      referencia_pago:  ['transferencia', 'cheque', 'deposito'].includes(formaPago) ? referenciaPago || null : null,
       vendedor:         currentUser?.email || '',
       vendedor_nombre:  userRol?.nombre    || '',
       created_by:       currentUser?.email || '',
@@ -512,6 +516,7 @@ export default function TabNuevaVenta({ mobile, currentUser, userRol }) {
       forma_pago:       formaPago,
       dias_credito:     formaPago === 'credito' ? diasCredito : 0,
       observaciones,
+      referencia_pago:  ['transferencia', 'cheque', 'deposito'].includes(formaPago) ? referenciaPago || null : null,
       vendedor:         currentUser?.email || '',
       vendedor_nombre:  userRol?.nombre    || '',
       created_by:       currentUser?.email || '',
@@ -631,6 +636,7 @@ export default function TabNuevaVenta({ mobile, currentUser, userRol }) {
     setItems([itemVacio()]);
     setObservaciones('');
     setFormaPago('efectivo');
+    setReferenciaPago('');
     setClienteId('consumidor_final');
     setClienteEsEmpleado(false);
     setEmpleadoSeleccionado(null);
@@ -955,6 +961,21 @@ export default function TabNuevaVenta({ mobile, currentUser, userRol }) {
                 <option key={d} value={d}>{d} días</option>
               ))}
             </select>
+          </div>
+        )}
+        {['transferencia', 'cheque', 'deposito'].includes(formaPago) && (
+          <div style={{ marginTop: 8 }}>
+            <label style={{ fontSize: 12, color: '#555', display: 'block', marginBottom: 4 }}>
+              Nº Transacción / Depósito (opcional)
+            </label>
+            <input
+              type="text"
+              value={referenciaPago}
+              onChange={e => setReferenciaPago(e.target.value)}
+              placeholder="Ej: 00123456"
+              style={{ width: '100%', padding: '7px 10px', borderRadius: 6,
+                border: '1px solid #ddd', fontSize: 13, boxSizing: 'border-box' }}
+            />
           </div>
         )}
       </div>
