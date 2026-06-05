@@ -28,6 +28,7 @@ export default function TabCobrar({ mobile, currentUser }) {
   const [modalCobro,   setModalCobro]   = useState(null); // cuenta seleccionada
   const [montoCobro,   setMontoCobro]   = useState('');
   const [formaCobro,   setFormaCobro]   = useState('efectivo');
+  const [referenciaCobro, setReferenciaCobro] = useState('');
   const [obsCobo,      setObsCobro]     = useState('');
   const [registrando,  setRegistrando]  = useState(false);
   const [msgExito,     setMsgExito]     = useState('');
@@ -113,7 +114,8 @@ export default function TabCobrar({ mobile, currentUser }) {
       forma_pago:       formaCobro,
       fecha:            new Date().toISOString().split('T')[0],
       observaciones:    obsCobo,
-      registrado_por:   currentUser?.email || ''
+      registrado_por:   currentUser?.email || '',
+      referencia_pago:  ['transferencia', 'cheque', 'deposito'].includes(formaCobro) ? referenciaCobro || null : null,
     });
 
     // Actualizar monto cobrado y estado
@@ -129,6 +131,7 @@ export default function TabCobrar({ mobile, currentUser }) {
     setModalCobro(null);
     setMontoCobro('');
     setObsCobro('');
+    setReferenciaCobro('');
     mostrarExito(`✅ Cobro de $${monto.toFixed(2)} registrado`);
     cargarCuentas();
   }
@@ -400,6 +403,23 @@ export default function TabCobrar({ mobile, currentUser }) {
                 ))}
               </div>
             </div>
+
+            {/* Referencia pago */}
+            {['transferencia', 'cheque', 'deposito'].includes(formaCobro) && (
+              <div style={{ marginTop: 8, marginBottom: 12 }}>
+                <label style={{ fontSize: 12, color: '#555', display: 'block', marginBottom: 4 }}>
+                  Nº Transacción / Depósito (opcional)
+                </label>
+                <input
+                  type="text"
+                  value={referenciaCobro}
+                  onChange={e => setReferenciaCobro(e.target.value)}
+                  placeholder="Ej: 00123456"
+                  style={{ width: '100%', padding: '7px 10px', borderRadius: 6,
+                    border: '1px solid #ddd', fontSize: 13, boxSizing: 'border-box' }}
+                />
+              </div>
+            )}
 
             {/* Observaciones */}
             <div style={{ marginBottom: 20 }}>
