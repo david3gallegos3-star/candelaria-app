@@ -21,14 +21,44 @@ export default function LibroDiario({ onVolver, onVolverMenu, userRol, currentUs
   async function cargarAsientos() {
     const desde = periodo + '-01';
     const [y, m] = periodo.split('-').map(Number);
-    const hasta = new Date(y, m, 0).toISOString().split('T')[0]; // último día real del mes
-    const { data } = await supabase
+    const hasta = new Date(y, m, 0).toISOString().split('T')[0];
+
+    const { data: asientosData } = await supabase
       .from('libro_diario')
-      .select('*, libro_diario_detalle(*, cuentas_contables(codigo, nombre, tipo))')
+      .select('*')
       .gte('fecha', desde).lte('fecha', hasta)
       .neq('estado', 'eliminado')
       .order('fecha').order('created_at');
-    const lista = data || [];
+
+    const asientoIds = (asientosData || []).map(a => a.id);
+
+    let detallesMap = {};
+    if (asientoIds.length > 0) {
+      const { data: detallesData } = await supabase
+        .from('libro_diario_detalle')
+        .select('*')
+        .in('asiento_id', asientoIds);
+
+      const cuentaIds = [...new Set((detallesData || []).map(d => d.cuenta_id))];
+      let cuentasMap = {};
+      if (cuentaIds.length > 0) {
+        const { data: cuentasData } = await supabase
+          .from('cuentas_contables')
+          .select('id, codigo, nombre, tipo')
+          .in('id', cuentaIds);
+        (cuentasData || []).forEach(c => { cuentasMap[c.id] = c; });
+      }
+
+      (detallesData || []).forEach(d => {
+        if (!detallesMap[d.asiento_id]) detallesMap[d.asiento_id] = [];
+        detallesMap[d.asiento_id].push({ ...d, cuentas_contables: cuentasMap[d.cuenta_id] || null });
+      });
+    }
+
+    const lista = (asientosData || []).map(a => ({
+      ...a,
+      libro_diario_detalle: detallesMap[a.id] || [],
+    }));
     setAsientos(lista);
 
     let debe = 0, haber = 0, pendientes = 0;
