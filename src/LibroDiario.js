@@ -20,7 +20,8 @@ export default function LibroDiario({ onVolver, onVolverMenu, userRol, currentUs
 
   async function cargarAsientos() {
     const desde = periodo + '-01';
-    const hasta = periodo + '-31';
+    const [y, m] = periodo.split('-').map(Number);
+    const hasta = new Date(y, m, 0).toISOString().split('T')[0]; // último día real del mes
     const { data } = await supabase
       .from('libro_diario')
       .select('*, libro_diario_detalle(*, cuentas_contables(codigo, nombre, tipo))')
