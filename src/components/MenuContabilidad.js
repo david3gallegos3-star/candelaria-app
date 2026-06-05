@@ -235,50 +235,6 @@ export default function MenuContabilidad({ navegarA, onVolver }) {
 
         {/* Borrar pruebas */}
         <div style={{ textAlign: 'center', marginBottom: '16px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
-            <button onClick={handleBorrarPruebas} disabled={borrando} style={{
-              background: borrando ? '#374151' : 'rgba(220,38,38,0.15)',
-              border: '1.5px solid rgba(220,38,38,0.5)',
-              color: '#f87171', borderRadius: '10px',
-              padding: '10px 20px', cursor: borrando ? 'default' : 'pointer',
-              fontSize: '13px', fontWeight: 'bold',
-            }}>
-              {borrando ? '⏳ Borrando...' : '🗑️ Borrar datos de prueba'}
-            </button>
-            <button onClick={handleBorrarFacturas} disabled={borrandoFacturas} style={{
-              background: borrandoFacturas ? '#374151' : 'rgba(234,88,12,0.15)',
-              border: '1.5px solid rgba(234,88,12,0.5)',
-              color: '#fb923c', borderRadius: '10px',
-              padding: '10px 20px', cursor: borrandoFacturas ? 'default' : 'pointer',
-              fontSize: '13px', fontWeight: 'bold',
-            }}>
-              {borrandoFacturas ? '⏳ Borrando...' : '🧾 Borrar facturas de prueba'}
-            </button>
-            <button onClick={handleBorrarNotasVenta} disabled={borrandoNV} style={{
-              background: borrandoNV ? '#374151' : 'rgba(142,68,173,0.15)',
-              border: '1.5px solid rgba(142,68,173,0.5)',
-              color: '#c39bd3', borderRadius: '10px',
-              padding: '10px 20px', cursor: borrandoNV ? 'default' : 'pointer',
-              fontSize: '13px', fontWeight: 'bold',
-            }}>
-              {borrandoNV ? '⏳ Borrando...' : '📋 Borrar notas de venta de prueba'}
-            </button>
-          </div>
-          {msgBorrar && (
-            <div style={{ fontSize: 12, color: msgBorrar.startsWith('✓') ? '#4ade80' : '#f87171' }}>
-              {msgBorrar}
-            </div>
-          )}
-          {msgFacturas && (
-            <div style={{ fontSize: 12, color: msgFacturas.startsWith('✓') ? '#4ade80' : '#f87171' }}>
-              {msgFacturas}
-            </div>
-          )}
-          {msgNV && (
-            <div style={{ fontSize: 12, color: msgNV.startsWith('✓') ? '#4ade80' : '#f87171' }}>
-              {msgNV}
-            </div>
-          )}
           <button onClick={handleBorrarTodo} disabled={borrandoTodo} style={{
             background: borrandoTodo ? '#374151' : 'rgba(220,38,38,0.3)',
             border: '2px solid rgba(220,38,38,0.8)',
