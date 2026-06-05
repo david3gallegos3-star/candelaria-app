@@ -58,7 +58,7 @@ export default function TabPagosUnificado({ mobile }) {
   const [cargando,     setCargando]     = useState(true);
 
   // Filtros
-  const [filtroEstado, setFiltroEstado] = useState('pendientes');
+  const [filtroEstado, setFiltroEstado] = useState('todas');
   const [filtroDesde,  setFiltroDesde]  = useState('');
   const [filtroHasta,  setFiltroHasta]  = useState('');
   const [filtroForma,  setFiltroForma]  = useState('todas');
@@ -566,8 +566,8 @@ export default function TabPagosUnificado({ mobile }) {
       ) : (
         filtradas.map(c => {
           const dias   = diasRestantes(c.fecha_vencimiento);
-          const badge  = badgeVenc(dias);
           const pagado = c.estado === 'pagado';
+          const badge  = pagado ? null : badgeVenc(dias);
           const parcial = c.estado === 'parcial';
           const sri    = c.compras?.autorizacion_sri || '';
           const xmlUrl = c.compras?.xml_sri_url      || null;

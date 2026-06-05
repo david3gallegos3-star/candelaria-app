@@ -71,6 +71,8 @@ export default function MenuContabilidad({ navegarA, onVolver }) {
   const [msgFacturas,      setMsgFacturas]      = useState('');
   const [borrandoNV,       setBorrandoNV]       = useState(false);
   const [msgNV,            setMsgNV]            = useState('');
+  const [borrandoTodo,     setBorrandoTodo]     = useState(false);
+  const [msgTodo,          setMsgTodo]          = useState('');
 
   async function handleBorrarFacturas() {
     const ok = window.confirm('⚠️ ¿Borrar TODAS las facturas de prueba?\n\nSe eliminarán: facturas, detalles y cuentas por cobrar. El secuencial vuelve a 1.\n\nEsta acción NO se puede deshacer.');
@@ -111,6 +113,40 @@ export default function MenuContabilidad({ navegarA, onVolver }) {
     }
     setBorrandoNV(false);
     setTimeout(() => setMsgNV(''), 5000);
+  }
+
+  async function handleBorrarTodo() {
+    const ok = window.confirm('⚠️ ¿Borrar ABSOLUTAMENTE TODOS los datos de prueba?\n\nIncluye: libro diario, facturas, compras, nómina, caja chica, hotmail, clientes, empleados, proveedores y más.\n\nEsta acción NO se puede deshacer.');
+    if (!ok) return;
+    const ok2 = window.confirm('¿Confirmas? Se borrarán TODOS los registros de prueba.');
+    if (!ok2) return;
+    setBorrandoTodo(true);
+    setMsgTodo('');
+    try {
+      const tablas = [
+        'libro_diario_detalle', 'libro_diario',
+        'nomina_movimientos', 'nomina',
+        'bank_statements', 'ms_tokens',
+        'facturas_detalle', 'cuentas_cobrar', 'perdidas', 'notas_credito', 'facturas',
+        'compras_detalle', 'compras',
+        'caja_gastos', 'caja_entregas', 'cobros', 'caja_chica',
+        'cuentas_pagar',
+        'talonario_pagos_banco', 'talonario_pagos_personales', 'talonario_otros_ingresos',
+        'bank_statements',
+        'clientes', 'empleados', 'proveedores',
+      ];
+      for (const t of tablas) {
+        await supabase.from(t).delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      }
+      await supabase.from('config_contabilidad')
+        .update({ valor: { completado: false, fecha: null, banco: 0, caja: 0, inventario: 0, patrimonio: 0 } })
+        .eq('clave', 'asiento_inicial');
+      setMsgTodo('✓ Todos los datos de prueba borrados');
+    } catch (e) {
+      setMsgTodo('Error: ' + e.message);
+    }
+    setBorrandoTodo(false);
+    setTimeout(() => setMsgTodo(''), 6000);
   }
 
   async function handleBorrarPruebas() {
@@ -241,6 +277,20 @@ export default function MenuContabilidad({ navegarA, onVolver }) {
           {msgNV && (
             <div style={{ fontSize: 12, color: msgNV.startsWith('✓') ? '#4ade80' : '#f87171' }}>
               {msgNV}
+            </div>
+          )}
+          <button onClick={handleBorrarTodo} disabled={borrandoTodo} style={{
+            background: borrandoTodo ? '#374151' : 'rgba(220,38,38,0.3)',
+            border: '2px solid rgba(220,38,38,0.8)',
+            color: '#ff6b6b', borderRadius: '10px',
+            padding: '12px 28px', cursor: borrandoTodo ? 'default' : 'pointer',
+            fontSize: '14px', fontWeight: 'bold', marginTop: 4,
+          }}>
+            {borrandoTodo ? '⏳ Borrando todo...' : '🔥 Borrar TODAS las pruebas de contabilidad'}
+          </button>
+          {msgTodo && (
+            <div style={{ fontSize: 12, color: msgTodo.startsWith('✓') ? '#4ade80' : '#f87171' }}>
+              {msgTodo}
             </div>
           )}
         </div>
