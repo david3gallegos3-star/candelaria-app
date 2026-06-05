@@ -26,7 +26,8 @@ export default function TabCajaChica({ mobile, currentUser }) {
   const [datosMes,     setDatosMes]     = useState([]);
   const [provSugs,     setProvSugs]     = useState([]);
   const [provFoco,     setProvFoco]     = useState(null);
-  const listo = useRef(false); // true solo después de que cargarDia terminó
+  const listo       = useRef(false);
+  const autoSaveRef = useRef(null);
 
   function fGasto() {
     return { proveedor:'', detalle:'', valor:'', ruc:'', numero_factura:'', pendiente_compra:false, expandido:false };
@@ -38,12 +39,49 @@ export default function TabCajaChica({ mobile, currentUser }) {
   useRealtime(['caja_chica', 'caja_entregas', 'caja_gastos', 'cobros', 'compras'], cargarDia);
   useEffect(() => { if (vista === 'mes') cargarMes(); }, [vista, mesSel]);
 
-  // Autosave — solo después de que cargarDia terminó (evita sobrescribir el borrador al montar)
+  // Autosave en Supabase — 1.5s después del último cambio
   useEffect(() => {
     if (!listo.current || guardadoHoy) return;
-    const draft = { responsable, inicial, cierre, observaciones, gastos, entregas };
-    localStorage.setItem(`caja_draft_${fecha}`, JSON.stringify(draft));
+    clearTimeout(autoSaveRef.current);
+    autoSaveRef.current = setTimeout(() => autoGuardarBorrador(), 1500);
   }, [responsable, inicial, cierre, observaciones, gastos, entregas, guardadoHoy]);
+
+  async function autoGuardarBorrador() {
+    if (guardadoHoy) return;
+    let id = cajaId;
+    const row = {
+      fecha, responsable,
+      caja_inicial: parseFloat(inicial) || 0,
+      caja_cierre:  parseFloat(cierre)  || 0,
+      observaciones,
+    };
+    if (!id) {
+      const { data } = await supabase.from('caja_chica').insert(row).select().single();
+      if (data?.id) { id = data.id; setCajaId(data.id); }
+    } else {
+      await supabase.from('caja_chica').update(row).eq('id', id);
+    }
+    if (!id) return;
+
+    await supabase.from('caja_gastos').delete().eq('caja_id', id);
+    const gastosOk = gastos.filter(g => g.proveedor || g.detalle || g.valor);
+    if (gastosOk.length) {
+      await supabase.from('caja_gastos').insert(gastosOk.map((g, i) => ({
+        caja_id: id, proveedor: g.proveedor, ruc: g.ruc,
+        numero_factura: g.numero_factura, detalle: g.detalle,
+        valor: parseFloat(g.valor) || 0,
+        pendiente_compra: g.pendiente_compra, orden: i,
+      })));
+    }
+
+    await supabase.from('caja_entregas').delete().eq('caja_id', id);
+    const entregasOk = entregas.filter(e => e.cantidad || e.recibe);
+    if (entregasOk.length) {
+      await supabase.from('caja_entregas').insert(entregasOk.map((e, i) => ({
+        caja_id: id, cantidad: parseFloat(e.cantidad) || 0, recibe: e.recibe, orden: i,
+      })));
+    }
+  }
 
   async function cargarProveedores() {
     const [{ data: provs }, { data: historial }] = await Promise.all([
@@ -83,23 +121,6 @@ export default function TabCajaChica({ mobile, currentUser }) {
     } else {
       setCajaId(null);
       setGuardadoHoy(false);
-
-      // Restaurar borrador si existe
-      const draftRaw = localStorage.getItem(`caja_draft_${fecha}`);
-      if (draftRaw) {
-        try {
-          const draft = JSON.parse(draftRaw);
-          setResponsable(draft.responsable || '');
-          setInicial(draft.inicial || '');
-          setCierre(draft.cierre || '');
-          setObservaciones(draft.observaciones || '');
-          setGastos(draft.gastos?.length ? draft.gastos : [fGasto()]);
-          setEntregas(draft.entregas?.length ? draft.entregas : [fEntrega()]);
-          return;
-        } catch {}
-      }
-
-      // Sin borrador: limpiar y cargar cierre del día anterior como inicial
       setResponsable('');
       setCierre('');
       setObservaciones('');
@@ -224,8 +245,7 @@ export default function TabCajaChica({ mobile, currentUser }) {
       }
     }).catch(console.error);
 
-    // Borrar borrador y resetear formulario — inicial = cierre guardado
-    localStorage.removeItem(`caja_draft_${fecha}`);
+    // Resetear formulario — inicial = cierre guardado
     setInicial(cierreGuardado);
     setCierre('');
     setObservaciones('');
