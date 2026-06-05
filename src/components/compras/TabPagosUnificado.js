@@ -131,7 +131,7 @@ export default function TabPagosUnificado({ mobile }) {
     const estadoOk =
       filtroEstado === 'pendientes' ? c.estado !== 'pagado' :
       filtroEstado === 'vencidas'   ? c.estado !== 'pagado' && dias !== null && dias < 0 :
-      filtroEstado === 'pagadas'    ? c.estado === 'pagado' :
+      filtroEstado === 'pagadas'    ? c.estado === 'pagado' || c.estado === 'parcial' :
       true;
     const desdeOk = !filtroDesde || (c.fecha_vencimiento || '') >= filtroDesde;
     const hastaOk = !filtroHasta || (c.fecha_vencimiento || '') <= filtroHasta;
