@@ -12,7 +12,6 @@ export default function ResumenTalonario() {
   const [datos, setDatos] = useState(null);
   const [cargando, setCargando] = useState(false);
   const [saldoBanco, setSaldoBanco] = useState('');
-  const [editandoSaldo, setEditandoSaldo] = useState(false);
 
   useEffect(() => { cargar(); }, [mes, año]);
 
@@ -97,12 +96,6 @@ export default function ResumenTalonario() {
       cobroEfect, cobroCheq, cobroTransf, pagosPrestTarj, pagosGastPers,
       cxcPendiente, saldoCalculadoBanco, movsBanco });
     setCargando(false);
-  }
-
-  async function guardarSaldo(val) {
-    await supabase.from('config_contabilidad')
-      .upsert({ clave: `saldo_banco_${año}_${mes}`, valor: { saldo: val } }, { onConflict: 'clave' });
-    setEditandoSaldo(false);
   }
 
 
@@ -207,20 +200,9 @@ export default function ResumenTalonario() {
             </div>
             <div style={{ display:'flex', justifyContent:'space-between', padding:'6px 10px', borderBottom:'1px solid #ddd', background:'#1a2a4a' }}>
               <span style={{ color:'#aaa' }}>💳 Saldo banco real</span>
-              {editandoSaldo ? (
-                <div style={{ display:'flex', gap:6 }}>
-                  <input type="number" value={saldoBanco} onChange={e => setSaldoBanco(e.target.value)}
-                    style={{ width:100, padding:'3px 6px', borderRadius:4, border:'none', fontSize:12 }} />
-                  <button onClick={() => guardarSaldo(saldoBanco)}
-                    style={{ background:'#27ae60', color:'white', border:'none', borderRadius:4,
-                      padding:'3px 8px', cursor:'pointer', fontSize:11 }}>✓</button>
-                </div>
-              ) : (
-                <span onClick={() => setEditandoSaldo(true)}
-                  style={{ fontWeight:'bold', color:'white', cursor:'pointer' }}>
-                  {saldoBanco ? `$${parseFloat(saldoBanco).toFixed(2)}` : '✏️ Ingresar'}
-                </span>
-              )}
+              <span style={{ fontWeight:'bold', color:'white' }}>
+                {saldoBanco ? `$${parseFloat(saldoBanco).toFixed(2)}` : '—'}
+              </span>
             </div>
             {saldoBanco && (
               <div style={{ display:'flex', justifyContent:'space-between', padding:'6px 10px',
