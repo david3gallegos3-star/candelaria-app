@@ -84,10 +84,41 @@ export default function PagosPersonales() {
 
   async function cargar() {
     setCargando(true);
-    const { data } = await supabase
-      .from('talonario_pagos_personales')
-      .select('*').eq('mes', mes).eq('año', año).order('categoria').order('fecha');
-    setFilas(data || []);
+    const fechaDesde = `${año}-${String(mes).padStart(2,'0')}-01`;
+    const fechaHasta = `${año}-${String(mes).padStart(2,'0')}-${new Date(año, mes, 0).getDate()}`;
+
+    const [{ data }, { data: cajas }] = await Promise.all([
+      supabase.from('talonario_pagos_personales')
+        .select('*').eq('mes', mes).eq('año', año).order('categoria').order('fecha'),
+      supabase.from('caja_chica')
+        .select('id, fecha')
+        .gte('fecha', fechaDesde).lte('fecha', fechaHasta),
+    ]);
+
+    let gastosPersonales = [];
+    const cajaIds = (cajas || []).map(c => c.id);
+    if (cajaIds.length) {
+      const { data: gp } = await supabase
+        .from('caja_gastos')
+        .select('id, caja_id, proveedor, detalle, valor')
+        .in('caja_id', cajaIds)
+        .eq('es_personal', true);
+
+      const fechaMap = Object.fromEntries((cajas || []).map(c => [c.id, c.fecha]));
+      gastosPersonales = (gp || []).map(g => ({
+        id:           `caja_${g.id}`,
+        fecha:        fechaMap[g.caja_id] || null,
+        beneficiario: g.proveedor || null,
+        concepto:     g.detalle || 'Gasto personal efectivo',
+        monto:        parseFloat(g.valor || 0),
+        categoria:    'gastos_personal',
+        forma_pago:   '01',
+        comentario:   'Registrado en Caja Chica',
+        _readOnly:    true,
+      }));
+    }
+
+    setFilas([...(data || []), ...gastosPersonales]);
     setSeleccionados(new Set());
     setCargando(false);
   }
@@ -126,6 +157,7 @@ export default function PagosPersonales() {
   }
 
   async function guardar() {
+    if (form._readOnly) return setForm(null);
     if (!form.concepto || !form.monto) return alert('Concepto y monto son requeridos');
     setGuardando(true);
     const payload = { mes, año, fecha: form.fecha || null, beneficiario: form.beneficiario || null,
@@ -142,6 +174,7 @@ export default function PagosPersonales() {
   }
 
   async function eliminar(id) {
+    if (String(id).startsWith('caja_')) return;
     await supabase.from('talonario_pagos_personales').delete().eq('id', id);
     cargar();
   }
