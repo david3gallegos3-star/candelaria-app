@@ -10,6 +10,8 @@ export default function MovimientosBanco() {
   const [editandoSaldo, setEditandoSaldo] = useState(false);
   const [guardandoS,    setGuardandoS]    = useState(false);
   const [filtro,        setFiltro]        = useState('');
+  const [editandoComision,  setEditandoComision]  = useState(null);
+  const [montoComisionEdit, setMontoComisionEdit] = useState('');
 
   useEffect(() => { cargar(); }, [mes, año]);
 
@@ -22,8 +24,8 @@ export default function MovimientosBanco() {
       { data: config },
     ] = await Promise.all([
       supabase.from('cobros')
-        .select('id,fecha,monto,forma_pago,observaciones,clientes(nombre),facturas(numero)')
-        .in('forma_pago', ['transferencia','deposito'])
+        .select('id,fecha,monto,comision,forma_pago,observaciones,clientes(nombre),facturas(numero)')
+        .in('forma_pago', ['transferencia','deposito','cheque'])
         .gte('fecha', fechaDesde).lte('fecha', fechaHasta).order('fecha'),
       supabase.from('talonario_pagos_banco')
         .select('id,fecha,monto,descripcion,banco')
@@ -38,12 +40,28 @@ export default function MovimientosBanco() {
     setSaldoReal(config?.valor?.saldo || '');
 
     const lista = [
-      ...(cobros||[]).map(c => ({
-        fecha: c.fecha,
-        descripcion: `Cobro ${c.forma_pago === 'deposito' ? 'Depósito' : 'Transferencia'} — ${c.clientes?.nombre || c.facturas?.numero || c.observaciones || ''}`,
-        tipo: 'entrada',
-        monto: parseFloat(c.monto||0),
-      })),
+      ...(cobros||[]).flatMap(c => {
+        const label = c.forma_pago === 'deposito' ? 'Depósito' : c.forma_pago === 'cheque' ? 'Cheque' : 'Transferencia';
+        const quien = c.clientes?.nombre || c.facturas?.numero || c.observaciones || '';
+        const filas = [{
+          fecha: c.fecha,
+          descripcion: `Cobro ${label} — ${quien}`,
+          tipo: 'entrada',
+          monto: parseFloat(c.monto||0),
+          cobroId: c.id,
+          cobroLabel: quien,
+        }];
+        if (parseFloat(c.comision||0) > 0) {
+          filas.push({
+            fecha: c.fecha,
+            descripcion: `└ Comisión — ${quien}`,
+            tipo: 'salida',
+            monto: parseFloat(c.comision),
+            esComision: true,
+          });
+        }
+        return filas;
+      }),
       ...(otrosI||[]).map(o => ({
         fecha: o.fecha || '',
         descripcion: `Otro ingreso — ${o.descripcion || o.empresa || ''}`,
@@ -68,6 +86,13 @@ export default function MovimientosBanco() {
       .upsert({ clave: `saldo_banco_${año}_${mes}`, valor: { saldo: val } }, { onConflict: 'clave' });
     setGuardandoS(false);
     setEditandoSaldo(false);
+  }
+
+  async function guardarComision(cobroId, val) {
+    await supabase.from('cobros').update({ comision: parseFloat(val) || 0 }).eq('id', cobroId);
+    setEditandoComision(null);
+    setMontoComisionEdit('');
+    cargar();
   }
 
   const totalEntradas = movs.filter(m => m.tipo === 'entrada').reduce((s,m) => s + m.monto, 0);
@@ -197,9 +222,35 @@ export default function MovimientosBanco() {
               {movsFilt.length === 0 ? (
                 <tr><td colSpan={4} style={{ padding:24, textAlign:'center', color:'#aaa', fontSize:13 }}>Sin resultados para "{filtro}"</td></tr>
               ) : movsFilt.map((m, i) => (
-                <tr key={i} style={{ borderBottom:'1px solid #f0f0f0', background: i%2===0?'white':'#fafafa' }}>
+                <tr key={i} style={{ borderBottom:'1px solid #f0f0f0',
+                  background: m.esComision ? '#fff8f8' : i%2===0 ? 'white' : '#fafafa' }}>
                   <td style={{ padding:'8px 14px', fontSize:12, color:'#888' }}>{fmt(m.fecha)}</td>
-                  <td style={{ padding:'8px 14px', fontSize:12, color:'#333' }}>{m.descripcion}</td>
+                  <td style={{ padding:'8px 14px', fontSize:12, color: m.esComision ? '#e74c3c' : '#333' }}>
+                    {m.descripcion}
+                    {m.cobroId && (
+                      editandoComision === m.cobroId ? (
+                        <span style={{ display:'inline-flex', gap:4, marginLeft:8, alignItems:'center' }}>
+                          <input type="number" value={montoComisionEdit}
+                            onChange={e => setMontoComisionEdit(e.target.value)}
+                            placeholder="0.00" autoFocus
+                            style={{ width:80, padding:'2px 6px', borderRadius:4, border:'1px solid #e74c3c',
+                              fontSize:11, outline:'none' }}
+                          />
+                          <button onClick={() => guardarComision(m.cobroId, montoComisionEdit)}
+                            style={{ background:'#27ae60', color:'white', border:'none', borderRadius:4,
+                              padding:'2px 8px', cursor:'pointer', fontSize:11 }}>✓</button>
+                          <button onClick={() => setEditandoComision(null)}
+                            style={{ background:'#f0f2f5', color:'#555', border:'none', borderRadius:4,
+                              padding:'2px 6px', cursor:'pointer', fontSize:11 }}>✕</button>
+                        </span>
+                      ) : (
+                        <button onClick={() => { setEditandoComision(m.cobroId); setMontoComisionEdit(''); }}
+                          title="Agregar/editar comisión"
+                          style={{ marginLeft:8, background:'none', border:'none', cursor:'pointer',
+                            fontSize:11, color:'#aaa', padding:'1px 4px', borderRadius:4 }}>✏️</button>
+                      )
+                    )}
+                  </td>
                   <td style={{ padding:'8px 14px', fontSize:12, textAlign:'right', fontWeight:'bold', color:'#27ae60' }}>
                     {m.tipo === 'entrada' ? `$${m.monto.toFixed(2)}` : '—'}
                   </td>
