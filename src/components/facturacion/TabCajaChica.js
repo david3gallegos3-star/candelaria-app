@@ -19,8 +19,10 @@ export default function TabCajaChica({ mobile, currentUser }) {
   const [observaciones,setObservaciones]= useState('');
   const [gastos,       setGastos]       = useState([fGasto()]);
   const [entregas,     setEntregas]     = useState([fEntrega()]);
-  const [cobros,       setCobros]       = useState([]);
-  const [guardando,    setGuardando]    = useState(false);
+  const [cobros,          setCobros]          = useState([]);
+  const [comprasEfect,    setComprasEfect]    = useState([]);
+  const [pagosEfect,      setPagosEfect]      = useState([]);
+  const [guardando,       setGuardando]       = useState(false);
   const [guardadoHoy,  setGuardadoHoy]  = useState(false);
   const [mesSel,       setMesSel]       = useState(hoy.slice(0, 7));
   const [datosMes,     setDatosMes]     = useState([]);
@@ -141,6 +143,23 @@ export default function TabCajaChica({ mobile, currentUser }) {
       .select('*, facturas(numero), clientes(nombre)')
       .eq('fecha', fecha);
     setCobros(c || []);
+
+    // Compras pagadas en efectivo ese día (directas, no crédito)
+    const { data: ce } = await supabase
+      .from('compras')
+      .select('id, proveedor_nombre, total, es_personal, fecha')
+      .eq('fecha', fecha)
+      .eq('forma_pago', 'efectivo');
+    setComprasEfect(ce || []);
+
+    // Pagos de facturas en crédito hechos en efectivo ese día
+    const { data: pe } = await supabase
+      .from('pagos_compras')
+      .select('id, monto, notas, fecha_pago, compra_id, compras(proveedor_nombre, es_personal)')
+      .eq('fecha_pago', fecha)
+      .eq('forma_pago', 'efectivo');
+    setPagosEfect(pe || []);
+
     listo.current = true;
   }
 
@@ -418,12 +437,14 @@ export default function TabCajaChica({ mobile, currentUser }) {
   const updG = (i, f, v) => setGastos(g => g.map((x, idx) => idx === i ? { ...x, [f]: v } : x));
   const updE = (i, f, v) => setEntregas(e => e.map((x, idx) => idx === i ? { ...x, [f]: v } : x));
 
-  const tGastos   = gastos.reduce((s, g) => s + (parseFloat(g.valor) || 0), 0);
-  const tEntregas = entregas.reduce((s, e) => s + (parseFloat(e.cantidad) || 0), 0);
-  const tCobros   = cobros.reduce((s, c) => s + (parseFloat(c.monto) || 0), 0);
-  const tTransf   = cobros.filter(c => c.forma_pago === 'transferencia').reduce((s, c) => s + parseFloat(c.monto), 0);
-  const tCheq     = cobros.filter(c => c.forma_pago === 'cheque').reduce((s, c) => s + parseFloat(c.monto), 0);
-  const tEfect    = cobros.filter(c => c.forma_pago === 'efectivo').reduce((s, c) => s + parseFloat(c.monto), 0);
+  const tGastos      = gastos.reduce((s, g) => s + (parseFloat(g.valor) || 0), 0);
+  const tEntregas    = entregas.reduce((s, e) => s + (parseFloat(e.cantidad) || 0), 0);
+  const tCobros      = cobros.reduce((s, c) => s + (parseFloat(c.monto) || 0), 0);
+  const tTransf      = cobros.filter(c => c.forma_pago === 'transferencia').reduce((s, c) => s + parseFloat(c.monto), 0);
+  const tCheq        = cobros.filter(c => c.forma_pago === 'cheque').reduce((s, c) => s + parseFloat(c.monto), 0);
+  const tEfect       = cobros.filter(c => c.forma_pago === 'efectivo').reduce((s, c) => s + parseFloat(c.monto), 0);
+  const tComprasEf   = comprasEfect.reduce((s, c) => s + (parseFloat(c.total) || 0), 0);
+  const tPagosEf     = pagosEfect.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0);
 
   const inp = { padding:'7px 10px', borderRadius:7, border:'1.5px solid #ddd', fontSize:'13px', outline:'none', boxSizing:'border-box' };
   const thS = { background:'#f0f2f5', padding:'6px 8px', fontWeight:'bold', fontSize:'10px', color:'#555', textAlign:'left', borderBottom:'2px solid #ddd' };
@@ -650,7 +671,7 @@ export default function TabCajaChica({ mobile, currentUser }) {
           <input type="number" value={cierre} onChange={e => setCierre(e.target.value)}
             placeholder="0.00" style={{ ...inp, width:'100%', borderColor:'#e74c3c' }} />
           <div style={{ marginTop:5, fontSize:'11px', color:'#2980b9', fontWeight:'bold' }}>
-            Esperado: ${(parseFloat(inicial||0) + tEfect - tGastos - tEntregas).toFixed(2)}
+            Esperado: ${(parseFloat(inicial||0) + tEfect - tGastos - tComprasEf - tPagosEf - tEntregas).toFixed(2)}
           </div>
         </div>
       </div>
@@ -773,6 +794,53 @@ export default function TabCajaChica({ mobile, currentUser }) {
         </button>
       </div>
 
+      {/* COMPRAS / PAGOS EN EFECTIVO */}
+      {(comprasEfect.length > 0 || pagosEfect.length > 0) && (
+        <div style={{ background:'white', borderRadius:12, padding:'16px', marginBottom:12, boxShadow:'0 2px 8px rgba(0,0,0,0.06)', border:'1.5px solid #f39c12' }}>
+          <div style={{ fontWeight:'bold', fontSize:'13px', color:'#1a1a2e', marginBottom:10,
+            display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+            🛒 COMPRAS / PAGOS EN EFECTIVO
+            <span style={{ fontSize:'13px', color:'#e67e22', fontWeight:'bold' }}>
+              Total: ${(tComprasEf + tPagosEf).toFixed(2)}
+            </span>
+          </div>
+          <div style={{ fontSize:'10px', color:'#888', marginBottom:8, fontStyle:'italic' }}>
+            Solo lectura — registrado en Compras
+          </div>
+          <table style={{ width:'100%', borderCollapse:'collapse' }}>
+            <thead><tr>
+              <th style={thS}>PROVEEDOR</th>
+              <th style={thS}>TIPO</th>
+              <th style={{ ...thS, width:120, textAlign:'right' }}>MONTO ($)</th>
+            </tr></thead>
+            <tbody>
+              {comprasEfect.map(c => (
+                <tr key={c.id}>
+                  <td style={tdS}>{c.proveedor_nombre || '—'}</td>
+                  <td style={{ ...tdS, fontSize:11, color:'#888' }}>
+                    {c.es_personal ? '👤 Compra personal' : '📦 Compra MP'} — pago directo efectivo
+                  </td>
+                  <td style={{ ...tdS, textAlign:'right', fontWeight:'bold', color:'#e67e22' }}>
+                    ${parseFloat(c.total||0).toFixed(2)}
+                  </td>
+                </tr>
+              ))}
+              {pagosEfect.map(p => (
+                <tr key={p.id}>
+                  <td style={tdS}>{p.compras?.proveedor_nombre || '—'}</td>
+                  <td style={{ ...tdS, fontSize:11, color:'#888' }}>
+                    {p.compras?.es_personal ? '👤 Compra personal' : '📦 Compra MP'} — abono/pago factura crédito
+                  </td>
+                  <td style={{ ...tdS, textAlign:'right', fontWeight:'bold', color:'#e67e22' }}>
+                    ${parseFloat(p.monto||0).toFixed(2)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       {/* COBROS DEL DÍA */}
       <div style={{ background:'white', borderRadius:12, padding:'16px', marginBottom:12, boxShadow:'0 2px 8px rgba(0,0,0,0.06)' }}>
         <div style={{ fontWeight:'bold', fontSize:'13px', color:'#1a1a2e', marginBottom:10,
@@ -883,7 +951,7 @@ export default function TabCajaChica({ mobile, currentUser }) {
 
       {/* Resumen + Botones */}
       {(() => {
-        const cajaEsperada    = parseFloat(inicial||0) + tEfect - tGastos - tEntregas;
+        const cajaEsperada    = parseFloat(inicial||0) + tEfect - tGastos - tComprasEf - tPagosEf - tEntregas;
         const cierreIngresado = cierre !== '' && cierre !== null;
         const descuadre       = parseFloat(cierre||0) - cajaEsperada;
         const cuadra          = cierreIngresado && Math.abs(descuadre) < 0.005;
