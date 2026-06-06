@@ -49,7 +49,7 @@ export default function MovimientosBanco() {
           tipo: 'entrada',
           monto: parseFloat(c.monto||0),
           cobroId: c.id,
-          cobroLabel: quien,
+          comisionActual: parseFloat(c.comision||0),
         }];
         if (parseFloat(c.comision||0) > 0) {
           filas.push({
@@ -244,7 +244,7 @@ export default function MovimientosBanco() {
                               padding:'2px 6px', cursor:'pointer', fontSize:11 }}>✕</button>
                         </span>
                       ) : (
-                        <button onClick={() => { setEditandoComision(m.cobroId); setMontoComisionEdit(''); }}
+                        <button onClick={() => { setEditandoComision(m.cobroId); setMontoComisionEdit(m.comisionActual > 0 ? String(m.comisionActual) : ''); }}
                           title="Agregar/editar comisión"
                           style={{ marginLeft:8, background:'none', border:'none', cursor:'pointer',
                             fontSize:11, color:'#aaa', padding:'1px 4px', borderRadius:4 }}>✏️</button>
