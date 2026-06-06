@@ -86,10 +86,10 @@ export default function LibroDiario({ onVolver, onVolverMenu, userRol, currentUs
   const cuadrado = balance < 0.01;
 
   return (
-    <div style={{ minHeight:'100vh', background:'#0f172a', fontFamily:'Arial,sans-serif' }}>
+    <div style={{ minHeight:'100vh', background:'#1e293b', fontFamily:'Arial,sans-serif' }}>
       {/* Top bar */}
       <div style={{
-        background:'#1e293b', padding:'10px 20px',
+        background:'#273549', padding:'10px 20px',
         display:'flex', justifyContent:'space-between', alignItems:'center',
         borderBottom:'1px solid #334155'
       }}>
