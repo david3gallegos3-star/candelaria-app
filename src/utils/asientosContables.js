@@ -181,7 +181,7 @@ export async function generarAsientoCierre(cierre, cuentas) {
 
   const fecha = cierre.fecha;
   const fmt   = v => `$${parseFloat(v||0).toFixed(2)}`;
-  const cab   = `CAJA_CHICA — Cierre Caja ${cierre.fecha}`;
+  const cab   = 'Cierre Caja Chica';
   const lineas = [];
 
   // Saldo inicial en caja
