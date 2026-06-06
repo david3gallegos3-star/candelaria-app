@@ -1,0 +1,127 @@
+import React, { useEffect, useState } from 'react';
+import { supabase } from '../../../../supabase';
+import { useTalonario } from '../TalonarioContext';
+
+export default function MovimientosBanco() {
+  const { mes, año, fechaDesde, fechaHasta, MESES } = useTalonario();
+  const [movs,     setMovs]     = useState([]);
+  const [cargando, setCargando] = useState(false);
+
+  useEffect(() => { cargar(); }, [mes, año]);
+
+  async function cargar() {
+    setCargando(true);
+    const [
+      { data: cobros },
+      { data: pagosB },
+      { data: otrosI },
+    ] = await Promise.all([
+      supabase.from('cobros')
+        .select('id,fecha,monto,forma_pago,observaciones,clientes(nombre),facturas(numero)')
+        .in('forma_pago', ['transferencia','deposito'])
+        .gte('fecha', fechaDesde).lte('fecha', fechaHasta).order('fecha'),
+      supabase.from('talonario_pagos_banco')
+        .select('id,fecha,monto,descripcion,banco')
+        .eq('mes', mes).eq('año', año).order('fecha'),
+      supabase.from('talonario_otros_ingresos')
+        .select('id,fecha,monto,descripcion,empresa,forma_pago')
+        .eq('mes', mes).eq('año', año)
+        .neq('forma_pago', '01').order('fecha'),
+    ]);
+
+    const lista = [
+      ...(cobros||[]).map(c => ({
+        fecha: c.fecha,
+        descripcion: `Cobro ${c.forma_pago === 'deposito' ? 'Depósito' : 'Transferencia'} — ${c.clientes?.nombre || c.facturas?.numero || c.observaciones || ''}`,
+        tipo: 'entrada',
+        monto: parseFloat(c.monto||0),
+      })),
+      ...(otrosI||[]).map(o => ({
+        fecha: o.fecha || '',
+        descripcion: `Otro ingreso — ${o.descripcion || o.empresa || ''}`,
+        tipo: 'entrada',
+        monto: parseFloat(o.monto||0),
+      })),
+      ...(pagosB||[]).map(p => ({
+        fecha: p.fecha || '',
+        descripcion: `Pago banco — ${p.descripcion || p.banco || ''}`,
+        tipo: 'salida',
+        monto: parseFloat(p.monto||0),
+      })),
+    ].sort((a, b) => (a.fecha||'').localeCompare(b.fecha||''));
+
+    setMovs(lista);
+    setCargando(false);
+  }
+
+  const totalEntradas = movs.filter(m => m.tipo === 'entrada').reduce((s,m) => s + m.monto, 0);
+  const totalSalidas  = movs.filter(m => m.tipo === 'salida').reduce((s,m) => s + m.monto, 0);
+  const neto          = totalEntradas - totalSalidas;
+
+  const fmt = fecha => {
+    if (!fecha) return '—';
+    const [y,mo,d] = fecha.split('-');
+    return `${parseInt(d)}/${parseInt(mo)}/${y}`;
+  };
+
+  if (cargando) return <div style={{ padding:40, textAlign:'center', color:'#888' }}>Cargando...</div>;
+
+  return (
+    <div>
+      {/* KPIs */}
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:12, marginBottom:16 }}>
+        {[
+          { label:'ENTRADAS AL BANCO', val: totalEntradas, color:'#27ae60', bg:'#e8f5e9' },
+          { label:'SALIDAS DEL BANCO', val: totalSalidas,  color:'#e74c3c', bg:'#fde8e8' },
+          { label:'NETO DEL MES',      val: neto,          color: neto>=0?'#27ae60':'#e74c3c', bg: neto>=0?'#e8f5e9':'#fde8e8' },
+        ].map(k => (
+          <div key={k.label} style={{ background:k.bg, border:`2px solid ${k.color}`, borderRadius:10, padding:'12px 16px', textAlign:'center' }}>
+            <div style={{ fontSize:10, fontWeight:'bold', color:'#888', marginBottom:4 }}>{k.label}</div>
+            <div style={{ fontSize:22, fontWeight:'bold', color:k.color }}>${k.val.toFixed(2)}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Tabla */}
+      {movs.length === 0 ? (
+        <div style={{ background:'white', borderRadius:12, padding:40, textAlign:'center', color:'#aaa', boxShadow:'0 2px 8px rgba(0,0,0,0.06)' }}>
+          Sin movimientos bancarios en {MESES[mes-1]} {año}
+        </div>
+      ) : (
+        <div style={{ background:'white', borderRadius:12, overflow:'hidden', boxShadow:'0 2px 8px rgba(0,0,0,0.06)' }}>
+          <table style={{ width:'100%', borderCollapse:'collapse' }}>
+            <thead>
+              <tr style={{ background:'#1a2a4a', color:'white' }}>
+                <th style={{ padding:'10px 14px', textAlign:'left', fontSize:11 }}>FECHA</th>
+                <th style={{ padding:'10px 14px', textAlign:'left', fontSize:11 }}>DESCRIPCIÓN</th>
+                <th style={{ padding:'10px 14px', textAlign:'right', fontSize:11, color:'#4ade80' }}>ENTRADA (+)</th>
+                <th style={{ padding:'10px 14px', textAlign:'right', fontSize:11, color:'#f87171' }}>SALIDA (-)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {movs.map((m, i) => (
+                <tr key={i} style={{ borderBottom:'1px solid #f0f0f0', background: i%2===0?'white':'#fafafa' }}>
+                  <td style={{ padding:'8px 14px', fontSize:12, color:'#888' }}>{fmt(m.fecha)}</td>
+                  <td style={{ padding:'8px 14px', fontSize:12, color:'#333' }}>{m.descripcion}</td>
+                  <td style={{ padding:'8px 14px', fontSize:12, textAlign:'right', fontWeight:'bold', color:'#27ae60' }}>
+                    {m.tipo === 'entrada' ? `$${m.monto.toFixed(2)}` : '—'}
+                  </td>
+                  <td style={{ padding:'8px 14px', fontSize:12, textAlign:'right', fontWeight:'bold', color:'#e74c3c' }}>
+                    {m.tipo === 'salida' ? `$${m.monto.toFixed(2)}` : '—'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr style={{ background:'#1a2a4a', color:'white', fontWeight:'bold' }}>
+                <td colSpan={2} style={{ padding:'8px 14px', fontSize:12 }}>TOTAL {MESES[mes-1].toUpperCase()} {año}</td>
+                <td style={{ padding:'8px 14px', textAlign:'right', fontSize:12, color:'#4ade80' }}>${totalEntradas.toFixed(2)}</td>
+                <td style={{ padding:'8px 14px', textAlign:'right', fontSize:12, color:'#f87171' }}>${totalSalidas.toFixed(2)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}

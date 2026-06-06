@@ -236,54 +236,6 @@ export default function ResumenTalonario() {
           </div>
         </div>
       </div>
-      {/* Tabla movimientos banco */}
-      {movsBanco.length > 0 && (
-        <div style={{ gridColumn:'1/-1', border:'2px solid #2980b9', borderRadius:10, overflow:'hidden', marginTop:4 }}>
-          <div style={{ background:'#2980b9', color:'white', padding:'8px 14px', fontWeight:'bold', fontSize:13 }}>
-            🏦 Movimientos Banco — {MESES[mes-1]} {año}
-          </div>
-          <table style={{ width:'100%', borderCollapse:'collapse' }}>
-            <thead>
-              <tr style={{ background:'#f0f2f5', fontSize:11, fontWeight:'bold', color:'#555' }}>
-                <th style={{ padding:'6px 12px', textAlign:'left' }}>FECHA</th>
-                <th style={{ padding:'6px 12px', textAlign:'left' }}>DESCRIPCIÓN</th>
-                <th style={{ padding:'6px 12px', textAlign:'right', color:'#27ae60' }}>ENTRADA (+)</th>
-                <th style={{ padding:'6px 12px', textAlign:'right', color:'#e74c3c' }}>SALIDA (-)</th>
-              </tr>
-            </thead>
-            <tbody>
-              {movsBanco.map((m, i) => {
-                const [y,mo,d] = (m.fecha||'').split('-');
-                const fmtF = m.fecha ? `${parseInt(d)}/${parseInt(mo)}/${y}` : '—';
-                return (
-                  <tr key={i} style={{ borderTop:'1px solid #f0f0f0', fontSize:12 }}>
-                    <td style={{ padding:'5px 12px', color:'#888' }}>{fmtF}</td>
-                    <td style={{ padding:'5px 12px', color:'#333' }}>{m.descripcion}</td>
-                    <td style={{ padding:'5px 12px', textAlign:'right', color:'#27ae60', fontWeight:'bold' }}>
-                      {m.tipo === 'entrada' ? `$${m.monto.toFixed(2)}` : '—'}
-                    </td>
-                    <td style={{ padding:'5px 12px', textAlign:'right', color:'#e74c3c', fontWeight:'bold' }}>
-                      {m.tipo === 'salida' ? `$${m.monto.toFixed(2)}` : '—'}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-            <tfoot>
-              <tr style={{ background:'#1a2a4a', color:'white', fontWeight:'bold', fontSize:12 }}>
-                <td colSpan={2} style={{ padding:'6px 12px' }}>TOTAL MES</td>
-                <td style={{ padding:'6px 12px', textAlign:'right', color:'#4ade80' }}>
-                  ${movsBanco.filter(m=>m.tipo==='entrada').reduce((s,m)=>s+m.monto,0).toFixed(2)}
-                </td>
-                <td style={{ padding:'6px 12px', textAlign:'right', color:'#f87171' }}>
-                  ${movsBanco.filter(m=>m.tipo==='salida').reduce((s,m)=>s+m.monto,0).toFixed(2)}
-                </td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-      )}
-
     </div>
   );
 }

@@ -14,9 +14,11 @@ import FacturasPersonales    from './compras/FacturasPersonales';
 import ExcelExport           from './shared/ExcelExport';
 import ExcelImport           from './shared/ExcelImport';
 import HotmailSync           from './hotmail/HotmailSync';
+import MovimientosBanco      from './banco/MovimientosBanco';
 
 const GRUPOS = [
   { id: 'resumen',  label: '📊 RESUMEN',   subs: null },
+  { id: 'banco',    label: '🏦 BANCO',     subs: null },
   { id: 'ingresos', label: '💵 INGRESOS',   subs: [
     { id: 'cobros_efectivo',       label: 'Cobros Efectivo' },
     { id: 'cobros_transferencia',  label: 'Cobros Transf./Depósito' },
@@ -135,6 +137,7 @@ export default function TabTalonario({ onVolver, onVolverMenu }) {
       {/* Contenido */}
       <div style={{ padding: 16 }}>
         {seccion === 'resumen'              && <ResumenTalonario />}
+        {seccion === 'banco'                && <MovimientosBanco />}
         {seccion === 'cobros_efectivo'      && <CobrosEfectivo />}
         {seccion === 'cobros_transferencia' && <CobrosTransferencia />}
         {seccion === 'cobros_cheques'       && <CobrosCheques />}
