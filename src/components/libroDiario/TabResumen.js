@@ -56,9 +56,9 @@ export default function TabResumen({ asientos, vistaMode, onRefresh, currentUser
         {FILTROS.map(f => (
           <button key={f} onClick={() => setFiltro(f)} style={{
             background: filtro===f ? '#1e3a5f' : '#1e293b',
-            border: `1px solid ${filtro===f ? '#2563eb' : '#334155'}`,
-            color:  filtro===f ? '#93c5fd' : '#6b7280',
-            padding:'3px 10px', borderRadius:20, fontSize:10, cursor:'pointer'
+            border: `1px solid ${filtro===f ? '#2563eb' : '#475569'}`,
+            color:  filtro===f ? '#93c5fd' : '#cbd5e1',
+            padding:'4px 12px', borderRadius:20, fontSize:11, cursor:'pointer'
           }}>{f}</button>
         ))}
       </div>
@@ -75,7 +75,7 @@ export default function TabResumen({ asientos, vistaMode, onRefresh, currentUser
                  : i === 4 ? <span style={{ color:'#f87171' }}>salió de:</span>
                  : '·'}
               </div>
-              <div style={{ color:'#9ca3af', fontSize:9, fontWeight:'bold', textTransform:'uppercase' }}>{h}</div>
+              <div style={{ color:'#9ca3af', fontSize:11, fontWeight:'bold', textTransform:'uppercase' }}>{h}</div>
             </div>
           ))}
         </div>
@@ -103,16 +103,16 @@ export default function TabResumen({ asientos, vistaMode, onRefresh, currentUser
                       setSeleccion(s);
                     }}
                   />
-                  <span style={{ color:col.text, fontSize:9, fontWeight:'bold' }}>
+                  <span style={{ color:col.text, fontSize:11, fontWeight:'bold' }}>
                     {col.label} {asiento.origen.toUpperCase()} — {asiento.descripcion}
                   </span>
-                  <span style={{ color:'#6b7280', fontSize:9 }}>{asiento.fecha}</span>
+                  <span style={{ color:'#6b7280', fontSize:11 }}>{asiento.fecha}</span>
                 </div>
                 <div style={{ display:'flex', gap:6, alignItems:'center' }}>
                   <span style={{
                     background: asiento.estado==='confirmado' ? '#065f46' : '#78350f',
                     color:      asiento.estado==='confirmado' ? '#6ee7b7' : '#fcd34d',
-                    fontSize:8, padding:'2px 8px', borderRadius:10
+                    fontSize:11, padding:'3px 10px', borderRadius:10
                   }}>
                     {asiento.estado==='confirmado' ? '✓ Confirmado' : '⏳ Provisional'}
                   </span>
@@ -127,14 +127,14 @@ export default function TabResumen({ asientos, vistaMode, onRefresh, currentUser
               {lineas.map((l, i) => (
                 <div key={i} style={{ display:'grid',
                   gridTemplateColumns:'80px 1fr 100px 90px 90px 1fr',
-                  gap:8, padding:'3px 12px 3px 42px', borderTop:'1px solid rgba(255,255,255,0.03)' }}>
-                  <div style={{ color:'#6b7280', fontSize:9 }}>{i===0 ? asiento.fecha : ''}</div>
-                  <div style={{ color:'#e5e7eb', fontSize:9 }}>{l.descripcion}</div>
-                  <div style={{ color:'#7dd3fc', fontSize:9 }}>{l.cuentas_contables?.codigo}</div>
-                  <div style={{ color:'#4ade80', fontSize:9, textAlign:'right' }}>
+                  gap:8, padding:'6px 12px 6px 42px', borderTop:'1px solid rgba(255,255,255,0.05)' }}>
+                  <div style={{ color:'#6b7280', fontSize:12 }}>{i===0 ? asiento.fecha : ''}</div>
+                  <div style={{ color:'#e5e7eb', fontSize:12 }}>{l.descripcion}</div>
+                  <div style={{ color:'#7dd3fc', fontSize:12 }}>{l.cuentas_contables?.codigo}</div>
+                  <div style={{ color:'#4ade80', fontSize:12, textAlign:'right', fontWeight:'bold' }}>
                     {parseFloat(l.debe)>0 ? `$${parseFloat(l.debe).toFixed(2)}` : '—'}
                   </div>
-                  <div style={{ color:'#f87171', fontSize:9, textAlign:'right' }}>
+                  <div style={{ color:'#f87171', fontSize:12, textAlign:'right', fontWeight:'bold' }}>
                     {parseFloat(l.haber)>0 ? `$${parseFloat(l.haber).toFixed(2)}` : '—'}
                   </div>
                   <div></div><div></div>
