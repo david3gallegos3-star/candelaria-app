@@ -66,7 +66,7 @@ export default function TabResumen({ asientos, vistaMode, onRefresh, currentUser
       {/* Tabla */}
       <div style={{ background:'#111827', borderRadius:8, border:'1px solid #1f2937', overflow:'hidden' }}>
         <div style={{ display:'grid', gridTemplateColumns:'30px 80px 1fr 100px 90px 90px 110px 60px',
-                      gap:8, padding:'8px 12px', background:'#1f2937',
+                      gap:8, padding:'8px 12px 8px 42px', background:'#1f2937',
                       borderBottom:'1px solid #374151' }}>
           {['','Fecha','Descripción','Cuenta','Debe','Haber','Estado',''].map((h,i) => (
             <div key={i} style={{ textAlign: i>=4&&i<=5?'right':'left' }}>
