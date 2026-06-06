@@ -167,34 +167,72 @@ export async function generarAsientoNomina(nomina, formaPago = 'transferencia') 
   return { data: [dataA, dataB], error: null };
 }
 
-export async function generarAsientoCierre(cierre, caja_chica_id) {
-  const { cuentas, error: errCfg } = await getCuentasModulos();
-  if (errCfg) return { data: null, error: errCfg };
+export async function generarAsientoCierre(cierre, cuentas) {
+  // Compatibilidad: si se pasa solo el id (versión anterior), obtener cuentas
+  if (typeof cuentas === 'string') {
+    const cfg = await getCuentasModulos();
+    if (cfg.error) return { data: null, error: cfg.error };
+    cuentas = cfg.cuentas;
+  }
 
   if (!cierre.total_ingresos && !cierre.total_gastos) {
     return { data: null, error: 'Cierre sin movimientos' };
   }
 
   const fecha = cierre.fecha;
-  const descripcionCab = `Cierre Caja ${cierre.fecha}`;
+  const fmt   = v => `$${parseFloat(v||0).toFixed(2)}`;
+  const cab   = `CAJA_CHICA — Cierre Caja ${cierre.fecha}`;
   const lineas = [];
 
+  // Saldo inicial en caja
   if (cierre.total_ingresos > 0) {
-    lineas.push({ cuenta_id: cuentas.caja_chica_id, descripcion: descripcionCab, debe: cierre.total_ingresos, haber: 0, orden: 0 });
-    lineas.push({ cuenta_id: cuentas.ventas_internas_id, descripcion: descripcionCab, debe: 0, haber: cierre.total_ingresos, orden: 1 });
+    lineas.push({
+      cuenta_id:   cuentas.caja_chica_id,
+      descripcion: `Inicio Caja Chica: ${fmt(cierre.total_ingresos)}`,
+      debe: cierre.total_ingresos, haber: 0, orden: lineas.length,
+    });
+    lineas.push({
+      cuenta_id:   cuentas.ventas_internas_id,
+      descripcion: `Cierre Caja Chica: ${fmt(cierre.total_ingresos)}`,
+      debe: 0, haber: cierre.total_ingresos, orden: lineas.length,
+    });
   }
 
+  // Gastos pagados en efectivo
   if (cierre.total_gastos > 0) {
-    lineas.push({ cuenta_id: cuentas.gasto_caja_id, descripcion: descripcionCab, debe: cierre.total_gastos, haber: 0, orden: lineas.length });
-    lineas.push({ cuenta_id: caja_chica_id, descripcion: descripcionCab, debe: 0, haber: cierre.total_gastos, orden: lineas.length });
+    lineas.push({
+      cuenta_id:   cuentas.gasto_caja_id,
+      descripcion: `Gastos efectivo Caja Chica: ${fmt(cierre.total_gastos)}`,
+      debe: cierre.total_gastos, haber: 0, orden: lineas.length,
+    });
+    lineas.push({
+      cuenta_id:   cuentas.caja_chica_id,
+      descripcion: `Sale de Caja Chica (gastos): ${fmt(cierre.total_gastos)}`,
+      debe: 0, haber: cierre.total_gastos, orden: lineas.length,
+    });
+  }
+
+  // Depósito al banco
+  const deposito = parseFloat(cierre.total_deposito || 0);
+  if (deposito > 0 && cuentas.banco_id) {
+    lineas.push({
+      cuenta_id:   cuentas.banco_id,
+      descripcion: `Entra a Banco desde Caja Chica: ${fmt(deposito)}`,
+      debe: deposito, haber: 0, orden: lineas.length,
+    });
+    lineas.push({
+      cuenta_id:   cuentas.caja_chica_id,
+      descripcion: `Sale de Caja Chica a Banco: ${fmt(deposito)}`,
+      debe: 0, haber: deposito, orden: lineas.length,
+    });
   }
 
   return insertarAsiento({
     fecha,
-    descripcion: descripcionCab,
-    tipo: 'interno',
-    origen: 'caja_chica',
-    origen_id: cierre.id,
+    descripcion: cab,
+    tipo:       'interno',
+    origen:     'caja_chica',
+    origen_id:  cierre.id,
     lineas,
   });
 }

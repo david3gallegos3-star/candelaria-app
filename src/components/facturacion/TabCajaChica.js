@@ -248,9 +248,10 @@ export default function TabCajaChica({ mobile, currentUser }) {
         generarAsientoCierre({
           id, fecha,
           total_ingresos: parseFloat(inicial) || 0,
-          total_gastos: tGastos,
-          saldo_final: cierreGuardado,
-        }, cuentas.caja_chica_id).catch(console.error);
+          total_gastos:   tGastos,
+          total_deposito: tEntregas,
+          saldo_final:    cierreGuardado,
+        }, cuentas).catch(console.error);
       }
     }).catch(console.error);
 
