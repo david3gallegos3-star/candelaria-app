@@ -9,6 +9,7 @@ export default function MovimientosBanco() {
   const [saldoReal,     setSaldoReal]     = useState('');
   const [editandoSaldo, setEditandoSaldo] = useState(false);
   const [guardandoS,    setGuardandoS]    = useState(false);
+  const [filtro,        setFiltro]        = useState('');
 
   useEffect(() => { cargar(); }, [mes, año]);
 
@@ -85,8 +86,27 @@ export default function MovimientosBanco() {
   const dif      = saldoNum - neto;
   const cuadra   = Math.abs(dif) < 0.01;
 
+  const q        = filtro.toLowerCase();
+  const movsFilt = filtro
+    ? movs.filter(m => m.descripcion.toLowerCase().includes(q) || fmt(m.fecha).includes(q))
+    : movs;
+
   return (
     <div>
+      {/* KPIs */}
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:12, marginBottom:16 }}>
+        {[
+          { label:'ENTRADAS AL BANCO', val: totalEntradas, color:'#27ae60', bg:'#e8f5e9' },
+          { label:'SALIDAS DEL BANCO', val: totalSalidas,  color:'#e74c3c', bg:'#fde8e8' },
+          { label:'NETO DEL MES',      val: neto,          color: neto>=0?'#27ae60':'#e74c3c', bg: neto>=0?'#e8f5e9':'#fde8e8' },
+        ].map(k => (
+          <div key={k.label} style={{ background:k.bg, border:`2px solid ${k.color}`, borderRadius:10, padding:'12px 16px', textAlign:'center' }}>
+            <div style={{ fontSize:10, fontWeight:'bold', color:'#888', marginBottom:4 }}>{k.label}</div>
+            <div style={{ fontSize:22, fontWeight:'bold', color:k.color }}>${k.val.toFixed(2)}</div>
+          </div>
+        ))}
+      </div>
+
       {/* Saldo banco */}
       <div style={{ background:'white', borderRadius:12, padding:16, marginBottom:16,
         boxShadow:'0 2px 8px rgba(0,0,0,0.06)', display:'flex', gap:16, flexWrap:'wrap', alignItems:'center' }}>
@@ -147,18 +167,14 @@ export default function MovimientosBanco() {
         )}
       </div>
 
-      {/* KPIs */}
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:12, marginBottom:16 }}>
-        {[
-          { label:'ENTRADAS AL BANCO', val: totalEntradas, color:'#27ae60', bg:'#e8f5e9' },
-          { label:'SALIDAS DEL BANCO', val: totalSalidas,  color:'#e74c3c', bg:'#fde8e8' },
-          { label:'NETO DEL MES',      val: neto,          color: neto>=0?'#27ae60':'#e74c3c', bg: neto>=0?'#e8f5e9':'#fde8e8' },
-        ].map(k => (
-          <div key={k.label} style={{ background:k.bg, border:`2px solid ${k.color}`, borderRadius:10, padding:'12px 16px', textAlign:'center' }}>
-            <div style={{ fontSize:10, fontWeight:'bold', color:'#888', marginBottom:4 }}>{k.label}</div>
-            <div style={{ fontSize:22, fontWeight:'bold', color:k.color }}>${k.val.toFixed(2)}</div>
-          </div>
-        ))}
+      {/* Buscador */}
+      <div style={{ marginBottom:12 }}>
+        <input
+          type="text" value={filtro} onChange={e => setFiltro(e.target.value)}
+          placeholder="🔍 Buscar movimiento..."
+          style={{ width:'100%', padding:'9px 14px', borderRadius:8, border:'1px solid #ddd',
+            fontSize:13, outline:'none', boxSizing:'border-box' }}
+        />
       </div>
 
       {/* Tabla */}
@@ -178,7 +194,9 @@ export default function MovimientosBanco() {
               </tr>
             </thead>
             <tbody>
-              {movs.map((m, i) => (
+              {movsFilt.length === 0 ? (
+                <tr><td colSpan={4} style={{ padding:24, textAlign:'center', color:'#aaa', fontSize:13 }}>Sin resultados para "{filtro}"</td></tr>
+              ) : movsFilt.map((m, i) => (
                 <tr key={i} style={{ borderBottom:'1px solid #f0f0f0', background: i%2===0?'white':'#fafafa' }}>
                   <td style={{ padding:'8px 14px', fontSize:12, color:'#888' }}>{fmt(m.fecha)}</td>
                   <td style={{ padding:'8px 14px', fontSize:12, color:'#333' }}>{m.descripcion}</td>
