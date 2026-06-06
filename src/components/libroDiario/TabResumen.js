@@ -70,8 +70,11 @@ export default function TabResumen({ asientos, vistaMode, onRefresh, currentUser
                       borderBottom:'1px solid #374151' }}>
           {['','Fecha','Descripción','Cuenta','Debe','Haber','Estado',''].map((h,i) => (
             <div key={i} style={{ textAlign: i>=4&&i<=5?'right':'left' }}>
-              {i === 4 && <div style={{ color:'#4ade80', fontSize:7, opacity:0.5, marginBottom:1 }}>tengo</div>}
-              {i === 5 && <div style={{ color:'#f87171', fontSize:7, opacity:0.5, marginBottom:1 }}>salió de:</div>}
+              <div style={{ fontSize:7, marginBottom:1, opacity: i===4||i===5 ? 0.5 : 0 }}>
+                {i === 4 ? <span style={{ color:'#4ade80' }}>tengo</span>
+                 : i === 5 ? <span style={{ color:'#f87171' }}>salió de:</span>
+                 : '·'}
+              </div>
               <div style={{ color:'#9ca3af', fontSize:9, fontWeight:'bold', textTransform:'uppercase' }}>{h}</div>
             </div>
           ))}
