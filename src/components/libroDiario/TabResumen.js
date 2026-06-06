@@ -65,11 +65,11 @@ export default function TabResumen({ asientos, vistaMode, onRefresh, currentUser
 
       {/* Tabla */}
       <div style={{ background:'#111827', borderRadius:8, border:'1px solid #1f2937', overflow:'hidden' }}>
-        <div style={{ display:'grid', gridTemplateColumns:'80px 1fr 100px 90px 90px 110px 60px',
+        <div style={{ display:'grid', gridTemplateColumns:'80px 1fr 100px 90px 90px 1fr',
                       gap:8, padding:'8px 12px 8px 42px', background:'#1f2937',
                       borderBottom:'1px solid #374151' }}>
-          {['Fecha','Descripción','Cuenta','Debe','Haber','Estado',''].map((h,i) => (
-            <div key={i} style={{ textAlign: i>=3&&i<=4?'right': i===5?'center':'left' }}>
+          {['Fecha','Descripción','Cuenta','Debe','Haber','Estado'].map((h,i) => (
+            <div key={i} style={{ textAlign: i>=3&&i<=4?'right': i===5?'right':'left' }}>
               <div style={{ fontSize:7, marginBottom:1, opacity: i===3||i===4 ? 0.5 : 0 }}>
                 {i === 3 ? <span style={{ color:'#4ade80' }}>tengo</span>
                  : i === 4 ? <span style={{ color:'#f87171' }}>salió de:</span>
@@ -126,7 +126,7 @@ export default function TabResumen({ asientos, vistaMode, onRefresh, currentUser
               </div>
               {lineas.map((l, i) => (
                 <div key={i} style={{ display:'grid',
-                  gridTemplateColumns:'80px 1fr 100px 90px 90px 110px 60px',
+                  gridTemplateColumns:'80px 1fr 100px 90px 90px 1fr',
                   gap:8, padding:'3px 12px 3px 42px', borderTop:'1px solid rgba(255,255,255,0.03)' }}>
                   <div style={{ color:'#6b7280', fontSize:9 }}>{i===0 ? asiento.fecha : ''}</div>
                   <div style={{ color:'#e5e7eb', fontSize:9 }}>{l.descripcion}</div>
