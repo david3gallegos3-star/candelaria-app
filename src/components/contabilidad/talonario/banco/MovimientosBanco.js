@@ -4,8 +4,11 @@ import { useTalonario } from '../TalonarioContext';
 
 export default function MovimientosBanco() {
   const { mes, año, fechaDesde, fechaHasta, MESES } = useTalonario();
-  const [movs,     setMovs]     = useState([]);
-  const [cargando, setCargando] = useState(false);
+  const [movs,          setMovs]          = useState([]);
+  const [cargando,      setCargando]      = useState(false);
+  const [saldoReal,     setSaldoReal]     = useState('');
+  const [editandoSaldo, setEditandoSaldo] = useState(false);
+  const [guardandoS,    setGuardandoS]    = useState(false);
 
   useEffect(() => { cargar(); }, [mes, año]);
 
@@ -15,6 +18,7 @@ export default function MovimientosBanco() {
       { data: cobros },
       { data: pagosB },
       { data: otrosI },
+      { data: config },
     ] = await Promise.all([
       supabase.from('cobros')
         .select('id,fecha,monto,forma_pago,observaciones,clientes(nombre),facturas(numero)')
@@ -27,7 +31,10 @@ export default function MovimientosBanco() {
         .select('id,fecha,monto,descripcion,empresa,forma_pago')
         .eq('mes', mes).eq('año', año)
         .neq('forma_pago', '01').order('fecha'),
+      supabase.from('config_contabilidad')
+        .select('valor').eq('clave', `saldo_banco_${año}_${mes}`).maybeSingle(),
     ]);
+    setSaldoReal(config?.valor?.saldo || '');
 
     const lista = [
       ...(cobros||[]).map(c => ({
@@ -54,6 +61,14 @@ export default function MovimientosBanco() {
     setCargando(false);
   }
 
+  async function guardarSaldo(val) {
+    setGuardandoS(true);
+    await supabase.from('config_contabilidad')
+      .upsert({ clave: `saldo_banco_${año}_${mes}`, valor: { saldo: val } }, { onConflict: 'clave' });
+    setGuardandoS(false);
+    setEditandoSaldo(false);
+  }
+
   const totalEntradas = movs.filter(m => m.tipo === 'entrada').reduce((s,m) => s + m.monto, 0);
   const totalSalidas  = movs.filter(m => m.tipo === 'salida').reduce((s,m) => s + m.monto, 0);
   const neto          = totalEntradas - totalSalidas;
@@ -66,8 +81,72 @@ export default function MovimientosBanco() {
 
   if (cargando) return <div style={{ padding:40, textAlign:'center', color:'#888' }}>Cargando...</div>;
 
+  const saldoNum = parseFloat(saldoReal || 0);
+  const dif      = saldoNum - neto;
+  const cuadra   = Math.abs(dif) < 0.01;
+
   return (
     <div>
+      {/* Saldo banco */}
+      <div style={{ background:'white', borderRadius:12, padding:16, marginBottom:16,
+        boxShadow:'0 2px 8px rgba(0,0,0,0.06)', display:'flex', gap:16, flexWrap:'wrap', alignItems:'center' }}>
+        <div style={{ flex:1 }}>
+          <div style={{ fontSize:11, fontWeight:'bold', color:'#888', marginBottom:4 }}>SALDO REAL BANCO — {MESES[mes-1]} {año}</div>
+          {editandoSaldo ? (
+            <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+              <input
+                type="number" value={saldoReal} onChange={e => setSaldoReal(e.target.value)}
+                placeholder="0.00" autoFocus
+                style={{ fontSize:20, fontWeight:'bold', padding:'6px 10px', borderRadius:8,
+                  border:'2px solid #2980b9', width:160, outline:'none' }}
+              />
+              <button onClick={() => guardarSaldo(saldoReal)} disabled={guardandoS}
+                style={{ background:'#27ae60', color:'white', border:'none', borderRadius:8,
+                  padding:'8px 16px', cursor:'pointer', fontWeight:'bold', fontSize:13 }}>
+                {guardandoS ? '...' : '✓ Guardar'}
+              </button>
+              <button onClick={() => setEditandoSaldo(false)}
+                style={{ background:'#f0f2f5', color:'#555', border:'none', borderRadius:8,
+                  padding:'8px 12px', cursor:'pointer', fontSize:13 }}>
+                Cancelar
+              </button>
+            </div>
+          ) : (
+            <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+              <span style={{ fontSize:24, fontWeight:'bold', color:'#1a2a4a' }}>
+                {saldoReal ? `$${parseFloat(saldoReal).toFixed(2)}` : '—'}
+              </span>
+              <button onClick={() => setEditandoSaldo(true)}
+                style={{ background:'#2980b9', color:'white', border:'none', borderRadius:8,
+                  padding:'6px 14px', cursor:'pointer', fontSize:12, fontWeight:'bold' }}>
+                ✏️ {saldoReal ? 'Editar' : 'Ingresar saldo'}
+              </button>
+            </div>
+          )}
+          <div style={{ fontSize:11, color:'#aaa', marginTop:4 }}>
+            Ingresa el saldo real del estado de cuenta del banco
+          </div>
+        </div>
+
+        {saldoReal && (
+          <div style={{ display:'flex', gap:12 }}>
+            <div style={{ textAlign:'center', padding:'10px 16px', borderRadius:10,
+              background:'#f0f2f5', border:'1px solid #ddd' }}>
+              <div style={{ fontSize:10, color:'#888', fontWeight:'bold' }}>NETO CALCULADO</div>
+              <div style={{ fontSize:18, fontWeight:'bold', color: neto>=0?'#27ae60':'#e74c3c' }}>${neto.toFixed(2)}</div>
+            </div>
+            <div style={{ textAlign:'center', padding:'10px 16px', borderRadius:10,
+              background: cuadra ? '#e8f5e9' : '#fde8e8',
+              border: `2px solid ${cuadra ? '#27ae60' : '#e74c3c'}` }}>
+              <div style={{ fontSize:10, fontWeight:'bold', color: cuadra?'#27ae60':'#e74c3c' }}>DIFERENCIA</div>
+              <div style={{ fontSize:18, fontWeight:'bold', color: cuadra?'#27ae60':'#e74c3c' }}>
+                {cuadra ? '✓ Cuadra' : `${dif>0?'+':''}$${dif.toFixed(2)}`}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* KPIs */}
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:12, marginBottom:16 }}>
         {[
