@@ -32,13 +32,13 @@ export default function ResumenTalonario() {
       { data: config },
     ] = await Promise.all([
       supabase.from('facturas').select('total').gte('created_at', fechaDesde + 'T00:00:00').lte('created_at', fechaHasta + 'T23:59:59').neq('estado', 'anulada'),
-      supabase.from('cobros').select('monto,forma_pago').gte('fecha', fechaDesde).lte('fecha', fechaHasta),
+      supabase.from('cobros').select('id,fecha,monto,forma_pago,observaciones,clientes(nombre),facturas(numero)').gte('fecha', fechaDesde).lte('fecha', fechaHasta),
       supabase.from('caja_chica').select('id').gte('fecha', fechaDesde).lte('fecha', fechaHasta),
       supabase.from('compras').select('total,tiene_factura').gte('fecha', fechaDesde).lte('fecha', fechaHasta),
       supabase.from('nomina').select('sueldo_prop,iess_patronal').eq('periodo', periodo),
-      supabase.from('talonario_pagos_banco').select('monto').eq('mes', mes).eq('año', año),
+      supabase.from('talonario_pagos_banco').select('id,fecha,monto,descripcion,banco').eq('mes', mes).eq('año', año),
       supabase.from('talonario_pagos_personales').select('monto,categoria').eq('mes', mes).eq('año', año),
-      supabase.from('talonario_otros_ingresos').select('monto').eq('mes', mes).eq('año', año),
+      supabase.from('talonario_otros_ingresos').select('id,fecha,monto,descripcion,empresa,forma_pago').eq('mes', mes).eq('año', año),
       supabase.from('cuentas_cobrar').select('monto_total,monto_cobrado').in('estado', ['pendiente', 'parcial']),
       supabase.from('config_contabilidad').select('valor').eq('clave', `saldo_banco_${año}_${mes}`).maybeSingle(),
     ]);
@@ -66,10 +66,36 @@ export default function ResumenTalonario() {
 
     const cxcPendiente = (cxc||[]).reduce((s,c) => s + parseFloat(c.monto_total||0) - parseFloat(c.monto_cobrado||0), 0);
 
+    // Movimientos banco detallados
+    const cobrosTransfDet = (cobros||[]).filter(c => ['transferencia','deposito'].includes(c.forma_pago));
+    const otrosIngBancoDet = (otrosI||[]).filter(o => o.forma_pago !== '01');
+    const otrosIngBancoTotal = otrosIngBancoDet.reduce((s,o) => s + parseFloat(o.monto||0), 0);
+    const saldoCalculadoBanco = cobroTransf + otrosIngBancoTotal - totalPagosB;
+
+    // Tabla movimientos banco: entradas y salidas ordenadas por fecha
+    const movsBanco = [
+      ...cobrosTransfDet.map(c => ({
+        fecha: c.fecha, tipo: 'entrada',
+        descripcion: `Cobro ${c.forma_pago} — ${c.clientes?.nombre || c.facturas?.numero || ''}`,
+        monto: parseFloat(c.monto||0),
+      })),
+      ...otrosIngBancoDet.map(o => ({
+        fecha: o.fecha || '', tipo: 'entrada',
+        descripcion: `Otro ingreso — ${o.descripcion || o.empresa || ''}`,
+        monto: parseFloat(o.monto||0),
+      })),
+      ...(pagosB||[]).map(p => ({
+        fecha: p.fecha || '', tipo: 'salida',
+        descripcion: `Pago banco — ${p.descripcion || p.banco || ''}`,
+        monto: parseFloat(p.monto||0),
+      })),
+    ].sort((a,b) => (a.fecha||'').localeCompare(b.fecha||''));
+
     setSaldoBanco(config?.valor?.saldo || '');
     setDatos({ totalVentas, totalOtrosI, totalGastos, comprasCon, comprasSin,
       totalSueldos, totalIess, totalPagosB, totalPagosP,
-      cobroEfect, cobroCheq, cobroTransf, pagosPrestTarj, pagosGastPers, cxcPendiente });
+      cobroEfect, cobroCheq, cobroTransf, pagosPrestTarj, pagosGastPers,
+      cxcPendiente, saldoCalculadoBanco, movsBanco });
     setCargando(false);
   }
 
@@ -86,7 +112,7 @@ export default function ResumenTalonario() {
     totalVentas, totalOtrosI, totalGastos, comprasCon, comprasSin,
     totalSueldos, totalIess, totalPagosB, totalPagosP,
     cobroEfect, cobroCheq, cobroTransf, pagosPrestTarj, pagosGastPers,
-    cxcPendiente,
+    cxcPendiente, saldoCalculadoBanco, movsBanco,
   } = datos;
 
   const totalIngMes  = totalVentas + totalOtrosI;
@@ -171,26 +197,93 @@ export default function ResumenTalonario() {
           {titulo('ACTIVOS', '#555')}
           {fila('(+) Cuentas por cobrar', cxcPendiente, '#27ae60')}
 
-          <div style={{ marginTop:10, background:'#1a2a4a', color:'white', padding:'7px 10px',
-            borderRadius:6, display:'flex', justifyContent:'space-between', alignItems:'center', fontSize:12 }}>
-            <span>💳 Saldo cuenta corriente</span>
-            {editandoSaldo ? (
-              <div style={{ display:'flex', gap:6 }}>
-                <input type="number" value={saldoBanco} onChange={e => setSaldoBanco(e.target.value)}
-                  style={{ width:100, padding:'3px 6px', borderRadius:4, border:'none', fontSize:12 }} />
-                <button onClick={() => guardarSaldo(saldoBanco)}
-                  style={{ background:'#27ae60', color:'white', border:'none', borderRadius:4,
-                    padding:'3px 8px', cursor:'pointer', fontSize:11 }}>✓</button>
-              </div>
-            ) : (
-              <span onClick={() => esAdminContador && setEditandoSaldo(true)}
-                style={{ fontWeight:'bold', cursor: esAdminContador ? 'pointer' : 'default' }}>
-                {saldoBanco ? `$${parseFloat(saldoBanco).toFixed(2)}` : (esAdminContador ? '✏️ Ingresar' : '—')}
+          {/* Saldo banco calculado vs real */}
+          <div style={{ marginTop:10, background:'#f0f2f5', borderRadius:6, overflow:'hidden', fontSize:12 }}>
+            <div style={{ display:'flex', justifyContent:'space-between', padding:'6px 10px', borderBottom:'1px solid #ddd' }}>
+              <span style={{ color:'#555' }}>💳 Saldo banco calculado (mes)</span>
+              <span style={{ fontWeight:'bold', color: saldoCalculadoBanco >= 0 ? '#27ae60' : '#e74c3c' }}>
+                ${parseFloat(saldoCalculadoBanco||0).toFixed(2)}
               </span>
+            </div>
+            <div style={{ display:'flex', justifyContent:'space-between', padding:'6px 10px', borderBottom:'1px solid #ddd', background:'#1a2a4a' }}>
+              <span style={{ color:'#aaa' }}>💳 Saldo banco real</span>
+              {editandoSaldo ? (
+                <div style={{ display:'flex', gap:6 }}>
+                  <input type="number" value={saldoBanco} onChange={e => setSaldoBanco(e.target.value)}
+                    style={{ width:100, padding:'3px 6px', borderRadius:4, border:'none', fontSize:12 }} />
+                  <button onClick={() => guardarSaldo(saldoBanco)}
+                    style={{ background:'#27ae60', color:'white', border:'none', borderRadius:4,
+                      padding:'3px 8px', cursor:'pointer', fontSize:11 }}>✓</button>
+                </div>
+              ) : (
+                <span onClick={() => setEditandoSaldo(true)}
+                  style={{ fontWeight:'bold', color:'white', cursor:'pointer' }}>
+                  {saldoBanco ? `$${parseFloat(saldoBanco).toFixed(2)}` : '✏️ Ingresar'}
+                </span>
+              )}
+            </div>
+            {saldoBanco && (
+              <div style={{ display:'flex', justifyContent:'space-between', padding:'6px 10px',
+                background: Math.abs(parseFloat(saldoBanco) - saldoCalculadoBanco) < 0.01 ? '#e8f5e9' : '#fde8e8' }}>
+                <span style={{ color:'#555' }}>Diferencia</span>
+                <span style={{ fontWeight:'bold', color: Math.abs(parseFloat(saldoBanco) - saldoCalculadoBanco) < 0.01 ? '#27ae60' : '#e74c3c' }}>
+                  {Math.abs(parseFloat(saldoBanco) - saldoCalculadoBanco) < 0.01
+                    ? '✓ Cuadra'
+                    : `${(parseFloat(saldoBanco) - saldoCalculadoBanco) > 0 ? '+' : ''}$${(parseFloat(saldoBanco) - saldoCalculadoBanco).toFixed(2)}`}
+                </span>
+              </div>
             )}
           </div>
         </div>
       </div>
+      {/* Tabla movimientos banco */}
+      {movsBanco.length > 0 && (
+        <div style={{ gridColumn:'1/-1', border:'2px solid #2980b9', borderRadius:10, overflow:'hidden', marginTop:4 }}>
+          <div style={{ background:'#2980b9', color:'white', padding:'8px 14px', fontWeight:'bold', fontSize:13 }}>
+            🏦 Movimientos Banco — {MESES[mes-1]} {año}
+          </div>
+          <table style={{ width:'100%', borderCollapse:'collapse' }}>
+            <thead>
+              <tr style={{ background:'#f0f2f5', fontSize:11, fontWeight:'bold', color:'#555' }}>
+                <th style={{ padding:'6px 12px', textAlign:'left' }}>FECHA</th>
+                <th style={{ padding:'6px 12px', textAlign:'left' }}>DESCRIPCIÓN</th>
+                <th style={{ padding:'6px 12px', textAlign:'right', color:'#27ae60' }}>ENTRADA (+)</th>
+                <th style={{ padding:'6px 12px', textAlign:'right', color:'#e74c3c' }}>SALIDA (-)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {movsBanco.map((m, i) => {
+                const [y,mo,d] = (m.fecha||'').split('-');
+                const fmtF = m.fecha ? `${parseInt(d)}/${parseInt(mo)}/${y}` : '—';
+                return (
+                  <tr key={i} style={{ borderTop:'1px solid #f0f0f0', fontSize:12 }}>
+                    <td style={{ padding:'5px 12px', color:'#888' }}>{fmtF}</td>
+                    <td style={{ padding:'5px 12px', color:'#333' }}>{m.descripcion}</td>
+                    <td style={{ padding:'5px 12px', textAlign:'right', color:'#27ae60', fontWeight:'bold' }}>
+                      {m.tipo === 'entrada' ? `$${m.monto.toFixed(2)}` : '—'}
+                    </td>
+                    <td style={{ padding:'5px 12px', textAlign:'right', color:'#e74c3c', fontWeight:'bold' }}>
+                      {m.tipo === 'salida' ? `$${m.monto.toFixed(2)}` : '—'}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            <tfoot>
+              <tr style={{ background:'#1a2a4a', color:'white', fontWeight:'bold', fontSize:12 }}>
+                <td colSpan={2} style={{ padding:'6px 12px' }}>TOTAL MES</td>
+                <td style={{ padding:'6px 12px', textAlign:'right', color:'#4ade80' }}>
+                  ${movsBanco.filter(m=>m.tipo==='entrada').reduce((s,m)=>s+m.monto,0).toFixed(2)}
+                </td>
+                <td style={{ padding:'6px 12px', textAlign:'right', color:'#f87171' }}>
+                  ${movsBanco.filter(m=>m.tipo==='salida').reduce((s,m)=>s+m.monto,0).toFixed(2)}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
+
     </div>
   );
 }
