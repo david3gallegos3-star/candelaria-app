@@ -32,7 +32,7 @@ export default function TabCajaChica({ mobile, currentUser }) {
   const autoSaveRef = useRef(null);
 
   function fGasto() {
-    return { proveedor:'', detalle:'', valor:'', ruc:'', numero_factura:'', pendiente_compra:false, expandido:false };
+    return { proveedor:'', detalle:'', valor:'', ruc:'', numero_factura:'', pendiente_compra:false, expandido:false, es_personal:false };
   }
   function fEntrega() { return { cantidad:'', recibe:'' }; }
 
@@ -73,6 +73,7 @@ export default function TabCajaChica({ mobile, currentUser }) {
         numero_factura: g.numero_factura, detalle: g.detalle,
         valor: parseFloat(g.valor) || 0,
         pendiente_compra: g.pendiente_compra, orden: i,
+        es_personal: g.es_personal || false,
       })));
     }
 
@@ -228,7 +229,8 @@ export default function TabCajaChica({ mobile, currentUser }) {
         proveedor: g.proveedor, ruc: g.ruc,
         numero_factura: g.numero_factura, detalle: g.detalle,
         valor: parseFloat(g.valor) || 0,
-        pendiente_compra: g.pendiente_compra, orden: i
+        pendiente_compra: g.pendiente_compra, orden: i,
+        es_personal: g.es_personal || false,
       })));
 
       for (const g of gastosOk.filter(g => g.pendiente_compra && g.proveedor)) {
@@ -689,6 +691,7 @@ export default function TabCajaChica({ mobile, currentUser }) {
             <th style={thS}>DETALLE</th>
             <th style={{ ...thS, width:100 }}>VALOR ($)</th>
             <th style={{ ...thS, width:70, textAlign:'center' }}>PENDIENTE</th>
+            <th style={{ ...thS, width:70, textAlign:'center' }}>PERSONAL</th>
             <th style={{ ...thS, width:70, textAlign:'center' }}>+INFO / 🗑</th>
           </tr></thead>
           <tbody>
@@ -747,6 +750,12 @@ export default function TabCajaChica({ mobile, currentUser }) {
                     <input type="checkbox" checked={g.pendiente_compra}
                       onChange={e => updG(i,'pendiente_compra',e.target.checked)}
                       title="Marcar pendiente en Compras"
+                      style={{ width:16, height:16, cursor:'pointer' }} />
+                  </td>
+                  <td style={{ ...tdS, textAlign:'center' }}>
+                    <input type="checkbox" checked={g.es_personal || false}
+                      onChange={e => updG(i,'es_personal',e.target.checked)}
+                      title="Marcar como gasto personal"
                       style={{ width:16, height:16, cursor:'pointer' }} />
                   </td>
                   <td style={{ ...tdS, textAlign:'center' }}>
