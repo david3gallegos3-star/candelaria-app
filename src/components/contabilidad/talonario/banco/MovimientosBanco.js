@@ -22,6 +22,7 @@ export default function MovimientosBanco() {
       { data: pagosB },
       { data: otrosI },
       { data: config },
+      { data: factsP },
     ] = await Promise.all([
       supabase.from('cobros')
         .select('id,fecha,monto,comision,forma_pago,observaciones,clientes(nombre),facturas(numero)')
@@ -36,6 +37,10 @@ export default function MovimientosBanco() {
         .neq('forma_pago', '01').order('fecha'),
       supabase.from('config_contabilidad')
         .select('valor').eq('clave', `saldo_banco_${año}_${mes}`).maybeSingle(),
+      supabase.from('talonario_facturas_personales')
+        .select('id,fecha,proveedor,descripcion,monto,numero_transferencia')
+        .eq('mes', mes).eq('año', año)
+        .eq('forma_pago', '20').order('fecha'),
     ]);
     setSaldoReal(config?.valor?.saldo || '');
 
@@ -73,6 +78,12 @@ export default function MovimientosBanco() {
         descripcion: `Pago banco — ${p.descripcion || p.banco || ''}`,
         tipo: 'salida',
         monto: parseFloat(p.monto||0),
+      })),
+      ...(factsP||[]).map(f => ({
+        fecha: f.fecha || '',
+        descripcion: `Factura personal — ${f.proveedor || f.descripcion || ''}${f.numero_transferencia ? ` (${f.numero_transferencia})` : ''}`,
+        tipo: 'salida',
+        monto: parseFloat(f.monto||0),
       })),
     ].sort((a, b) => (a.fecha||'').localeCompare(b.fecha||''));
 
