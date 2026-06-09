@@ -166,7 +166,6 @@ export default function SubirFacturas({ onClose, esPersonal = false }) {
       } else {
         await supabase.from('compras').insert({
           proveedor_nombre:  datos.proveedor_nombre || '',
-          proveedor_ruc:     datos.proveedor_ruc    || null,
           fecha,
           tiene_factura:     datos.tiene_factura !== false,
           numero_factura:    datos.numero_factura   || null,
@@ -179,7 +178,6 @@ export default function SubirFacturas({ onClose, esPersonal = false }) {
           total:             datos.total       || 0,
           es_personal:       false,
           estado:            'pendiente',
-          origen:            'subida_ia',
           notas:             datos.items?.length
             ? datos.items.map(i => `${i.descripcion} x${i.cantidad}`).join('; ')
             : null,
