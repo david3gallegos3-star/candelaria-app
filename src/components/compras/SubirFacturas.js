@@ -84,17 +84,18 @@ async function analizarArchivo(file) {
 
 async function verificarDuplicado(numeroFactura, esPersonal) {
   if (!numeroFactura) return null;
-  if (esPersonal) {
-    // talonario_facturas_personales no tiene numero_factura — se guarda en comentario
-    const { data } = await supabase
-      .from('talonario_facturas_personales')
-      .select('id, fecha')
-      .eq('comentario', numeroFactura)
-      .maybeSingle();
-    return data || null;
-  }
-  const { data } = await supabase.from('compras').select('id, fecha').eq('numero_factura', numeroFactura).maybeSingle();
-  return data || null;
+
+  const [{ data: enCompras }, { data: enPersonales }] = await Promise.all([
+    supabase.from('compras').select('id, fecha').eq('numero_factura', numeroFactura).maybeSingle(),
+    supabase.from('talonario_facturas_personales').select('id, fecha').eq('comentario', numeroFactura).maybeSingle(),
+  ]);
+
+  const encontrado = enCompras || enPersonales;
+  if (!encontrado) return null;
+  return {
+    ...encontrado,
+    fuente: enCompras ? 'Compras del negocio' : 'Facturas personales',
+  };
 }
 
 export default function SubirFacturas({ onClose, esPersonal = false }) {
@@ -285,7 +286,7 @@ export default function SubirFacturas({ onClose, esPersonal = false }) {
                     <div style={{ color: '#888', marginTop: 2 }}>
                       {a.duplicado.enLote
                         ? 'Repetida en este lote · No se volverá a cargar'
-                        : `Ya registrada el ${a.duplicado.fecha} · No se volverá a cargar`}
+                        : `Ya registrada el ${a.duplicado.fecha} en ${a.duplicado.fuente || 'el sistema'} · No se volverá a cargar`}
                     </div>
                   </div>
                 ))}
