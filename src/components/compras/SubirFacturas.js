@@ -84,8 +84,16 @@ async function analizarArchivo(file) {
 
 async function verificarDuplicado(numeroFactura, esPersonal) {
   if (!numeroFactura) return null;
-  const tabla = esPersonal ? 'talonario_facturas_personales' : 'compras';
-  const { data } = await supabase.from(tabla).select('id, fecha').eq('numero_factura', numeroFactura).single();
+  if (esPersonal) {
+    // talonario_facturas_personales no tiene numero_factura — se guarda en comentario
+    const { data } = await supabase
+      .from('talonario_facturas_personales')
+      .select('id, fecha')
+      .eq('comentario', numeroFactura)
+      .maybeSingle();
+    return data || null;
+  }
+  const { data } = await supabase.from('compras').select('id, fecha').eq('numero_factura', numeroFactura).maybeSingle();
   return data || null;
 }
 

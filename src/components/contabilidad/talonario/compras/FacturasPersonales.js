@@ -76,6 +76,7 @@ export default function FacturasPersonales() {
   }
 
   async function eliminar(id) {
+    if (String(id).startsWith('compra_')) return;
     await supabase.from('talonario_facturas_personales').delete().eq('id', id);
     cargar();
   }
