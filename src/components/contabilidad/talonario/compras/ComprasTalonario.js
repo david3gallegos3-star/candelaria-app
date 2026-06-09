@@ -17,7 +17,7 @@ export default function ComprasTalonario() {
       setCargando(true);
       const { data } = await supabase
         .from('compras')
-        .select('id, fecha, total, tiene_factura, forma_pago, numero_factura, proveedores(nombre)')
+        .select('id, fecha, total, tiene_factura, forma_pago, numero_factura, proveedor_nombre, proveedores(nombre)')
         .gte('fecha', fechaDesde)
         .lte('fecha', fechaHasta)
         .neq('es_personal', true)
@@ -46,7 +46,7 @@ export default function ComprasTalonario() {
 
   const columnas = [
     { key: 'fecha',           label: 'Fecha' },
-    { key: 'proveedor',       label: 'Proveedor', render: f => f.proveedores?.nombre || '—' },
+    { key: 'proveedor',       label: 'Proveedor', render: f => f.proveedores?.nombre || f.proveedor_nombre || '—' },
     { key: 'numero_factura',  label: 'N° Factura', render: f => f.numero_factura || '—' },
     { key: 'tiene_factura',   label: 'Tipo', render: f => f.tiene_factura
       ? <span style={{ background:'#e8f5e9', color:'#27ae60', padding:'2px 8px', borderRadius:6, fontSize:11, fontWeight:'bold' }}>Con factura</span>
