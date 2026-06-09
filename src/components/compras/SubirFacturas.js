@@ -124,6 +124,18 @@ export default function SubirFacturas({ onClose, esPersonal = false }) {
       }
     }
 
+    // Detectar duplicados dentro del mismo lote
+    const vistos = {};
+    for (const item of resultado) {
+      const num = item.datos?.numero_factura;
+      if (!num) continue;
+      if (vistos[num]) {
+        if (!item.duplicado) item.duplicado = { fecha: vistos[num].datos.fecha_emision, enLote: true };
+      } else {
+        vistos[num] = item;
+      }
+    }
+
     setArchivos(resultado);
     setAnalizando(false);
     e.target.value = '';
@@ -271,7 +283,9 @@ export default function SubirFacturas({ onClose, esPersonal = false }) {
                       {a.datos?.numero_factura} — {a.datos?.proveedor_nombre}
                     </div>
                     <div style={{ color: '#888', marginTop: 2 }}>
-                      Ya registrada el {a.duplicado.fecha} · No se volverá a cargar
+                      {a.duplicado.enLote
+                        ? 'Repetida en este lote · No se volverá a cargar'
+                        : `Ya registrada el ${a.duplicado.fecha} · No se volverá a cargar`}
                     </div>
                   </div>
                 ))}
