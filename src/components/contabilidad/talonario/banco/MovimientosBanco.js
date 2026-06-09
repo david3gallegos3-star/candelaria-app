@@ -29,7 +29,7 @@ export default function MovimientosBanco() {
         .in('forma_pago', ['transferencia','deposito','cheque'])
         .gte('fecha', fechaDesde).lte('fecha', fechaHasta).order('fecha'),
       supabase.from('talonario_pagos_banco')
-        .select('id,fecha,monto,descripcion,banco')
+        .select('id,fecha,monto,concepto,beneficiario')
         .eq('mes', mes).eq('año', año).order('fecha'),
       supabase.from('talonario_otros_ingresos')
         .select('id,fecha,monto,descripcion,empresa,forma_pago')
@@ -75,7 +75,7 @@ export default function MovimientosBanco() {
       })),
       ...(pagosB||[]).map(p => ({
         fecha: p.fecha || '',
-        descripcion: `Pago banco — ${p.descripcion || p.banco || ''}`,
+        descripcion: `Pago banco — ${p.concepto || p.beneficiario || ''}`,
         tipo: 'salida',
         monto: parseFloat(p.monto||0),
       })),

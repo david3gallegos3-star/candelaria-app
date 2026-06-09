@@ -35,7 +35,7 @@ export default function ResumenTalonario() {
       supabase.from('caja_chica').select('id').gte('fecha', fechaDesde).lte('fecha', fechaHasta),
       supabase.from('compras').select('total,tiene_factura').gte('fecha', fechaDesde).lte('fecha', fechaHasta),
       supabase.from('nomina').select('sueldo_prop,iess_patronal').eq('periodo', periodo),
-      supabase.from('talonario_pagos_banco').select('id,fecha,monto,descripcion,banco').eq('mes', mes).eq('año', año),
+      supabase.from('talonario_pagos_banco').select('id,fecha,monto,concepto,beneficiario').eq('mes', mes).eq('año', año),
       supabase.from('talonario_pagos_personales').select('monto,categoria').eq('mes', mes).eq('año', año),
       supabase.from('talonario_otros_ingresos').select('id,fecha,monto,descripcion,empresa,forma_pago').eq('mes', mes).eq('año', año),
       supabase.from('cuentas_cobrar').select('monto_total,monto_cobrado').in('estado', ['pendiente', 'parcial']),
@@ -85,7 +85,7 @@ export default function ResumenTalonario() {
       })),
       ...(pagosB||[]).map(p => ({
         fecha: p.fecha || '', tipo: 'salida',
-        descripcion: `Pago banco — ${p.descripcion || p.banco || ''}`,
+        descripcion: `Pago banco — ${p.concepto || p.beneficiario || ''}`,
         monto: parseFloat(p.monto||0),
       })),
     ].sort((a,b) => (a.fecha||'').localeCompare(b.fecha||''));
