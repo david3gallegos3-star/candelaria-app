@@ -129,7 +129,7 @@ function generarHtml(cuerpo, paraQzTray = false, repetir = 1) {
     </style>
   </head><body>
     ${copias}
-    <pre>${' \n'.repeat(9)}</pre>
+    <pre>${' \n'.repeat(12)}</pre>
     ${paraQzTray ? '' : '<script>setTimeout(function(){ window.print(); }, 400);<\/script>'}
   </body></html>`;
 }
