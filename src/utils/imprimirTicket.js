@@ -104,7 +104,7 @@ async function imprimirConQzTray(html) {
       copies:  1, // El HTML ya incluye las 2 copias
     });
 
-    await qz.print(config, [{ type: 'html', format: 'plain', data: html }]);
+    await qz.print(config, [{ type: 'pixel', format: 'html', flavor: 'plain', data: html }]);
     return true;
   } catch (e) {
     console.warn('QZ Tray no disponible, usando ventana del navegador:', e.message);
