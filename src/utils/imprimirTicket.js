@@ -97,12 +97,28 @@ function cuerpoTicket(f, detalle) {
   }
   out += linea + '\n';
   out += centrar('GRACIAS POR SU COMPRA', ANCHO) + '\n';
+  out += '\n\n\n';
+  out += pad('Firma:', 7) + '_'.repeat(ANCHO - 7) + '\n';
+  out += centrar(limpiarTexto(f.cliente_nombre || f.cliente || 'CONSUMIDOR FINAL'), ANCHO) + '\n';
+  const cedula = f.cliente_ruc || f.cliente_cedula;
+  if (cedula && cedula !== '9999999999999') {
+    out += centrar(`CI/RUC: ${cedula}`, ANCHO) + '\n';
+  }
   return out;
 }
 
-function generarHtml(cuerpo, paraQzTray = false) {
+// repetir = veces que se imprime el set completo (Nota/Factura + COPIA CLIENTE + COPIA EMPRESA)
+function generarHtml(cuerpo, paraQzTray = false, repetir = 1) {
   const sepCliente = '='.repeat(ANCHO) + '\n' + centrar('COPIA CLIENTE', ANCHO) + '\n' + '='.repeat(ANCHO);
   const sepEmpresa = '='.repeat(ANCHO) + '\n' + centrar('COPIA EMPRESA', ANCHO) + '\n' + '='.repeat(ANCHO);
+
+  let copias = '';
+  for (let i = 0; i < repetir; i++) {
+    copias += `<pre>${escapeHtml(cuerpo)}</pre>`;
+    copias += `<pre style="margin-top:6px">${escapeHtml(sepCliente)}</pre>`;
+    copias += `<pre>${escapeHtml(cuerpo)}</pre>`;
+    copias += `<pre style="margin-top:6px">${escapeHtml(sepEmpresa)}</pre>`;
+  }
 
   return `<!DOCTYPE html><html><head>
     <meta charset="utf-8">
@@ -112,10 +128,8 @@ function generarHtml(cuerpo, paraQzTray = false) {
       pre { margin: 0; white-space: pre-wrap; word-break: break-all; }
     </style>
   </head><body>
-    <pre>${escapeHtml(cuerpo)}</pre>
-    <pre style="margin-top:6px">${escapeHtml(sepCliente)}</pre>
-    <pre>${escapeHtml(cuerpo)}</pre>
-    <pre style="margin-top:6px">${escapeHtml(sepEmpresa)}</pre>
+    ${copias}
+    <pre>${'\n'.repeat(8)}</pre>
     ${paraQzTray ? '' : '<script>setTimeout(function(){ window.print(); }, 400);<\/script>'}
   </body></html>`;
 }
@@ -164,16 +178,17 @@ async function imprimirConQzTray(html) {
   }
 }
 
-export async function imprimirTicket(factura, detalle) {
-  const cuerpo = cuerpoTicket(factura, detalle);
+export async function imprimirTicket(factura, detalle, opciones = {}) {
+  const cuerpo  = cuerpoTicket(factura, detalle);
+  const repetir = opciones.copiaExtra ? 2 : 1;
 
   // Intentar QZ Tray primero (impresión directa sin diálogo)
-  const htmlQz = generarHtml(cuerpo, true);
+  const htmlQz = generarHtml(cuerpo, true, repetir);
   const usóQz  = await imprimirConQzTray(htmlQz);
 
   // Fallback: ventana del navegador con window.print()
   if (!usóQz) {
-    const html = generarHtml(cuerpo, false);
+    const html = generarHtml(cuerpo, false, repetir);
     const win  = window.open('', '_blank', 'width=380,height=600,left=200,top=100');
     if (!win) { alert('Permite ventanas emergentes para imprimir el ticket'); return; }
     win.document.write(html);
