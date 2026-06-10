@@ -2,6 +2,70 @@
 const EMPRESA   = 'EMBUTIDOS Y JAMONES CANDELARIA';
 const RUC       = '1002345351001';
 const DIRECCION = 'Ibarra, Imbabura, Ecuador';
+const ANCHO     = 40; // ancho en caracteres del papel (ajustar si la impresora corta o sobra espacio)
+
+// Quita tildes, ñ y ¡¿ porque la tabla de caracteres de la impresora térmica
+// no las soporta y las muestra como símbolos chinos / corta el texto.
+const TILDES = {
+  á:'a', é:'e', í:'i', ó:'o', ú:'u', Á:'A', É:'E', Í:'I', Ó:'O', Ú:'U',
+  ñ:'n', Ñ:'N', ü:'u', Ü:'U', '¡':'', '¿':'',
+};
+function limpiarTexto(s) {
+  return String(s ?? '').replace(/[áéíóúÁÉÍÓÚñÑüÜ¡¿]/g, c => TILDES[c]);
+}
+
+function escapeHtml(s) {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function pad(str, len) {
+  str = limpiarTexto(str);
+  return str.length > len ? str.slice(0, len) : str + ' '.repeat(len - str.length);
+}
+
+function padNum(str, len) {
+  str = String(str ?? '');
+  return str.length > len ? str.slice(0, len) : ' '.repeat(len - str.length) + str;
+}
+
+function centrar(str, ancho) {
+  str = limpiarTexto(str);
+  if (str.length >= ancho) return str.slice(0, ancho);
+  const totalPad = ancho - str.length;
+  const izq = Math.floor(totalPad / 2);
+  return ' '.repeat(izq) + str + ' '.repeat(totalPad - izq);
+}
+
+function wrap(str, ancho) {
+  str = String(str ?? '');
+  const lineas = [];
+  for (let i = 0; i < str.length; i += ancho) lineas.push(str.slice(i, i + ancho));
+  return lineas.join('\n');
+}
+
+function filaTotal(label, valor) {
+  const v = `$${parseFloat(valor || 0).toFixed(2)}`;
+  return pad(label, ANCHO - v.length) + v;
+}
+
+function filasProductos(detalle) {
+  const ANCHO_DESC = 16;
+  let out = pad('PRODUCTO', ANCHO_DESC) + ' ' + padNum('CANT', 6) + ' ' + padNum('P/UNIT', 7) + ' ' + padNum('TOTAL', 8) + '\n';
+  for (const d of (detalle || [])) {
+    const desc  = limpiarTexto(d.descripcion || d.producto_nombre || '');
+    const cant  = parseFloat(d.cantidad || 0).toFixed(3);
+    const pUnit = `$${parseFloat(d.precio_unitario || 0).toFixed(2)}`;
+    const sub   = `$${parseFloat(d.subtotal || 0).toFixed(2)}`;
+
+    const partes = [];
+    for (let i = 0; i < desc.length; i += ANCHO_DESC) partes.push(desc.slice(i, i + ANCHO_DESC));
+    if (!partes.length) partes.push('');
+
+    out += pad(partes[0], ANCHO_DESC) + ' ' + padNum(cant, 6) + ' ' + padNum(pUnit, 7) + ' ' + padNum(sub, 8) + '\n';
+    for (let i = 1; i < partes.length; i++) out += partes[i] + '\n';
+  }
+  return out;
+}
 
 function cuerpoTicket(f, detalle) {
   const fecha = new Date(f.created_at || new Date())
@@ -9,61 +73,49 @@ function cuerpoTicket(f, detalle) {
       day:'2-digit', month:'2-digit', year:'numeric',
       hour:'2-digit', minute:'2-digit' });
 
-  const filas = (detalle || []).map(d =>
-    `<tr>
-      <td style="padding:1px 0;max-width:110px;word-wrap:break-word">${d.descripcion || d.producto_nombre}</td>
-      <td style="padding:1px 3px;text-align:right;white-space:nowrap">${parseFloat(d.cantidad||0).toFixed(3)}</td>
-      <td style="padding:1px 3px;text-align:right;white-space:nowrap">$${parseFloat(d.precio_unitario||0).toFixed(4)}</td>
-      <td style="padding:1px 0;text-align:right;white-space:nowrap">$${parseFloat(d.subtotal||0).toFixed(2)}</td>
-    </tr>`
-  ).join('');
-
-  return `
-    <div style="text-align:center;font-weight:bold;font-size:13px;margin-bottom:3px">${EMPRESA}</div>
-    <div style="text-align:center;font-size:10px">RUC: ${RUC}</div>
-    <div style="text-align:center;font-size:10px">${DIRECCION}</div>
-    <div style="border-top:1px dashed #000;margin:5px 0"></div>
-    <div style="font-size:11px"><b>${f.tipo === 'nota_venta' ? 'NOTA DE VENTA' : 'FACTURA'}:</b> ${f.numero || ''}</div>
-    <div style="font-size:10px">Fecha: ${fecha}</div>
-    <div style="font-size:10px">Cliente: ${f.cliente_nombre || f.cliente || 'CONSUMIDOR FINAL'}</div>
-    <div style="font-size:10px">Vendedor: ${f.vendedor_nombre || f.vendedor || ''}</div>
-    <div style="font-size:10px">Pago: ${f.forma_pago || ''}</div>
-    <div style="border-top:1px dashed #000;margin:5px 0"></div>
-    <table style="width:100%;font-size:10px;border-collapse:collapse">
-      <thead>
-        <tr style="border-bottom:1px solid #000">
-          <th style="text-align:left;padding:1px 0">PRODUCTO</th>
-          <th style="text-align:right;padding:1px 3px">KG</th>
-          <th style="text-align:right;padding:1px 3px">P/KG</th>
-          <th style="text-align:right;padding:1px 0">TOTAL</th>
-        </tr>
-      </thead>
-      <tbody>${filas}</tbody>
-    </table>
-    <div style="border-top:1px dashed #000;margin:5px 0"></div>
-    <div style="display:flex;justify-content:space-between;font-size:11px"><span>Subtotal:</span><span>$${parseFloat(f.subtotal||0).toFixed(2)}</span></div>
-    <div style="display:flex;justify-content:space-between;font-size:11px"><span>IVA 15%:</span><span>$${parseFloat(f.iva||0).toFixed(2)}</span></div>
-    <div style="display:flex;justify-content:space-between;font-size:14px;font-weight:bold;margin-top:3px"><span>TOTAL:</span><span>$${parseFloat(f.total||0).toFixed(2)}</span></div>
-    ${f.autorizacion_sri
-      ? `<div style="font-size:8px;margin-top:5px;word-break:break-all">Auth SRI: ${f.autorizacion_sri}</div>`
-      : ''}
-    <div style="border-top:1px dashed #000;margin:5px 0"></div>
-    <div style="text-align:center;font-size:10px">¡Gracias por su compra!</div>
-  `;
+  const linea = '-'.repeat(ANCHO);
+  let out = '';
+  out += centrar(EMPRESA, ANCHO) + '\n';
+  out += centrar(`RUC: ${RUC}`, ANCHO) + '\n';
+  out += centrar(DIRECCION, ANCHO) + '\n';
+  out += linea + '\n';
+  out += `${f.tipo === 'nota_venta' ? 'NOTA DE VENTA' : 'FACTURA'}: ${f.numero || ''}\n`;
+  out += `Fecha: ${fecha}\n`;
+  out += `Cliente: ${limpiarTexto(f.cliente_nombre || f.cliente || 'CONSUMIDOR FINAL')}\n`;
+  out += `Vendedor: ${limpiarTexto(f.vendedor_nombre || f.vendedor || '')}\n`;
+  out += `Pago: ${limpiarTexto(f.forma_pago || '')}\n`;
+  out += linea + '\n';
+  out += filasProductos(detalle);
+  out += linea + '\n';
+  out += filaTotal('Subtotal:', f.subtotal) + '\n';
+  out += filaTotal('IVA 15%:', f.iva) + '\n';
+  out += filaTotal('TOTAL:', f.total) + '\n';
+  if (f.autorizacion_sri) {
+    out += linea + '\n';
+    out += 'Auth SRI:\n';
+    out += wrap(f.autorizacion_sri, ANCHO) + '\n';
+  }
+  out += linea + '\n';
+  out += centrar('GRACIAS POR SU COMPRA', ANCHO) + '\n';
+  return out;
 }
 
 function generarHtml(cuerpo, paraQzTray = false) {
+  const sepCliente = '='.repeat(ANCHO) + '\n' + centrar('COPIA CLIENTE', ANCHO) + '\n' + '='.repeat(ANCHO);
+  const sepEmpresa = '='.repeat(ANCHO) + '\n' + centrar('COPIA EMPRESA', ANCHO) + '\n' + '='.repeat(ANCHO);
+
   return `<!DOCTYPE html><html><head>
     <meta charset="utf-8">
     <style>
       @page { size: 80mm auto; margin: 3mm 4mm; }
-      body { font-family: 'Courier New', monospace; width: 72mm; margin: 0; padding: 0; }
+      body { font-family: 'Courier New', monospace; width: 72mm; margin: 0; padding: 0; font-size: 11px; }
+      pre { margin: 0; white-space: pre-wrap; word-break: break-all; }
     </style>
   </head><body>
-    <div>${cuerpo}</div>
-    <div style="border-top:2px dashed #000;margin:10px 0;text-align:center;font-size:9px;letter-spacing:2px">COPIA CLIENTE</div>
-    <div>${cuerpo}</div>
-    <div style="border-top:2px dashed #000;margin:10px 0;text-align:center;font-size:9px;letter-spacing:2px">COPIA EMPRESA</div>
+    <pre>${escapeHtml(cuerpo)}</pre>
+    <pre style="margin-top:6px">${escapeHtml(sepCliente)}</pre>
+    <pre>${escapeHtml(cuerpo)}</pre>
+    <pre style="margin-top:6px">${escapeHtml(sepEmpresa)}</pre>
     ${paraQzTray ? '' : '<script>setTimeout(function(){ window.print(); }, 400);<\/script>'}
   </body></html>`;
 }
