@@ -97,7 +97,7 @@ function cuerpoTicket(f, detalle) {
   }
   out += linea + '\n';
   out += centrar('GRACIAS POR SU COMPRA', ANCHO) + '\n';
-  out += '\n\n\n';
+  out += ' \n'.repeat(4);
   out += pad('Firma:', 7) + '_'.repeat(ANCHO - 7) + '\n';
   out += centrar(limpiarTexto(f.cliente_nombre || f.cliente || 'CONSUMIDOR FINAL'), ANCHO) + '\n';
   const cedula = f.cliente_ruc || f.cliente_cedula;
@@ -129,7 +129,7 @@ function generarHtml(cuerpo, paraQzTray = false, repetir = 1) {
     </style>
   </head><body>
     ${copias}
-    <pre>${'\n'.repeat(8)}</pre>
+    <pre>${' \n'.repeat(20)}</pre>
     ${paraQzTray ? '' : '<script>setTimeout(function(){ window.print(); }, 400);<\/script>'}
   </body></html>`;
 }
