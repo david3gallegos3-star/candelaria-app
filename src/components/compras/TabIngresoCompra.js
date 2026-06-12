@@ -204,7 +204,7 @@ export default function TabIngresoCompra({ mobile, currentUser, userRol }) {
             precio_kg:        null,
             subtotal:         parseFloat(item.monto),
             descuento:        parseFloat(item.descuento) || 0,
-            iva_pct:          parseFloat(item.iva_pct ?? 15),
+            iva_pct:          (item.iva_pct === '' || item.iva_pct == null) ? 15 : (parseFloat(item.iva_pct) || 0),
           });
           continue;
         }
@@ -222,7 +222,7 @@ export default function TabIngresoCompra({ mobile, currentUser, userRol }) {
           precio_kg:        precio,
           subtotal:         parseFloat(item.subtotal),
           descuento:        parseFloat(item.descuento) || 0,
-          iva_pct:          parseFloat(item.iva_pct ?? 15),
+          iva_pct:          (item.iva_pct === '' || item.iva_pct == null) ? 15 : (parseFloat(item.iva_pct) || 0),
         });
 
         // Actualizar stock en inventario_mp
