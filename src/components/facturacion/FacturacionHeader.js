@@ -2,7 +2,8 @@
 // FacturacionHeader.js
 // Header sticky del módulo de facturación
 // ============================================
-import React from 'react';
+import React, { useState } from 'react';
+import SelectorImpresora from './SelectorImpresora';
 
 const TABS = [
   { key: 'nueva',      emoji: '🛒', label: 'Nueva venta'   },
@@ -14,6 +15,8 @@ export default function FacturacionHeader({
   mobile, tabActiva, setTabActiva,
   onVolver, onVolverMenu
 }) {
+  const [selectorImpresoraAbierto, setSelectorImpresoraAbierto] = useState(false);
+
   const btnBase = {
     border: 'none', borderRadius: '8px', cursor: 'pointer',
     fontWeight: 'bold', fontSize: '13px',
@@ -56,7 +59,18 @@ export default function FacturacionHeader({
             🧾 Facturación
           </div>
         </div>
+
+        <button onClick={() => setSelectorImpresoraAbierto(true)} title="Elegir impresora" style={{
+          ...btnBase,
+          background: 'rgba(255,255,255,0.15)', color: 'white',
+          padding: mobile ? '8px 12px' : '7px 14px',
+          border: '1px solid rgba(255,255,255,0.25)'
+        }}>🖨️</button>
       </div>
+
+      {selectorImpresoraAbierto && (
+        <SelectorImpresora onClose={() => setSelectorImpresoraAbierto(false)} />
+      )}
 
       {/* Tabs */}
       <div style={{
