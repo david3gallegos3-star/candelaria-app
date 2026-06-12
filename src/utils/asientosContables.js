@@ -288,16 +288,17 @@ export async function generarAsientoCobro(cobro) {
   const cuentaDebe = cobro.forma_pago === 'efectivo'
     ? cuentas.caja_chica_id
     : cuentas.banco_id;
+  const labelCuenta = cobro.forma_pago === 'efectivo' ? 'Caja Chica' : 'Banco';
 
-  const descripcion = `Cobro CxC - ${cobro.forma_pago || 'efectivo'}`;
+  const descripcionCab = `Cobro CxC - ${cobro.forma_pago || 'efectivo'}`;
   const lineas = [
-    { cuenta_id: cuentaDebe,     descripcion, debe: cobro.monto, haber: 0,           orden: 0 },
-    { cuenta_id: cuentas.cxc_id, descripcion, debe: 0,           haber: cobro.monto, orden: 1 },
+    { cuenta_id: cuentaDebe,     descripcion: labelCuenta,    debe: cobro.monto, haber: 0,           orden: 0 },
+    { cuenta_id: cuentas.cxc_id, descripcion: 'CxC Clientes', debe: 0,           haber: cobro.monto, orden: 1 },
   ];
 
   return insertarAsiento({
     fecha:       cobro.fecha,
-    descripcion,
+    descripcion: descripcionCab,
     tipo:        'interno',
     origen:      'manual',
     origen_id:   cobro.id,
