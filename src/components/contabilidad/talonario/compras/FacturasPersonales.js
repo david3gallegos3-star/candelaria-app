@@ -2,8 +2,11 @@ import React, { useEffect, useState } from 'react';
 import { supabase } from '../../../../supabase';
 import { useTalonario } from '../TalonarioContext';
 import { TablaCrud, FORMAS_PAGO } from '../shared/TablaCrud';
+import { calcularResumenItems } from '../../../../utils/comprasCalc';
 
-const VACIO = { fecha: '', proveedor: '', descripcion: '', monto: '',
+const itemVacio = () => ({ descripcion: '', monto: '', descuento: '', iva_pct: 15, ivaDiferente: false });
+
+const VACIO = { fecha: '', proveedor: '', descripcion: '', items: [itemVacio()],
   tiene_factura: true, forma_pago: '20', comentario: '', numero_transferencia: '' };
 
 export default function FacturasPersonales() {
@@ -27,6 +30,16 @@ export default function FacturasPersonales() {
         .gte('fecha', fechaDesde).lte('fecha', fechaHasta).order('fecha'),
     ]);
 
+    const idsManuales = (manuales || []).map(m => m.id);
+    const { data: itemsManuales } = idsManuales.length > 0
+      ? await supabase.from('talonario_facturas_personales_items').select('*').in('factura_id', idsManuales).order('orden')
+      : { data: [] };
+
+    const manualesConItems = (manuales || []).map(m => ({
+      ...m,
+      items: (itemsManuales || []).filter(it => it.factura_id === m.id),
+    }));
+
     // Unificar: marcar las de compras con _fuente para no editarlas
     const deComprasNorm = (deCompras || []).map(c => ({
       id:           `compra_${c.id}`,
@@ -40,14 +53,15 @@ export default function FacturasPersonales() {
       _readOnly:    true,
     }));
 
-    setFilas([...(manuales || []), ...deComprasNorm]);
+    setFilas([...manualesConItems, ...deComprasNorm]);
     setCargando(false);
   }
 
   useEffect(() => { cargar(); }, [mes, año]);
 
   async function guardar() {
-    if (!form.descripcion || !form.monto) return alert('Descripción y monto son requeridos');
+    const itemsValidos = (form.items || []).filter(i => i.descripcion && parseFloat(i.monto) > 0);
+    if (!form.descripcion || itemsValidos.length === 0) return alert('Descripción y al menos un item con monto son requeridos');
     if (form.forma_pago === '20' && !form.numero_transferencia?.trim())
       return alert('El número de transferencia es obligatorio para pagos bancarios');
     if (form.forma_pago === '20') {
@@ -60,16 +74,33 @@ export default function FacturasPersonales() {
       if (existe) return alert('Este número de transferencia ya está registrado');
     }
     setGuardando(true);
+    const resumen = calcularResumenItems(itemsValidos);
     const payload = { mes, año, fecha: form.fecha || null, proveedor: form.proveedor || null,
-      descripcion: form.descripcion, monto: parseFloat(form.monto),
+      descripcion: form.descripcion, monto: resumen.total,
+      base_iva15: resumen.baseIva15, base_iva0: resumen.baseIva0,
+      iva: resumen.ivaTotal, descuento: resumen.descuentoTotal,
       tiene_factura: form.tiene_factura !== false,
       forma_pago: form.forma_pago, comentario: form.comentario || null,
       numero_transferencia: form.forma_pago === '20' ? form.numero_transferencia.trim() : null };
+
+    let facturaId = form.id;
     if (form.id) {
       await supabase.from('talonario_facturas_personales').update(payload).eq('id', form.id);
+      await supabase.from('talonario_facturas_personales_items').delete().eq('factura_id', form.id);
     } else {
-      await supabase.from('talonario_facturas_personales').insert(payload);
+      const { data: nueva } = await supabase.from('talonario_facturas_personales').insert(payload).select().single();
+      facturaId = nueva.id;
     }
+    await supabase.from('talonario_facturas_personales_items').insert(
+      itemsValidos.map((it, i) => ({
+        factura_id:  facturaId,
+        descripcion: it.descripcion,
+        monto:       parseFloat(it.monto) || 0,
+        descuento:   parseFloat(it.descuento) || 0,
+        iva_pct:     parseFloat(it.iva_pct ?? 15),
+        orden:       i,
+      }))
+    );
     setGuardando(false);
     setForm(null);
     cargar();
@@ -104,7 +135,7 @@ export default function FacturasPersonales() {
         campoMonto="monto"
         cargando={cargando}
         esAdminContador={esAdminContador}
-        onAgregar={() => setForm({ ...VACIO })}
+        onAgregar={() => setForm({ ...VACIO, items: [itemVacio()] })}
         onEditar={f => setForm({ ...f })}
         onEliminar={eliminar}
       />
@@ -120,7 +151,6 @@ export default function FacturasPersonales() {
               ['fecha',       'Fecha',       'date'],
               ['proveedor',   'Proveedor',   'text'],
               ['descripcion', 'Descripción', 'text'],
-              ['monto',       'Monto ($)',   'number'],
               ['comentario',  'Comentario',  'text'],
             ].map(([key, lbl, type]) => (
               <div key={key} style={{ marginBottom: 12 }}>
@@ -130,6 +160,63 @@ export default function FacturasPersonales() {
                     border: '1px solid #ddd', fontSize: 13, boxSizing: 'border-box' }} />
               </div>
             ))}
+            <div style={{ marginBottom: 12 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                <label style={{ fontSize: 12, color: '#555' }}>Items de la factura</label>
+                <button
+                  onClick={() => setForm(p => ({ ...p, items: [...(p.items || []), itemVacio()] }))}
+                  style={{ background: '#27ae60', color: 'white', border: 'none',
+                    borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontSize: 11, fontWeight: 'bold' }}
+                >+ Agregar item</button>
+              </div>
+              {(form.items || []).map((item, idx) => (
+                <div key={idx} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 28px', gap: 6, marginBottom: 6 }}>
+                  <input type="text" value={item.descripcion} placeholder="Descripción"
+                    onChange={e => setForm(p => ({ ...p, items: p.items.map((it,i) => i===idx ? { ...it, descripcion: e.target.value } : it) }))}
+                    style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #ddd', fontSize: 12, boxSizing: 'border-box' }} />
+                  <input type="number" min="0" step="0.01" value={item.monto} placeholder="Monto"
+                    onChange={e => setForm(p => ({ ...p, items: p.items.map((it,i) => i===idx ? { ...it, monto: e.target.value } : it) }))}
+                    style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #ddd', fontSize: 12, boxSizing: 'border-box' }} />
+                  <input type="number" min="0" step="0.01" value={item.descuento} placeholder="Desc."
+                    onChange={e => setForm(p => ({ ...p, items: p.items.map((it,i) => i===idx ? { ...it, descuento: e.target.value } : it) }))}
+                    style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #ddd', fontSize: 12, boxSizing: 'border-box' }} />
+                  {item.ivaDiferente ? (
+                    <input type="number" min="0" max="100" step="0.01" value={item.iva_pct} placeholder="IVA %"
+                      onChange={e => setForm(p => ({ ...p, items: p.items.map((it,i) => i===idx ? { ...it, iva_pct: e.target.value } : it) }))}
+                      style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #ddd', fontSize: 12, boxSizing: 'border-box' }} />
+                  ) : (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <span style={{ padding: '4px 8px', borderRadius: 6, background: '#f0f2f5', fontSize: 11, fontWeight: 'bold' }}>{item.iva_pct}%</span>
+                      <button
+                        onClick={() => setForm(p => ({ ...p, items: p.items.map((it,i) => i===idx ? { ...it, ivaDiferente: true } : it) }))}
+                        title="Usar otra tasa de IVA"
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12 }}
+                      >✏️</button>
+                    </div>
+                  )}
+                  <button
+                    onClick={() => setForm(p => ({ ...p, items: p.items.filter((_,i) => i!==idx) }))}
+                    disabled={(form.items || []).length <= 1}
+                    style={{ background: 'none', border: 'none', color: '#e74c3c', cursor: 'pointer', fontSize: 16 }}
+                  >✕</button>
+                </div>
+              ))}
+              {(() => {
+                const r = calcularResumenItems((form.items || []).filter(i => i.descripcion && parseFloat(i.monto) > 0));
+                return (
+                  <div style={{ background: '#f8f9fa', borderRadius: 6, padding: 8, fontSize: 12, marginTop: 4 }}>
+                    {r.baseIva15 > 0 && <div>Base IVA 15%: ${r.baseIva15.toFixed(2)}</div>}
+                    {r.baseIva0 > 0 && <div>Base IVA 0%: ${r.baseIva0.toFixed(2)}</div>}
+                    {Object.entries(r.otrasBases).map(([pct, monto]) => (
+                      <div key={pct}>Base IVA {pct}%: ${monto.toFixed(2)}</div>
+                    ))}
+                    {r.descuentoTotal > 0 && <div>Descuento: -${r.descuentoTotal.toFixed(2)}</div>}
+                    <div>IVA: ${r.ivaTotal.toFixed(2)}</div>
+                    <div style={{ fontWeight: 'bold' }}>Total: ${r.total.toFixed(2)}</div>
+                  </div>
+                );
+              })()}
+            </div>
             <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
               <input type="checkbox" id="tieneFact" checked={form.tiene_factura !== false}
                 onChange={e => setForm(p => ({ ...p, tiene_factura: e.target.checked }))} />
