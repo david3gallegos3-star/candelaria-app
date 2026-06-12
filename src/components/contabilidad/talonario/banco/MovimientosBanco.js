@@ -23,6 +23,9 @@ export default function MovimientosBanco() {
       { data: otrosI },
       { data: config },
       { data: factsP },
+      { data: ventasBanco },
+      { data: comprasBanco },
+      { data: cajasMes },
     ] = await Promise.all([
       supabase.from('cobros')
         .select('id,fecha,monto,comision,forma_pago,observaciones,clientes(nombre),facturas(numero)')
@@ -41,8 +44,28 @@ export default function MovimientosBanco() {
         .select('id,fecha,proveedor,descripcion,monto,numero_transferencia')
         .eq('mes', mes).eq('año', año)
         .eq('forma_pago', '20').order('fecha'),
+      supabase.from('facturas')
+        .select('id,numero,total,cliente_nombre,metodo_pago,created_at')
+        .in('metodo_pago', ['transferencia','cheque'])
+        .neq('estado', 'anulada')
+        .gte('created_at', fechaDesde + 'T00:00:00').lte('created_at', fechaHasta + 'T23:59:59')
+        .order('created_at'),
+      supabase.from('compras')
+        .select('id,fecha,total,proveedor_nombre,forma_pago')
+        .in('forma_pago', ['transferencia','cheque','deposito'])
+        .gte('fecha', fechaDesde).lte('fecha', fechaHasta).order('fecha'),
+      supabase.from('caja_chica')
+        .select('id,fecha')
+        .gte('fecha', fechaDesde).lte('fecha', fechaHasta),
     ]);
     setSaldoReal(config?.valor?.saldo || '');
+
+    const cajaIds = (cajasMes || []).map(c => c.id);
+    const fechaPorCaja = {};
+    (cajasMes || []).forEach(c => { fechaPorCaja[c.id] = c.fecha; });
+    const { data: entregas } = cajaIds.length > 0
+      ? await supabase.from('caja_entregas').select('caja_id,cantidad,recibe').in('caja_id', cajaIds)
+      : { data: [] };
 
     const lista = [
       ...(cobros||[]).flatMap(c => {
@@ -84,6 +107,24 @@ export default function MovimientosBanco() {
         descripcion: `Factura personal — ${f.proveedor || f.descripcion || ''}${f.numero_transferencia ? ` (${f.numero_transferencia})` : ''}`,
         tipo: 'salida',
         monto: parseFloat(f.monto||0),
+      })),
+      ...(ventasBanco||[]).map(f => ({
+        fecha: (f.created_at || '').split('T')[0],
+        descripcion: `Venta ${f.metodo_pago} — ${f.numero} — ${f.cliente_nombre || ''}`,
+        tipo: 'entrada',
+        monto: parseFloat(f.total||0),
+      })),
+      ...(comprasBanco||[]).map(c => ({
+        fecha: c.fecha || '',
+        descripcion: `Compra ${c.forma_pago} — ${c.proveedor_nombre || ''}`,
+        tipo: 'salida',
+        monto: parseFloat(c.total||0),
+      })),
+      ...(entregas||[]).map(e => ({
+        fecha: fechaPorCaja[e.caja_id] || '',
+        descripcion: `Depósito desde Caja Chica${e.recibe ? ` — ${e.recibe}` : ''}`,
+        tipo: 'entrada',
+        monto: parseFloat(e.cantidad||0),
       })),
     ].sort((a, b) => (a.fecha||'').localeCompare(b.fecha||''));
 

@@ -30,10 +30,10 @@ export default function ResumenTalonario() {
       { data: cxc },
       { data: config },
     ] = await Promise.all([
-      supabase.from('facturas').select('total').gte('created_at', fechaDesde + 'T00:00:00').lte('created_at', fechaHasta + 'T23:59:59').neq('estado', 'anulada'),
+      supabase.from('facturas').select('total,metodo_pago').gte('created_at', fechaDesde + 'T00:00:00').lte('created_at', fechaHasta + 'T23:59:59').neq('estado', 'anulada'),
       supabase.from('cobros').select('id,fecha,monto,forma_pago,observaciones,clientes(nombre),facturas(numero)').gte('fecha', fechaDesde).lte('fecha', fechaHasta),
       supabase.from('caja_chica').select('id').gte('fecha', fechaDesde).lte('fecha', fechaHasta),
-      supabase.from('compras').select('total,tiene_factura').gte('fecha', fechaDesde).lte('fecha', fechaHasta),
+      supabase.from('compras').select('total,tiene_factura,forma_pago').gte('fecha', fechaDesde).lte('fecha', fechaHasta),
       supabase.from('nomina').select('sueldo_prop,iess_patronal').eq('periodo', periodo),
       supabase.from('talonario_pagos_banco').select('id,fecha,monto,concepto,beneficiario').eq('mes', mes).eq('año', año),
       supabase.from('talonario_pagos_personales').select('monto,categoria').eq('mes', mes).eq('año', año),
@@ -43,9 +43,12 @@ export default function ResumenTalonario() {
     ]);
 
     const cajaIds = (cajas || []).map(c => c.id);
-    const { data: gastos } = cajaIds.length > 0
-      ? await supabase.from('caja_gastos').select('valor').in('caja_id', cajaIds)
-      : { data: [] };
+    const [{ data: gastos }, { data: entregas }] = cajaIds.length > 0
+      ? await Promise.all([
+          supabase.from('caja_gastos').select('valor').in('caja_id', cajaIds),
+          supabase.from('caja_entregas').select('cantidad').in('caja_id', cajaIds),
+        ])
+      : [{ data: [] }, { data: [] }];
 
     const totalVentas    = suma(facturas || [], 'total');
     const totalOtrosI    = suma(otrosI   || [], 'monto');
@@ -69,7 +72,10 @@ export default function ResumenTalonario() {
     const cobrosTransfDet = (cobros||[]).filter(c => ['transferencia','deposito'].includes(c.forma_pago));
     const otrosIngBancoDet = (otrosI||[]).filter(o => o.forma_pago !== '01');
     const otrosIngBancoTotal = otrosIngBancoDet.reduce((s,o) => s + parseFloat(o.monto||0), 0);
-    const saldoCalculadoBanco = cobroTransf + otrosIngBancoTotal - totalPagosB;
+    const ventasBancoTotal  = (facturas||[]).filter(f => ['transferencia','cheque'].includes(f.metodo_pago)).reduce((s,f) => s + parseFloat(f.total||0), 0);
+    const comprasBancoTotal = (compras||[]).filter(c => ['transferencia','cheque','deposito'].includes(c.forma_pago)).reduce((s,c) => s + parseFloat(c.total||0), 0);
+    const totalEntregasCaja = suma(entregas || [], 'cantidad');
+    const saldoCalculadoBanco = cobroTransf + otrosIngBancoTotal - totalPagosB + ventasBancoTotal + totalEntregasCaja - comprasBancoTotal;
 
     // Tabla movimientos banco: entradas y salidas ordenadas por fecha
     const movsBanco = [
