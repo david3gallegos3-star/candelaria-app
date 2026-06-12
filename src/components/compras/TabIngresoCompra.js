@@ -7,12 +7,20 @@ import { supabase } from '../../supabase';
 import { registrarAuditoria, crearNotificacion } from '../../utils/helpers';
 import { generarAsientoCompra } from '../../utils/asientosContables';
 import { useRealtime } from '../../hooks/useRealtime';
+import { calcularResumenItems } from '../../utils/comprasCalc';
 
-const itemVacio = () => ({
+const itemVacioEmpresa = () => ({
   materia_prima_id: '', mp_nombre: '',
   cantidad_kg: '', precio_kg: '', subtotal: 0,
-  precio_anterior: 0, inv_id: ''
+  precio_anterior: 0, inv_id: '',
+  descuento: '', iva_pct: 15, ivaDiferente: false,
 });
+
+const itemVacioPersonal = () => ({
+  descripcion: '', monto: '', descuento: '', iva_pct: 15, ivaDiferente: false,
+});
+
+const itemVacio = (personal) => personal ? itemVacioPersonal() : itemVacioEmpresa();
 
 const FORMAS_PAGO = [
   { value: 'efectivo',      label: '💵 Efectivo'      },
@@ -32,9 +40,6 @@ export default function TabIngresoCompra({ mobile, currentUser, userRol }) {
   const [numFactura,      setNumFactura]      = useState('');
   const [autorizacionSri, setAutorizacionSri] = useState('');
   const [fechaEmision,    setFechaEmision]    = useState('');
-  const [baseIva15,       setBaseIva15]       = useState('');
-  const [baseIva0,        setBaseIva0]        = useState('');
-  const [descuento,       setDescuento]       = useState('');
   const [recordarFactura, setRecordarFactura] = useState(false);
   const [tieneRetencion,  setTieneRetencion]  = useState(false);
   const [retFuentePct,    setRetFuentePct]    = useState('');
@@ -47,7 +52,7 @@ export default function TabIngresoCompra({ mobile, currentUser, userRol }) {
   const [referenciaPago, setReferenciaPago] = useState('');
   const [diasCredito,  setDiasCredito]  = useState(30);
   const [notas,        setNotas]        = useState('');
-  const [items,        setItems]        = useState([itemVacio()]);
+  const [items,        setItems]        = useState([itemVacio(false)]);
   const [guardando,    setGuardando]    = useState(false);
   const [msgExito,     setMsgExito]     = useState('');
   const [error,        setError]        = useState('');
@@ -87,21 +92,39 @@ export default function TabIngresoCompra({ mobile, currentUser, userRol }) {
         nuevo.precio_anterior = parseFloat(mp?.precio_kg || 0);
         nuevo.inv_id         = mp?.inv_id || '';
       }
-      const cant   = parseFloat(nuevo.cantidad_kg || 0);
-      const precio = parseFloat(nuevo.precio_kg   || 0);
-      nuevo.subtotal = parseFloat((cant * precio).toFixed(2));
+      if (!esPersonal) {
+        const cant   = parseFloat(nuevo.cantidad_kg || 0);
+        const precio = parseFloat(nuevo.precio_kg   || 0);
+        nuevo.subtotal = parseFloat((cant * precio).toFixed(2));
+      }
       return nuevo;
     }));
   }
 
-  function agregarItem()     { setItems(prev => [...prev, itemVacio()]); }
+  function agregarItem()     { setItems(prev => [...prev, itemVacio(esPersonal)]); }
   function eliminarItem(idx) { setItems(prev => prev.filter((_, i) => i !== idx)); }
 
+  function toggleEsPersonal(checked) {
+    const hayDatos = items.some(it =>
+      (it.materia_prima_id || it.descripcion || '').toString().trim() !== '' ||
+      parseFloat(it.cantidad_kg || it.monto || 0) > 0
+    );
+    if (hayDatos) {
+      if (!window.confirm('Cambiar el tipo de compra borrará los items ingresados. ¿Continuar?')) return;
+    }
+    setEsPersonal(checked);
+    setItems([itemVacio(checked)]);
+  }
+
   // ── Totales ───────────────────────────────────────────────
-  const subtotal    = items.reduce((s, i) => s + (parseFloat(i.subtotal) || 0), 0);
-  const descuentoN  = parseFloat(descuento || 0);
-  const baseIva     = Math.max(0, subtotal - descuentoN);
-  const iva         = tieneFactura ? parseFloat((baseIva * 0.15).toFixed(2)) : 0;
+  const resumenItems = calcularResumenItems(items);
+  const subtotal    = resumenItems.subtotalTotal;
+  const descuentoN  = resumenItems.descuentoTotal;
+  const baseIva15   = resumenItems.baseIva15;
+  const baseIva0    = resumenItems.baseIva0;
+  const otrasBases  = resumenItems.otrasBases;
+  const baseIva     = parseFloat((subtotal - descuentoN).toFixed(2));
+  const iva         = tieneFactura ? resumenItems.ivaTotal : 0;
   const total       = parseFloat((baseIva + iva).toFixed(2));
   const retFuenteN  = tieneRetencion ? parseFloat((baseIva * (parseFloat(retFuentePct) || 0) / 100).toFixed(2)) : 0;
   const retIvaN     = tieneRetencion ? parseFloat((iva * (parseFloat(retIvaPct) || 0) / 100).toFixed(2)) : 0;
@@ -110,9 +133,11 @@ export default function TabIngresoCompra({ mobile, currentUser, userRol }) {
   // ── Guardar compra ────────────────────────────────────────
   async function guardarCompra() {
     setError('');
-    const itemsValidos = items.filter(i => i.materia_prima_id && parseFloat(i.cantidad_kg) > 0);
+    const itemsValidos = esPersonal
+      ? items.filter(i => i.descripcion && parseFloat(i.monto) > 0)
+      : items.filter(i => i.materia_prima_id && parseFloat(i.cantidad_kg) > 0);
     if (!proveedorId)          return setError('Selecciona un proveedor');
-    if (itemsValidos.length === 0) return setError('Agrega al menos un material con cantidad');
+    if (itemsValidos.length === 0) return setError(esPersonal ? 'Agrega al menos un item con monto' : 'Agrega al menos un material con cantidad');
 
     setGuardando(true);
     const proveedor = proveedores.find(p => p.id === proveedorId);
@@ -129,8 +154,8 @@ export default function TabIngresoCompra({ mobile, currentUser, userRol }) {
         numero_factura:     tieneFactura ? (numFactura || null) : null,
         autorizacion_sri:   tieneFactura && autorizacionSri ? autorizacionSri : null,
         fecha_emision:      tieneFactura && fechaEmision ? fechaEmision : null,
-        base_iva15:         tieneFactura && baseIva15 ? parseFloat(baseIva15) : null,
-        base_iva0:          tieneFactura && baseIva0  ? parseFloat(baseIva0)  : null,
+        base_iva15:         tieneFactura ? baseIva15 : null,
+        base_iva0:          tieneFactura ? baseIva0  : null,
         recordar_factura:   tieneFactura && !numFactura && recordarFactura,
         subtotal,
         descuento:          descuentoN || null,
@@ -170,6 +195,20 @@ export default function TabIngresoCompra({ mobile, currentUser, userRol }) {
 
       // 2. Guardar detalle + actualizar inventario por cada ítem
       for (const item of itemsValidos) {
+        if (esPersonal) {
+          await supabase.from('compras_detalle').insert({
+            compra_id:        compra.id,
+            materia_prima_id: null,
+            mp_nombre:        item.descripcion,
+            cantidad_kg:      null,
+            precio_kg:        null,
+            subtotal:         parseFloat(item.monto),
+            descuento:        parseFloat(item.descuento) || 0,
+            iva_pct:          parseFloat(item.iva_pct ?? 15),
+          });
+          continue;
+        }
+
         const kg     = parseFloat(item.cantidad_kg);
         const precio = parseFloat(item.precio_kg || 0);
         const mp     = materiales.find(m => m.id === item.materia_prima_id);
@@ -181,7 +220,9 @@ export default function TabIngresoCompra({ mobile, currentUser, userRol }) {
           mp_nombre:        item.mp_nombre,
           cantidad_kg:      kg,
           precio_kg:        precio,
-          subtotal:         parseFloat(item.subtotal)
+          subtotal:         parseFloat(item.subtotal),
+          descuento:        parseFloat(item.descuento) || 0,
+          iva_pct:          parseFloat(item.iva_pct ?? 15),
         });
 
         // Actualizar stock en inventario_mp
@@ -240,14 +281,11 @@ export default function TabIngresoCompra({ mobile, currentUser, userRol }) {
       }
 
       // Resetear formulario
-      setItems([itemVacio()]);
+      setItems([itemVacio(esPersonal)]);
       setProveedorId('');
       setNumFactura('');
       setAutorizacionSri('');
       setFechaEmision('');
-      setBaseIva15('');
-      setBaseIva0('');
-      setDescuento('');
       setTieneFactura(false);
       setRecordarFactura(false);
       setTieneRetencion(false);
@@ -258,7 +296,7 @@ export default function TabIngresoCompra({ mobile, currentUser, userRol }) {
       setFormaPago('efectivo');
       setReferenciaPago('');
       setNotas('');
-      mostrarExito(`✅ Compra registrada — ${itemsValidos.length} material(es), $${total.toFixed(2)} — inventario actualizado`);
+      mostrarExito(`✅ Compra registrada — ${itemsValidos.length} ${esPersonal ? 'item(s)' : 'material(es)'}, $${total.toFixed(2)}${esPersonal ? '' : ' — inventario actualizado'}`);
       cargarDatos(); // recargar stocks
 
     } catch (e) {
@@ -294,18 +332,6 @@ export default function TabIngresoCompra({ mobile, currentUser, userRol }) {
           if (d && m && y) setFechaEmision(`${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`);
         }
 
-        // Descuento total
-        const totalDesc = parseFloat(xml.querySelector('totalDescuento')?.textContent || '0');
-        if (totalDesc > 0) setDescuento(totalDesc.toFixed(2));
-
-        // Bases imponibles por tasa de IVA
-        xml.querySelectorAll('totalConImpuestos totalImpuesto').forEach(imp => {
-          const cod  = imp.querySelector('codigoPorcentaje')?.textContent?.trim();
-          const base = parseFloat(imp.querySelector('baseImponible')?.textContent || '0');
-          if (cod === '4' || cod === '5') setBaseIva15(base.toFixed(2)); // 15%
-          if (cod === '0')               setBaseIva0(base.toFixed(2));   // 0%
-        });
-
         setTieneFactura(true);
       } catch (err) {
         setError('Error al leer el XML: ' + err.message);
@@ -333,6 +359,45 @@ export default function TabIngresoCompra({ mobile, currentUser, userRol }) {
     padding: mobile ? '14px' : '16px 20px',
     marginBottom: 14, boxShadow: '0 2px 8px rgba(0,0,0,0.06)'
   };
+
+  const columnasHeader = esPersonal
+    ? ['DESCRIPCIÓN', 'MONTO ($)', 'DESCUENTO ($)', 'IVA', '']
+    : (tieneFactura
+        ? ['MATERIA PRIMA', 'CANT (kg)', 'PRECIO/kg ($)', 'SUBTOTAL', 'DESCUENTO ($)', 'IVA', '']
+        : ['MATERIA PRIMA', 'CANT (kg)', 'PRECIO/kg ($)', 'SUBTOTAL', '']);
+
+  const gridCols = esPersonal
+    ? '2.5fr 1fr 1fr 0.8fr 36px'
+    : (tieneFactura
+        ? '2fr 0.8fr 0.9fr 0.8fr 0.8fr 0.7fr 36px'
+        : '2.5fr 1fr 1fr 1fr 36px');
+
+  function renderIva(item, idx) {
+    if (item.ivaDiferente) {
+      return (
+        <input
+          type="number" min="0" max="100" step="0.01"
+          value={item.iva_pct}
+          onChange={e => actualizarItem(idx, 'iva_pct', e.target.value)}
+          placeholder="15"
+          style={inputStyle}
+        />
+      );
+    }
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        <span style={{
+          padding: '6px 10px', borderRadius: 6, background: '#f0f2f5',
+          fontSize: 12, fontWeight: 'bold', color: '#555'
+        }}>{item.iva_pct}%</span>
+        <button
+          onClick={() => actualizarItem(idx, 'ivaDiferente', true)}
+          title="Usar otra tasa de IVA"
+          style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13 }}
+        >✏️</button>
+      </div>
+    );
+  }
 
   return (
     <div style={{ maxWidth: 860, margin: '0 auto' }}>
@@ -407,7 +472,7 @@ export default function TabIngresoCompra({ mobile, currentUser, userRol }) {
             border: esPersonal ? '1.5px solid #e67e22' : '1.5px solid transparent' }}>
             <input
               type="checkbox" checked={esPersonal}
-              onChange={e => setEsPersonal(e.target.checked)}
+              onChange={e => toggleEsPersonal(e.target.checked)}
               style={{ width: 16, height: 16 }}
             />
             <span style={{ fontSize: '13px', fontWeight: 'bold', color: esPersonal ? '#e67e22' : '#555' }}>
@@ -490,36 +555,6 @@ export default function TabIngresoCompra({ mobile, currentUser, userRol }) {
               <input
                 type="date" value={fechaEmision}
                 onChange={e => setFechaEmision(e.target.value)}
-                style={inputStyle}
-              />
-            </div>
-            <div>
-              <label style={labelStyle}>Base IVA 15% ($)</label>
-              <input
-                type="number" min="0" step="0.01"
-                value={baseIva15}
-                onChange={e => setBaseIva15(e.target.value)}
-                placeholder="0.00"
-                style={inputStyle}
-              />
-            </div>
-            <div>
-              <label style={labelStyle}>Base IVA 0% ($)</label>
-              <input
-                type="number" min="0" step="0.01"
-                value={baseIva0}
-                onChange={e => setBaseIva0(e.target.value)}
-                placeholder="0.00"
-                style={inputStyle}
-              />
-            </div>
-            <div>
-              <label style={labelStyle}>Descuento ($)</label>
-              <input
-                type="number" min="0" step="0.01"
-                value={descuento}
-                onChange={e => setDescuento(e.target.value)}
-                placeholder="0.00"
                 style={inputStyle}
               />
             </div>
@@ -624,14 +659,14 @@ export default function TabIngresoCompra({ mobile, currentUser, userRol }) {
         )}
       </div>
 
-      {/* Materiales */}
+      {/* Materiales / Items */}
       <div style={card}>
         <div style={{
           display: 'flex', justifyContent: 'space-between',
           alignItems: 'center', marginBottom: 12
         }}>
           <div style={{ fontWeight: 'bold', color: '#1a1a2e', fontSize: '14px' }}>
-            📦 Materiales recibidos
+            {esPersonal ? '📄 Items de la factura' : '📦 Materiales recibidos'}
           </div>
           <button onClick={agregarItem} style={{
             background: '#27ae60', color: 'white', border: 'none',
@@ -643,11 +678,11 @@ export default function TabIngresoCompra({ mobile, currentUser, userRol }) {
         {!mobile && (
           <div style={{
             display: 'grid',
-            gridTemplateColumns: '2.5fr 1fr 1fr 1fr 36px',
+            gridTemplateColumns: gridCols,
             gap: 8, marginBottom: 6
           }}>
-            {['MATERIA PRIMA', 'CANT (kg)', 'PRECIO/kg ($)', 'SUBTOTAL', ''].map(h => (
-              <div key={h} style={{
+            {columnasHeader.map((h, i) => (
+              <div key={`${h}-${i}`} style={{
                 fontSize: '10px', fontWeight: 'bold', color: '#888'
               }}>{h}</div>
             ))}
@@ -657,69 +692,128 @@ export default function TabIngresoCompra({ mobile, currentUser, userRol }) {
         {items.map((item, idx) => (
           <div key={idx} style={{
             display: 'grid',
-            gridTemplateColumns: mobile ? '1fr' : '2.5fr 1fr 1fr 1fr 36px',
+            gridTemplateColumns: mobile ? '1fr' : gridCols,
             gap: 8, marginBottom: 10,
             padding: mobile ? 10 : 0,
             background: mobile ? '#f8f9fa' : 'transparent',
             borderRadius: mobile ? 8 : 0
           }}>
-            <div>
-              {mobile && <label style={labelStyle}>Materia prima</label>}
-              <select
-                value={item.materia_prima_id}
-                onChange={e => actualizarItem(idx, 'materia_prima_id', e.target.value)}
-                style={inputStyle}
-              >
-                <option value="">— seleccionar —</option>
-                {materiales.map(m => (
-                  <option key={m.id} value={m.id}>
-                    {m.nombre_producto || m.nombre}
-                    {' '}(stock: {parseFloat(m.stock_kg || 0).toFixed(1)} kg)
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              {mobile && <label style={labelStyle}>Cant. (kg)</label>}
-              <input
-                type="number" min="0" step="0.001"
-                value={item.cantidad_kg}
-                onChange={e => actualizarItem(idx, 'cantidad_kg', e.target.value)}
-                placeholder="0.000"
-                style={inputStyle}
-              />
-            </div>
-            <div>
-              {mobile && <label style={labelStyle}>Precio/kg ($)</label>}
-              <input
-                type="number" min="0" step="0.0001"
-                value={item.precio_kg}
-                onChange={e => actualizarItem(idx, 'precio_kg', e.target.value)}
-                placeholder="0.0000"
-                style={{
-                  ...inputStyle,
-                  borderColor: item.precio_kg && parseFloat(item.precio_kg) !== item.precio_anterior
-                    ? '#f39c12' : '#ddd'
-                }}
-              />
-              {item.precio_anterior > 0 &&
-               item.precio_kg &&
-               parseFloat(item.precio_kg) !== item.precio_anterior && (
-                <div style={{ fontSize: '10px', color: '#f39c12', marginTop: 2 }}>
-                  ⚠️ anterior: ${item.precio_anterior.toFixed(4)}
+            {esPersonal ? (
+              <>
+                <div>
+                  {mobile && <label style={labelStyle}>Descripción</label>}
+                  <input
+                    type="text"
+                    value={item.descripcion}
+                    onChange={e => actualizarItem(idx, 'descripcion', e.target.value)}
+                    placeholder="Ej: Útiles de oficina"
+                    style={inputStyle}
+                  />
                 </div>
-              )}
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center' }}>
-              {mobile && <label style={labelStyle}>Subtotal</label>}
-              <div style={{
-                padding: '8px 10px', borderRadius: 8,
-                background: '#f0f7f0', fontSize: '14px',
-                fontWeight: 'bold', color: '#27ae60', width: '100%'
-              }}>
-                ${(parseFloat(item.subtotal) || 0).toFixed(2)}
-              </div>
-            </div>
+                <div>
+                  {mobile && <label style={labelStyle}>Monto ($)</label>}
+                  <input
+                    type="number" min="0" step="0.01"
+                    value={item.monto}
+                    onChange={e => actualizarItem(idx, 'monto', e.target.value)}
+                    placeholder="0.00"
+                    style={inputStyle}
+                  />
+                </div>
+                <div>
+                  {mobile && <label style={labelStyle}>Descuento ($)</label>}
+                  <input
+                    type="number" min="0" step="0.01"
+                    value={item.descuento}
+                    onChange={e => actualizarItem(idx, 'descuento', e.target.value)}
+                    placeholder="0.00"
+                    style={inputStyle}
+                  />
+                </div>
+                <div>
+                  {mobile && <label style={labelStyle}>IVA</label>}
+                  {renderIva(item, idx)}
+                </div>
+              </>
+            ) : (
+              <>
+                <div>
+                  {mobile && <label style={labelStyle}>Materia prima</label>}
+                  <select
+                    value={item.materia_prima_id}
+                    onChange={e => actualizarItem(idx, 'materia_prima_id', e.target.value)}
+                    style={inputStyle}
+                  >
+                    <option value="">— seleccionar —</option>
+                    {materiales.map(m => (
+                      <option key={m.id} value={m.id}>
+                        {m.nombre_producto || m.nombre}
+                        {' '}(stock: {parseFloat(m.stock_kg || 0).toFixed(1)} kg)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  {mobile && <label style={labelStyle}>Cant. (kg)</label>}
+                  <input
+                    type="number" min="0" step="0.001"
+                    value={item.cantidad_kg}
+                    onChange={e => actualizarItem(idx, 'cantidad_kg', e.target.value)}
+                    placeholder="0.000"
+                    style={inputStyle}
+                  />
+                </div>
+                <div>
+                  {mobile && <label style={labelStyle}>Precio/kg ($)</label>}
+                  <input
+                    type="number" min="0" step="0.0001"
+                    value={item.precio_kg}
+                    onChange={e => actualizarItem(idx, 'precio_kg', e.target.value)}
+                    placeholder="0.0000"
+                    style={{
+                      ...inputStyle,
+                      borderColor: item.precio_kg && parseFloat(item.precio_kg) !== item.precio_anterior
+                        ? '#f39c12' : '#ddd'
+                    }}
+                  />
+                  {item.precio_anterior > 0 &&
+                   item.precio_kg &&
+                   parseFloat(item.precio_kg) !== item.precio_anterior && (
+                    <div style={{ fontSize: '10px', color: '#f39c12', marginTop: 2 }}>
+                      ⚠️ anterior: ${item.precio_anterior.toFixed(4)}
+                    </div>
+                  )}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center' }}>
+                  {mobile && <label style={labelStyle}>Subtotal</label>}
+                  <div style={{
+                    padding: '8px 10px', borderRadius: 8,
+                    background: '#f0f7f0', fontSize: '14px',
+                    fontWeight: 'bold', color: '#27ae60', width: '100%'
+                  }}>
+                    ${(parseFloat(item.subtotal) || 0).toFixed(2)}
+                  </div>
+                </div>
+                {tieneFactura && (
+                  <>
+                    <div>
+                      {mobile && <label style={labelStyle}>Descuento ($)</label>}
+                      <input
+                        type="number" min="0" step="0.01"
+                        value={item.descuento}
+                        onChange={e => actualizarItem(idx, 'descuento', e.target.value)}
+                        placeholder="0.00"
+                        style={inputStyle}
+                      />
+                    </div>
+                    <div>
+                      {mobile && <label style={labelStyle}>IVA</label>}
+                      {renderIva(item, idx)}
+                    </div>
+                  </>
+                )}
+              </>
+            )}
             <div style={{ display: 'flex', alignItems: 'center' }}>
               {items.length > 1 && (
                 <button onClick={() => eliminarItem(idx)} style={{
@@ -802,7 +896,10 @@ export default function TabIngresoCompra({ mobile, currentUser, userRol }) {
           {[
             ['SUBTOTAL',  `$${subtotal.toFixed(2)}`,   '#aed6f1'],
             ...(descuentoN > 0 ? [['DESC.', `-$${descuentoN.toFixed(2)}`, '#f1948a']] : []),
-            ['IVA 15%',   `$${iva.toFixed(2)}`,        tieneFactura ? '#f9e79f' : '#666'],
+            ...(tieneFactura && baseIva15 > 0 ? [['BASE IVA 15%', `$${baseIva15.toFixed(2)}`, '#d5dbdb']] : []),
+            ...(tieneFactura && baseIva0 > 0 ? [['BASE IVA 0%', `$${baseIva0.toFixed(2)}`, '#d5dbdb']] : []),
+            ...(tieneFactura ? Object.entries(otrasBases).map(([pct, monto]) => [`BASE IVA ${pct}%`, `$${monto.toFixed(2)}`, '#d5dbdb']) : []),
+            ['IVA',       `$${iva.toFixed(2)}`,        tieneFactura ? '#f9e79f' : '#666'],
             ['TOTAL',     `$${total.toFixed(2)}`,       '#a9dfbf'],
             ...(tieneRetencion ? [['NETO PAGAR', `$${netoPagar.toFixed(2)}`, '#fff9c4']] : []),
           ].map(([l, v, col]) => (
