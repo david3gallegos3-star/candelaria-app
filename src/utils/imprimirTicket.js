@@ -134,36 +134,54 @@ function generarHtml(cuerpo, paraQzTray = false, repetir = 1) {
   </body></html>`;
 }
 
+export const QZ_PRINTER_KEY = 'qz_printer_name';
+
+// Certificado firmado + firma — permite recordar permisos en QZ Tray
+function configurarSeguridadQz(qz) {
+  qz.security.setCertificatePromise((resolve, reject) => {
+    fetch('/qz-certificate.pem')
+      .then(r => r.text())
+      .then(resolve)
+      .catch(reject);
+  });
+  qz.security.setSignatureAlgorithm('SHA512');
+  qz.security.setSignaturePromise((toSign) => (resolve, reject) => {
+    fetch('/api/qz-sign', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ toSign }),
+    })
+      .then(r => r.json())
+      .then(d => resolve(d.signature))
+      .catch(reject);
+  });
+}
+
+async function conectarQz(qz) {
+  configurarSeguridadQz(qz);
+  if (!qz.websocket.isActive()) {
+    await qz.websocket.connect({ retries: 1, delay: 0.5 });
+  }
+}
+
+// Lista las impresoras disponibles en esta PC (para el selector de impresora)
+export async function listarImpresorasQz() {
+  const qz = window.qz;
+  if (!qz) throw new Error('QZ Tray no está disponible');
+  await conectarQz(qz);
+  return qz.printers.find();
+}
+
 async function imprimirConQzTray(html) {
   const qz = window.qz;
   if (!qz) return false;
 
   try {
-    // Certificado firmado — permite recordar permisos en QZ Tray
-    qz.security.setCertificatePromise((resolve, reject) => {
-      fetch('/qz-certificate.pem')
-        .then(r => r.text())
-        .then(resolve)
-        .catch(reject);
-    });
-    qz.security.setSignatureAlgorithm('SHA512');
-    qz.security.setSignaturePromise((toSign) => (resolve, reject) => {
-      fetch('/api/qz-sign', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ toSign }),
-      })
-        .then(r => r.json())
-        .then(d => resolve(d.signature))
-        .catch(reject);
-    });
+    await conectarQz(qz);
 
-    if (!qz.websocket.isActive()) {
-      await qz.websocket.connect({ retries: 1, delay: 0.5 });
-    }
-
-    const printer = await qz.printers.getDefault();
-    const config  = qz.configs.create(printer, {
+    const guardada = localStorage.getItem(QZ_PRINTER_KEY);
+    const printer  = guardada || await qz.printers.getDefault();
+    const config   = qz.configs.create(printer, {
       size:    { width: 80, height: null },
       units:   'mm',
       margins: { top: 3, right: 4, bottom: 3, left: 4 },
