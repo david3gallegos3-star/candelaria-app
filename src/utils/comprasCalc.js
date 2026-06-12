@@ -5,7 +5,7 @@ export function calcularResumenItems(items) {
   for (const it of items) {
     const subtotal  = parseFloat(it.subtotal ?? it.monto) || 0;
     const descuento = parseFloat(it.descuento) || 0;
-    const ivaPct    = parseFloat(it.iva_pct ?? 15);
+    const ivaPct    = (it.iva_pct === '' || it.iva_pct == null) ? 15 : (parseFloat(it.iva_pct) || 0);
     const base      = Math.max(0, subtotal - descuento);
     const iva       = parseFloat((base * ivaPct / 100).toFixed(2));
 

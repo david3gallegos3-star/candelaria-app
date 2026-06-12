@@ -52,4 +52,12 @@ describe('calcularResumenItems', () => {
     expect(r.total).toBe(0);
     expect(r.otrasBases).toEqual({});
   });
+
+  test('iva_pct vacío (campo limpiado por el usuario) se trata como 15%', () => {
+    const items = [{ subtotal: 40, descuento: 0, iva_pct: '' }];
+    const r = calcularResumenItems(items);
+    expect(r.baseIva15).toBeCloseTo(40);
+    expect(r.ivaTotal).toBeCloseTo(6);
+    expect(Number.isNaN(r.ivaTotal)).toBe(false);
+  });
 });
