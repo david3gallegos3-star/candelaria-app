@@ -85,22 +85,26 @@ export default function FacturasPersonales() {
 
     let facturaId = form.id;
     if (form.id) {
-      await supabase.from('talonario_facturas_personales').update(payload).eq('id', form.id);
-      await supabase.from('talonario_facturas_personales_items').delete().eq('factura_id', form.id);
+      const { error: errUpd } = await supabase.from('talonario_facturas_personales').update(payload).eq('id', form.id);
+      if (errUpd) { setGuardando(false); return alert('Error al guardar: ' + errUpd.message); }
+      const { error: errDel } = await supabase.from('talonario_facturas_personales_items').delete().eq('factura_id', form.id);
+      if (errDel) { setGuardando(false); return alert('Error al guardar: ' + errDel.message); }
     } else {
-      const { data: nueva } = await supabase.from('talonario_facturas_personales').insert(payload).select().single();
+      const { data: nueva, error: errIns } = await supabase.from('talonario_facturas_personales').insert(payload).select().single();
+      if (errIns) { setGuardando(false); return alert('Error al guardar: ' + errIns.message); }
       facturaId = nueva.id;
     }
-    await supabase.from('talonario_facturas_personales_items').insert(
+    const { error: errItems } = await supabase.from('talonario_facturas_personales_items').insert(
       itemsValidos.map((it, i) => ({
         factura_id:  facturaId,
         descripcion: it.descripcion,
         monto:       parseFloat(it.monto) || 0,
         descuento:   parseFloat(it.descuento) || 0,
-        iva_pct:     parseFloat(it.iva_pct ?? 15),
+        iva_pct:     (it.iva_pct === '' || it.iva_pct == null) ? 15 : (parseFloat(it.iva_pct) || 0),
         orden:       i,
       }))
     );
+    if (errItems) { setGuardando(false); return alert('Error al guardar los items: ' + errItems.message); }
     setGuardando(false);
     setForm(null);
     cargar();
