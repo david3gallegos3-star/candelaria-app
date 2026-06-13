@@ -133,7 +133,6 @@ export default function MenuContabilidad({ navegarA, onVolver }) {
       const tablas = [
         'libro_diario_detalle', 'libro_diario',
         'nomina_movimientos', 'nomina',
-        'bank_statements',
         'cobros', 'facturas_detalle', 'cuentas_cobrar', 'perdidas', 'notas_credito', 'facturas',
         'pagos_compras', 'compras_detalle', 'cuentas_pagar', 'compras',
         'caja_gastos', 'caja_entregas', 'caja_chica',

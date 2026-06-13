@@ -13,7 +13,6 @@ import ComprasTalonario      from './compras/ComprasTalonario';
 import FacturasPersonales    from './compras/FacturasPersonales';
 import ExcelExport           from './shared/ExcelExport';
 import ExcelImport           from './shared/ExcelImport';
-import HotmailSync           from './hotmail/HotmailSync';
 import MovimientosBanco      from './banco/MovimientosBanco';
 
 const GRUPOS = [
@@ -34,7 +33,6 @@ const GRUPOS = [
     { id: 'compras_tab',        label: 'Compras' },
     { id: 'facturas_personales',label: 'Facturas Personales' },
   ]},
-  { id: 'hotmail', label: '📧 HOTMAIL', subs: null },
 ];
 
 export default function TabTalonario({ onVolver, onVolverMenu }) {
@@ -147,7 +145,6 @@ export default function TabTalonario({ onVolver, onVolverMenu }) {
         {seccion === 'pagos_personales'     && <PagosPersonales />}
         {seccion === 'compras_tab'          && <ComprasTalonario />}
         {seccion === 'facturas_personales'  && <FacturasPersonales />}
-        {seccion === 'hotmail'              && <HotmailSync />}
       </div>
 
       {showImport && <ExcelImport onClose={() => setShowImport(false)} />}
