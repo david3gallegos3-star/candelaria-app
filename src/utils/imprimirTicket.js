@@ -173,16 +173,18 @@ export async function listarImpresorasQz() {
 }
 
 // repetir = veces que se imprime el set completo (Nota/Factura + COPIA CLIENTE + COPIA EMPRESA)
-function generarTextoQz(cuerpo, repetir = 1) {
+// Cada copia (CLIENTE/EMPRESA) sale como ticket separado, con su propio corte de papel.
+export function generarTextoQz(cuerpo, repetir = 1) {
   const sepCliente = '='.repeat(ANCHO) + '\n' + centrar('COPIA CLIENTE', ANCHO) + '\n' + '='.repeat(ANCHO) + '\n';
   const sepEmpresa = '='.repeat(ANCHO) + '\n' + centrar('COPIA EMPRESA', ANCHO) + '\n' + '='.repeat(ANCHO) + '\n';
+  const CORTE   = '\x1D\x56\x00'; // GS V 0 - corte total de papel
+  const ESPACIO = ' \n'.repeat(2);
 
   let texto = '\x1B\x40'; // ESC @ - inicializar impresora
   for (let i = 0; i < repetir; i++) {
-    texto += cuerpo + sepCliente + cuerpo + sepEmpresa;
+    texto += cuerpo + sepCliente + ESPACIO + CORTE;
+    texto += cuerpo + sepEmpresa + ESPACIO + CORTE;
   }
-  texto += ' \n'.repeat(9);
-  texto += '\x1D\x56\x00'; // GS V 0 - corte total de papel
 
   return [texto];
 }
