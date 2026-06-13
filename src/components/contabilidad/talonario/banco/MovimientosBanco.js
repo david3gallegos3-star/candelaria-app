@@ -374,7 +374,7 @@ export default function MovimientosBanco() {
                   </td>
                 </tr>
               ))}
-              {notaDiferencia && (
+              {!cuadra && notaDiferencia && (
                 <tr style={{ background:'#fff8e1', borderTop:'2px solid #f0e0b0' }}>
                   <td colSpan={2} style={{ padding:'8px 14px', fontSize:12, color:'#996600', fontStyle:'italic' }}>
                     📝 Diferencia {dif>0?'+':''}${dif.toFixed(2)}: {notaDiferencia}
