@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../../supabase';
 import { useTalonario } from './TalonarioContext';
+import { calcularNetoBancoMes, calcularSaldoCalculado, calcularDiferencia } from '../../../utils/saldoBanco';
 
 function suma(arr, campo) {
   return arr.reduce((s, r) => s + parseFloat(r[campo] || 0), 0);
@@ -75,7 +76,8 @@ export default function ResumenTalonario() {
     const ventasBancoTotal  = (facturas||[]).filter(f => ['transferencia','cheque'].includes(f.metodo_pago)).reduce((s,f) => s + parseFloat(f.total||0), 0);
     const comprasBancoTotal = (compras||[]).filter(c => ['transferencia','cheque','deposito'].includes(c.forma_pago)).reduce((s,c) => s + parseFloat(c.total||0), 0);
     const totalEntregasCaja = suma(entregas || [], 'cantidad');
-    const saldoCalculadoBanco = cobroTransf + otrosIngBancoTotal - totalPagosB + ventasBancoTotal + totalEntregasCaja - comprasBancoTotal;
+    const { neto: netoBancoMes } = await calcularNetoBancoMes(año, mes);
+    const { saldoCalculado, pendienteInicial } = await calcularSaldoCalculado(año, mes, netoBancoMes);
 
     // Tabla movimientos banco: entradas y salidas ordenadas por fecha
     const movsBanco = [
@@ -100,7 +102,7 @@ export default function ResumenTalonario() {
     setDatos({ totalVentas, totalOtrosI, totalGastos, comprasCon, comprasSin,
       totalSueldos, totalIess, totalPagosB, totalPagosP,
       cobroEfect, cobroCheq, cobroTransf, pagosPrestTarj, pagosGastPers,
-      cxcPendiente, saldoCalculadoBanco, movsBanco });
+      cxcPendiente, saldoCalculado, pendienteInicial, movsBanco });
     setCargando(false);
   }
 
@@ -111,8 +113,10 @@ export default function ResumenTalonario() {
     totalVentas, totalOtrosI, totalGastos, comprasCon, comprasSin,
     totalSueldos, totalIess, totalPagosB, totalPagosP,
     cobroEfect, cobroCheq, cobroTransf, pagosPrestTarj, pagosGastPers,
-    cxcPendiente, saldoCalculadoBanco, movsBanco,
+    cxcPendiente, saldoCalculado, pendienteInicial, movsBanco,
   } = datos;
+
+  const { dif, cuadra, color: difColor } = calcularDiferencia(saldoBanco, saldoCalculado);
 
   const totalIngMes  = totalVentas + totalOtrosI;
   const totalEgrMes  = totalGastos + comprasCon + comprasSin + totalSueldos + totalIess + totalPagosB + totalPagosP;
@@ -199,11 +203,16 @@ export default function ResumenTalonario() {
           {/* Saldo banco calculado vs real */}
           <div style={{ marginTop:10, background:'#f0f2f5', borderRadius:6, overflow:'hidden', fontSize:12 }}>
             <div style={{ display:'flex', justifyContent:'space-between', padding:'6px 10px', borderBottom:'1px solid #ddd' }}>
-              <span style={{ color:'#555' }}>💳 Saldo banco calculado (mes)</span>
-              <span style={{ fontWeight:'bold', color: saldoCalculadoBanco >= 0 ? '#27ae60' : '#e74c3c' }}>
-                ${parseFloat(saldoCalculadoBanco||0).toFixed(2)}
+              <span style={{ color:'#555' }}>💳 Saldo banco calculado</span>
+              <span style={{ fontWeight:'bold', color: saldoCalculado >= 0 ? '#27ae60' : '#e74c3c' }}>
+                ${parseFloat(saldoCalculado||0).toFixed(2)}
               </span>
             </div>
+            {pendienteInicial && (
+              <div style={{ padding:'4px 10px', fontSize:10, color:'#e67e22', background:'#fdf0e3' }}>
+                ⚠️ Pendiente configurar Asiento Inicial (Libro Diario)
+              </div>
+            )}
             <div style={{ display:'flex', justifyContent:'space-between', padding:'6px 10px', borderBottom:'1px solid #ddd', background:'#1a2a4a' }}>
               <span style={{ color:'#aaa' }}>💳 Saldo banco real</span>
               <span style={{ fontWeight:'bold', color:'white' }}>
@@ -212,12 +221,10 @@ export default function ResumenTalonario() {
             </div>
             {saldoBanco && (
               <div style={{ display:'flex', justifyContent:'space-between', padding:'6px 10px',
-                background: Math.abs(parseFloat(saldoBanco) - saldoCalculadoBanco) < 0.01 ? '#e8f5e9' : '#fde8e8' }}>
+                background: cuadra ? '#e8f5e9' : (dif < 0 ? '#fde8e8' : '#fdf0e3') }}>
                 <span style={{ color:'#555' }}>Diferencia</span>
-                <span style={{ fontWeight:'bold', color: Math.abs(parseFloat(saldoBanco) - saldoCalculadoBanco) < 0.01 ? '#27ae60' : '#e74c3c' }}>
-                  {Math.abs(parseFloat(saldoBanco) - saldoCalculadoBanco) < 0.01
-                    ? '✓ Cuadra'
-                    : `${(parseFloat(saldoBanco) - saldoCalculadoBanco) > 0 ? '+' : ''}$${(parseFloat(saldoBanco) - saldoCalculadoBanco).toFixed(2)}`}
+                <span style={{ fontWeight:'bold', color: difColor }}>
+                  {cuadra ? '✓ Cuadra' : `${dif>0?'+':''}$${dif.toFixed(2)}`}
                 </span>
               </div>
             )}
