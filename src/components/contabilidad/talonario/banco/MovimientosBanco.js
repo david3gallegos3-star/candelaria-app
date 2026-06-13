@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../../../supabase';
 import { useTalonario } from '../TalonarioContext';
+import { calcularSaldoCalculado, calcularDiferencia } from '../../../../utils/saldoBanco';
 
 export default function MovimientosBanco() {
   const { mes, año, fechaDesde, fechaHasta, MESES } = useTalonario();
@@ -12,6 +13,11 @@ export default function MovimientosBanco() {
   const [filtro,        setFiltro]        = useState('');
   const [editandoComision,  setEditandoComision]  = useState(null);
   const [montoComisionEdit, setMontoComisionEdit] = useState('');
+  const [saldoCalculado,   setSaldoCalculado]   = useState(0);
+  const [pendienteInicial, setPendienteInicial] = useState(false);
+  const [notaDiferencia,   setNotaDiferencia]   = useState('');
+  const [editandoNota,     setEditandoNota]     = useState(false);
+  const [notaEdit,         setNotaEdit]         = useState('');
 
   useEffect(() => { cargar(); }, [mes, año]);
 
@@ -59,6 +65,7 @@ export default function MovimientosBanco() {
         .gte('fecha', fechaDesde).lte('fecha', fechaHasta),
     ]);
     setSaldoReal(config?.valor?.saldo || '');
+    setNotaDiferencia(config?.valor?.notaDiferencia || '');
 
     const cajaIds = (cajasMes || []).map(c => c.id);
     const fechaPorCaja = {};
@@ -128,16 +135,31 @@ export default function MovimientosBanco() {
       })),
     ].sort((a, b) => (a.fecha||'').localeCompare(b.fecha||''));
 
+    const totalEntradasMes = lista.filter(m => m.tipo === 'entrada').reduce((s,m) => s + m.monto, 0);
+    const totalSalidasMes  = lista.filter(m => m.tipo === 'salida').reduce((s,m) => s + m.monto, 0);
+    const { saldoCalculado: sc, pendienteInicial: pi } = await calcularSaldoCalculado(año, mes, totalEntradasMes - totalSalidasMes);
+
     setMovs(lista);
+    setSaldoCalculado(sc);
+    setPendienteInicial(pi);
     setCargando(false);
   }
 
   async function guardarSaldo(val) {
     setGuardandoS(true);
     await supabase.from('config_contabilidad')
-      .upsert({ clave: `saldo_banco_${año}_${mes}`, valor: { saldo: val } }, { onConflict: 'clave' });
+      .upsert({ clave: `saldo_banco_${año}_${mes}`, valor: { saldo: val, notaDiferencia } }, { onConflict: 'clave' });
     setGuardandoS(false);
     setEditandoSaldo(false);
+  }
+
+  async function guardarNota(val) {
+    setGuardandoS(true);
+    await supabase.from('config_contabilidad')
+      .upsert({ clave: `saldo_banco_${año}_${mes}`, valor: { saldo: saldoReal, notaDiferencia: val } }, { onConflict: 'clave' });
+    setNotaDiferencia(val);
+    setGuardandoS(false);
+    setEditandoNota(false);
   }
 
   async function guardarComision(cobroId, val) {
@@ -159,9 +181,7 @@ export default function MovimientosBanco() {
 
   if (cargando) return <div style={{ padding:40, textAlign:'center', color:'#888' }}>Cargando...</div>;
 
-  const saldoNum = parseFloat(saldoReal || 0);
-  const dif      = saldoNum - neto;
-  const cuadra   = Math.abs(dif) < 0.01;
+  const { dif, cuadra, color: difColor } = calcularDiferencia(saldoReal, saldoCalculado);
 
   const q        = filtro.toLowerCase();
   const movsFilt = filtro
@@ -226,20 +246,63 @@ export default function MovimientosBanco() {
         </div>
 
         {saldoReal && (
-          <div style={{ display:'flex', gap:12 }}>
-            <div style={{ textAlign:'center', padding:'10px 16px', borderRadius:10,
-              background:'#f0f2f5', border:'1px solid #ddd' }}>
-              <div style={{ fontSize:10, color:'#888', fontWeight:'bold' }}>NETO CALCULADO</div>
-              <div style={{ fontSize:18, fontWeight:'bold', color: neto>=0?'#27ae60':'#e74c3c' }}>${neto.toFixed(2)}</div>
-            </div>
-            <div style={{ textAlign:'center', padding:'10px 16px', borderRadius:10,
-              background: cuadra ? '#e8f5e9' : '#fde8e8',
-              border: `2px solid ${cuadra ? '#27ae60' : '#e74c3c'}` }}>
-              <div style={{ fontSize:10, fontWeight:'bold', color: cuadra?'#27ae60':'#e74c3c' }}>DIFERENCIA</div>
-              <div style={{ fontSize:18, fontWeight:'bold', color: cuadra?'#27ae60':'#e74c3c' }}>
-                {cuadra ? '✓ Cuadra' : `${dif>0?'+':''}$${dif.toFixed(2)}`}
+          <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+            <div style={{ display:'flex', gap:12, flexWrap:'wrap' }}>
+              <div style={{ textAlign:'center', padding:'10px 16px', borderRadius:10,
+                background:'#f0f2f5', border:'1px solid #ddd' }}>
+                <div style={{ fontSize:10, color:'#888', fontWeight:'bold' }}>NETO CALCULADO</div>
+                <div style={{ fontSize:18, fontWeight:'bold', color: neto>=0?'#27ae60':'#e74c3c' }}>${neto.toFixed(2)}</div>
+              </div>
+              <div style={{ textAlign:'center', padding:'10px 16px', borderRadius:10,
+                background:'#f0f2f5', border:'1px solid #ddd' }}>
+                <div style={{ fontSize:10, color:'#888', fontWeight:'bold' }}>SALDO CALCULADO</div>
+                <div style={{ fontSize:18, fontWeight:'bold', color: saldoCalculado>=0?'#27ae60':'#e74c3c' }}>${saldoCalculado.toFixed(2)}</div>
+                {pendienteInicial && (
+                  <div style={{ fontSize:9, color:'#e67e22', marginTop:4, maxWidth:140 }}>
+                    ⚠️ Pendiente configurar Asiento Inicial
+                  </div>
+                )}
+              </div>
+              <div style={{ textAlign:'center', padding:'10px 16px', borderRadius:10,
+                background: cuadra ? '#e8f5e9' : (dif < 0 ? '#fde8e8' : '#fdf0e3'),
+                border: `2px solid ${difColor}` }}>
+                <div style={{ fontSize:10, fontWeight:'bold', color: difColor }}>DIFERENCIA</div>
+                <div style={{ fontSize:18, fontWeight:'bold', color: difColor }}>
+                  {cuadra ? '✓ Cuadra' : `${dif>0?'+':''}$${dif.toFixed(2)}`}
+                </div>
               </div>
             </div>
+
+            {!cuadra && (
+              editandoNota ? (
+                <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
+                  <input type="text" value={notaEdit} onChange={e => setNotaEdit(e.target.value)}
+                    placeholder="¿Por qué existe esta diferencia?" autoFocus
+                    style={{ flex:1, minWidth:240, fontSize:13, padding:'7px 10px', borderRadius:8,
+                      border:'1.5px solid #2980b9', outline:'none' }} />
+                  <button onClick={() => guardarNota(notaEdit)} disabled={guardandoS}
+                    style={{ background:'#27ae60', color:'white', border:'none', borderRadius:8,
+                      padding:'7px 14px', cursor:'pointer', fontWeight:'bold', fontSize:12 }}>
+                    {guardandoS ? '...' : '✓ Guardar'}
+                  </button>
+                  <button onClick={() => setEditandoNota(false)}
+                    style={{ background:'#f0f2f5', color:'#555', border:'none', borderRadius:8,
+                      padding:'7px 12px', cursor:'pointer', fontSize:12 }}>
+                    Cancelar
+                  </button>
+                </div>
+              ) : (
+                <div style={{ display:'flex', gap:8, alignItems:'center', fontSize:12 }}>
+                  <span style={{ color:'#888' }}>
+                    {notaDiferencia ? `📝 ${notaDiferencia}` : 'Sin explicación para esta diferencia.'}
+                  </span>
+                  <button onClick={() => { setNotaEdit(notaDiferencia); setEditandoNota(true); }}
+                    style={{ background:'none', border:'none', cursor:'pointer', fontSize:11, color:'#2980b9' }}>
+                    ✏️ {notaDiferencia ? 'Editar' : 'Explicar'}
+                  </button>
+                </div>
+              )
+            )}
           </div>
         )}
       </div>
@@ -311,6 +374,15 @@ export default function MovimientosBanco() {
                   </td>
                 </tr>
               ))}
+              {notaDiferencia && (
+                <tr style={{ background:'#fff8e1', borderTop:'2px solid #f0e0b0' }}>
+                  <td colSpan={2} style={{ padding:'8px 14px', fontSize:12, color:'#996600', fontStyle:'italic' }}>
+                    📝 Diferencia {dif>0?'+':''}${dif.toFixed(2)}: {notaDiferencia}
+                  </td>
+                  <td></td>
+                  <td></td>
+                </tr>
+              )}
             </tbody>
             <tfoot>
               <tr style={{ background:'#1a2a4a', color:'white', fontWeight:'bold' }}>
