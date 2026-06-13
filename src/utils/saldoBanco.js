@@ -96,7 +96,7 @@ export async function calcularSaldoCalculado(año, mes, netoMes) {
   }
 
   if (caso === 'inicial') {
-    return { saldoCalculado: asientoInicial.banco + netoMes, pendienteInicial: false };
+    return { saldoCalculado: parseFloat(asientoInicial.banco || 0) + netoMes, pendienteInicial: false };
   }
 
   // caso === 'rebase': base = saldo real del mes anterior, o saldo calculado del mes anterior
