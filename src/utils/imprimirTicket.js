@@ -108,7 +108,7 @@ function cuerpoTicket(f, detalle) {
 }
 
 // repetir = veces que se imprime el set completo (Nota/Factura + COPIA CLIENTE + COPIA EMPRESA)
-function generarHtml(cuerpo, paraQzTray = false, repetir = 1) {
+function generarHtml(cuerpo, repetir = 1) {
   const sepCliente = '='.repeat(ANCHO) + '\n' + centrar('COPIA CLIENTE', ANCHO) + '\n' + '='.repeat(ANCHO);
   const sepEmpresa = '='.repeat(ANCHO) + '\n' + centrar('COPIA EMPRESA', ANCHO) + '\n' + '='.repeat(ANCHO);
 
@@ -130,7 +130,7 @@ function generarHtml(cuerpo, paraQzTray = false, repetir = 1) {
   </head><body>
     ${copias}
     <pre>${' \n'.repeat(9)}</pre>
-    ${paraQzTray ? '' : '<script>setTimeout(function(){ window.print(); }, 400);<\/script>'}
+    <script>setTimeout(function(){ window.print(); }, 400);<\/script>
   </body></html>`;
 }
 
@@ -172,7 +172,22 @@ export async function listarImpresorasQz() {
   return qz.printers.find();
 }
 
-async function imprimirConQzTray(html) {
+// repetir = veces que se imprime el set completo (Nota/Factura + COPIA CLIENTE + COPIA EMPRESA)
+function generarTextoQz(cuerpo, repetir = 1) {
+  const sepCliente = '='.repeat(ANCHO) + '\n' + centrar('COPIA CLIENTE', ANCHO) + '\n' + '='.repeat(ANCHO) + '\n';
+  const sepEmpresa = '='.repeat(ANCHO) + '\n' + centrar('COPIA EMPRESA', ANCHO) + '\n' + '='.repeat(ANCHO) + '\n';
+
+  let texto = '\x1B\x40'; // ESC @ - inicializar impresora
+  for (let i = 0; i < repetir; i++) {
+    texto += cuerpo + sepCliente + cuerpo + sepEmpresa;
+  }
+  texto += ' \n'.repeat(9);
+  texto += '\x1D\x56\x00'; // GS V 0 - corte total de papel
+
+  return [texto];
+}
+
+async function imprimirConQzTray(cuerpo, repetir) {
   const qz = window.qz;
   if (!qz) return false;
 
@@ -181,14 +196,9 @@ async function imprimirConQzTray(html) {
 
     const guardada = localStorage.getItem(QZ_PRINTER_KEY);
     const printer  = guardada || await qz.printers.getDefault();
-    const config   = qz.configs.create(printer, {
-      size:    { width: 80, height: null },
-      units:   'mm',
-      margins: { top: 3, right: 4, bottom: 3, left: 4 },
-      copies:  1, // El HTML ya incluye las 2 copias
-    });
+    const config   = qz.configs.create(printer);
 
-    await qz.print(config, [{ type: 'pixel', format: 'html', flavor: 'plain', data: html }]);
+    await qz.print(config, generarTextoQz(cuerpo, repetir));
     return true;
   } catch (e) {
     console.warn('QZ Tray no disponible, usando ventana del navegador:', e.message);
@@ -201,12 +211,11 @@ export async function imprimirTicket(factura, detalle, opciones = {}) {
   const repetir = opciones.copiaExtra ? 2 : 1;
 
   // Intentar QZ Tray primero (impresión directa sin diálogo)
-  const htmlQz = generarHtml(cuerpo, true, repetir);
-  const usóQz  = await imprimirConQzTray(htmlQz);
+  const usóQz = await imprimirConQzTray(cuerpo, repetir);
 
   // Fallback: ventana del navegador con window.print()
   if (!usóQz) {
-    const html = generarHtml(cuerpo, false, repetir);
+    const html = generarHtml(cuerpo, repetir);
     const win  = window.open('', '_blank', 'width=380,height=600,left=200,top=100');
     if (!win) { alert('Permite ventanas emergentes para imprimir el ticket'); return; }
     win.document.write(html);
