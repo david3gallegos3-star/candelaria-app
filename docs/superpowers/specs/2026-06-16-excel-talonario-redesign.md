@@ -98,7 +98,7 @@ Fila 24: (-) CUENTAS POR PAGAR             $0,00  (dato no disponible aún)
 
 > Nota: `caja_gastos` tiene campo `detalle` pero no `proveedor` como columna separada. La columna PROVEEDOR en el Excel de referencia parece ser un identificador del proveedor que en el sistema actual está mezclado en `detalle`. Por ahora, PROVEEDOR = primera parte del detalle antes de la primera coma/descripción, o vacío. Revisar con David si se necesita campo separado.
 
-**Acción concreta:** caja_gastos query agregar `proveedores(nombre)` si tiene proveedor_id, si no usar vacío para PROVEEDOR y `detalle` para DETALLE.
+**Acción concreta:** actualizar query de `caja_gastos` a `select('valor,detalle,proveedor,caja_id')`. PROVEEDOR = `caja_gastos.proveedor`, DETALLE = `caja_gastos.detalle`.
 
 ---
 
@@ -240,6 +240,7 @@ Anchos de columna: ajustados para que el contenido no quede truncado (A=25, B=15
 Promise.all([
   cobros: select('fecha,monto,forma_pago,observaciones,clientes(nombre),cuentas_cobrar(monto_total),facturas(numero)')
   cajas: sin cambio
+  gastos: select('valor,detalle,proveedor,caja_id')  ← agregar proveedor
   compras: select('fecha,total,tiene_factura,numero_factura,proveedor_nombre,forma_pago,proveedores(ruc)')
   pagosB: sin cambio
   pagosP: sin cambio
