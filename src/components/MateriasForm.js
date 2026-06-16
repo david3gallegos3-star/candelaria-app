@@ -6,7 +6,14 @@
 
 import React from 'react';
 
-function MateriasForm({ data, setData, categoriasMp, generarSiguienteId, esEdicion = false }) {
+function MateriasForm({ data, setData, categoriasMp, generarSiguienteId, esEdicion = false, materias = [] }) {
+  const precioKg = parseFloat(data.precio_kg);
+  const similares = precioKg > 0
+    ? materias.filter(m => {
+        if (esEdicion && m.id === data.id) return false;
+        return Math.abs(parseFloat(m.precio_kg || 0) - precioKg) < 0.001;
+      })
+    : [];
   return (
     <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px' }}>
 
@@ -127,6 +134,36 @@ function MateriasForm({ data, setData, categoriasMp, generarSiguienteId, esEdici
           }}
         />
       </div>
+
+      {/* AVISO PRECIO DUPLICADO */}
+      {similares.length > 0 && (
+        <div style={{
+          gridColumn: '1/-1',
+          background: '#fde8e8', border: '1.5px solid #e74c3c',
+          borderRadius: 8, padding: '10px 14px',
+        }}>
+          <div style={{ fontWeight: 'bold', color: '#c0392b', fontSize: 13, marginBottom: 6 }}>
+            ⚠️ Hay {similares.length} producto{similares.length > 1 ? 's' : ''} con este mismo precio (${precioKg.toFixed(4)}/KG).
+            ¿No es alguno el que buscas? Podrías estar duplicando una materia prima.
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {similares.map(m => (
+              <div key={m.id} style={{
+                display: 'flex', gap: 10, alignItems: 'center',
+                background: '#fff0f0', borderRadius: 5, padding: '5px 10px',
+                border: '1px solid #f5b7b1', fontSize: 12,
+              }}>
+                <span style={{ fontWeight: 'bold', color: '#922b21', minWidth: 45 }}>{m.id}</span>
+                <span style={{ color: '#333', flex: 1 }}>{m.nombre}</span>
+                {m.proveedor && <span style={{ color: '#777' }}>{m.proveedor}</span>}
+                <span style={{ fontWeight: 'bold', color: '#c0392b', minWidth: 80, textAlign: 'right' }}>
+                  ${parseFloat(m.precio_kg).toFixed(4)}/KG
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* PRECIO LB — automático */}
       <div style={{ display:'flex', flexDirection:'column', gap:'4px' }}>

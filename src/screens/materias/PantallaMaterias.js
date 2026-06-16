@@ -430,6 +430,7 @@ function PantallaMaterias({
         guardarEdicionMP={guardarEdicionMP}
         categoriasMp={categoriasMp}
         generarSiguienteId={generarSiguienteId}
+        materias={materias}
       />
 
       {/* Modal categorías */}

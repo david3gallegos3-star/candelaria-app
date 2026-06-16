@@ -16,7 +16,8 @@ function MateriasModalAgregar({
   guardarEdicionMP,
   // Compartido
   categoriasMp,
-  generarSiguienteId
+  generarSiguienteId,
+  materias,
 }) {
   return (
     <>
@@ -52,6 +53,7 @@ function MateriasModalAgregar({
               setData={setForm}
               categoriasMp={categoriasMp}
               generarSiguienteId={generarSiguienteId}
+              materias={materias}
             />
 
             {/* Botones */}
@@ -107,6 +109,7 @@ function MateriasModalAgregar({
               categoriasMp={categoriasMp}
               generarSiguienteId={generarSiguienteId}
               esEdicion={true}
+              materias={materias}
             />
 
             {/* Botones */}
