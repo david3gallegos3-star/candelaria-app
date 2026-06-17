@@ -51,8 +51,8 @@ export default function MovimientosBanco() {
         .eq('mes', mes).eq('año', año)
         .eq('forma_pago', '20').order('fecha'),
       supabase.from('facturas')
-        .select('id,numero,total,cliente_nombre,forma_pago,created_at')
-        .in('forma_pago', ['transferencia','cheque'])
+        .select('id,numero,total,cliente_nombre,metodo_pago,created_at')
+        .in('metodo_pago', ['transferencia','cheque'])
         .neq('estado', 'anulada')
         .gte('created_at', fechaDesde + 'T00:00:00').lte('created_at', fechaHasta + 'T23:59:59')
         .order('created_at'),
@@ -117,7 +117,7 @@ export default function MovimientosBanco() {
       })),
       ...(ventasBanco||[]).map(f => ({
         fecha: (f.created_at || '').split('T')[0],
-        descripcion: `Venta ${f.forma_pago} — ${f.numero} — ${f.cliente_nombre || ''}`,
+        descripcion: `Venta ${f.metodo_pago} — ${f.numero} — ${f.cliente_nombre || ''}`,
         tipo: 'entrada',
         monto: parseFloat(f.total||0),
       })),
