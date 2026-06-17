@@ -31,7 +31,7 @@ export default function ResumenTalonario() {
       { data: cxc },
       { data: config },
     ] = await Promise.all([
-      supabase.from('facturas').select('total,metodo_pago').gte('created_at', fechaDesde + 'T00:00:00').lte('created_at', fechaHasta + 'T23:59:59').neq('estado', 'anulada'),
+      supabase.from('facturas').select('total,forma_pago').gte('created_at', fechaDesde + 'T00:00:00').lte('created_at', fechaHasta + 'T23:59:59').neq('estado', 'anulada'),
       supabase.from('cobros').select('id,fecha,monto,forma_pago,observaciones,clientes(nombre),facturas(numero)').gte('fecha', fechaDesde).lte('fecha', fechaHasta),
       supabase.from('caja_chica').select('id').gte('fecha', fechaDesde).lte('fecha', fechaHasta),
       supabase.from('compras').select('total,tiene_factura,forma_pago').gte('fecha', fechaDesde).lte('fecha', fechaHasta),
@@ -73,7 +73,7 @@ export default function ResumenTalonario() {
     const cobrosTransfDet = (cobros||[]).filter(c => ['transferencia','deposito'].includes(c.forma_pago));
     const otrosIngBancoDet = (otrosI||[]).filter(o => o.forma_pago !== '01');
     const otrosIngBancoTotal = otrosIngBancoDet.reduce((s,o) => s + parseFloat(o.monto||0), 0);
-    const ventasBancoTotal  = (facturas||[]).filter(f => ['transferencia','cheque'].includes(f.metodo_pago)).reduce((s,f) => s + parseFloat(f.total||0), 0);
+    const ventasBancoTotal  = (facturas||[]).filter(f => ['transferencia','cheque'].includes(f.forma_pago)).reduce((s,f) => s + parseFloat(f.total||0), 0);
     const comprasBancoTotal = (compras||[]).filter(c => ['transferencia','cheque','deposito'].includes(c.forma_pago)).reduce((s,c) => s + parseFloat(c.total||0), 0);
     const totalEntregasCaja = suma(entregas || [], 'cantidad');
     const { neto: netoBancoMes } = await calcularNetoBancoMes(año, mes);
