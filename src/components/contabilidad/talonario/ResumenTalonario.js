@@ -199,6 +199,7 @@ export default function ResumenTalonario() {
 
           {titulo('ACTIVOS', '#555')}
           {fila('(+) Cuentas por cobrar', cxcPendiente, '#27ae60')}
+          {fila('(-) Cuentas por pagar', 0, '#e74c3c')}
 
           {/* Saldo banco calculado vs real */}
           <div style={{ marginTop:10, background:'#f0f2f5', borderRadius:6, overflow:'hidden', fontSize:12 }}>
@@ -216,18 +217,16 @@ export default function ResumenTalonario() {
             <div style={{ display:'flex', justifyContent:'space-between', padding:'6px 10px', borderBottom:'1px solid #ddd', background:'#1a2a4a' }}>
               <span style={{ color:'#aaa' }}>💳 Saldo banco real</span>
               <span style={{ fontWeight:'bold', color:'white' }}>
-                {saldoBanco ? `$${parseFloat(saldoBanco).toFixed(2)}` : '—'}
+                ${saldoBanco ? parseFloat(saldoBanco).toFixed(2) : '0.00'}
               </span>
             </div>
-            {saldoBanco && (
-              <div style={{ display:'flex', justifyContent:'space-between', padding:'6px 10px',
-                background: cuadra ? '#e8f5e9' : (dif < 0 ? '#fde8e8' : '#fdf0e3') }}>
-                <span style={{ color:'#555' }}>Diferencia</span>
-                <span style={{ fontWeight:'bold', color: difColor }}>
-                  {cuadra ? '✓ Cuadra' : `${dif>0?'+':''}$${dif.toFixed(2)}`}
-                </span>
-              </div>
-            )}
+            <div style={{ display:'flex', justifyContent:'space-between', padding:'6px 10px',
+              background: !saldoBanco ? '#f0f2f5' : cuadra ? '#e8f5e9' : (dif < 0 ? '#fde8e8' : '#fdf0e3') }}>
+              <span style={{ color:'#555' }}>Diferencia</span>
+              <span style={{ fontWeight:'bold', color: !saldoBanco ? '#27ae60' : difColor }}>
+                {!saldoBanco ? '$0.00' : cuadra ? '✓ Cuadra' : `${dif>0?'+':''}$${dif.toFixed(2)}`}
+              </span>
+            </div>
           </div>
         </div>
       </div>
