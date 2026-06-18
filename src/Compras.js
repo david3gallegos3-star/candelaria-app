@@ -8,6 +8,7 @@ import ComprasHeader         from './components/compras/ComprasHeader';
 import TabIngresoCompra      from './components/compras/TabIngresoCompra';
 import TabProveedores        from './components/compras/TabProveedores';
 import TabPagosUnificado     from './components/compras/TabPagosUnificado';
+import TabPersonalesCompras  from './components/compras/TabPersonalesCompras';
 import SubirFacturas         from './components/compras/SubirFacturas';
 
 const FORMA_LABEL = {
@@ -149,12 +150,21 @@ function ModalPersonales({ onClose, onNueva }) {
   );
 }
 
-function Compras({ onVolver, onVolverMenu, userRol, currentUser }) {
+function Compras({ onVolver, onVolverMenu, userRol, currentUser, navState, onClearNavState }) {
   const [tabActiva,       setTabActiva]       = useState('nueva');
+  const [editCompraId,    setEditCompraId]    = useState(null);
   const [mobile,          setMobile]          = useState(window.innerWidth < 768);
   const [showSubir,       setShowSubir]       = useState(false);
   const [subirPersonal,   setSubirPersonal]   = useState(false);
   const [showPersonales,  setShowPersonales]  = useState(false);
+
+  useEffect(() => {
+    if (!navState) return;
+    if (navState.tab === 'personales') {
+      setTabActiva('personales');
+      setEditCompraId(navState.editId || null);
+    }
+  }, [navState]);
 
   useEffect(() => {
     const fn = () => setMobile(window.innerWidth < 768);
@@ -186,6 +196,13 @@ function Compras({ onVolver, onVolverMenu, userRol, currentUser }) {
         {tabActiva === 'nueva'       && <TabIngresoCompra mobile={mobile} currentUser={currentUser} />}
         {tabActiva === 'proveedores' && <TabProveedores   mobile={mobile} />}
         {tabActiva === 'pagos'       && <TabPagosUnificado mobile={mobile} />}
+        {tabActiva === 'personales'  && (
+          <TabPersonalesCompras
+            mobile={mobile}
+            editCompraId={editCompraId}
+            onClearEdit={() => { setEditCompraId(null); onClearNavState?.(); }}
+          />
+        )}
       </div>
 
       {showSubir && (

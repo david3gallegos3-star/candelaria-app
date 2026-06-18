@@ -8,6 +8,7 @@ const TABS = [
   { key: 'nueva',       emoji: '📦', label: 'Nueva compra'   },
   { key: 'proveedores', emoji: '🏢', label: 'Proveedores'    },
   { key: 'pagos',       emoji: '💳', label: 'Pagos'          },
+  { key: 'personales',  emoji: '👤', label: 'Personales'     },
 ];
 
 export default function ComprasHeader({

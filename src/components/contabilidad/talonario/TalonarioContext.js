@@ -6,7 +6,7 @@ const TalonarioContext = createContext(null);
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
                'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 
-export function TalonarioProvider({ userRol, children }) {
+export function TalonarioProvider({ userRol, onEditarCompraPersonal, children }) {
   const hoy = new Date();
   const [mes, setMes]   = useState(hoy.getMonth() + 1);  // 1-12
   const [año, setAño]   = useState(hoy.getFullYear());
@@ -26,6 +26,7 @@ export function TalonarioProvider({ userRol, children }) {
       fechaDesde,
       fechaHasta,
       MESES,
+      onEditarCompraPersonal: onEditarCompraPersonal || (() => {}),
     }}>
       {children}
     </TalonarioContext.Provider>

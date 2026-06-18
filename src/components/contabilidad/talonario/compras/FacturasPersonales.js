@@ -10,7 +10,7 @@ const VACIO = { fecha: '', proveedor: '', descripcion: '', items: [itemVacio()],
   tiene_factura: true, forma_pago: '20', comentario: '', numero_transferencia: '' };
 
 export default function FacturasPersonales() {
-  const { mes, año, esAdminContador } = useTalonario();
+  const { mes, año, esAdminContador, onEditarCompraPersonal } = useTalonario();
   const [filas,     setFilas]     = useState([]);
   const [cargando,  setCargando]  = useState(false);
   const [form,      setForm]      = useState(null);
@@ -140,7 +140,13 @@ export default function FacturasPersonales() {
         cargando={cargando}
         esAdminContador={esAdminContador}
         onAgregar={() => setForm({ ...VACIO, items: [itemVacio()] })}
-        onEditar={f => setForm({ ...f })}
+        onEditar={f => {
+          if (String(f.id).startsWith('compra_')) {
+            onEditarCompraPersonal(f.id.replace('compra_', ''));
+          } else {
+            setForm({ ...f });
+          }
+        }}
         onEliminar={eliminar}
       />
 

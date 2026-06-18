@@ -72,6 +72,7 @@ function App() {
   const [productoActivo,  setProductoActivo]  = useState(null);
   const [formulaContexto,     setFormulaContexto]     = useState(null);
   const [formulaIngredientes, setFormulaIngredientes] = useState(null);
+  const [comprasNavState,     setComprasNavState]     = useState(null);
 
   function navegarA(destino) {
     setHistorialNav(prev => [...prev, pantalla]);
@@ -1101,6 +1102,8 @@ if (pantalla === 'compras')
     onVolverMenu={() => setPantalla('menuPrincipal')}
     userRol={userRol}
     currentUser={user}
+    navState={comprasNavState}
+    onClearNavState={() => setComprasNavState(null)}
   />;
 
 if (pantalla === 'conciliacion')
@@ -1122,6 +1125,10 @@ if (pantalla === 'talonario')
     onVolver={volverAtras}
     onVolverMenu={() => setPantalla('menuPrincipal')}
     userRol={userRol}
+    onEditarCompraPersonal={(compraId) => {
+      setComprasNavState({ tab: 'personales', editId: compraId });
+      navegarA('compras');
+    }}
   />;
 
 if (pantalla === 'trazabilidad')
