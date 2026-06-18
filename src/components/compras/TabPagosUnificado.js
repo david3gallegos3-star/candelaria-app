@@ -6,6 +6,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import * as XLSX from 'xlsx';
 import { supabase } from '../../supabase';
 import { useRealtime } from '../../hooks/useRealtime';
+import { generarAsientoPagoProveedor } from '../../utils/asientosContables';
 
 const FORMA_SRI  = { efectivo: '01', transferencia: '20', cheque: '20', credito: '19', tarjeta: '19' };
 const FORMA_EMOJI = { transferencia: '🏦', efectivo: '💵', cheque: '📝', tarjeta: '💳', credito: '📅' };
@@ -65,12 +66,13 @@ export default function TabPagosUnificado({ mobile }) {
   const [busqueda,     setBusqueda]     = useState('');
 
   // Modal registrar pago
-  const [modalPago,   setModalPago]    = useState(null);
-  const [montoPago,   setMontoPago]    = useState('');
-  const [formaPago,   setFormaPago]    = useState('transferencia');
-  const [notaPago,    setNotaPago]     = useState('');
-  const [guardando,   setGuardando]    = useState(false);
-  const [error,       setError]        = useState('');
+  const [modalPago,     setModalPago]     = useState(null);
+  const [montoPago,     setMontoPago]     = useState('');
+  const [formaPago,     setFormaPago]     = useState('transferencia');
+  const [notaPago,      setNotaPago]      = useState('');
+  const [comisionPago,  setComisionPago]  = useState('');
+  const [guardando,     setGuardando]     = useState(false);
+  const [error,         setError]         = useState('');
 
   // Modal editar cuenta
   const [modalEditar,    setModalEditar]    = useState(null);
@@ -263,6 +265,7 @@ export default function TabPagosUnificado({ mobile }) {
     setMontoPago(parseFloat(cuenta.saldo_pendiente || 0).toFixed(2));
     setFormaPago('transferencia');
     setNotaPago('');
+    setComisionPago('');
     setError('');
   }
 
@@ -282,16 +285,25 @@ export default function TabPagosUnificado({ mobile }) {
     }).eq('id', modalPago.id);
     if (e1) { setError(e1.message); setGuardando(false); return; }
 
-    const { error: e2 } = await supabase.from('pagos_compras').insert({
+    const { data: pagoData, error: e2 } = await supabase.from('pagos_compras').insert({
       cuenta_pagar_id: modalPago.id,
       compra_id:       modalPago.compra_id,
       proveedor_id:    modalPago.proveedor_id,
       monto,
       forma_pago:  formaPago,
       fecha_pago:  ahora.slice(0, 10),
-      notas:       notaPago.trim() || null
-    });
+      notas:       notaPago.trim() || null,
+      comision:    parseFloat(comisionPago) || 0,
+    }).select('id,monto,forma_pago,fecha_pago,comision').single();
     if (e2) { setError(e2.message); setGuardando(false); return; }
+
+    if (pagoData && ['transferencia','cheque','deposito'].includes(formaPago)) {
+      generarAsientoPagoProveedor({
+        ...pagoData,
+        proveedor_nombre: modalPago.proveedores?.nombre || '',
+        numero_factura:   modalPago.compras?.numero_factura || null,
+      }).catch(e => console.error('Asiento pago proveedor:', e));
+    }
 
     await cargar();
     setModalPago(null);
@@ -652,20 +664,27 @@ export default function TabPagosUnificado({ mobile }) {
                         PAGOS REALIZADOS:
                       </div>
                       {pagosCuenta.map(p => (
-                        <div key={p.id} style={{
-                          display: 'flex', alignItems: 'center', gap: '10px',
-                          fontSize: '12px', color: '#555', marginBottom: '3px'
-                        }}>
-                          <span style={{ color: '#27ae60', fontWeight: 'bold' }}>
-                            ${(p.monto || 0).toFixed(2)}
-                          </span>
-                          <span>{FORMA_EMOJI[p.forma_pago] || '💰'} {p.forma_pago}</span>
-                          <span>📅 {p.fecha_pago}</span>
-                          {p.notas && <span style={{ fontStyle: 'italic', color: '#888' }}>📝 {p.notas}</span>}
-                          <button onClick={() => abrirEditarPago(p)} style={{
-                            background: 'none', border: 'none', cursor: 'pointer',
-                            fontSize: '11px', color: '#2980b9', padding: '0', textDecoration: 'underline'
-                          }}>✏️ editar</button>
+                        <div key={p.id} style={{ marginBottom: '4px' }}>
+                          <div style={{
+                            display: 'flex', alignItems: 'center', gap: '10px',
+                            fontSize: '12px', color: '#555'
+                          }}>
+                            <span style={{ color: '#27ae60', fontWeight: 'bold' }}>
+                              ${(p.monto || 0).toFixed(2)}
+                            </span>
+                            <span>{FORMA_EMOJI[p.forma_pago] || '💰'} {p.forma_pago}</span>
+                            <span>📅 {p.fecha_pago}</span>
+                            {p.notas && <span style={{ fontStyle: 'italic', color: '#888' }}>📝 {p.notas}</span>}
+                            <button onClick={() => abrirEditarPago(p)} style={{
+                              background: 'none', border: 'none', cursor: 'pointer',
+                              fontSize: '11px', color: '#2980b9', padding: '0', textDecoration: 'underline'
+                            }}>✏️ editar</button>
+                          </div>
+                          {parseFloat(p.comision || 0) > 0 && (
+                            <div style={{ fontSize: '11px', color: '#e74c3c', paddingLeft: '8px' }}>
+                              └ Comisión banco: ${parseFloat(p.comision).toFixed(2)}
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -722,11 +741,22 @@ export default function TabPagosUnificado({ mobile }) {
                 <option value="tarjeta">Tarjeta</option>
               </select>
             </div>
-            <div style={{ marginBottom: '20px' }}>
+            <div style={{ marginBottom: '14px' }}>
               <label style={{ display: 'block', fontSize: '12px', color: '#555', marginBottom: '4px', fontWeight: '600' }}>Nota (opcional)</label>
               <input value={notaPago} onChange={e => setNotaPago(e.target.value)}
                 style={inputFull} placeholder="Ej. Transferencia Banco Pichincha" />
             </div>
+
+            {['transferencia', 'cheque', 'deposito'].includes(formaPago) && (
+              <div style={{ marginBottom: '20px' }}>
+                <label style={{ fontSize: '12px', color: '#555', fontWeight: '600', marginBottom: '4px', display: 'block' }}>
+                  Comisión bancaria (opcional)
+                </label>
+                <input type="number" min="0" step="0.01" value={comisionPago}
+                  onChange={e => setComisionPago(e.target.value)}
+                  style={inputFull} placeholder="$0.00 — dejar vacío si no hay comisión" />
+              </div>
+            )}
 
             {error && (
               <div style={{

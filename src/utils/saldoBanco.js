@@ -52,7 +52,7 @@ export async function calcularNetoBancoMes(año, mes) {
       .eq('forma_pago', '20'),
     supabase.from('facturas')
       .select('total,forma_pago')
-      .in('forma_pago', ['transferencia','cheque'])
+      .in('forma_pago', ['transferencia','cheque','tarjeta_credito'])
       .neq('estado', 'anulada')
       .gte('created_at', fechaDesde + 'T00:00:00').lte('created_at', fechaHasta + 'T23:59:59'),
     supabase.from('compras')

@@ -89,7 +89,8 @@ export async function generarAsientoCompra(compra) {
   if (errCfg) return { data: null, error: errCfg };
 
   const fecha = new Date().toISOString().split('T')[0];
-  const descripcionCab = `Compra MP - ${compra.proveedor_nombre}`;
+  const numFact = compra.numero_factura ? `${compra.numero_factura} — ` : '';
+  const descripcionCab = `Compra MP - ${numFact}${compra.proveedor_nombre}`;
   const cuentaHaber = compra.forma_pago === 'credito'
     ? cuentas.cxp_id
     : compra.forma_pago === 'efectivo'
@@ -97,18 +98,18 @@ export async function generarAsientoCompra(compra) {
       : cuentas.banco_id;
 
   const labelPago = compra.forma_pago === 'efectivo' ? 'Caja Chica'
-    : compra.forma_pago === 'credito' ? 'Proveedores (crédito)'
+    : compra.forma_pago === 'credito' ? 'CxP Proveedores'
     : 'Banco';
 
   const lineas = [
-    { cuenta_id: cuentas.inventario_mp_id, descripcion: `Inventario MP — ${compra.proveedor_nombre}`, debe: compra.subtotal, haber: 0, orden: 0 },
+    { cuenta_id: cuentas.inventario_mp_id, descripcion: `Inventario MP — ${numFact}${compra.proveedor_nombre}`, debe: compra.subtotal, haber: 0, orden: 0 },
   ];
 
   if (compra.iva > 0) {
-    lineas.push({ cuenta_id: cuentas.iva_compras_id, descripcion: `IVA Compras — ${compra.proveedor_nombre}`, debe: compra.iva, haber: 0, orden: 1 });
+    lineas.push({ cuenta_id: cuentas.iva_compras_id, descripcion: `IVA Compras — ${numFact}${compra.proveedor_nombre}`, debe: compra.iva, haber: 0, orden: 1 });
   }
 
-  lineas.push({ cuenta_id: cuentaHaber, descripcion: `${labelPago} — ${compra.proveedor_nombre}`, debe: 0, haber: compra.total, orden: lineas.length });
+  lineas.push({ cuenta_id: cuentaHaber, descripcion: `${labelPago} — ${numFact}${compra.proveedor_nombre}`, debe: 0, haber: compra.total, orden: lineas.length });
 
   return insertarAsiento({
     fecha,
@@ -116,6 +117,35 @@ export async function generarAsientoCompra(compra) {
     tipo: 'tributario',
     origen: 'compras',
     origen_id: compra.id,
+    lineas,
+  });
+}
+
+export async function generarAsientoPagoProveedor(pago) {
+  const { cuentas, error: errCfg } = await getCuentasModulos();
+  if (errCfg) return { data: null, error: errCfg };
+
+  const numFact = pago.numero_factura ? `${pago.numero_factura} — ` : '';
+  const descripcionCab = `Pago proveedor - ${numFact}${pago.proveedor_nombre}`;
+  const comision = parseFloat(pago.comision || 0);
+  const totalBanco = pago.monto + comision;
+  const cuentaGasto = cuentas.gasto_caja_id;
+
+  const lineas = [
+    { cuenta_id: cuentas.cxp_id,  descripcion: `CxP Proveedores — ${numFact}${pago.proveedor_nombre}`, debe: pago.monto, haber: 0,           orden: 0 },
+    { cuenta_id: cuentas.banco_id, descripcion: `Banco — ${numFact}${pago.proveedor_nombre}`,           debe: 0,         haber: totalBanco,   orden: 1 },
+  ];
+
+  if (comision > 0) {
+    lineas.push({ cuenta_id: cuentaGasto, descripcion: `Gasto comisión banco — ${pago.proveedor_nombre}`, debe: comision, haber: 0, orden: 2 });
+  }
+
+  return insertarAsiento({
+    fecha:       pago.fecha_pago,
+    descripcion: descripcionCab,
+    tipo:        'tributario',
+    origen:      'pagos_compras',
+    origen_id:   pago.id,
     lineas,
   });
 }

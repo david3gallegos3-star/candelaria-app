@@ -6,19 +6,37 @@ import { TablaCrud, FORMAS_PAGO } from '../shared/TablaCrud';
 
 const VACIO = { fecha: '', beneficiario: '', concepto: '', monto: '', forma_pago: '20', comentario: '' };
 
+const FORMA_LABEL = {
+  transferencia: 'Transferencia',
+  cheque:        'Cheque',
+  deposito:      'Depósito',
+};
+
 export default function PagosDelMes() {
   const { mes, año, esAdminContador } = useTalonario();
-  const [filas,     setFilas]     = useState([]);
-  const [cargando,  setCargando]  = useState(false);
-  const [form,      setForm]      = useState(null);
-  const [guardando, setGuardando] = useState(false);
+  const [filas,         setFilas]         = useState([]);
+  const [pagosCompras,  setPagosCompras]  = useState([]);
+  const [cargando,      setCargando]      = useState(false);
+  const [form,          setForm]          = useState(null);
+  const [guardando,     setGuardando]     = useState(false);
 
   async function cargar() {
     setCargando(true);
-    const { data } = await supabase
-      .from('talonario_pagos_banco')
-      .select('*').eq('mes', mes).eq('año', año).order('fecha');
+    const fechaDesde = `${año}-${String(mes).padStart(2,'0')}-01`;
+    const ultimoDia  = new Date(año, mes, 0).getDate();
+    const fechaHasta = `${año}-${String(mes).padStart(2,'0')}-${String(ultimoDia).padStart(2,'0')}`;
+
+    const [{ data }, { data: pagos }] = await Promise.all([
+      supabase.from('talonario_pagos_banco')
+        .select('*').eq('mes', mes).eq('año', año).order('fecha'),
+      supabase.from('pagos_compras')
+        .select('id,monto,forma_pago,fecha_pago,notas,comision,proveedores(nombre),compras(es_personal)')
+        .in('forma_pago', ['transferencia','cheque','deposito'])
+        .gte('fecha_pago', fechaDesde).lte('fecha_pago', fechaHasta)
+        .order('fecha_pago'),
+    ]);
     setFilas(data || []);
+    setPagosCompras((pagos || []).filter(p => !p.compras?.es_personal));
     setCargando(false);
   }
 
@@ -57,6 +75,9 @@ export default function PagosDelMes() {
     { key: 'comentario', label: 'Comentario' },
   ];
 
+  const totalPagosCompras = pagosCompras.reduce((s, p) => s + parseFloat(p.monto||0), 0);
+  const totalComisiones   = pagosCompras.reduce((s, p) => s + parseFloat(p.comision||0), 0);
+
   return (
     <>
       <TablaCrud
@@ -70,6 +91,56 @@ export default function PagosDelMes() {
         onEditar={f => setForm({ ...f })}
         onEliminar={eliminar}
       />
+
+      {/* Pagos a proveedores (desde módulo Compras) */}
+      {pagosCompras.length > 0 && (
+        <div style={{ marginTop: 20, background: 'white', borderRadius: 10,
+          boxShadow: '0 1px 4px rgba(0,0,0,0.08)', overflow: 'hidden' }}>
+          <div style={{ background: '#1a3a2a', color: 'white', padding: '10px 16px',
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontWeight: 'bold', fontSize: 13 }}>🏢 Pagos a Proveedores (módulo Compras)</span>
+            <span style={{ fontSize: 13 }}>
+              Total: ${totalPagosCompras.toFixed(2)}
+              {totalComisiones > 0 && <span style={{ color: '#f9ca24', marginLeft: 8 }}>+ Comisiones: ${totalComisiones.toFixed(2)}</span>}
+            </span>
+          </div>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead>
+              <tr style={{ background: '#f5f7f5' }}>
+                {['Fecha','Proveedor','Forma','Notas','Monto'].map(h => (
+                  <th key={h} style={{ padding: '8px 10px', textAlign: h === 'Monto' ? 'right' : 'left',
+                    fontSize: 11, fontWeight: 700, color: '#555', borderBottom: '1px solid #eee' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {pagosCompras.map(p => (
+                <React.Fragment key={p.id}>
+                  <tr style={{ borderBottom: '1px solid #f0f0f0' }}>
+                    <td style={{ padding: '7px 10px', color: '#555' }}>{p.fecha_pago || '—'}</td>
+                    <td style={{ padding: '7px 10px', fontWeight: 600 }}>{p.proveedores?.nombre || '—'}</td>
+                    <td style={{ padding: '7px 10px', color: '#666' }}>{FORMA_LABEL[p.forma_pago] || p.forma_pago}</td>
+                    <td style={{ padding: '7px 10px', color: '#888', fontStyle: 'italic' }}>{p.notas || ''}</td>
+                    <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 'bold', color: '#1a3a2a' }}>
+                      ${parseFloat(p.monto||0).toFixed(2)}
+                    </td>
+                  </tr>
+                  {parseFloat(p.comision||0) > 0 && (
+                    <tr style={{ background: '#fff8f8' }}>
+                      <td colSpan={4} style={{ padding: '3px 10px 5px 24px', color: '#e74c3c', fontSize: 11 }}>
+                        └ Comisión banco
+                      </td>
+                      <td style={{ padding: '3px 10px 5px', textAlign: 'right', color: '#e74c3c', fontSize: 11, fontWeight: 'bold' }}>
+                        ${parseFloat(p.comision).toFixed(2)}
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {form && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',

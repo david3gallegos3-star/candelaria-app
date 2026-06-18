@@ -52,7 +52,7 @@ export default function MovimientosBanco() {
         .eq('forma_pago', '20').order('fecha'),
       supabase.from('facturas')
         .select('id,numero,total,forma_pago,created_at')
-        .in('forma_pago', ['transferencia','cheque'])
+        .in('forma_pago', ['transferencia','cheque','tarjeta_credito'])
         .neq('estado', 'anulada')
         .gte('created_at', fechaDesde + 'T00:00:00').lte('created_at', fechaHasta + 'T23:59:59')
         .order('created_at'),
@@ -76,7 +76,7 @@ export default function MovimientosBanco() {
 
     const lista = [
       ...(cobros||[]).flatMap(c => {
-        const label = c.forma_pago === 'deposito' ? 'Depósito' : c.forma_pago === 'cheque' ? 'Cheque' : 'Transferencia';
+        const label = c.forma_pago === 'deposito' ? 'Depósito' : c.forma_pago === 'cheque' ? 'Cheque' : c.forma_pago === 'tarjeta_credito' ? 'Tarjeta' : 'Transferencia';
         const quien = c.clientes?.nombre || c.facturas?.numero || c.observaciones || '';
         const filas = [{
           fecha: c.fecha,

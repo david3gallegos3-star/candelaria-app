@@ -19,6 +19,7 @@ const FORMAS_PAGO = [
   { value: 'efectivo',        label: '💵 Efectivo'        },
   { value: 'transferencia',   label: '🏦 Transferencia'   },
   { value: 'cheque',          label: '📝 Cheque'           },
+  { value: 'tarjeta_credito', label: '💳 Tarjeta'          },
   { value: 'credito',         label: '📅 Crédito'          },
   { value: 'credito_nomina',  label: '🛒 Crédito nómina'  },
 ];

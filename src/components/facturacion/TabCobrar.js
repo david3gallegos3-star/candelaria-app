@@ -48,8 +48,6 @@ export default function TabCobrar({ mobile, currentUser }) {
   const [formaCobro,       setFormaCobro]       = useState('efectivo');
   const [referenciaCobro,  setReferenciaCobro]  = useState('');
   const [obsCobo,          setObsCobro]         = useState('');
-  const [tieneComision,    setTieneComision]    = useState(false);
-  const [montoComision,    setMontoComision]    = useState('');
   const [registrando,      setRegistrando]      = useState(false);
   const [msgExito,         setMsgExito]         = useState('');
 
@@ -87,7 +85,7 @@ export default function TabCobrar({ mobile, currentUser }) {
       observaciones:    obsCobo,
       registrado_por:   currentUser?.email || '',
       referencia_pago:  ['transferencia', 'cheque', 'deposito'].includes(formaCobro) ? referenciaCobro || null : null,
-      comision:         tieneComision ? parseFloat(montoComision) || 0 : 0,
+      comision:         0,
     }).select('id, monto, forma_pago, fecha').single();
 
     if (!errCobro && cobroData) {
@@ -106,8 +104,6 @@ export default function TabCobrar({ mobile, currentUser }) {
     setMontoCobro('');
     setObsCobro('');
     setReferenciaCobro('');
-    setTieneComision(false);
-    setMontoComision('');
     setMsgExito(`✅ Cobro de $${monto.toFixed(2)} registrado`);
     setTimeout(() => setMsgExito(''), 4000);
     cargarCuentas();
@@ -415,23 +411,6 @@ export default function TabCobrar({ mobile, currentUser }) {
               </div>
             )}
 
-            {['transferencia', 'cheque', 'deposito'].includes(formaCobro) && (
-              <div style={{ marginBottom: 12 }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: '#555' }}>
-                  <input type="checkbox" checked={tieneComision}
-                    onChange={e => { setTieneComision(e.target.checked); if (!e.target.checked) setMontoComision(''); }}
-                    style={{ width: 16, height: 16, cursor: 'pointer' }} />
-                  Tiene comisión bancaria
-                </label>
-                {tieneComision && (
-                  <input type="number" min="0.01" step="0.01" value={montoComision}
-                    onChange={e => setMontoComision(e.target.value)}
-                    placeholder="Monto comisión ($)"
-                    style={{ marginTop: 6, width: '100%', padding: '7px 10px', borderRadius: 6,
-                      border: '1.5px solid #e74c3c', fontSize: 13, boxSizing: 'border-box' }} />
-                )}
-              </div>
-            )}
 
             <div style={{ marginBottom: 20 }}>
               <label style={{ fontSize: 11, fontWeight: 'bold', color: '#555', display: 'block', marginBottom: 4 }}>
@@ -444,11 +423,7 @@ export default function TabCobrar({ mobile, currentUser }) {
             </div>
 
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
-              <button onClick={() => {
-                  setModalCobro(null);
-                  setTieneComision(false);
-                  setMontoComision('');
-                }}
+              <button onClick={() => setModalCobro(null)}
                 style={{ background: '#f0f2f5', color: '#555', border: 'none',
                   borderRadius: 8, padding: '10px 20px', cursor: 'pointer', fontWeight: 'bold' }}>
                 Cancelar

@@ -22,6 +22,8 @@ Antes de escribir código que use una librería externa (React, Supabase, cualqu
 | Al crear un plan de implementación | `writing-plans` |
 | Al ejecutar un plan con tareas independientes | `subagent-driven-development` |
 | Al terminar una rama de desarrollo | `finishing-a-development-branch` |
+| Al modificar cualquier cosa de contabilidad (talonario, libro diario, resumen, saldos) | `contabilidad-auditoria` |
+| Cuando David pida "escanea la contabilidad" o "verifica los flujos" | `contabilidad-auditoria` |
 
 **No esperar a que David los pida — activarlos proactivamente según la situación.**
 
