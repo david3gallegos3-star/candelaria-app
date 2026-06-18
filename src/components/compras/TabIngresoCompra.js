@@ -214,8 +214,17 @@ export default function TabIngresoCompra({ mobile, currentUser, userRol }) {
       if (formaPago === 'credito') {
         const venc = new Date(fecha);
         venc.setDate(venc.getDate() + diasCredito);
-        const nuevoSaldo = total - creditoDisponible;
-        await supabase.from('cuentas_pagar').insert({
+
+        const { data: saldosFavorFrescos, error: errSaldos } = await supabase
+          .from('cuentas_pagar')
+          .select('id, saldo_pendiente')
+          .eq('proveedor_id', proveedorId)
+          .lt('saldo_pendiente', 0);
+        if (errSaldos) throw errSaldos;
+        const creditoFresco = (saldosFavorFrescos || []).reduce((s, c) => s + Math.abs(c.saldo_pendiente), 0);
+        const nuevoSaldo = total - creditoFresco;
+
+        const { error: errCp } = await supabase.from('cuentas_pagar').insert({
           compra_id:         compra.id,
           proveedor_id:      proveedorId,
           monto_total:       total,
@@ -226,20 +235,15 @@ export default function TabIngresoCompra({ mobile, currentUser, userRol }) {
           notas:             `Crédito ${diasCredito} días`,
           updated_at:        new Date().toISOString()
         });
+        if (errCp) throw errCp;
 
-        if (creditoDisponible > 0) {
-          const { data: saldosFavor } = await supabase
-            .from('cuentas_pagar')
-            .select('id')
-            .eq('proveedor_id', proveedorId)
-            .lt('saldo_pendiente', 0);
-          for (const cp of saldosFavor || []) {
-            await supabase.from('cuentas_pagar').update({
-              saldo_pendiente: 0,
-              notas: `Aplicado a compra del ${fecha}`,
-              updated_at: new Date().toISOString(),
-            }).eq('id', cp.id);
-          }
+        for (const cp of saldosFavorFrescos || []) {
+          const { error: errZero } = await supabase.from('cuentas_pagar').update({
+            saldo_pendiente: 0,
+            notas: `Aplicado a compra del ${fecha}`,
+            updated_at: new Date().toISOString(),
+          }).eq('id', cp.id);
+          if (errZero) throw errZero;
         }
       }
 
