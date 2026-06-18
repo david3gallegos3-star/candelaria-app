@@ -22,7 +22,7 @@ export default function EditarCompraModal({ compraId, userRol, currentUser, onCl
   const cargar = useCallback(async () => {
     setCargando(true);
     const [{ data: c }, { data: dets }, { data: cp }, { data: provs }, { data: mps }, { data: inv }] = await Promise.all([
-      supabase.from('compras').select('*').eq('id', compraId).single(),
+      supabase.from('compras').select('*').eq('id', compraId).maybeSingle(),
       supabase.from('compras_detalle').select('*').eq('compra_id', compraId).order('id'),
       supabase.from('cuentas_pagar').select('*').eq('compra_id', compraId).maybeSingle(),
       supabase.from('proveedores').select('*').eq('activo', true).order('nombre'),
