@@ -61,7 +61,7 @@ export function puedeEditarCompra(compra, userRol) {
 
 - `soloAdmin: true` se usa más adelante para forzar la estrategia "reversión + nuevo asiento" en Libro Diario aunque el asiento siga `provisional` (ver §4).
 - Si `permitido: false`, el botón "Editar"/"Anular" no aparece (o aparece deshabilitado con tooltip "Solo un administrador puede editar compras de más de 7 días").
-- Requiere que `compras.created_at` exista. Si la tabla no lo tiene hoy, se agrega por migración (ver §9) con `default now()` y backfill con la columna `fecha` para registros viejos.
+- Requiere que `compras.created_at` exista. Si la tabla no lo tiene hoy, se agrega por migración (ver §10) con `default now()` y backfill con la columna `fecha` para registros viejos.
 
 ---
 
@@ -183,13 +183,64 @@ await supabase.from('cuentas_pagar').update({
 }).eq('compra_id', compraId);
 ```
 
-Si `nuevoSaldo < 0`, el modal de edición muestra, después de guardar: **"⚠️ Ya se pagó ${Math.abs(nuevoSaldo).toFixed(2)} de más con el monto corregido. Gestiona la devolución con el proveedor — el sistema no la hace automático."** No bloquea el guardado, solo informa.
+Si `nuevoSaldo < 0`, el modal de edición muestra, después de guardar: **"⚠️ Ya se pagó ${Math.abs(nuevoSaldo).toFixed(2)} de más con el monto corregido — el proveedor te queda debiendo."** No bloquea el guardado. Cómo se resuelve ese saldo a favor se cubre en §7.
 
 Los items/montos de una compra de crédito **se pueden editar siempre**, tenga o no pagos parciales (decisión explícita de David — no hay bloqueo aquí, a diferencia de Anular).
 
 ---
 
-## 7. Anular compra
+## 7. Resolución de saldo a favor (sobrepago a proveedor)
+
+Cuando una edición deja `cuentas_pagar.saldo_pendiente < 0`, ese saldo es **a nuestro favor** (el proveedor nos debe). El Libro Diario ya queda contablemente correcto en el momento de la edición — la cuenta CxP Proveedores neta ese saldo negativo automáticamente vía la reversión+nuevo de §4, sin asiento extra. Lo que falta es resolver ese saldo a nivel de `cuentas_pagar` (sub-ledger) y dejarlo visible hasta que se resuelva.
+
+**Dónde se muestra:**
+- `TabProveedores.js` — badge `💰 $X a favor` en la fila del proveedor (suma de sus `cuentas_pagar.saldo_pendiente < 0`).
+- `TabIngresoCompra.js` — al seleccionar un proveedor con saldo a favor y `forma_pago = 'credito'`, aviso antes de guardar (ver aplicación automática más abajo).
+- `TabPagosUnificado.js` — sección nueva "💰 Saldos a favor", separada de Pendientes/Vencidas/Pagadas, con el botón de devolución.
+
+**Camino A — nos devuelven en efectivo/transferencia.** Botón "🏦 Registrar devolución" en la cuenta con saldo negativo → modal (monto precargado con `Math.abs(saldo_pendiente)`, forma de pago, fecha) → nueva función en `asientosContables.js`:
+
+```js
+export async function generarAsientoDevolucionProveedor(devolucion) {
+  const { cuentas, error: errCfg } = await getCuentasModulos();
+  if (errCfg) return { data: null, error: errCfg };
+
+  const cuentaDebe  = devolucion.forma_pago === 'efectivo' ? cuentas.caja_chica_id : cuentas.banco_id;
+  const labelCuenta = devolucion.forma_pago === 'efectivo' ? 'Caja Chica' : 'Banco';
+  const descripcionCab = `Devolución proveedor - ${devolucion.proveedor_nombre}`;
+
+  const lineas = [
+    { cuenta_id: cuentaDebe,     descripcion: `${labelCuenta} — devolución ${devolucion.proveedor_nombre}`, debe: devolucion.monto, haber: 0, orden: 0 },
+    { cuenta_id: cuentas.cxp_id, descripcion: `CxP Proveedores — devolución ${devolucion.proveedor_nombre}`, debe: 0, haber: devolucion.monto, orden: 1 },
+  ];
+
+  return insertarAsiento({
+    fecha: devolucion.fecha, descripcion: descripcionCab,
+    tipo: 'tributario', origen: 'devoluciones_proveedor', origen_id: devolucion.cuenta_pagar_id,
+    lineas,
+  });
+}
+```
+
+Al guardar: `cuentas_pagar.saldo_pendiente += monto` (sube hacia 0), e insertar en `pagos_compras` con `tipo: 'devolucion'` (columna nueva, default `'pago'` en filas existentes) para que quede en el historial de movimientos del proveedor junto a sus pagos normales.
+
+**Camino B — se aplica como crédito a la próxima compra.** Sin botón, automático. En `guardarCompra()` de `TabIngresoCompra.js`, antes de insertar la nueva fila de `cuentas_pagar` cuando `formaPago === 'credito'`:
+
+```js
+const { data: saldosFavor } = await supabase
+  .from('cuentas_pagar')
+  .select('id, saldo_pendiente')
+  .eq('proveedor_id', proveedorId)
+  .lt('saldo_pendiente', 0);
+
+const creditoDisponible = (saldosFavor || []).reduce((s, c) => s + Math.abs(c.saldo_pendiente), 0);
+```
+
+Si `creditoDisponible > 0`, se avisa antes de guardar: *"Este proveedor tiene $X a favor — se aplican a esta compra, tu saldo pendiente queda en $Y."* Al confirmar: la nueva `cuentas_pagar.saldo_pendiente = total - creditoDisponible` (puede seguir negativo si el crédito sobra, y se arrastra otra vez), y las filas viejas con saldo negativo pasan a `saldo_pendiente = 0` con nota `"Aplicado a compra del [fecha nueva]"`. **No genera asiento nuevo** — es la misma cuenta CxP Proveedores, solo se reparte distinto entre filas de `cuentas_pagar`.
+
+---
+
+## 8. Anular compra
 
 Botón "🚫 Anular" junto a "✏️ Editar", sujeto a las mismas reglas de `puedeEditarCompra`. Condición extra: **bloqueado si la compra es a crédito y ya tiene algún pago registrado** (`saldo_pendiente < monto_total`). Para compras al contado o crédito sin pagos, anular:
 
@@ -224,7 +275,7 @@ Si está bloqueado por pagos parciales, el botón "Anular" se deshabilita con to
 
 ---
 
-## 8. `EditarCompraModal.js` — flujo
+## 9. `EditarCompraModal.js` — flujo
 
 ```jsx
 export default function EditarCompraModal({ compraId, userRol, currentUser, onClose, onGuardado }) {
@@ -242,7 +293,7 @@ export default function EditarCompraModal({ compraId, userRol, currentUser, onCl
 
 ---
 
-## 9. Migraciones SQL necesarias
+## 10. Migraciones SQL necesarias
 
 ```sql
 -- Si compras no tiene created_at:
@@ -250,26 +301,30 @@ ALTER TABLE compras ADD COLUMN IF NOT EXISTS created_at timestamptz DEFAULT now(
 UPDATE compras SET created_at = fecha::timestamptz WHERE created_at IS NULL;
 
 -- estado 'anulada' ya es texto libre (compras.estado es text) — no requiere migración de tipo.
+
+-- Para distinguir devoluciones de pagos normales en el historial del proveedor:
+ALTER TABLE pagos_compras ADD COLUMN IF NOT EXISTS tipo text DEFAULT 'pago';
 ```
 
 ---
 
-## 10. Archivos a crear/modificar
+## 11. Archivos a crear/modificar
 
 | Archivo | Cambio |
 |---------|--------|
 | `src/components/compras/CompraForm.js` | **Nuevo** — extraído de TabIngresoCompra.js |
-| `src/components/compras/TabIngresoCompra.js` | Refactor: usa `<CompraForm modo="nueva">`, conserva lógica de guardado |
+| `src/components/compras/TabIngresoCompra.js` | Refactor: usa `<CompraForm modo="nueva">`, conserva lógica de guardado; agrega detección de saldo a favor (§7 camino B) |
 | `src/components/compras/EditarCompraModal.js` | **Nuevo** — modal de edición/anulación unificado |
 | `src/utils/compraEditPermisos.js` | **Nuevo** — `puedeEditarCompra()` |
-| `src/utils/asientosContables.js` | + `sincronizarAsientoCompraEditada()`, `revertirAsientoCompra()` |
+| `src/utils/asientosContables.js` | + `sincronizarAsientoCompraEditada()`, `revertirAsientoCompra()`, `generarAsientoDevolucionProveedor()` |
 | `src/components/compras/TabPersonalesCompras.js` | Reemplaza su modal propio por `<EditarCompraModal>` |
-| `src/components/compras/TabPagosUnificado.js` | Reemplaza "Editar cuenta" por `<EditarCompraModal>`; agrega botón Editar en "Compras pagadas al contado" |
-| SQL (Supabase, manual) | `compras.created_at` si no existe |
+| `src/components/compras/TabPagosUnificado.js` | Reemplaza "Editar cuenta" por `<EditarCompraModal>`; agrega botón Editar en "Compras pagadas al contado"; agrega sección "💰 Saldos a favor" + modal de devolución |
+| `src/components/compras/TabProveedores.js` | Agrega badge "💰 $X a favor" por proveedor |
+| SQL (Supabase, manual) | `compras.created_at` si no existe; `pagos_compras.tipo` |
 
 ---
 
-## 11. Lo que NO cambia
+## 12. Lo que NO cambia
 
 - `registrarPago()` / pagos parciales en `TabPagosUnificado.js` — intacto.
 - El flujo de creación (`guardarCompra` en `TabIngresoCompra.js`) sigue igual, solo cambia de dónde saca el JSX de campos.
