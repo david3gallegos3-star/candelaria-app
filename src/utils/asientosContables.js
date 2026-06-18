@@ -129,12 +129,16 @@ export async function generarAsientoCompra(compra) {
 }
 
 export async function revertirAsientoCompra(compraOriginal, asientoId) {
-  const { data: detalles } = await supabase
+  const { data: detalles, error: errSel } = await supabase
     .from('libro_diario_detalle')
     .select('cuenta_id, descripcion, debe, haber, orden')
     .eq('asiento_id', asientoId);
+  if (errSel) return { data: null, error: errSel };
+  if (!detalles || detalles.length === 0) {
+    return { data: null, error: `No se encontraron líneas para el asiento ${asientoId}` };
+  }
 
-  const lineasInvertidas = (detalles || []).map((l, i) => ({
+  const lineasInvertidas = detalles.map((l, i) => ({
     cuenta_id: l.cuenta_id,
     descripcion: `Reversión — ${l.descripcion}`,
     debe: l.haber, haber: l.debe,
@@ -152,7 +156,7 @@ export async function revertirAsientoCompra(compraOriginal, asientoId) {
 }
 
 export async function sincronizarAsientoCompraEditada(compraActualizada, { forzarReversion }) {
-  const { data: asientoExistente } = await supabase
+  const { data: asientoExistente, error: errSel } = await supabase
     .from('libro_diario')
     .select('id, estado')
     .eq('origen', 'compras')
@@ -161,18 +165,20 @@ export async function sincronizarAsientoCompraEditada(compraActualizada, { forza
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();
+  if (errSel) return { data: null, error: errSel };
 
   if (!asientoExistente) {
     return generarAsientoCompra(compraActualizada);
   }
 
   if (asientoExistente.estado === 'provisional' && !forzarReversion) {
-    await supabase.from('libro_diario_detalle').delete().eq('asiento_id', asientoExistente.id);
-    await supabase.from('libro_diario').delete().eq('id', asientoExistente.id);
+    const { error: errDel } = await supabase.from('libro_diario').delete().eq('id', asientoExistente.id);
+    if (errDel) return { data: null, error: errDel };
     return generarAsientoCompra(compraActualizada);
   }
 
-  await revertirAsientoCompra(compraActualizada, asientoExistente.id);
+  const { error: errRev } = await revertirAsientoCompra(compraActualizada, asientoExistente.id);
+  if (errRev) return { data: null, error: errRev };
   return generarAsientoCompra(compraActualizada);
 }
 
