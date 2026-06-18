@@ -37,7 +37,7 @@ export async function calcularNetoBancoMes(año, mes) {
   ] = await Promise.all([
     supabase.from('cobros')
       .select('monto,comision,forma_pago')
-      .in('forma_pago', ['transferencia','deposito','cheque'])
+      .in('forma_pago', ['transferencia','deposito','cheque','tarjeta_credito'])
       .gte('fecha', fechaDesde).lte('fecha', fechaHasta),
     supabase.from('talonario_pagos_banco')
       .select('monto')

@@ -35,7 +35,7 @@ export default function MovimientosBanco() {
     ] = await Promise.all([
       supabase.from('cobros')
         .select('id,fecha,monto,comision,forma_pago,observaciones,clientes(nombre),facturas(numero)')
-        .in('forma_pago', ['transferencia','deposito','cheque'])
+        .in('forma_pago', ['transferencia','deposito','cheque','tarjeta_credito'])
         .gte('fecha', fechaDesde).lte('fecha', fechaHasta).order('fecha'),
       supabase.from('talonario_pagos_banco')
         .select('id,fecha,monto,concepto,beneficiario')

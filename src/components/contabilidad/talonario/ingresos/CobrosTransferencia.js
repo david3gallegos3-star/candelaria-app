@@ -3,6 +3,12 @@ import { supabase } from '../../../../supabase';
 import { useTalonario } from '../TalonarioContext';
 import { TablaLectura } from '../shared/TablaLectura';
 
+const LABEL_FORMA = {
+  transferencia:   'Transferencia',
+  deposito:        'Depósito',
+  tarjeta_credito: 'Tarjeta de crédito',
+};
+
 export default function CobrosTransferencia() {
   const { fechaDesde, fechaHasta } = useTalonario();
   const [filas, setFilas] = useState([]);
@@ -13,8 +19,8 @@ export default function CobrosTransferencia() {
       setCargando(true);
       const { data } = await supabase
         .from('cobros')
-        .select('id, fecha, monto, forma_pago, observaciones, clientes(nombre)')
-        .in('forma_pago', ['transferencia', 'deposito'])
+        .select('id, fecha, monto, forma_pago, observaciones, clientes(nombre), facturas(numero)')
+        .in('forma_pago', ['transferencia', 'deposito', 'tarjeta_credito'])
         .gte('fecha', fechaDesde)
         .lte('fecha', fechaHasta)
         .order('fecha');
@@ -26,19 +32,32 @@ export default function CobrosTransferencia() {
 
   const columnas = [
     { key: 'fecha',      label: 'Fecha' },
-    { key: 'cliente',    label: 'Cliente',  render: f => f.clientes?.nombre || '—' },
-    { key: 'monto',      label: 'Monto',    render: f => `$${parseFloat(f.monto||0).toFixed(2)}`, align: 'right' },
-    { key: 'forma_pago', label: 'Forma Pago', render: f => f.forma_pago === 'deposito' ? 'Depósito (20)' : 'Transferencia (20)' },
+    { key: 'cliente',    label: 'Cliente',    render: f => f.clientes?.nombre || '—' },
+    { key: 'monto',      label: 'Monto',      render: f => `$${parseFloat(f.monto||0).toFixed(2)}`, align: 'right' },
+    { key: 'forma_pago', label: 'Forma Pago', render: f => LABEL_FORMA[f.forma_pago] || f.forma_pago },
+    { key: 'factura',    label: 'Nº Factura', render: f => f.facturas?.numero || '—' },
     { key: 'obs',        label: 'Comentario', render: f => f.observaciones || '' },
   ];
 
+  const transferencias = filas.filter(f => f.forma_pago === 'transferencia');
+  const deposYTarjeta  = filas.filter(f => ['deposito', 'tarjeta_credito'].includes(f.forma_pago));
+
   return (
-    <TablaLectura
-      titulo="🏦 Cobros Transferencia / Depósito"
-      filas={filas}
-      columnas={columnas}
-      cargando={cargando}
-      campoMonto="monto"
-    />
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+      <TablaLectura
+        titulo="🏦 Cobros en Transferencia"
+        filas={transferencias}
+        columnas={columnas}
+        cargando={cargando}
+        campoMonto="monto"
+      />
+      <TablaLectura
+        titulo="🏧 Cobros en Depósito y Tarjeta"
+        filas={deposYTarjeta}
+        columnas={columnas}
+        cargando={cargando}
+        campoMonto="monto"
+      />
+    </div>
   );
 }

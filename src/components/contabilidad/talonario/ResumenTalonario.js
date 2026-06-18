@@ -68,7 +68,7 @@ export default function ResumenTalonario() {
 
     const cobroEfect = (cobros||[]).filter(c => c.forma_pago==='efectivo').reduce((s,c) => s+parseFloat(c.monto||0), 0);
     const cobroCheq  = (cobros||[]).filter(c => c.forma_pago==='cheque').reduce((s,c) => s+parseFloat(c.monto||0), 0);
-    const cobroTransf= (cobros||[]).filter(c => ['transferencia','deposito'].includes(c.forma_pago)).reduce((s,c) => s+parseFloat(c.monto||0), 0);
+    const cobroTransf= (cobros||[]).filter(c => ['transferencia','deposito','tarjeta_credito'].includes(c.forma_pago)).reduce((s,c) => s+parseFloat(c.monto||0), 0);
 
     const cxcPendiente = (cxc||[]).reduce((s,c) => s + parseFloat(c.monto_total||0) - parseFloat(c.monto_cobrado||0), 0);
 

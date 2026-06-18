@@ -4,9 +4,11 @@ import { useRealtime } from '../../hooks/useRealtime';
 import { generarAsientoCobro } from '../../utils/asientosContables';
 
 const FORMAS_COBRO = [
-  { value: 'efectivo',      label: '💵 Efectivo'     },
-  { value: 'transferencia', label: '🏦 Transferencia' },
-  { value: 'cheque',        label: '📝 Cheque'        },
+  { value: 'efectivo',        label: '💵 Efectivo'          },
+  { value: 'transferencia',   label: '🏦 Transferencia'     },
+  { value: 'cheque',          label: '📝 Cheque'            },
+  { value: 'deposito',        label: '🏧 Depósito'          },
+  { value: 'tarjeta_credito', label: '💳 Tarjeta de crédito' },
 ];
 
 function diasRestantes(fechaVenc) {
