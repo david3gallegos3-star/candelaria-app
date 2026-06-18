@@ -15,6 +15,7 @@
 .DS_Store
 .superpowers/
 docs/superpowers/plans/
+.worktrees/
 .env.local
 .env.development.local
 .env.test.local
