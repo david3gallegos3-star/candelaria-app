@@ -9,5 +9,6 @@ ALTER TABLE pagos_compras ADD COLUMN IF NOT EXISTS tipo text DEFAULT 'pago';
 
 -- 3. libro_diario.origen — agregar 'devoluciones_proveedor' al CHECK existente
 ALTER TABLE libro_diario DROP CONSTRAINT IF EXISTS libro_diario_origen_check;
+-- 'pagos_compras' y 'talonario_pagos_banco' tambien se agregan: ya se usaban en el codigo (asientosContables.js) pero nunca estuvieron en este CHECK — bug preexistente, se corrige aqui de paso.
 ALTER TABLE libro_diario ADD CONSTRAINT libro_diario_origen_check
-  CHECK (origen IN ('facturacion','compras','nomina','caja_chica','manual','asiento_inicial','devoluciones_proveedor'));
+  CHECK (origen IN ('facturacion','compras','nomina','caja_chica','manual','asiento_inicial','devoluciones_proveedor','pagos_compras','talonario_pagos_banco'));
