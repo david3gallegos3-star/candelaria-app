@@ -88,25 +88,35 @@ export default function TabPagosUnificado({ mobile }) {
   const [editFormPago,     setEditFormPago]      = useState({});
   const [xmlPagoContent,   setXmlPagoContent]    = useState('');
   const [guardandoPago,    setGuardandoPago]      = useState(false);
+  const [comprasDirectas,  setComprasDirectas]    = useState([]);
 
   const cargar = useCallback(async () => {
     setCargando(true);
-    const { data: cuentasData } = await supabase
-      .from('cuentas_pagar')
-      .select(`
-        *,
-        proveedores ( nombre, razon_social, ruc ),
-        compras (
-          id, numero_factura, autorizacion_sri, xml_sri_url,
-          recordar_factura, subtotal, descuento, iva, total,
-          tiene_factura, forma_pago, fecha,
-          compras_detalle ( mp_nombre )
-        )
-      `)
-      .order('fecha_vencimiento', { ascending: true });
+    const [{ data: cuentasData }, { data: directasData }] = await Promise.all([
+      supabase
+        .from('cuentas_pagar')
+        .select(`
+          *,
+          proveedores ( nombre, razon_social, ruc ),
+          compras (
+            id, numero_factura, autorizacion_sri, xml_sri_url,
+            recordar_factura, subtotal, descuento, iva, total,
+            tiene_factura, forma_pago, fecha,
+            compras_detalle ( mp_nombre )
+          )
+        `)
+        .order('fecha_vencimiento', { ascending: true }),
+      supabase
+        .from('compras')
+        .select('id,fecha,proveedor_nombre,total,comision,forma_pago,tiene_factura,numero_factura')
+        .neq('forma_pago', 'credito')
+        .eq('es_personal', false)
+        .order('fecha', { ascending: false }),
+    ]);
 
     const todasCuentas = cuentasData || [];
     setCuentas(todasCuentas);
+    setComprasDirectas(directasData || []);
 
     if (todasCuentas.length > 0) {
       const ids = todasCuentas.map(c => c.id);
@@ -145,6 +155,17 @@ export default function TabPagosUnificado({ mobile }) {
   // Pagos de las cuentas filtradas
   const filtradaIds   = new Set(filtradas.map(c => c.id));
   const pagosFiltrados = pagos.filter(p => filtradaIds.has(p.cuenta_pagar_id));
+
+  // Compras pagadas al contado (no crédito) — solo en Todas y Pagadas
+  const comprasDirectasFiltradas = (filtroEstado === 'todas' || filtroEstado === 'pagadas')
+    ? comprasDirectas.filter(c => {
+        const desdeOk = !filtroDesde || c.fecha >= filtroDesde;
+        const hastaOk = !filtroHasta || c.fecha <= filtroHasta;
+        const formaOk = filtroForma === 'todas' || c.forma_pago === filtroForma;
+        const busOk   = !busqueda   || norm(c.proveedor_nombre).includes(norm(busqueda));
+        return desdeOk && hastaOk && formaOk && busOk;
+      })
+    : [];
 
   // ── Resumen (siempre sobre TODAS las cuentas) ─────────────
   const totalPendiente = cuentas
@@ -709,6 +730,46 @@ export default function TabPagosUnificado({ mobile }) {
             </div>
           );
         })
+      )}
+
+      {/* ── Compras pagadas al contado ── */}
+      {comprasDirectasFiltradas.length > 0 && (
+        <div style={{ marginTop: 14 }}>
+          <div style={{ background: '#e8f8f0', borderRadius: 10, padding: '9px 14px', marginBottom: 8,
+            fontWeight: 'bold', fontSize: 13, color: '#1a3a2a',
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>✅ Compras pagadas al contado ({comprasDirectasFiltradas.length})</span>
+            <span>${comprasDirectasFiltradas.reduce((s,c) => s + parseFloat(c.total||0) + parseFloat(c.comision||0), 0).toFixed(2)}</span>
+          </div>
+          {comprasDirectasFiltradas.map(c => (
+            <div key={c.id} style={{ ...card, borderLeft: '4px solid #27ae60' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap' }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 4 }}>
+                    <span style={{ fontWeight: 'bold', fontSize: 14, color: '#1a3a2a' }}>
+                      🏢 {c.proveedor_nombre || 'Proveedor'}
+                    </span>
+                    <span style={{ background: '#27ae60', color: 'white', borderRadius: 12,
+                      padding: '2px 10px', fontSize: 11, fontWeight: 'bold' }}>✅ Pagada</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 12, color: '#555' }}>
+                    <span>📅 Fecha: <b>{c.fecha || '—'}</b></span>
+                    <span>💰 Total: <b>${parseFloat(c.total||0).toFixed(2)}</b></span>
+                    {parseFloat(c.comision||0) > 0 && (
+                      <span style={{ color: '#e74c3c' }}>└ Comisión: ${parseFloat(c.comision).toFixed(2)}</span>
+                    )}
+                    <span>{FORMA_EMOJI[c.forma_pago] || '💳'} {c.forma_pago}</span>
+                    {c.numero_factura
+                      ? <span style={{ color: '#2980b9' }}>🧾 {c.numero_factura}</span>
+                      : c.tiene_factura
+                        ? <span style={{ color: '#f39c12', fontSize: 11 }}>⚠️ Factura pendiente</span>
+                        : null}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
       )}
 
       {/* ══ Modal: Registrar Pago ══ */}
