@@ -128,6 +128,54 @@ export async function generarAsientoCompra(compra) {
   });
 }
 
+export async function revertirAsientoCompra(compraOriginal, asientoId) {
+  const { data: detalles } = await supabase
+    .from('libro_diario_detalle')
+    .select('cuenta_id, descripcion, debe, haber, orden')
+    .eq('asiento_id', asientoId);
+
+  const lineasInvertidas = (detalles || []).map((l, i) => ({
+    cuenta_id: l.cuenta_id,
+    descripcion: `Reversión — ${l.descripcion}`,
+    debe: l.haber, haber: l.debe,
+    orden: i,
+  }));
+
+  return insertarAsiento({
+    fecha: new Date().toISOString().split('T')[0],
+    descripcion: `Reversión por edición — Compra ${compraOriginal.proveedor_nombre}`,
+    tipo: 'tributario',
+    origen: 'compras',
+    origen_id: compraOriginal.id,
+    lineas: lineasInvertidas,
+  });
+}
+
+export async function sincronizarAsientoCompraEditada(compraActualizada, { forzarReversion }) {
+  const { data: asientoExistente } = await supabase
+    .from('libro_diario')
+    .select('id, estado')
+    .eq('origen', 'compras')
+    .eq('origen_id', compraActualizada.id)
+    .neq('estado', 'eliminado')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!asientoExistente) {
+    return generarAsientoCompra(compraActualizada);
+  }
+
+  if (asientoExistente.estado === 'provisional' && !forzarReversion) {
+    await supabase.from('libro_diario_detalle').delete().eq('asiento_id', asientoExistente.id);
+    await supabase.from('libro_diario').delete().eq('id', asientoExistente.id);
+    return generarAsientoCompra(compraActualizada);
+  }
+
+  await revertirAsientoCompra(compraActualizada, asientoExistente.id);
+  return generarAsientoCompra(compraActualizada);
+}
+
 export async function generarAsientoPagoProveedor(pago) {
   const { cuentas, error: errCfg } = await getCuentasModulos();
   if (errCfg) return { data: null, error: errCfg };
