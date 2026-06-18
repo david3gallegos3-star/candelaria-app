@@ -34,7 +34,7 @@ export default function ResumenTalonario() {
       supabase.from('facturas').select('total,forma_pago').gte('created_at', fechaDesde + 'T00:00:00').lte('created_at', fechaHasta + 'T23:59:59').neq('estado', 'anulada'),
       supabase.from('cobros').select('id,fecha,monto,forma_pago,observaciones,clientes(nombre),facturas(numero)').gte('fecha', fechaDesde).lte('fecha', fechaHasta),
       supabase.from('caja_chica').select('id').gte('fecha', fechaDesde).lte('fecha', fechaHasta),
-      supabase.from('compras').select('total,tiene_factura,forma_pago').gte('fecha', fechaDesde).lte('fecha', fechaHasta),
+      supabase.from('compras').select('total,tiene_factura,forma_pago,es_personal').gte('fecha', fechaDesde).lte('fecha', fechaHasta),
       supabase.from('nomina').select('sueldo_prop,iess_patronal').eq('periodo', periodo),
       supabase.from('talonario_pagos_banco').select('id,fecha,monto,concepto,beneficiario').eq('mes', mes).eq('año', año),
       supabase.from('talonario_pagos_personales').select('monto,categoria').eq('mes', mes).eq('año', año),
@@ -46,16 +46,19 @@ export default function ResumenTalonario() {
     const cajaIds = (cajas || []).map(c => c.id);
     const [{ data: gastos }, { data: entregas }] = cajaIds.length > 0
       ? await Promise.all([
-          supabase.from('caja_gastos').select('valor').in('caja_id', cajaIds),
+          supabase.from('caja_gastos').select('valor,es_personal').in('caja_id', cajaIds),
           supabase.from('caja_entregas').select('cantidad').in('caja_id', cajaIds),
         ])
       : [{ data: [] }, { data: [] }];
 
     const totalVentas    = suma(facturas || [], 'total');
     const totalOtrosI    = suma(otrosI   || [], 'monto');
-    const totalGastos    = suma(gastos   || [], 'valor');
-    const comprasCon     = (compras || []).filter(c =>  c.tiene_factura).reduce((s,c) => s + parseFloat(c.total||0), 0);
-    const comprasSin     = (compras || []).filter(c => !c.tiene_factura).reduce((s,c) => s + parseFloat(c.total||0), 0);
+    const totalGastos    = suma((gastos||[]).filter(g => !g.es_personal), 'valor');
+    const gastosPersonalesCaja = suma((gastos||[]).filter(g => g.es_personal), 'valor');
+    const comprasCon     = (compras || []).filter(c =>  c.tiene_factura && !c.es_personal).reduce((s,c) => s + parseFloat(c.total||0), 0);
+    const comprasSin     = (compras || []).filter(c => !c.tiene_factura && !c.es_personal).reduce((s,c) => s + parseFloat(c.total||0), 0);
+    const totalComprasPersonales    = suma((compras||[]).filter(c => c.es_personal), 'total');
+    const comprasPersonalesPagadas  = suma((compras||[]).filter(c => c.es_personal && c.forma_pago !== 'credito'), 'total');
     const totalSueldos   = suma(nomina   || [], 'sueldo_prop');
     const totalIess      = suma(nomina   || [], 'iess_patronal');
     const totalPagosB    = suma(pagosB   || [], 'monto');
@@ -102,6 +105,7 @@ export default function ResumenTalonario() {
     setDatos({ totalVentas, totalOtrosI, totalGastos, comprasCon, comprasSin,
       totalSueldos, totalIess, totalPagosB, totalPagosP,
       cobroEfect, cobroCheq, cobroTransf, pagosPrestTarj, pagosGastPers,
+      gastosPersonalesCaja, totalComprasPersonales, comprasPersonalesPagadas,
       cxcPendiente, saldoCalculado, pendienteInicial, movsBanco });
     setCargando(false);
   }
@@ -113,17 +117,20 @@ export default function ResumenTalonario() {
     totalVentas, totalOtrosI, totalGastos, comprasCon, comprasSin,
     totalSueldos, totalIess, totalPagosB, totalPagosP,
     cobroEfect, cobroCheq, cobroTransf, pagosPrestTarj, pagosGastPers,
+    gastosPersonalesCaja, totalComprasPersonales, comprasPersonalesPagadas,
     cxcPendiente, saldoCalculado, pendienteInicial, movsBanco,
   } = datos;
 
   const { dif, cuadra, color: difColor } = calcularDiferencia(saldoBanco, saldoCalculado);
 
   const totalIngMes  = totalVentas + totalOtrosI;
-  const totalEgrMes  = totalGastos + comprasCon + comprasSin + totalSueldos + totalIess + totalPagosB + totalPagosP;
+  const totalPagosPersonalesTotal = totalPagosP + gastosPersonalesCaja + totalComprasPersonales;
+  const totalEgrMes  = totalGastos + comprasCon + comprasSin + totalSueldos + totalIess + totalPagosB + totalPagosPersonalesTotal;
   const utilidadBruta= totalIngMes - totalEgrMes;
 
   const totalIngCons = cobroEfect + cobroCheq + cobroTransf + totalOtrosI;
-  const totalEgrCons = totalGastos + totalPagosB + pagosPrestTarj + pagosGastPers;
+  const pagosGastPersTotal = pagosGastPers + gastosPersonalesCaja + comprasPersonalesPagadas;
+  const totalEgrCons = totalGastos + totalPagosB + pagosPrestTarj + pagosGastPersTotal;
 
   const $ = v => `$${parseFloat(v||0).toFixed(2)}`;
   const fila = (label, valor, color) => (
@@ -165,7 +172,7 @@ export default function ResumenTalonario() {
           {fila('(-) Sueldos', totalSueldos, '#e74c3c')}
           {fila('(-) IESS patronal', totalIess, '#e74c3c')}
           {fila('(-) Pagos del mes', totalPagosB, '#e74c3c')}
-          {fila('(-) Pagos personales', totalPagosP, '#e74c3c')}
+          {fila('(-) Pagos personales', totalPagosPersonalesTotal, '#e74c3c')}
           {totalRow('TOTAL EGRESOS', totalEgrMes, '#e74c3c')}
 
           <div style={{ marginTop:12, background:'#ffd700', padding:'8px 10px',
@@ -194,7 +201,7 @@ export default function ResumenTalonario() {
           {fila('(-) Gastos efectivo', totalGastos, '#e74c3c')}
           {fila('(-) Pagos con banco', totalPagosB, '#e74c3c')}
           {fila('(-) Tarjetas/préstamos', pagosPrestTarj, '#e74c3c')}
-          {fila('(-) Gastos personales', pagosGastPers, '#e74c3c')}
+          {fila('(-) Gastos personales', pagosGastPersTotal, '#e74c3c')}
           {totalRow('TOTAL', totalEgrCons, '#e74c3c')}
 
           {titulo('ACTIVOS', '#555')}
