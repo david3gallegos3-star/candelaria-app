@@ -85,11 +85,12 @@ export async function checkRecordatoriosFactura() {
       if (!debeNotificar) continue;
 
       await supabase.from('notificaciones').insert({
-        tipo:       'recordatorio_factura',
-        origen:     'compras',
-        mensaje:    `🔔 Pendiente N° factura — ${c.proveedor_nombre || 'Proveedor'} (compra del ${c.fecha})`,
-        leida:      false,
-        expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        tipo:           'recordatorio_factura',
+        origen:         'compras',
+        usuario_nombre: 'Sistema',
+        mensaje:        `🔔 Pendiente N° factura — ${c.proveedor_nombre || 'Proveedor'} (compra del ${c.fecha})`,
+        leida:          false,
+        expires_at:     new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
       });
 
       await supabase.from('compras')
