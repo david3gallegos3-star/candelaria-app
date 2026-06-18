@@ -211,6 +211,29 @@ export async function generarAsientoPagoProveedor(pago) {
   });
 }
 
+export async function generarAsientoDevolucionProveedor(devolucion) {
+  const { cuentas, error: errCfg } = await getCuentasModulos();
+  if (errCfg) return { data: null, error: errCfg };
+
+  const cuentaDebe  = devolucion.forma_pago === 'efectivo' ? cuentas.caja_chica_id : cuentas.banco_id;
+  const labelCuenta = devolucion.forma_pago === 'efectivo' ? 'Caja Chica' : 'Banco';
+  const descripcionCab = `Devolución proveedor - ${devolucion.proveedor_nombre}`;
+
+  const lineas = [
+    { cuenta_id: cuentaDebe,     descripcion: `${labelCuenta} — devolución ${devolucion.proveedor_nombre}`, debe: devolucion.monto, haber: 0, orden: 0 },
+    { cuenta_id: cuentas.cxp_id, descripcion: `CxP Proveedores — devolución ${devolucion.proveedor_nombre}`, debe: 0, haber: devolucion.monto, orden: 1 },
+  ];
+
+  return insertarAsiento({
+    fecha: devolucion.fecha,
+    descripcion: descripcionCab,
+    tipo: 'tributario',
+    origen: 'devoluciones_proveedor',
+    origen_id: devolucion.cuenta_pagar_id,
+    lineas,
+  });
+}
+
 const MESES_CORTOS = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
 
 export async function generarAsientoPagoFijo({ id, monto, codigo, cuenta_debe_key, mes, año }) {
