@@ -8,7 +8,7 @@ export async function ajustarInventarioPorEdicion(itemOriginal, itemNuevo, conte
     .from('inventario_mp')
     .select('id, stock_kg')
     .eq('materia_prima_id', itemNuevo.materia_prima_id)
-    .single();
+    .maybeSingle();
 
   if (!inv) return;
 
