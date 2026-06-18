@@ -101,6 +101,9 @@ export async function generarAsientoCompra(compra) {
     : compra.forma_pago === 'credito' ? 'CxP Proveedores'
     : 'Banco';
 
+  const comision = parseFloat(compra.comision || 0);
+  const totalBanco = compra.total + comision;
+
   const lineas = [
     { cuenta_id: cuentas.inventario_mp_id, descripcion: `Inventario MP — ${numFact}${compra.proveedor_nombre}`, debe: compra.subtotal, haber: 0, orden: 0 },
   ];
@@ -109,7 +112,11 @@ export async function generarAsientoCompra(compra) {
     lineas.push({ cuenta_id: cuentas.iva_compras_id, descripcion: `IVA Compras — ${numFact}${compra.proveedor_nombre}`, debe: compra.iva, haber: 0, orden: 1 });
   }
 
-  lineas.push({ cuenta_id: cuentaHaber, descripcion: `${labelPago} — ${numFact}${compra.proveedor_nombre}`, debe: 0, haber: compra.total, orden: lineas.length });
+  if (comision > 0 && compra.forma_pago !== 'efectivo' && compra.forma_pago !== 'credito') {
+    lineas.push({ cuenta_id: cuentas.gasto_caja_id, descripcion: `Gasto comisión banco — ${numFact}${compra.proveedor_nombre}`, debe: comision, haber: 0, orden: lineas.length });
+  }
+
+  lineas.push({ cuenta_id: cuentaHaber, descripcion: `${labelPago} — ${numFact}${compra.proveedor_nombre}`, debe: 0, haber: comision > 0 && compra.forma_pago !== 'efectivo' && compra.forma_pago !== 'credito' ? totalBanco : compra.total, orden: lineas.length });
 
   return insertarAsiento({
     fecha,
@@ -147,6 +154,30 @@ export async function generarAsientoPagoProveedor(pago) {
     origen:      'pagos_compras',
     origen_id:   pago.id,
     lineas,
+  });
+}
+
+const MESES_CORTOS = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+
+export async function generarAsientoPagoFijo({ id, monto, codigo, cuenta_debe_key, mes, año }) {
+  const { cuentas, error: errCfg } = await getCuentasModulos();
+  if (errCfg) return { data: null, error: errCfg };
+
+  const cuentaDebe = cuentas[cuenta_debe_key];
+  if (!cuentaDebe) return { data: null, error: `Cuenta ${cuenta_debe_key} no configurada` };
+
+  const descripcion = `${codigo} — ${MESES_CORTOS[mes - 1]} ${año}`;
+
+  return insertarAsiento({
+    fecha:       new Date().toISOString().split('T')[0],
+    descripcion,
+    tipo:        'tributario',
+    origen:      'talonario_pagos_banco',
+    origen_id:   id,
+    lineas: [
+      { cuenta_id: cuentaDebe,       descripcion, debe: monto, haber: 0,     orden: 0 },
+      { cuenta_id: cuentas.banco_id, descripcion, debe: 0,     haber: monto, orden: 1 },
+    ],
   });
 }
 

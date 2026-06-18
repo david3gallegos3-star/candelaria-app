@@ -56,7 +56,7 @@ export async function calcularNetoBancoMes(año, mes) {
       .neq('estado', 'anulada')
       .gte('created_at', fechaDesde + 'T00:00:00').lte('created_at', fechaHasta + 'T23:59:59'),
     supabase.from('compras')
-      .select('total,forma_pago')
+      .select('total,comision,forma_pago')
       .in('forma_pago', ['transferencia','cheque','deposito'])
       .gte('fecha', fechaDesde).lte('fecha', fechaHasta),
     supabase.from('caja_chica')
@@ -75,7 +75,7 @@ export async function calcularNetoBancoMes(año, mes) {
   const salidasPagosB    = (pagosB||[]).reduce((s,p) => s + parseFloat(p.monto||0), 0);
   const salidasFactsP    = (factsP||[]).reduce((s,f) => s + parseFloat(f.monto||0), 0);
   const entradasVentas   = (ventasBanco||[]).reduce((s,f) => s + parseFloat(f.total||0), 0);
-  const salidasCompras   = (comprasBanco||[]).reduce((s,c) => s + parseFloat(c.total||0), 0);
+  const salidasCompras   = (comprasBanco||[]).reduce((s,c) => s + parseFloat(c.total||0) + parseFloat(c.comision||0), 0);
   const entradasEntregas = (entregas||[]).reduce((s,e) => s + parseFloat(e.cantidad||0), 0);
 
   const totalEntradas = entradasCobros + entradasOtrosI + entradasVentas + entradasEntregas;

@@ -57,7 +57,7 @@ export default function MovimientosBanco() {
         .gte('created_at', fechaDesde + 'T00:00:00').lte('created_at', fechaHasta + 'T23:59:59')
         .order('created_at'),
       supabase.from('compras')
-        .select('id,fecha,total,proveedor_nombre,forma_pago')
+        .select('id,fecha,total,comision,proveedor_nombre,forma_pago')
         .in('forma_pago', ['transferencia','cheque','deposito'])
         .gte('fecha', fechaDesde).lte('fecha', fechaHasta).order('fecha'),
       supabase.from('caja_chica')
@@ -121,12 +121,24 @@ export default function MovimientosBanco() {
         tipo: 'entrada',
         monto: parseFloat(f.total||0),
       })),
-      ...(comprasBanco||[]).map(c => ({
-        fecha: c.fecha || '',
-        descripcion: `Compra ${c.forma_pago} — ${c.proveedor_nombre || ''}`,
-        tipo: 'salida',
-        monto: parseFloat(c.total||0),
-      })),
+      ...(comprasBanco||[]).flatMap(c => {
+        const filas = [{
+          fecha: c.fecha || '',
+          descripcion: `Compra ${c.forma_pago} — ${c.proveedor_nombre || ''}`,
+          tipo: 'salida',
+          monto: parseFloat(c.total||0),
+        }];
+        if (parseFloat(c.comision||0) > 0) {
+          filas.push({
+            fecha: c.fecha || '',
+            descripcion: `└ Comisión — ${c.proveedor_nombre || ''}`,
+            tipo: 'salida',
+            monto: parseFloat(c.comision),
+            esComision: true,
+          });
+        }
+        return filas;
+      }),
       ...(entregas||[]).map(e => ({
         fecha: fechaPorCaja[e.caja_id] || '',
         descripcion: `Depósito desde Caja Chica${e.recibe ? ` — ${e.recibe}` : ''}`,

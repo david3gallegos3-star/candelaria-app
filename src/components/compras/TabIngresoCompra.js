@@ -50,6 +50,7 @@ export default function TabIngresoCompra({ mobile, currentUser, userRol }) {
   const [xmlContent,      setXmlContent]      = useState('');
   const [formaPago,    setFormaPago]    = useState('efectivo');
   const [referenciaPago, setReferenciaPago] = useState('');
+  const [comisionPago, setComisionPago] = useState('');
   const [diasCredito,  setDiasCredito]  = useState(30);
   const [notas,        setNotas]        = useState('');
   const [items,        setItems]        = useState([itemVacio(false)]);
@@ -170,6 +171,7 @@ export default function TabIngresoCompra({ mobile, currentUser, userRol }) {
         neto_pagar:         tieneRetencion ? netoPagar : null,
         forma_pago:       formaPago,
         referencia_pago:  ['transferencia', 'cheque', 'deposito'].includes(formaPago) ? referenciaPago || null : null,
+        comision:         ['transferencia', 'cheque'].includes(formaPago) ? parseFloat(comisionPago) || 0 : 0,
         dias_credito:     formaPago === 'credito' ? diasCredito : 0,
         estado:           formaPago === 'credito' ? 'pendiente' : 'pagada',
         notas,
@@ -179,8 +181,10 @@ export default function TabIngresoCompra({ mobile, currentUser, userRol }) {
       generarAsientoCompra({
         id: compra.id,
         proveedor_nombre: proveedor?.nombre || '',
+        numero_factura: tieneFactura ? (numFactura || null) : null,
         subtotal, iva, total,
-        forma_pago: formaPago
+        forma_pago: formaPago,
+        comision: ['transferencia', 'cheque'].includes(formaPago) ? parseFloat(comisionPago) || 0 : 0,
       }).catch(console.error);
 
       // 1b. Subir XML a Storage si fue cargado
@@ -295,6 +299,7 @@ export default function TabIngresoCompra({ mobile, currentUser, userRol }) {
       setXmlContent('');
       setFormaPago('efectivo');
       setReferenciaPago('');
+      setComisionPago('');
       setNotas('');
       mostrarExito(`✅ Compra registrada — ${itemsValidos.length} ${esPersonal ? 'item(s)' : 'material(es)'}, $${total.toFixed(2)}${esPersonal ? '' : ' — inventario actualizado'}`);
       cargarDatos(); // recargar stocks
@@ -853,6 +858,21 @@ export default function TabIngresoCompra({ mobile, currentUser, userRol }) {
               value={referenciaPago}
               onChange={e => setReferenciaPago(e.target.value)}
               placeholder="Ej: 00123456"
+              style={{ width: '100%', padding: '7px 10px', borderRadius: 6,
+                border: '1px solid #ddd', fontSize: 13, boxSizing: 'border-box' }}
+            />
+          </div>
+        )}
+        {['transferencia', 'cheque'].includes(formaPago) && (
+          <div style={{ marginTop: 10 }}>
+            <label style={{ fontSize: 12, color: '#555', display: 'block', marginBottom: 4 }}>
+              Comisión bancaria (opcional)
+            </label>
+            <input
+              type="number" min="0" step="0.01"
+              value={comisionPago}
+              onChange={e => setComisionPago(e.target.value)}
+              placeholder="$0.00 — dejar vacío si no hay comisión"
               style={{ width: '100%', padding: '7px 10px', borderRadius: 6,
                 border: '1px solid #ddd', fontSize: 13, boxSizing: 'border-box' }}
             />

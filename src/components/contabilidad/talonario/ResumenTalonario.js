@@ -34,7 +34,7 @@ export default function ResumenTalonario() {
       supabase.from('facturas').select('total,forma_pago').gte('created_at', fechaDesde + 'T00:00:00').lte('created_at', fechaHasta + 'T23:59:59').neq('estado', 'anulada'),
       supabase.from('cobros').select('id,fecha,monto,forma_pago,observaciones,clientes(nombre),facturas(numero)').gte('fecha', fechaDesde).lte('fecha', fechaHasta),
       supabase.from('caja_chica').select('id').gte('fecha', fechaDesde).lte('fecha', fechaHasta),
-      supabase.from('compras').select('total,tiene_factura,forma_pago,es_personal').gte('fecha', fechaDesde).lte('fecha', fechaHasta),
+      supabase.from('compras').select('total,comision,tiene_factura,forma_pago,es_personal').gte('fecha', fechaDesde).lte('fecha', fechaHasta),
       supabase.from('nomina').select('sueldo_prop,iess_patronal').eq('periodo', periodo),
       supabase.from('talonario_pagos_banco').select('id,fecha,monto,concepto,beneficiario').eq('mes', mes).eq('año', año),
       supabase.from('talonario_pagos_personales').select('monto,categoria').eq('mes', mes).eq('año', año),
@@ -77,7 +77,7 @@ export default function ResumenTalonario() {
     const otrosIngBancoDet = (otrosI||[]).filter(o => o.forma_pago !== '01');
     const otrosIngBancoTotal = otrosIngBancoDet.reduce((s,o) => s + parseFloat(o.monto||0), 0);
     const ventasBancoTotal  = (facturas||[]).filter(f => ['transferencia','cheque'].includes(f.forma_pago)).reduce((s,f) => s + parseFloat(f.total||0), 0);
-    const comprasBancoTotal = (compras||[]).filter(c => ['transferencia','cheque','deposito'].includes(c.forma_pago)).reduce((s,c) => s + parseFloat(c.total||0), 0);
+    const comprasBancoTotal = (compras||[]).filter(c => ['transferencia','cheque','deposito'].includes(c.forma_pago) && !c.es_personal).reduce((s,c) => s + parseFloat(c.total||0) + parseFloat(c.comision||0), 0);
     const totalEntregasCaja = suma(entregas || [], 'cantidad');
     const { neto: netoBancoMes } = await calcularNetoBancoMes(año, mes);
     const { saldoCalculado, pendienteInicial } = await calcularSaldoCalculado(año, mes, netoBancoMes);
@@ -106,6 +106,7 @@ export default function ResumenTalonario() {
       totalSueldos, totalIess, totalPagosB, totalPagosP,
       cobroEfect, cobroCheq, cobroTransf, pagosPrestTarj, pagosGastPers,
       gastosPersonalesCaja, totalComprasPersonales, comprasPersonalesPagadas,
+      comprasBancoTotal,
       cxcPendiente, saldoCalculado, pendienteInicial, movsBanco });
     setCargando(false);
   }
@@ -118,6 +119,7 @@ export default function ResumenTalonario() {
     totalSueldos, totalIess, totalPagosB, totalPagosP,
     cobroEfect, cobroCheq, cobroTransf, pagosPrestTarj, pagosGastPers,
     gastosPersonalesCaja, totalComprasPersonales, comprasPersonalesPagadas,
+    comprasBancoTotal,
     cxcPendiente, saldoCalculado, pendienteInicial, movsBanco,
   } = datos;
 
@@ -130,7 +132,7 @@ export default function ResumenTalonario() {
 
   const totalIngCons = cobroEfect + cobroCheq + cobroTransf + totalOtrosI;
   const pagosGastPersTotal = pagosGastPers + gastosPersonalesCaja + comprasPersonalesPagadas;
-  const totalEgrCons = totalGastos + totalPagosB + pagosPrestTarj + pagosGastPersTotal;
+  const totalEgrCons = totalGastos + totalPagosB + comprasBancoTotal + pagosPrestTarj + pagosGastPersTotal;
 
   const $ = v => `$${parseFloat(v||0).toFixed(2)}`;
   const fila = (label, valor, color) => (
@@ -199,7 +201,7 @@ export default function ResumenTalonario() {
 
           {titulo('EGRESOS (pagos reales)', '#e74c3c')}
           {fila('(-) Gastos efectivo', totalGastos, '#e74c3c')}
-          {fila('(-) Pagos con banco', totalPagosB, '#e74c3c')}
+          {fila('(-) Pagos con banco', totalPagosB + comprasBancoTotal, '#e74c3c')}
           {fila('(-) Tarjetas/préstamos', pagosPrestTarj, '#e74c3c')}
           {fila('(-) Gastos personales', pagosGastPersTotal, '#e74c3c')}
           {totalRow('TOTAL', totalEgrCons, '#e74c3c')}
