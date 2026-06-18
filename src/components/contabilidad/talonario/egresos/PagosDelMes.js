@@ -19,7 +19,26 @@ const CUENTA_DEBE_OPTIONS = [
   { value: 'sueldos_pagar_id', label: 'Sueldos por Pagar' },
 ];
 
-const VACIO_FIJO = { nombre: '', codigo: '', monto_default: '', forma_pago: '20', cuenta_debe_key: 'gasto_caja_id', orden: 0 };
+const TIPO_MOD_CIF_OPTIONS = [
+  { value: '',          label: '— Sin vinculación —' },
+  { value: 'directa',   label: 'MOD Directa' },
+  { value: 'indirecta', label: 'MOD Indirecta' },
+  { value: 'cif',       label: 'CIF' },
+];
+
+const VACIO_FIJO = {
+  nombre: '', codigo: '', monto_default: '', forma_pago: '20',
+  cuenta_debe_key: 'gasto_caja_id', orden: 0,
+  tipo_mod_cif: '', mod_cif_row_id: '',
+};
+
+async function syncModCifRow(fijo, monto) {
+  if (!fijo.tipo_mod_cif || !fijo.mod_cif_row_id) return;
+  const tabla = fijo.tipo_mod_cif === 'cif' ? 'cif_items'
+    : fijo.tipo_mod_cif === 'directa' ? 'mod_directa' : 'mod_indirecta';
+  const campo = fijo.tipo_mod_cif === 'cif' ? 'valor_mes' : 'sueldo_mes';
+  await supabase.from(tabla).update({ [campo]: monto }).eq('id', fijo.mod_cif_row_id);
+}
 
 export default function PagosDelMes() {
   const { mes, año, esAdminContador } = useTalonario();
@@ -35,6 +54,7 @@ export default function PagosDelMes() {
   const [modalFijos,    setModalFijos]    = useState(false);
   const [formFijo,      setFormFijo]      = useState(null);
   const [guardandoFijo, setGuardandoFijo] = useState(false);
+  const [modCifRows,    setModCifRows]    = useState({ directa: [], indirecta: [], cif: [] });
 
   async function cargar() {
     setCargando(true);
@@ -68,7 +88,20 @@ export default function PagosDelMes() {
     setCargando(false);
   }
 
+  async function cargarModCifRows() {
+    const [{ data: d }, { data: i }, { data: c }] = await Promise.all([
+      supabase.from('mod_directa').select('id,nombre').order('orden'),
+      supabase.from('mod_indirecta').select('id,nombre').order('orden'),
+      supabase.from('cif_items').select('id,detalle').order('orden'),
+    ]);
+    setModCifRows({ directa: d||[], indirecta: i||[], cif: c||[] });
+  }
+
   useEffect(() => { cargar(); }, [mes, año]);
+
+  useEffect(() => {
+    if (modalFijos) cargarModCifRows();
+  }, [modalFijos]);
 
   async function guardar() {
     if (!form.concepto || !form.monto) return alert('Concepto y monto son requeridos');
@@ -109,6 +142,7 @@ export default function PagosDelMes() {
     if (!error && pago) {
       generarAsientoPagoFijo({ id: pago.id, monto, codigo: fijo.codigo, cuenta_debe_key: fijo.cuenta_debe_key, mes, año })
         .catch(e => console.error('Asiento pago fijo:', e));
+      syncModCifRow(fijo, monto).catch(e => console.error('Sync MOD+CIF:', e));
     }
     setRegistrando(r => ({ ...r, [fijo.id]: false }));
     cargar();
@@ -124,6 +158,7 @@ export default function PagosDelMes() {
       .eq('origen', 'talonario_pagos_banco').eq('origen_id', filaExistente.id);
     generarAsientoPagoFijo({ id: filaExistente.id, monto, codigo: fijo.codigo, cuenta_debe_key: fijo.cuenta_debe_key, mes, año })
       .catch(e => console.error('Asiento pago fijo edit:', e));
+    syncModCifRow(fijo, monto).catch(e => console.error('Sync MOD+CIF edit:', e));
 
     setRegistrando(r => ({ ...r, [fijo.id]: false }));
     setEditandoFijo(null);
@@ -133,6 +168,24 @@ export default function PagosDelMes() {
   async function guardarFijo() {
     if (!formFijo.nombre || !formFijo.codigo) return alert('Nombre y código son requeridos');
     setGuardandoFijo(true);
+
+    let modCifRowId = formFijo.mod_cif_row_id || null;
+
+    // Si eligió "crear nueva fila", la creamos primero
+    if (formFijo.tipo_mod_cif && formFijo.mod_cif_row_id === 'NUEVO') {
+      const tabla = formFijo.tipo_mod_cif === 'cif' ? 'cif_items'
+        : formFijo.tipo_mod_cif === 'directa' ? 'mod_directa' : 'mod_indirecta';
+      const maxOrden = (formFijo.tipo_mod_cif === 'cif' ? modCifRows.cif
+        : formFijo.tipo_mod_cif === 'directa' ? modCifRows.directa : modCifRows.indirecta).length;
+      const rowPayload = formFijo.tipo_mod_cif === 'cif'
+        ? { detalle: formFijo.nombre.trim(), valor_mes: 0, porcentaje_merma: 0, costo_kg: 0, orden: maxOrden }
+        : { nombre: formFijo.nombre.trim(), horas_mes: 240, sueldo_mes: 0, costo_kg: 0, orden: maxOrden };
+      const { data: newRow } = await supabase.from(tabla).insert(rowPayload).select('id').single();
+      modCifRowId = newRow?.id || null;
+    }
+
+    if (!formFijo.tipo_mod_cif) modCifRowId = null;
+
     const payload = {
       nombre:          formFijo.nombre.trim(),
       codigo:          formFijo.codigo.trim().toUpperCase(),
@@ -140,6 +193,8 @@ export default function PagosDelMes() {
       forma_pago:      formFijo.forma_pago || '20',
       cuenta_debe_key: formFijo.cuenta_debe_key,
       orden:           parseInt(formFijo.orden) || 0,
+      tipo_mod_cif:    formFijo.tipo_mod_cif || null,
+      mod_cif_row_id:  modCifRowId,
     };
     if (formFijo.id) {
       await supabase.from('pagos_fijos').update(payload).eq('id', formFijo.id);
@@ -148,6 +203,7 @@ export default function PagosDelMes() {
     }
     setGuardandoFijo(false);
     setFormFijo(null);
+    cargarModCifRows();
     cargar();
   }
 
@@ -177,6 +233,17 @@ export default function PagosDelMes() {
   const totalPagosCompras = pagosCompras.reduce((s, p) => s + parseFloat(p.monto||0), 0);
   const totalComisiones   = pagosCompras.reduce((s, p) => s + parseFloat(p.comision||0), 0);
   const fijosFiltrados    = pagosFijos.filter(f => f.activo);
+
+  // Filas del dropdown según tipo seleccionado en el form
+  const rowsParaTipo = (tipo) => {
+    if (tipo === 'directa')   return modCifRows.directa.map(r => ({ id: r.id, label: r.nombre }));
+    if (tipo === 'indirecta') return modCifRows.indirecta.map(r => ({ id: r.id, label: r.nombre }));
+    if (tipo === 'cif')       return modCifRows.cif.map(r => ({ id: r.id, label: r.detalle }));
+    return [];
+  };
+
+  const tipoLabel = (tipo) =>
+    TIPO_MOD_CIF_OPTIONS.find(o => o.value === tipo)?.label || '—';
 
   return (
     <>
@@ -217,7 +284,15 @@ export default function PagosDelMes() {
                     <td style={{ padding: '8px 12px', fontWeight: 'bold', color: '#1a3a2a', fontFamily: 'monospace' }}>
                       {fijo.codigo}
                     </td>
-                    <td style={{ padding: '8px 12px' }}>{fijo.nombre}</td>
+                    <td style={{ padding: '8px 12px' }}>
+                      {fijo.nombre}
+                      {fijo.tipo_mod_cif && (
+                        <span style={{ marginLeft: 6, fontSize: 10, background: '#eaf4ff',
+                          color: '#2980b9', borderRadius: 4, padding: '1px 5px' }}>
+                          {tipoLabel(fijo.tipo_mod_cif)}
+                        </span>
+                      )}
+                    </td>
                     <td style={{ padding: '8px 12px', color: '#666', fontSize: 11 }}>{cuentaLabel}</td>
                     <td style={{ padding: '8px 12px', textAlign: 'right' }}>
                       {filaReg && !estaEditando ? (
@@ -387,7 +462,7 @@ export default function PagosDelMes() {
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
           display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
           <div style={{ background: 'white', borderRadius: 12, padding: 24,
-            width: 700, maxWidth: '96vw', maxHeight: '90vh', overflowY: 'auto' }}>
+            width: 780, maxWidth: '96vw', maxHeight: '90vh', overflowY: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
               <h3 style={{ margin: 0, fontSize: 15 }}>⚙️ Administrar Pagos Fijos</h3>
               <button onClick={() => { setModalFijos(false); setFormFijo(null); }}
@@ -398,7 +473,7 @@ export default function PagosDelMes() {
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginBottom: 16 }}>
                 <thead>
                   <tr style={{ background: '#f5f7f5' }}>
-                    {['Cód','Nombre','Monto default','Forma pago','Cuenta DEBE','Orden','Activo',''].map(h => (
+                    {['Cód','Nombre','Monto default','Cuenta DEBE','MOD+CIF','Activo',''].map(h => (
                       <th key={h} style={{ padding: '6px 10px', textAlign: 'left', fontSize: 11,
                         fontWeight: 700, color: '#555', borderBottom: '1px solid #eee' }}>{h}</th>
                     ))}
@@ -410,13 +485,19 @@ export default function PagosDelMes() {
                       <td style={{ padding: '6px 10px', fontFamily: 'monospace', fontWeight: 'bold' }}>{f.codigo}</td>
                       <td style={{ padding: '6px 10px' }}>{f.nombre}</td>
                       <td style={{ padding: '6px 10px' }}>${parseFloat(f.monto_default||0).toFixed(2)}</td>
-                      <td style={{ padding: '6px 10px' }}>
-                        {FORMAS_PAGO.find(fp => fp.value === f.forma_pago)?.label || f.forma_pago}
-                      </td>
                       <td style={{ padding: '6px 10px', fontSize: 11 }}>
                         {CUENTA_DEBE_OPTIONS.find(o => o.value === f.cuenta_debe_key)?.label || f.cuenta_debe_key}
                       </td>
-                      <td style={{ padding: '6px 10px' }}>{f.orden}</td>
+                      <td style={{ padding: '6px 10px' }}>
+                        {f.tipo_mod_cif ? (
+                          <span style={{ background: '#eaf4ff', color: '#2980b9',
+                            borderRadius: 4, padding: '2px 7px', fontSize: 11, fontWeight: 'bold' }}>
+                            {tipoLabel(f.tipo_mod_cif)}
+                          </span>
+                        ) : (
+                          <span style={{ color: '#ccc', fontSize: 11 }}>—</span>
+                        )}
+                      </td>
                       <td style={{ padding: '6px 10px' }}>
                         <button onClick={() => toggleActivoFijo(f)}
                           style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 14 }}>
@@ -425,7 +506,7 @@ export default function PagosDelMes() {
                       </td>
                       <td style={{ padding: '6px 10px' }}>
                         <div style={{ display: 'flex', gap: 4 }}>
-                          <button onClick={() => setFormFijo({ ...f })}
+                          <button onClick={() => setFormFijo({ ...f, tipo_mod_cif: f.tipo_mod_cif || '', mod_cif_row_id: f.mod_cif_row_id || '' })}
                             style={{ background: '#2980b9', color: 'white', border: 'none',
                               borderRadius: 4, padding: '3px 8px', cursor: 'pointer', fontSize: 11 }}>✏️</button>
                           <button onClick={() => eliminarFijo(f.id)}
@@ -495,7 +576,48 @@ export default function PagosDelMes() {
                       style={{ width: '100%', padding: '7px 10px', borderRadius: 6,
                         border: '1px solid #ddd', fontSize: 12, boxSizing: 'border-box' }} />
                   </div>
+
+                  {/* Vinculación MOD+CIF — ocupa todo el ancho */}
+                  <div style={{ gridColumn: '1 / -1', borderTop: '1px solid #e0e0e0', paddingTop: 10, marginTop: 4 }}>
+                    <label style={{ fontSize: 11, color: '#2980b9', fontWeight: 'bold', display: 'block', marginBottom: 6 }}>
+                      🔗 Vinculación con MOD+CIF (permanente, aplica todos los meses)
+                    </label>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                      <div>
+                        <label style={{ fontSize: 11, color: '#555', display: 'block', marginBottom: 3 }}>Sección</label>
+                        <select value={formFijo.tipo_mod_cif}
+                          onChange={e => setFormFijo(p => ({ ...p, tipo_mod_cif: e.target.value, mod_cif_row_id: '' }))}
+                          style={{ width: '100%', padding: '7px 10px', borderRadius: 6,
+                            border: '1.5px solid #2980b9', fontSize: 12 }}>
+                          {TIPO_MOD_CIF_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                        </select>
+                      </div>
+                      {formFijo.tipo_mod_cif && (
+                        <div>
+                          <label style={{ fontSize: 11, color: '#555', display: 'block', marginBottom: 3 }}>Fila en MOD+CIF</label>
+                          <select value={formFijo.mod_cif_row_id}
+                            onChange={e => setFormFijo(p => ({ ...p, mod_cif_row_id: e.target.value }))}
+                            style={{ width: '100%', padding: '7px 10px', borderRadius: 6,
+                              border: '1.5px solid #2980b9', fontSize: 12 }}>
+                            <option value="">— Seleccionar fila —</option>
+                            <option value="NUEVO">➕ Crear nueva fila</option>
+                            {rowsParaTipo(formFijo.tipo_mod_cif).map(r => (
+                              <option key={r.id} value={r.id}>{r.label}</option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                    </div>
+                    {formFijo.tipo_mod_cif && (
+                      <div style={{ marginTop: 7, fontSize: 11, color: '#666', background: '#eaf4ff',
+                        borderRadius: 6, padding: '6px 10px' }}>
+                        Al registrar cada mes, el monto pagado se sincronizará automáticamente con la fila seleccionada en {tipoLabel(formFijo.tipo_mod_cif)}.
+                        Luego haz "Guardar y Sincronizar" en MOD+CIF para actualizar el $/kg en las fórmulas.
+                      </div>
+                    )}
+                  </div>
                 </div>
+
                 <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 14 }}>
                   <button onClick={() => setFormFijo(null)}
                     style={{ padding: '8px 18px', borderRadius: 6, border: '1px solid #ddd',
