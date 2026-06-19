@@ -25,7 +25,7 @@ export default function TabFormulario104({ mobile }) {
     const desde = `${anio}-${String(mes + 1).padStart(2,'0')}-01`;
     const hasta = new Date(anio, mes + 1, 0).toISOString().slice(0, 10); // último día del mes
 
-    const [{ data: facturas }, { data: compras }, { data: notasDebito }] = await Promise.all([
+    const [{ data: facturas }, { data: compras }, { data: notasCredito }] = await Promise.all([
       supabase.from('facturas')
         .select('subtotal, iva, porcentaje_iva, estado')
         .gte('created_at', desde + 'T00:00:00')
@@ -36,12 +36,14 @@ export default function TabFormulario104({ mobile }) {
         .neq('estado', 'anulada')
         .gte('fecha', desde)
         .lte('fecha', hasta),
-      // notas_debito si existen — ignorar si no hay tabla
-      supabase.from('facturas')
+      // Notas de credito electronicas del periodo — reducen ventas e IVA.
+      // Las manuales (es_manual=true) no se restan aqui porque su factura
+      // ya quedo fuera de la lista anterior (estado='anulada').
+      supabase.from('notas_credito')
         .select('subtotal, iva')
+        .eq('es_manual', false)
         .gte('created_at', desde + 'T00:00:00')
-        .lte('created_at', hasta + 'T23:59:59')
-        .eq('estado', 'anulada'),
+        .lte('created_at', hasta + 'T23:59:59'),
     ]);
 
     // ── Ventas ──────────────────────────────────────────────
@@ -57,9 +59,9 @@ export default function TabFormulario104({ mobile }) {
     const c451 = ventasGravadas.reduce((s, f) => s + (parseFloat(f.iva)      || 0), 0); // IVA cobrado
     const c431 = c401 + c411; // total ventas
 
-    // Notas crédito / facturas anuladas (reducen ventas)
-    const c415 = (notasDebito || []).reduce((s, f) => s + (parseFloat(f.subtotal) || 0), 0);
-    const c453 = (notasDebito || []).reduce((s, f) => s + (parseFloat(f.iva)      || 0), 0);
+    // Notas de crédito electrónicas del período (reducen ventas)
+    const c415 = (notasCredito || []).reduce((s, nc) => s + (parseFloat(nc.subtotal) || 0), 0);
+    const c453 = (notasCredito || []).reduce((s, nc) => s + (parseFloat(nc.iva)      || 0), 0);
 
     // ── Compras / adquisiciones ──────────────────────────────
     const comprasConIva = (compras || []).filter(c => (parseFloat(c.iva) || 0) > 0);
