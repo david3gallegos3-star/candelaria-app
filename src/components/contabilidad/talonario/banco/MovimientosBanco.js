@@ -32,6 +32,7 @@ export default function MovimientosBanco() {
       { data: ventasBanco },
       { data: comprasBanco },
       { data: cajasMes },
+      { data: notasCreditoBanco },
     ] = await Promise.all([
       supabase.from('cobros')
         .select('id,fecha,monto,comision,forma_pago,observaciones,clientes(nombre),facturas(numero)')
@@ -64,6 +65,9 @@ export default function MovimientosBanco() {
       supabase.from('caja_chica')
         .select('id,fecha')
         .gte('fecha', fechaDesde).lte('fecha', fechaHasta),
+      supabase.from('notas_credito')
+        .select('created_at, total, facturas(numero, forma_pago)').eq('es_manual', false)
+        .gte('created_at', fechaDesde + 'T00:00:00').lte('created_at', fechaHasta + 'T23:59:59'),
     ]);
     setSaldoReal(config?.valor?.saldo || '');
     setNotaDiferencia(config?.valor?.notaDiferencia || '');
@@ -122,6 +126,14 @@ export default function MovimientosBanco() {
         tipo: 'entrada',
         monto: parseFloat(f.total||0),
       })),
+      ...(notasCreditoBanco||[])
+        .filter(nc => ['transferencia','cheque','tarjeta_credito'].includes(nc.facturas?.forma_pago))
+        .map(nc => ({
+          fecha: (nc.created_at || '').split('T')[0],
+          descripcion: `Nota de crédito — ${nc.facturas?.numero || ''}`,
+          tipo: 'salida',
+          monto: parseFloat(nc.total||0),
+        })),
       ...(comprasBanco||[]).flatMap(c => {
         const filas = [{
           fecha: c.fecha || '',
