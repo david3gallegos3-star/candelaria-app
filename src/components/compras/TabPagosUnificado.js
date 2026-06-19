@@ -6,7 +6,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import * as XLSX from 'xlsx';
 import { supabase } from '../../supabase';
 import { useRealtime } from '../../hooks/useRealtime';
-import { generarAsientoPagoProveedor } from '../../utils/asientosContables';
+import { generarAsientoPagoProveedor, generarAsientoDevolucionProveedor } from '../../utils/asientosContables';
 import EditarCompraModal from './EditarCompraModal';
 
 const FORMA_SRI  = { efectivo: '01', transferencia: '20', cheque: '20', credito: '19', tarjeta: '19' };
@@ -89,6 +89,14 @@ export default function TabPagosUnificado({ mobile, currentUser, userRol }) {
   const [guardandoPago,    setGuardandoPago]      = useState(false);
   const [comprasDirectas,  setComprasDirectas]    = useState([]);
 
+  // Saldos a favor + modal devolución
+  const [saldosFavor,        setSaldosFavor]        = useState([]);
+  const [modalDevolucion,    setModalDevolucion]    = useState(null);
+  const [montoDevolucion,    setMontoDevolucion]    = useState('');
+  const [formaDevolucion,    setFormaDevolucion]    = useState('transferencia');
+  const [fechaDevolucion,    setFechaDevolucion]    = useState(hoy);
+  const [guardandoDevolucion, setGuardandoDevolucion] = useState(false);
+
   const cargar = useCallback(async () => {
     setCargando(true);
     const [{ data: cuentasData }, { data: directasData }] = await Promise.all([
@@ -117,6 +125,12 @@ export default function TabPagosUnificado({ mobile, currentUser, userRol }) {
     const todasCuentas = cuentasData || [];
     setCuentas(todasCuentas);
     setComprasDirectas(directasData || []);
+
+    const { data: saldosFavorData } = await supabase
+      .from('cuentas_pagar')
+      .select('id, proveedor_id, saldo_pendiente, proveedores ( nombre )')
+      .lt('saldo_pendiente', 0);
+    setSaldosFavor(saldosFavorData || []);
 
     if (todasCuentas.length > 0) {
       const ids = todasCuentas.map(c => c.id);
@@ -395,6 +409,47 @@ export default function TabPagosUnificado({ mobile, currentUser, userRol }) {
 
     setGuardandoPago(false);
     setModalEditarPago(null);
+    await cargar();
+  }
+
+  // ── Saldos a favor / devolución ───────────────────────────
+  function abrirDevolucion(c) {
+    setModalDevolucion(c);
+    setMontoDevolucion(Math.abs(c.saldo_pendiente).toFixed(2));
+    setFormaDevolucion('transferencia');
+    setFechaDevolucion(hoy);
+  }
+
+  async function registrarDevolucion() {
+    const monto = parseFloat(montoDevolucion);
+    if (!monto || monto <= 0) return;
+    setGuardandoDevolucion(true);
+
+    const { error } = await generarAsientoDevolucionProveedor({
+      cuenta_pagar_id: modalDevolucion.id,
+      proveedor_nombre: modalDevolucion.proveedores?.nombre || '',
+      forma_pago: formaDevolucion,
+      fecha: fechaDevolucion,
+      monto,
+    });
+    if (error) { setGuardandoDevolucion(false); return; }
+
+    await supabase.from('cuentas_pagar').update({
+      saldo_pendiente: modalDevolucion.saldo_pendiente + monto,
+      updated_at: new Date().toISOString(),
+    }).eq('id', modalDevolucion.id);
+
+    await supabase.from('pagos_compras').insert({
+      cuenta_pagar_id: modalDevolucion.id,
+      proveedor_id: modalDevolucion.proveedor_id,
+      monto,
+      forma_pago: formaDevolucion,
+      fecha_pago: fechaDevolucion,
+      tipo: 'devolucion',
+    });
+
+    setGuardandoDevolucion(false);
+    setModalDevolucion(null);
     await cargar();
   }
 
@@ -726,6 +781,35 @@ export default function TabPagosUnificado({ mobile, currentUser, userRol }) {
         </div>
       )}
 
+      {/* ── Saldos a favor ── */}
+      {saldosFavor.length > 0 && (
+        <div style={{ marginTop: 14 }}>
+          <div style={{ background: '#fff3e0', borderRadius: 10, padding: '9px 14px', marginBottom: 8,
+            fontWeight: 'bold', fontSize: 13, color: '#e67e22',
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>💰 Saldos a favor ({saldosFavor.length})</span>
+            <span>${saldosFavor.reduce((s, c) => s + Math.abs(c.saldo_pendiente), 0).toFixed(2)}</span>
+          </div>
+          {saldosFavor.map(c => (
+            <div key={c.id} style={{ ...card, borderLeft: '4px solid #e67e22',
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+              <div>
+                <span style={{ fontWeight: 'bold', fontSize: 14, color: '#1a3a2a' }}>
+                  🏢 {c.proveedores?.nombre || 'Proveedor'}
+                </span>
+                <span style={{ marginLeft: 10, fontWeight: 'bold', color: '#e67e22' }}>
+                  💰 ${Math.abs(c.saldo_pendiente).toFixed(2)} a favor
+                </span>
+              </div>
+              <button onClick={() => abrirDevolucion(c)} style={{
+                background: '#e67e22', color: 'white', border: 'none', borderRadius: 8,
+                padding: '8px 14px', cursor: 'pointer', fontSize: 12, fontWeight: 'bold'
+              }}>🏦 Registrar devolución</button>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* ══ Modal: Registrar Pago ══ */}
       {modalPago && (
         <div style={{
@@ -937,6 +1021,50 @@ export default function TabPagosUnificado({ mobile, currentUser, userRol }) {
                 background: '#2980b9', color: 'white', border: 'none',
                 borderRadius: '8px', padding: '9px 18px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold'
               }}>{guardandoPago ? 'Guardando...' : '💾 Guardar'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══ Modal: Registrar Devolución ══ */}
+      {modalDevolucion && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
+          zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
+          <div style={{ background: 'white', borderRadius: '16px', padding: '24px',
+            width: '100%', maxWidth: '420px', boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }}>
+            <h3 style={{ margin: '0 0 6px', color: '#1a3a2a' }}>🏦 Registrar devolución</h3>
+            <p style={{ margin: '0 0 20px', color: '#555', fontSize: '13px' }}>
+              Proveedor: <b>{modalDevolucion.proveedores?.nombre}</b><br />
+              Saldo a favor: <b style={{ color: '#e67e22' }}>${Math.abs(modalDevolucion.saldo_pendiente).toFixed(2)}</b>
+            </p>
+            <div style={{ marginBottom: '14px' }}>
+              <label style={{ display: 'block', fontSize: '12px', color: '#555', marginBottom: '4px', fontWeight: '600' }}>Monto *</label>
+              <input type="number" min="0.01" step="0.01" value={montoDevolucion}
+                onChange={e => setMontoDevolucion(e.target.value)} style={inputFull} />
+            </div>
+            <div style={{ marginBottom: '14px' }}>
+              <label style={{ display: 'block', fontSize: '12px', color: '#555', marginBottom: '4px', fontWeight: '600' }}>Forma de pago</label>
+              <select value={formaDevolucion} onChange={e => setFormaDevolucion(e.target.value)} style={inputFull}>
+                <option value="transferencia">Transferencia</option>
+                <option value="efectivo">Efectivo</option>
+              </select>
+            </div>
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ display: 'block', fontSize: '12px', color: '#555', marginBottom: '4px', fontWeight: '600' }}>Fecha</label>
+              <input type="date" value={fechaDevolucion}
+                onChange={e => setFechaDevolucion(e.target.value)} style={inputFull} />
+            </div>
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <button onClick={() => setModalDevolucion(null)} style={{
+                background: '#f0f2f5', border: 'none', borderRadius: '8px',
+                padding: '10px 20px', cursor: 'pointer', fontSize: '13px'
+              }}>Cancelar</button>
+              <button onClick={registrarDevolucion} disabled={guardandoDevolucion} style={{
+                background: guardandoDevolucion ? '#aaa' : '#e67e22',
+                color: 'white', border: 'none', borderRadius: '8px',
+                padding: '10px 24px', cursor: guardandoDevolucion ? 'default' : 'pointer',
+                fontSize: '13px', fontWeight: 'bold'
+              }}>{guardandoDevolucion ? 'Guardando...' : 'Confirmar devolución'}</button>
             </div>
           </div>
         </div>
