@@ -141,8 +141,8 @@ export default function TabPagosUnificado({ mobile }) {
   const filtradas = cuentas.filter(c => {
     const dias = diasRestantes(c.fecha_vencimiento);
     const estadoOk =
-      filtroEstado === 'pendientes' ? c.estado !== 'pagado' :
-      filtroEstado === 'vencidas'   ? c.estado !== 'pagado' && dias !== null && dias < 0 :
+      filtroEstado === 'pendientes' ? (c.estado !== 'pagado' && c.estado !== 'anulada') :
+      filtroEstado === 'vencidas'   ? (c.estado !== 'pagado' && c.estado !== 'anulada') && dias !== null && dias < 0 :
       filtroEstado === 'pagadas'    ? c.estado === 'pagado' || c.estado === 'parcial' :
       true;
     const desdeOk = !filtroDesde || (c.fecha_vencimiento || '') >= filtroDesde;
@@ -169,12 +169,12 @@ export default function TabPagosUnificado({ mobile }) {
 
   // ── Resumen (siempre sobre TODAS las cuentas) ─────────────
   const totalPendiente = cuentas
-    .filter(c => c.estado !== 'pagado')
+    .filter(c => c.estado !== 'pagado' && c.estado !== 'anulada')
     .reduce((s, c) => s + (c.saldo_pendiente || 0), 0);
   const totalVencido = cuentas
-    .filter(c => c.estado !== 'pagado' && diasRestantes(c.fecha_vencimiento) < 0)
+    .filter(c => c.estado !== 'pagado' && c.estado !== 'anulada' && diasRestantes(c.fecha_vencimiento) < 0)
     .reduce((s, c) => s + (c.saldo_pendiente || 0), 0);
-  const cuentasAbiertas = cuentas.filter(c => c.estado !== 'pagado').length;
+  const cuentasAbiertas = cuentas.filter(c => c.estado !== 'pagado' && c.estado !== 'anulada').length;
 
   // Totales de filtradas
   const totalFiltradas      = filtradas.reduce((s, c) => s + (c.monto_total || 0), 0);
@@ -217,7 +217,7 @@ export default function TabPagosUnificado({ mobile }) {
 
   // ── Exportar ATS SRI ──────────────────────────────────────
   function exportarATS() {
-    const hayPendientes = filtradas.some(c => c.estado !== 'pagado');
+    const hayPendientes = filtradas.some(c => c.estado !== 'pagado' && c.estado !== 'anulada');
     if (hayPendientes) {
       const ok = window.confirm(
         '⚠️ Hay cuentas pendientes en la vista actual.\n\n' +
