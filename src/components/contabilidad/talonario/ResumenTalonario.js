@@ -30,6 +30,7 @@ export default function ResumenTalonario() {
       { data: otrosI },
       { data: cxc },
       { data: config },
+      { data: notasCredito },
     ] = await Promise.all([
       supabase.from('facturas').select('total,forma_pago').gte('created_at', fechaDesde + 'T00:00:00').lte('created_at', fechaHasta + 'T23:59:59').neq('estado', 'anulada'),
       supabase.from('cobros').select('id,fecha,monto,forma_pago,observaciones,clientes(nombre),facturas(numero)').gte('fecha', fechaDesde).lte('fecha', fechaHasta),
@@ -41,6 +42,8 @@ export default function ResumenTalonario() {
       supabase.from('talonario_otros_ingresos').select('id,fecha,monto,descripcion,empresa,forma_pago').eq('mes', mes).eq('año', año),
       supabase.from('cuentas_cobrar').select('monto_total,monto_cobrado').in('estado', ['pendiente', 'parcial']),
       supabase.from('config_contabilidad').select('valor').eq('clave', `saldo_banco_${año}_${mes}`).maybeSingle(),
+      supabase.from('notas_credito').select('total').eq('es_manual', false)
+        .gte('created_at', fechaDesde + 'T00:00:00').lte('created_at', fechaHasta + 'T23:59:59'),
     ]);
 
     const cajaIds = (cajas || []).map(c => c.id);
@@ -51,7 +54,7 @@ export default function ResumenTalonario() {
         ])
       : [{ data: [] }, { data: [] }];
 
-    const totalVentas    = suma(facturas || [], 'total');
+    const totalVentas    = suma(facturas || [], 'total') - suma(notasCredito || [], 'total');
     const totalOtrosI    = suma(otrosI   || [], 'monto');
     const totalGastos    = suma((gastos||[]).filter(g => !g.es_personal), 'valor');
     const gastosPersonalesCaja = suma((gastos||[]).filter(g => g.es_personal), 'valor');
