@@ -19,7 +19,7 @@ export default function TabPersonalesCompras({ mobile, currentUser, userRol, edi
     setCargando(true);
     let q = supabase
       .from('compras')
-      .select('id,fecha,proveedor_nombre,total,tiene_factura,numero_factura,forma_pago,notas,subtotal,iva,descuento')
+      .select('id,fecha,proveedor_nombre,total,tiene_factura,numero_factura,forma_pago,notas,subtotal,iva,descuento,estado')
       .eq('es_personal', true)
       .order('fecha', { ascending: false });
     if (filtroDesde) q = q.gte('fecha', filtroDesde);
@@ -39,7 +39,7 @@ export default function TabPersonalesCompras({ mobile, currentUser, userRol, edi
   const filtradas = compras.filter(c =>
     !busqueda || (c.proveedor_nombre || '').toLowerCase().includes(busqueda.toLowerCase())
   );
-  const totalGeneral = filtradas.reduce((s, c) => s + parseFloat(c.total || 0), 0);
+  const totalGeneral = filtradas.filter(c => c.estado !== 'anulada').reduce((s, c) => s + parseFloat(c.total || 0), 0);
 
   const inputStyle = {
     padding: '6px 10px', borderRadius: 6, border: '1px solid #ddd',
@@ -105,7 +105,13 @@ export default function TabPersonalesCompras({ mobile, currentUser, userRol, edi
                 <tr key={c.id} style={{ borderBottom: '1px solid #f0f0f0',
                   background: i % 2 === 0 ? 'white' : '#fdf9ff' }}>
                   <td style={{ padding: '8px 12px', color: '#555' }}>{c.fecha || '—'}</td>
-                  <td style={{ padding: '8px 12px', fontWeight: 600 }}>{c.proveedor_nombre || '—'}</td>
+                  <td style={{ padding: '8px 12px', fontWeight: 600 }}>
+                    {c.proveedor_nombre || '—'}
+                    {c.estado === 'anulada' && (
+                      <span style={{ marginLeft: 8, background: '#e74c3c', color: 'white', borderRadius: 10,
+                        padding: '1px 8px', fontSize: 10, fontWeight: 'bold' }}>🚫 Anulada</span>
+                    )}
+                  </td>
                   <td style={{ padding: '8px 12px', color: '#666' }}>
                     {FORMA_LABEL[c.forma_pago] || c.forma_pago}
                   </td>
