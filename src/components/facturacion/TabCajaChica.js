@@ -158,7 +158,8 @@ export default function TabCajaChica({ mobile, currentUser }) {
       .from('pagos_compras')
       .select('id, monto, notas, fecha_pago, compra_id, compras(proveedor_nombre, es_personal)')
       .eq('fecha_pago', fecha)
-      .eq('forma_pago', 'efectivo');
+      .eq('forma_pago', 'efectivo')
+      .neq('tipo', 'devolucion');
     setPagosEfect(pe || []);
 
     listo.current = true;
