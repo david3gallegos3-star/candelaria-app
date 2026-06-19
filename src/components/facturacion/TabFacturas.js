@@ -94,17 +94,17 @@ export default function TabFacturas({ mobile, userRol }) {
   }
 
   // ── Ver detalle ───────────────────────────────────────────
-  async function toggleDetalle(id, estado) {
+  async function toggleDetalle(id, estado, tipo) {
     if (expandida === id) { setExpandida(null); setDetalle([]); setNotaCredito(null); return; }
     setExpandida(id);
     setDetalle([]);
     setNotaCredito(null);
     setCargandoDetalle(true);
 
-    if (estado === 'anulada') {
+    if (estado === 'anulada' && tipo !== 'nota_venta') {
       const { data: nc } = await supabase.from('notas_credito')
         .select('numero, autorizacion_sri, pdf_url, xml_url, es_manual, motivo')
-        .eq('factura_id', id).order('created_at', { ascending: false }).limit(1).single();
+        .eq('factura_id', id).order('created_at', { ascending: false }).limit(1).maybeSingle();
       if (nc) setNotaCredito(nc);
     }
 
@@ -661,7 +661,7 @@ export default function TabFacturas({ mobile, userRol }) {
 
                   {/* Botones */}
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    <button onClick={() => toggleDetalle(f.id, f.estado)} style={{
+                    <button onClick={() => toggleDetalle(f.id, f.estado, f.tipo)} style={{
                       background: abierta ? '#2980b9' : 'white',
                       color:      abierta ? 'white'   : '#2980b9',
                       border: '1.5px solid #2980b9',
