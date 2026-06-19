@@ -27,6 +27,7 @@ export default function FacturasPersonales() {
       supabase.from('compras')
         .select('id, fecha, proveedor_nombre, total, tiene_factura, numero_factura, forma_pago')
         .eq('es_personal', true)
+        .neq('estado', 'anulada')
         .gte('fecha', fechaDesde).lte('fecha', fechaHasta).order('fecha'),
     ]);
 
