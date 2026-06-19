@@ -7,6 +7,7 @@ import * as XLSX from 'xlsx';
 import { supabase } from '../../supabase';
 import { useRealtime } from '../../hooks/useRealtime';
 import { generarAsientoPagoProveedor } from '../../utils/asientosContables';
+import EditarCompraModal from './EditarCompraModal';
 
 const FORMA_SRI  = { efectivo: '01', transferencia: '20', cheque: '20', credito: '19', tarjeta: '19' };
 const FORMA_EMOJI = { transferencia: '🏦', efectivo: '💵', cheque: '📝', tarjeta: '💳', credito: '📅' };
@@ -51,7 +52,7 @@ function parsearXmlSRI(file, onDone) {
   reader.readAsText(file);
 }
 
-export default function TabPagosUnificado({ mobile }) {
+export default function TabPagosUnificado({ mobile, currentUser, userRol }) {
   const hoy  = new Date().toISOString().slice(0, 10);
 
   const [cuentas,      setCuentas]      = useState([]);
@@ -74,10 +75,8 @@ export default function TabPagosUnificado({ mobile }) {
   const [guardando,     setGuardando]     = useState(false);
   const [error,         setError]         = useState('');
 
-  // Modal editar cuenta
-  const [modalEditar,    setModalEditar]    = useState(null);
-  const [editForm,       setEditForm]       = useState({});
-  const [xmlEditContent, setXmlEditContent] = useState('');
+  // Modal editar compra (unificado)
+  const [modalEditarCompraId, setModalEditarCompraId] = useState(null);
 
   // Modal secuencial
   const [modalSeq,  setModalSeq]  = useState(null);
@@ -330,58 +329,6 @@ export default function TabPagosUnificado({ mobile }) {
     await cargar();
     setModalPago(null);
     setGuardando(false);
-  }
-
-  // ── Editar cuenta ─────────────────────────────────────────
-  function abrirEditar(c) {
-    setEditForm({
-      monto_total:       parseFloat(c.monto_total       || 0).toFixed(2),
-      saldo_pendiente:   parseFloat(c.saldo_pendiente   || 0).toFixed(2),
-      fecha_vencimiento: c.fecha_vencimiento || '',
-      estado:            c.estado            || 'pendiente',
-      forma_pago:        c.forma_pago        || 'credito',
-      notas:             c.notas             || '',
-      numero_factura:    c.compras?.numero_factura   || '',
-      autorizacion_sri:  c.compras?.autorizacion_sri || ''
-    });
-    setXmlEditContent('');
-    setModalEditar(c);
-  }
-
-  async function guardarEdicion() {
-    await supabase.from('cuentas_pagar').update({
-      monto_total:       parseFloat(editForm.monto_total)     || 0,
-      saldo_pendiente:   parseFloat(editForm.saldo_pendiente) || 0,
-      fecha_vencimiento: editForm.fecha_vencimiento || null,
-      estado:            editForm.estado,
-      forma_pago:        editForm.forma_pago,
-      notas:             editForm.notas.trim() || null,
-      updated_at:        new Date().toISOString()
-    }).eq('id', modalEditar.id);
-
-    if (modalEditar.compra_id) {
-      const nf = editForm.numero_factura.trim() || null;
-      await supabase.from('compras').update({
-        numero_factura:   nf,
-        autorizacion_sri: editForm.autorizacion_sri.trim() || null,
-        recordar_factura: nf ? false : undefined
-      }).eq('id', modalEditar.compra_id);
-    }
-
-    if (xmlEditContent && modalEditar.compra_id) {
-      const blob = new Blob([xmlEditContent], { type: 'text/xml' });
-      const { error: uploadErr } = await supabase.storage
-        .from('xml-sri')
-        .upload(`compras/${modalEditar.compra_id}.xml`, blob, { upsert: true, contentType: 'text/xml' });
-      if (!uploadErr) {
-        const { data: urlData } = supabase.storage.from('xml-sri').getPublicUrl(`compras/${modalEditar.compra_id}.xml`);
-        await supabase.from('compras').update({ xml_sri_url: urlData.publicUrl }).eq('id', modalEditar.compra_id);
-      }
-      setXmlEditContent('');
-    }
-
-    setModalEditar(null);
-    await cargar();
   }
 
   // ── Secuencial ────────────────────────────────────────────
@@ -715,7 +662,7 @@ export default function TabPagosUnificado({ mobile }) {
 
                 {/* Botones */}
                 <div style={{ display: 'flex', gap: '6px', flexShrink: 0, flexWrap: 'wrap' }}>
-                  <button onClick={() => abrirEditar(c)} style={{
+                  <button onClick={() => setModalEditarCompraId(c.compra_id)} style={{
                     background: '#f0f2f5', border: 'none', borderRadius: '8px',
                     padding: '8px 12px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold'
                   }}>✏️ Editar</button>
@@ -766,6 +713,12 @@ export default function TabPagosUnificado({ mobile }) {
                         ? <span style={{ color: '#f39c12', fontSize: 11 }}>⚠️ Factura pendiente</span>
                         : null}
                   </div>
+                </div>
+                <div style={{ display: 'flex', gap: 6, flexShrink: 0, flexWrap: 'wrap' }}>
+                  <button onClick={() => setModalEditarCompraId(c.id)} style={{
+                    background: '#f0f2f5', border: 'none', borderRadius: '8px',
+                    padding: '8px 12px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold'
+                  }}>✏️ Editar</button>
                 </div>
               </div>
             </div>
@@ -844,110 +797,14 @@ export default function TabPagosUnificado({ mobile }) {
         </div>
       )}
 
-      {/* ══ Modal: Editar Cuenta ══ */}
-      {modalEditar && (
-        <div style={{
-          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
-          zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px'
-        }}>
-          <div style={{
-            background: 'white', borderRadius: '16px', padding: '24px',
-            maxWidth: '480px', width: '100%', boxShadow: '0 8px 32px rgba(0,0,0,0.2)'
-          }}>
-            <h3 style={{ margin: '0 0 4px', color: '#1a3a2a' }}>✏️ Editar cuenta</h3>
-            <div style={{ fontSize: '12px', color: '#888', marginBottom: '18px' }}>{modalEditar.proveedores?.nombre}</div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
-              {[
-                { label: 'Monto total $', key: 'monto_total', type: 'number' },
-                { label: 'Saldo pendiente $', key: 'saldo_pendiente', type: 'number' },
-              ].map(({ label, key, type }) => (
-                <div key={key}>
-                  <label style={{ fontSize: '11px', fontWeight: '600', color: '#555', display: 'block', marginBottom: '4px' }}>{label}</label>
-                  <input type={type} min="0" step="0.01" value={editForm[key]}
-                    onChange={e => setEditForm(f => ({ ...f, [key]: e.target.value }))} style={inputFull} />
-                </div>
-              ))}
-              <div>
-                <label style={{ fontSize: '11px', fontWeight: '600', color: '#555', display: 'block', marginBottom: '4px' }}>Fecha vencimiento</label>
-                <input type="date" value={editForm.fecha_vencimiento}
-                  onChange={e => setEditForm(f => ({ ...f, fecha_vencimiento: e.target.value }))} style={inputFull} />
-              </div>
-              <div>
-                <label style={{ fontSize: '11px', fontWeight: '600', color: '#555', display: 'block', marginBottom: '4px' }}>Estado</label>
-                <select value={editForm.estado}
-                  onChange={e => setEditForm(f => ({ ...f, estado: e.target.value }))} style={inputFull}>
-                  <option value="pendiente">⏳ Pendiente</option>
-                  <option value="parcial">⚡ Parcial</option>
-                  <option value="pagado">✅ Pagado</option>
-                </select>
-              </div>
-              <div>
-                <label style={{ fontSize: '11px', fontWeight: '600', color: '#555', display: 'block', marginBottom: '4px' }}>Forma de pago</label>
-                <select value={editForm.forma_pago}
-                  onChange={e => setEditForm(f => ({ ...f, forma_pago: e.target.value }))} style={inputFull}>
-                  <option value="credito">📅 Crédito</option>
-                  <option value="transferencia">🏦 Transferencia</option>
-                  <option value="efectivo">💵 Efectivo</option>
-                  <option value="cheque">📝 Cheque</option>
-                </select>
-              </div>
-            </div>
-
-            <div style={{ marginBottom: '12px' }}>
-              <label style={{ fontSize: '11px', fontWeight: '600', color: '#555', display: 'block', marginBottom: '4px' }}>🧾 N° Factura proveedor</label>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <input value={editForm.numero_factura}
-                  onChange={e => setEditForm(f => ({ ...f, numero_factura: e.target.value }))}
-                  placeholder="001-001-000000001"
-                  style={{ ...inputStyle, flex: 1 }} />
-                <input id="xml-edit-cxp" type="file" accept=".xml" style={{ display: 'none' }}
-                  onChange={e => {
-                    if (e.target.files[0]) parsearXmlSRI(e.target.files[0], ({ autorizacion_sri, numero_factura, xmlContent }) => {
-                      setEditForm(f => ({
-                        ...f,
-                        autorizacion_sri: autorizacion_sri || f.autorizacion_sri,
-                        numero_factura:   numero_factura   || f.numero_factura
-                      }));
-                      if (xmlContent) setXmlEditContent(xmlContent);
-                    });
-                    e.target.value = '';
-                  }}
-                />
-                <label htmlFor="xml-edit-cxp" style={{
-                  background: '#e3f2fd', color: '#1565c0', border: '1.5px solid #90caf9',
-                  borderRadius: '8px', padding: '0 12px', cursor: 'pointer',
-                  fontSize: '12px', fontWeight: 'bold', display: 'flex', alignItems: 'center', whiteSpace: 'nowrap'
-                }}>📎 XML</label>
-              </div>
-            </div>
-
-            <div style={{ marginBottom: '12px' }}>
-              <label style={{ fontSize: '11px', fontWeight: '600', color: '#555', display: 'block', marginBottom: '4px' }}>Autorización SRI</label>
-              <input value={editForm.autorizacion_sri}
-                onChange={e => setEditForm(f => ({ ...f, autorizacion_sri: e.target.value }))}
-                placeholder="49 dígitos"
-                style={{ ...inputFull, fontFamily: 'monospace', fontSize: '11px', borderColor: editForm.autorizacion_sri ? '#27ae60' : '#ddd' }} />
-              {editForm.autorizacion_sri && <div style={{ fontSize: '10px', color: '#27ae60', marginTop: '2px' }}>✅ XML cargado</div>}
-            </div>
-
-            <div style={{ marginBottom: '20px' }}>
-              <label style={{ fontSize: '11px', fontWeight: '600', color: '#555', display: 'block', marginBottom: '4px' }}>Notas</label>
-              <input value={editForm.notas} onChange={e => setEditForm(f => ({ ...f, notas: e.target.value }))}
-                placeholder="Observaciones..." style={inputFull} />
-            </div>
-
-            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-              <button onClick={() => setModalEditar(null)} style={{
-                background: '#f0f2f5', border: 'none', borderRadius: '8px', padding: '10px 20px', cursor: 'pointer', fontSize: '13px'
-              }}>Cancelar</button>
-              <button onClick={guardarEdicion} style={{
-                background: 'linear-gradient(135deg,#1a3a2a,#1e5c3a)', color: 'white', border: 'none',
-                borderRadius: '8px', padding: '10px 24px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold'
-              }}>Guardar cambios</button>
-            </div>
-          </div>
-        </div>
+      {modalEditarCompraId && (
+        <EditarCompraModal
+          compraId={modalEditarCompraId}
+          userRol={userRol}
+          currentUser={currentUser}
+          onClose={() => setModalEditarCompraId(null)}
+          onGuardado={() => { setModalEditarCompraId(null); cargar(); }}
+        />
       )}
 
       {/* ══ Modal: Secuencial ══ */}
