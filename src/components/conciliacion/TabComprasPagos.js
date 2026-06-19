@@ -22,6 +22,7 @@ export default function TabComprasPagos({ mobile }) {
     const { data: compras } = await supabase
       .from('compras')
       .select('id, numero_factura, total, proveedor_id, fecha, proveedores(nombre)')
+      .neq('estado', 'anulada')
       .gte('fecha', desde)
       .lte('fecha', hasta);
 
