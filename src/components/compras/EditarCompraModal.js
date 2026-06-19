@@ -185,8 +185,9 @@ export default function EditarCompraModal({ compraId, userRol, currentUser, onCl
         }
       }
 
-      await supabase.from('compras_detalle').delete().eq('compra_id', compra.id);
-      await supabase.from('compras_detalle').insert(itemsValidos.map(item => formState.esPersonal ? {
+      const { error: errDel } = await supabase.from('compras_detalle').delete().eq('compra_id', compra.id);
+      if (errDel) throw errDel;
+      const { error: errIns } = await supabase.from('compras_detalle').insert(itemsValidos.map(item => formState.esPersonal ? {
         compra_id: compra.id, materia_prima_id: null, mp_nombre: item.descripcion,
         cantidad_kg: null, precio_kg: null, subtotal: parseFloat(item.monto),
         descuento: parseFloat(item.descuento) || 0,
@@ -196,26 +197,35 @@ export default function EditarCompraModal({ compraId, userRol, currentUser, onCl
         cantidad_kg: parseFloat(item.cantidad_kg), precio_kg: parseFloat(item.precio_kg || 0),
         subtotal: parseFloat(item.subtotal), descuento: parseFloat(item.descuento) || 0,
         iva_pct: (item.iva_pct === '' || item.iva_pct == null) ? 15 : parseFloat(item.iva_pct) || 0,
-      }));
+      })));
+      if (errIns) throw errIns;
 
       if (compra.forma_pago === 'credito' && cuentaPagar) {
-        const pagadoHastaAhora = cuentaPagar.monto_total - cuentaPagar.saldo_pendiente;
+        const { data: cuentaPagarFresca, error: errCpSel } = await supabase
+          .from('cuentas_pagar')
+          .select('monto_total, saldo_pendiente')
+          .eq('compra_id', compra.id)
+          .single();
+        if (errCpSel) throw errCpSel;
+        const pagadoHastaAhora = cuentaPagarFresca.monto_total - cuentaPagarFresca.saldo_pendiente;
         const nuevoSaldo = total - pagadoHastaAhora;
-        await supabase.from('cuentas_pagar').update({
+        const { error: errCpUpd } = await supabase.from('cuentas_pagar').update({
           monto_total: total,
           saldo_pendiente: nuevoSaldo,
-          estado: nuevoSaldo <= 0.001 ? 'pagado' : (nuevoSaldo < cuentaPagar.saldo_pendiente ? 'parcial' : 'pendiente'),
+          estado: nuevoSaldo <= 0.001 ? 'pagado' : (nuevoSaldo < cuentaPagarFresca.saldo_pendiente ? 'parcial' : 'pendiente'),
           updated_at: new Date().toISOString(),
         }).eq('compra_id', compra.id);
+        if (errCpUpd) throw errCpUpd;
         if (nuevoSaldo < 0) {
           setAvisoSaldo(`⚠️ Ya se pagó $${Math.abs(nuevoSaldo).toFixed(2)} de más con el monto corregido — el proveedor te queda debiendo.`);
         }
       }
 
-      await sincronizarAsientoCompraEditada(
+      const { error: errAsiento } = await sincronizarAsientoCompraEditada(
         { ...compra, subtotal, iva, total },
         { forzarReversion: permiso.soloAdmin }
       );
+      if (errAsiento) throw errAsiento;
 
       setGuardando(false);
       onGuardado?.();
