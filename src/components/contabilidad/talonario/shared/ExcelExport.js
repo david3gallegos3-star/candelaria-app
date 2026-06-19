@@ -28,6 +28,7 @@ export default function ExcelExport() {
         { data: facturas },
         { data: cxc },
         { data: saldoConfig },
+        { data: notasCredito },
       ] = await Promise.all([
         supabase.from('cobros')
           .select('fecha,monto,forma_pago,observaciones,clientes(nombre),cuentas_cobrar(monto_total),facturas(numero)')
@@ -49,6 +50,8 @@ export default function ExcelExport() {
         supabase.from('cuentas_cobrar').select('monto_total,monto_cobrado').in('estado', ['pendiente', 'parcial']),
         supabase.from('config_contabilidad').select('valor')
           .eq('clave', `saldo_banco_${año}_${mes}`).maybeSingle(),
+        supabase.from('notas_credito').select('total').eq('es_manual', false)
+          .gte('created_at', fechaDesde + 'T00:00:00').lte('created_at', fechaHasta + 'T23:59:59'),
       ]);
 
       const sum = (arr, campo) => parseFloat(((arr || []).reduce((t, r) => t + parseFloat(r[campo] || 0), 0)).toFixed(2));
@@ -67,7 +70,7 @@ export default function ExcelExport() {
       const diferencia = saldoReal !== null ? n(saldoReal - saldoCalculado) : null;
 
       // ── Totales calculados ─────────────────────────────────────────────────
-      const totalVentas  = sum(facturas, 'total');
+      const totalVentas  = n(sum(facturas, 'total') - sum(notasCredito, 'total'));
       const totalOtrosI  = sum(otrosI, 'monto');
       const totalGastos  = sum(gastos, 'valor');
       const comprasCon   = n((compras || []).filter(c => c.tiene_factura).reduce((t, r) => t + n(r.total), 0));
