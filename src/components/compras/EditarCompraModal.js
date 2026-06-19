@@ -45,6 +45,50 @@ export default function EditarCompraModal({ compraId, userRol, currentUser, onCl
 
   useEffect(() => { cargar(); }, [cargar]);
 
+  // useMemo es obligatorio acá (y debe ir antes de cualquier `return`
+  // condicional de abajo — un Hook no puede ejecutarse de forma
+  // condicional, o React lanza "Rendered fewer hooks than expected"):
+  // sin él, este objeto se crea de nuevo en cada render de
+  // EditarCompraModal — y CompraForm re-renderiza al padre en cada
+  // tecla (vía onChange → setFormState). Sin memo, el useEffect de CompraForm
+  // que re-siembra el estado al cambiar `valoresIniciales` se dispararía en
+  // cada tecla y borraría lo que el usuario está escribiendo.
+  const valoresIniciales = useMemo(() => {
+    if (!compra) return null;
+    return {
+    proveedorId: compra.proveedor_id || '',
+    fecha: compra.fecha || '',
+    tieneFactura: compra.tiene_factura || false,
+    esPersonal: compra.es_personal || false,
+    numFactura: compra.numero_factura || '',
+    autorizacionSri: compra.autorizacion_sri || '',
+    fechaEmision: compra.fecha_emision || '',
+    recordarFactura: compra.recordar_factura || false,
+    tieneRetencion: compra.tiene_retencion || false,
+    retFuentePct: compra.ret_fuente_pct != null ? String(compra.ret_fuente_pct) : '',
+    retIvaPct: compra.ret_iva_pct != null ? String(compra.ret_iva_pct) : '',
+    numRetencion: compra.num_retencion || '',
+    formaPago: compra.forma_pago || 'efectivo',
+    referenciaPago: compra.referencia_pago || '',
+    comisionPago: compra.comision ? String(compra.comision) : '',
+    diasCredito: compra.dias_credito || 30,
+    notas: compra.notas || '',
+    items: detalles.map(d => compra.es_personal ? {
+      descripcion: d.mp_nombre || '', monto: String(d.subtotal || ''),
+      descuento: String(d.descuento || ''), iva_pct: d.iva_pct ?? 15,
+      ivaDiferente: d.iva_pct != null && d.iva_pct !== 15,
+    } : {
+      materia_prima_id: d.materia_prima_id || '', mp_nombre: d.mp_nombre || '',
+      cantidad_kg: String(d.cantidad_kg || ''), precio_kg: String(d.precio_kg || ''),
+      subtotal: parseFloat(d.subtotal || 0), precio_anterior: parseFloat(d.precio_kg || 0),
+      inv_id: materiales.find(m => m.id === d.materia_prima_id)?.inv_id || '',
+      descuento: String(d.descuento || ''), iva_pct: d.iva_pct ?? 15,
+      ivaDiferente: d.iva_pct != null && d.iva_pct !== 15,
+    }),
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [compra, detalles, materiales]);
+
   const overlayStyle = {
     position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)',
     display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: 16,
@@ -77,44 +121,6 @@ export default function EditarCompraModal({ compraId, userRol, currentUser, onCl
   }
 
   const permiso = puedeEditarCompra(compra, userRol);
-
-  // useMemo es obligatorio acá: sin él, este objeto se crea de nuevo en cada
-  // render de EditarCompraModal — y CompraForm re-renderiza al padre en cada
-  // tecla (vía onChange → setFormState). Sin memo, el useEffect de CompraForm
-  // que re-siembra el estado al cambiar `valoresIniciales` se dispararía en
-  // cada tecla y borraría lo que el usuario está escribiendo.
-  const valoresIniciales = useMemo(() => ({
-    proveedorId: compra.proveedor_id || '',
-    fecha: compra.fecha || '',
-    tieneFactura: compra.tiene_factura || false,
-    esPersonal: compra.es_personal || false,
-    numFactura: compra.numero_factura || '',
-    autorizacionSri: compra.autorizacion_sri || '',
-    fechaEmision: compra.fecha_emision || '',
-    recordarFactura: compra.recordar_factura || false,
-    tieneRetencion: compra.tiene_retencion || false,
-    retFuentePct: compra.ret_fuente_pct != null ? String(compra.ret_fuente_pct) : '',
-    retIvaPct: compra.ret_iva_pct != null ? String(compra.ret_iva_pct) : '',
-    numRetencion: compra.num_retencion || '',
-    formaPago: compra.forma_pago || 'efectivo',
-    referenciaPago: compra.referencia_pago || '',
-    comisionPago: compra.comision ? String(compra.comision) : '',
-    diasCredito: compra.dias_credito || 30,
-    notas: compra.notas || '',
-    items: detalles.map(d => compra.es_personal ? {
-      descripcion: d.mp_nombre || '', monto: String(d.subtotal || ''),
-      descuento: String(d.descuento || ''), iva_pct: d.iva_pct ?? 15,
-      ivaDiferente: d.iva_pct != null && d.iva_pct !== 15,
-    } : {
-      materia_prima_id: d.materia_prima_id || '', mp_nombre: d.mp_nombre || '',
-      cantidad_kg: String(d.cantidad_kg || ''), precio_kg: String(d.precio_kg || ''),
-      subtotal: parseFloat(d.subtotal || 0), precio_anterior: parseFloat(d.precio_kg || 0),
-      inv_id: materiales.find(m => m.id === d.materia_prima_id)?.inv_id || '',
-      descuento: String(d.descuento || ''), iva_pct: d.iva_pct ?? 15,
-      ivaDiferente: d.iva_pct != null && d.iva_pct !== 15,
-    }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [compra, detalles, materiales]);
 
   const bloqueadaPorPago = compra.forma_pago === 'credito' && cuentaPagar &&
     Math.abs(cuentaPagar.saldo_pendiente - cuentaPagar.monto_total) > 0.01;
