@@ -41,6 +41,7 @@ export default function TabCierreMensual({ mobile }) {
         .in('estado', ['autorizada', 'borrador']),
       supabase.from('compras')
         .select('subtotal, iva, total, fecha')
+        .neq('estado', 'anulada')
         .gte('fecha', desde)
         .lte('fecha', hasta),
       supabase.from('nomina')
