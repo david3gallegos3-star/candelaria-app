@@ -199,6 +199,8 @@ function Compras({ onVolver, onVolverMenu, userRol, currentUser, navState, onCle
         {tabActiva === 'personales'  && (
           <TabPersonalesCompras
             mobile={mobile}
+            currentUser={currentUser}
+            userRol={userRol}
             editCompraId={editCompraId}
             onClearEdit={() => { setEditCompraId(null); onClearNavState?.(); }}
           />

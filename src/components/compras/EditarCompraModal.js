@@ -197,7 +197,7 @@ export default function EditarCompraModal({ compraId, userRol, currentUser, onCl
 
       const { error: errDel } = await supabase.from('compras_detalle').delete().eq('compra_id', compra.id);
       if (errDel) throw errDel;
-      const { error: errIns } = await supabase.from('compras_detalle').insert(itemsValidos.map(item => formState.esPersonal ? {
+      const detallesParaInsertar = itemsValidos.map(item => formState.esPersonal ? {
         compra_id: compra.id, materia_prima_id: null, mp_nombre: item.descripcion,
         cantidad_kg: null, precio_kg: null, subtotal: parseFloat(item.monto),
         descuento: parseFloat(item.descuento) || 0,
@@ -207,7 +207,8 @@ export default function EditarCompraModal({ compraId, userRol, currentUser, onCl
         cantidad_kg: parseFloat(item.cantidad_kg), precio_kg: parseFloat(item.precio_kg || 0),
         subtotal: parseFloat(item.subtotal), descuento: parseFloat(item.descuento) || 0,
         iva_pct: (item.iva_pct === '' || item.iva_pct == null) ? 15 : parseFloat(item.iva_pct) || 0,
-      })));
+      });
+      const { error: errIns } = await supabase.from('compras_detalle').insert(detallesParaInsertar);
       if (errIns) throw errIns;
 
       if (compra.forma_pago === 'credito' && cuentaPagar) {
