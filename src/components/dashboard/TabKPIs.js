@@ -61,11 +61,13 @@ export default function TabKPIs({ mobile }) {
       // Compras del mes
       supabase.from('compras')
         .select('total')
-        .gte('fecha', primerDia).lte('fecha', ultimoDiaStr),
+        .gte('fecha', primerDia).lte('fecha', ultimoDiaStr)
+        .neq('estado', 'anulada'),
       // Cuentas x pagar saldo pendiente
       supabase.from('cuentas_pagar')
         .select('saldo_pendiente')
-        .neq('estado', 'pagado'),
+        .neq('estado', 'pagado')
+        .neq('estado', 'anulada'),
       // Nómina del mes
       supabase.from('nominas')
         .select('neto')
