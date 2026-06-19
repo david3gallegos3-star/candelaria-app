@@ -82,6 +82,7 @@ export default function TabAlertas({ mobile }) {
         .from('cuentas_pagar')
         .select('saldo_pendiente, fecha_vencimiento, proveedores(nombre)')
         .neq('estado', 'pagado')
+        .neq('estado', 'anulada')
         .lt('fecha_vencimiento', hoyStr);
       (venc || []).forEach(c => {
         const dias = Math.abs(diasRestantes(c.fecha_vencimiento));
@@ -100,6 +101,7 @@ export default function TabAlertas({ mobile }) {
         .from('cuentas_pagar')
         .select('saldo_pendiente, fecha_vencimiento, proveedores(nombre)')
         .neq('estado', 'pagado')
+        .neq('estado', 'anulada')
         .gte('fecha_vencimiento', hoyStr)
         .lte('fecha_vencimiento', en7Str);
       (proxVenc || []).forEach(c => {
