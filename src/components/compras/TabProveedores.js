@@ -31,20 +31,25 @@ export default function TabProveedores({ mobile }) {
   const [guardando,   setGuardando]   = useState(false);
   const [error,       setError]       = useState('');
   const [confirmarElim, setConfirmarElim] = useState(null);
+  const [saldosFavor, setSaldosFavor] = useState({});
 
   const cargar = useCallback(async () => {
     setCargando(true);
-    const { data } = await supabase
-      .from('proveedores')
-      .select('*')
-      .is('deleted_at', null)
-      .order('nombre');
+    const [{ data }, { data: saldos }] = await Promise.all([
+      supabase.from('proveedores').select('*').is('deleted_at', null).order('nombre'),
+      supabase.from('cuentas_pagar').select('proveedor_id, saldo_pendiente').lt('saldo_pendiente', 0).neq('estado', 'anulada'),
+    ]);
     setProveedores(data || []);
+    const mapa = {};
+    for (const c of saldos || []) {
+      mapa[c.proveedor_id] = (mapa[c.proveedor_id] || 0) + Math.abs(c.saldo_pendiente);
+    }
+    setSaldosFavor(mapa);
     setCargando(false);
   }, []);
 
   useEffect(() => { cargar(); }, [cargar]);
-  useRealtime(['proveedores'], cargar);
+  useRealtime(['proveedores', 'cuentas_pagar'], cargar);
 
   const filtrados = proveedores.filter(p =>
     p.nombre.toLowerCase().includes(busqueda.toLowerCase()) ||
@@ -202,6 +207,14 @@ export default function TabProveedores({ mobile }) {
                       padding: '2px 10px', fontSize: '11px', fontWeight: 'bold'
                     }}>
                       {p.dias_credito}d crédito
+                    </span>
+                  )}
+                  {saldosFavor[p.id] > 0 && (
+                    <span style={{
+                      background: '#e67e22', color: 'white', borderRadius: '12px',
+                      padding: '2px 10px', fontSize: '11px', fontWeight: 'bold'
+                    }}>
+                      💰 ${saldosFavor[p.id].toFixed(2)} a favor
                     </span>
                   )}
                 </div>
