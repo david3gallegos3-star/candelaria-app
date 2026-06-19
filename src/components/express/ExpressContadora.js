@@ -69,7 +69,8 @@ export default function ExpressContadora({ currentUser, onLogout }) {
       // Compras de hoy
       supabase.from('compras')
         .select('total')
-        .eq('fecha', hoyISO),
+        .eq('fecha', hoyISO)
+        .neq('estado', 'anulada'),
       // CxP urgentes (vencen en ≤7 días)
       supabase.from('cuentas_pagar')
         .select('id, compra_id, proveedor_id, saldo_pendiente, fecha_vencimiento, monto_total, proveedores(nombre)')
@@ -93,7 +94,8 @@ export default function ExpressContadora({ currentUser, onLogout }) {
       supabase.from('compras')
         .select('subtotal, iva, total')
         .gte('fecha', mesDesde)
-        .lte('fecha', mesHasta),
+        .lte('fecha', mesHasta)
+        .neq('estado', 'anulada'),
       // Nómina del mes
       supabase.from('nomina')
         .select('costo_patronal, estado')
