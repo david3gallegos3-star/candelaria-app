@@ -129,7 +129,8 @@ export default function TabPagosUnificado({ mobile, currentUser, userRol }) {
     const { data: saldosFavorData } = await supabase
       .from('cuentas_pagar')
       .select('id, proveedor_id, saldo_pendiente, proveedores ( nombre )')
-      .lt('saldo_pendiente', 0);
+      .lt('saldo_pendiente', 0)
+      .neq('estado', 'anulada');
     setSaldosFavor(saldosFavorData || []);
 
     if (todasCuentas.length > 0) {
@@ -418,35 +419,52 @@ export default function TabPagosUnificado({ mobile, currentUser, userRol }) {
     setMontoDevolucion(Math.abs(c.saldo_pendiente).toFixed(2));
     setFormaDevolucion('transferencia');
     setFechaDevolucion(hoy);
+    setError('');
   }
 
   async function registrarDevolucion() {
     const monto = parseFloat(montoDevolucion);
-    if (!monto || monto <= 0) return;
-    setGuardandoDevolucion(true);
+    if (!monto || monto <= 0) { setError('Ingresa un monto válido.'); return; }
+    setGuardandoDevolucion(true); setError('');
 
-    const { error } = await generarAsientoDevolucionProveedor({
+    const { data: cpFresca, error: errSel } = await supabase
+      .from('cuentas_pagar')
+      .select('saldo_pendiente, proveedor_id')
+      .eq('id', modalDevolucion.id)
+      .single();
+    if (errSel) { setError(errSel.message); setGuardandoDevolucion(false); return; }
+
+    const saldoFavorFresco = Math.abs(cpFresca.saldo_pendiente);
+    if (monto > saldoFavorFresco + 0.001) {
+      setError(`El monto no puede superar el saldo a favor: $${saldoFavorFresco.toFixed(2)}`);
+      setGuardandoDevolucion(false);
+      return;
+    }
+
+    const { error: errAsiento } = await generarAsientoDevolucionProveedor({
       cuenta_pagar_id: modalDevolucion.id,
       proveedor_nombre: modalDevolucion.proveedores?.nombre || '',
       forma_pago: formaDevolucion,
       fecha: fechaDevolucion,
       monto,
     });
-    if (error) { setGuardandoDevolucion(false); return; }
+    if (errAsiento) { setError(errAsiento.message || String(errAsiento)); setGuardandoDevolucion(false); return; }
 
-    await supabase.from('cuentas_pagar').update({
-      saldo_pendiente: modalDevolucion.saldo_pendiente + monto,
+    const { error: errCp } = await supabase.from('cuentas_pagar').update({
+      saldo_pendiente: cpFresca.saldo_pendiente + monto,
       updated_at: new Date().toISOString(),
     }).eq('id', modalDevolucion.id);
+    if (errCp) { setError(errCp.message); setGuardandoDevolucion(false); return; }
 
-    await supabase.from('pagos_compras').insert({
+    const { error: errPago } = await supabase.from('pagos_compras').insert({
       cuenta_pagar_id: modalDevolucion.id,
-      proveedor_id: modalDevolucion.proveedor_id,
+      proveedor_id: cpFresca.proveedor_id,
       monto,
       forma_pago: formaDevolucion,
       fecha_pago: fechaDevolucion,
       tipo: 'devolucion',
     });
+    if (errPago) { setError(errPago.message); setGuardandoDevolucion(false); return; }
 
     setGuardandoDevolucion(false);
     setModalDevolucion(null);
@@ -1037,6 +1055,13 @@ export default function TabPagosUnificado({ mobile, currentUser, userRol }) {
               Proveedor: <b>{modalDevolucion.proveedores?.nombre}</b><br />
               Saldo a favor: <b style={{ color: '#e67e22' }}>${Math.abs(modalDevolucion.saldo_pendiente).toFixed(2)}</b>
             </p>
+            {error && (
+              <div style={{
+                background: '#ffeaea', border: '1px solid #e74c3c',
+                borderRadius: '8px', padding: '10px', color: '#e74c3c',
+                fontSize: '13px', marginBottom: '16px'
+              }}>{error}</div>
+            )}
             <div style={{ marginBottom: '14px' }}>
               <label style={{ display: 'block', fontSize: '12px', color: '#555', marginBottom: '4px', fontWeight: '600' }}>Monto *</label>
               <input type="number" min="0.01" step="0.01" value={montoDevolucion}
