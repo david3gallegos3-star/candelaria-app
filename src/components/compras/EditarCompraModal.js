@@ -143,6 +143,16 @@ export default function EditarCompraModal({ compraId, userRol, currentUser, onCl
     const netoPagar = parseFloat((total - retFuenteN - retIvaN).toFixed(2));
 
     try {
+      const { data: estadoActual, error: errCheckEstado } = await supabase
+        .from('compras')
+        .select('estado')
+        .eq('id', compra.id)
+        .single();
+      if (errCheckEstado) throw errCheckEstado;
+      if (estadoActual?.estado === 'anulada') {
+        throw new Error('Esta compra ya fue anulada — no se puede editar.');
+      }
+
       const { error: errU } = await supabase.from('compras').update({
         proveedor_id: formState.proveedorId,
         proveedor_nombre: proveedor?.nombre || compra.proveedor_nombre,
@@ -240,6 +250,16 @@ export default function EditarCompraModal({ compraId, userRol, currentUser, onCl
     setGuardando(true);
     setError('');
     try {
+      const { data: estadoActual, error: errCheckEstado } = await supabase
+        .from('compras')
+        .select('estado')
+        .eq('id', compra.id)
+        .single();
+      if (errCheckEstado) throw errCheckEstado;
+      if (estadoActual?.estado === 'anulada') {
+        throw new Error('Esta compra ya fue anulada.');
+      }
+
       const { error: errAnular } = await supabase.from('compras').update({ estado: 'anulada' }).eq('id', compra.id);
       if (errAnular) throw errAnular;
 
