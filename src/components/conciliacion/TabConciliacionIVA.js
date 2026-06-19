@@ -18,7 +18,7 @@ export default function TabConciliacionIVA({ mobile }) {
     setCargando(true);
     setResultado(null);
 
-    const [{ data: facturas }, { data: compras }] = await Promise.all([
+    const [{ data: facturas }, { data: compras }, { data: notasCredito }] = await Promise.all([
       supabase.from('facturas')
         .select('subtotal, iva, porcentaje_iva, estado, created_at')
         .gte('created_at', desde + 'T00:00:00')
@@ -29,11 +29,16 @@ export default function TabConciliacionIVA({ mobile }) {
         .neq('estado', 'anulada')
         .gte('fecha', desde)
         .lte('fecha', hasta),
+      supabase.from('notas_credito')
+        .select('subtotal, iva').eq('es_manual', false)
+        .gte('created_at', desde + 'T00:00:00').lte('created_at', hasta + 'T23:59:59'),
     ]);
 
-    // IVA en ventas
-    const ventasSubtotal = (facturas || []).reduce((s, f) => s + (parseFloat(f.subtotal) || 0), 0);
-    const ivaVentas      = (facturas || []).reduce((s, f) => s + (parseFloat(f.iva)      || 0), 0);
+    // IVA en ventas (neto de notas de credito electronicas)
+    const ventasSubtotal = (facturas || []).reduce((s, f) => s + (parseFloat(f.subtotal) || 0), 0)
+      - (notasCredito || []).reduce((s, nc) => s + (parseFloat(nc.subtotal) || 0), 0);
+    const ivaVentas      = (facturas || []).reduce((s, f) => s + (parseFloat(f.iva)      || 0), 0)
+      - (notasCredito || []).reduce((s, nc) => s + (parseFloat(nc.iva)      || 0), 0);
     const ivaVentasCalc  = parseFloat((ventasSubtotal * 0.15).toFixed(2));
 
     // IVA en compras
