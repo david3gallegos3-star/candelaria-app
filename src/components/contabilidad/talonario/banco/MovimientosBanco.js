@@ -59,6 +59,7 @@ export default function MovimientosBanco() {
       supabase.from('compras')
         .select('id,fecha,total,comision,proveedor_nombre,forma_pago')
         .in('forma_pago', ['transferencia','cheque','deposito'])
+        .neq('estado', 'anulada')
         .gte('fecha', fechaDesde).lte('fecha', fechaHasta).order('fecha'),
       supabase.from('caja_chica')
         .select('id,fecha')
