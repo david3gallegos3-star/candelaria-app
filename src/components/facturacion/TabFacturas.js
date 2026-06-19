@@ -919,18 +919,26 @@ export default function TabFacturas({ mobile, userRol }) {
               <span style={{ color: '#e67e22' }}>Ya fue anulada en el portal SRI. Esto registra la acción internamente.</span>
             </div>
 
-            <label style={{ fontWeight: '600', fontSize: '12px', color: '#333' }}>Motivo de anulación *</label>
+            <label style={{ fontWeight: '600', fontSize: '12px', color: '#333' }}>
+              Motivo de anulación <span style={{ color: '#e74c3c' }}>* obligatorio</span>
+            </label>
             <textarea
               value={motivoManual}
               onChange={e => setMotivoManual(e.target.value)}
               placeholder="Ej: Anulada en portal SRI por precio incorrecto..."
               rows={2}
               style={{
-                width: '100%', padding: '8px', borderRadius: 8, border: '1.5px solid #ddd',
+                width: '100%', padding: '8px', borderRadius: 8,
+                border: motivoManual.trim() ? '1.5px solid #ddd' : '1.5px solid #e74c3c',
                 fontSize: '13px', resize: 'vertical', boxSizing: 'border-box',
-                marginTop: 4, marginBottom: 14,
+                marginTop: 4, marginBottom: motivoManual.trim() ? 14 : 4,
               }}
             />
+            {!motivoManual.trim() && (
+              <div style={{ fontSize: '11px', color: '#e74c3c', marginBottom: 14 }}>
+                ⚠️ Escribe un motivo para poder registrar la anulación
+              </div>
+            )}
 
             <label style={{ fontWeight: '600', fontSize: '12px', color: '#333' }}>¿Qué hago con el producto?</label>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 6, marginBottom: 14 }}>
