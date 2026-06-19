@@ -33,6 +33,7 @@ export default function TabCierreMensual({ mobile }) {
       { data: cierresProduccion },
       { data: cxcPend },
       { data: cxpPend },
+      { data: notasCredito },
     ] = await Promise.all([
       supabase.from('facturas')
         .select('subtotal, iva, total, estado')
@@ -57,12 +58,18 @@ export default function TabCierreMensual({ mobile }) {
       supabase.from('cuentas_pagar')
         .select('monto_total, monto_pagado, estado')
         .eq('estado', 'pendiente'),
+      supabase.from('notas_credito')
+        .select('subtotal, iva, total').eq('es_manual', false)
+        .gte('created_at', desde + 'T00:00:00').lte('created_at', hasta + 'T23:59:59'),
     ]);
 
-    // ── Ventas ──────────────────────────────────────────────
-    const ventasSubtotal = (facturas || []).reduce((s, f) => s + (parseFloat(f.subtotal) || 0), 0);
-    const ventasIVA      = (facturas || []).reduce((s, f) => s + (parseFloat(f.iva)      || 0), 0);
-    const ventasTotal    = (facturas || []).reduce((s, f) => s + (parseFloat(f.total)    || 0), 0);
+    // ── Ventas (netas de notas de credito electronicas) ──────
+    const ncSubtotal = (notasCredito || []).reduce((s, nc) => s + (parseFloat(nc.subtotal) || 0), 0);
+    const ncIVA      = (notasCredito || []).reduce((s, nc) => s + (parseFloat(nc.iva)      || 0), 0);
+    const ncTotal    = (notasCredito || []).reduce((s, nc) => s + (parseFloat(nc.total)    || 0), 0);
+    const ventasSubtotal = (facturas || []).reduce((s, f) => s + (parseFloat(f.subtotal) || 0), 0) - ncSubtotal;
+    const ventasIVA      = (facturas || []).reduce((s, f) => s + (parseFloat(f.iva)      || 0), 0) - ncIVA;
+    const ventasTotal    = (facturas || []).reduce((s, f) => s + (parseFloat(f.total)    || 0), 0) - ncTotal;
     const nFacturas      = (facturas || []).length;
 
     // ── Compras ─────────────────────────────────────────────
