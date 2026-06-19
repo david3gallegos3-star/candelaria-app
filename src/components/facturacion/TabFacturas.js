@@ -1013,9 +1013,9 @@ export default function TabFacturas({ mobile, userRol }) {
               </button>
               <button onClick={registrarAnulacionManual} disabled={procesandoManual || !motivoManual.trim()}
                 style={{
-                  background: procesandoManual ? '#95a5a6' : '#e67e22',
+                  background: procesandoManual ? '#95a5a6' : !motivoManual.trim() ? '#bdc3c7' : '#e67e22',
                   color: 'white', border: 'none', borderRadius: 8, padding: '10px 20px',
-                  cursor: procesandoManual ? 'not-allowed' : 'pointer', fontWeight: 'bold',
+                  cursor: (procesandoManual || !motivoManual.trim()) ? 'not-allowed' : 'pointer', fontWeight: 'bold',
                 }}>
                 {procesandoManual ? '⏳ Registrando...' : '📋 Registrar anulación'}
               </button>
