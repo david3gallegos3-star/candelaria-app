@@ -86,7 +86,7 @@ async function fetchDesfasesResumen(desde, hasta) {
   const { data: compras } = await supabase
     .from('compras')
     .select('total, proveedor_id, proveedores(nombre)')
-    .gte('fecha', desde).lte('fecha', hasta).is('deleted_at', null);
+    .gte('fecha', desde).lte('fecha', hasta).is('deleted_at', null).neq('estado', 'anulada');
 
   const totalCompras  = (compras || []).reduce((s, c) => s + (c.total || 0), 0);
 
