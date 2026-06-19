@@ -53,7 +53,8 @@ export default function TabIngresoCompra({ mobile, currentUser, userRol }) {
         .from('cuentas_pagar')
         .select('saldo_pendiente')
         .eq('proveedor_id', formState.proveedorId)
-        .lt('saldo_pendiente', 0);
+        .lt('saldo_pendiente', 0)
+        .neq('estado', 'anulada');
       const credito = (data || []).reduce((s, c) => s + Math.abs(c.saldo_pendiente), 0);
       if (activo) setCreditoDisponible(credito);
     }
@@ -219,7 +220,8 @@ export default function TabIngresoCompra({ mobile, currentUser, userRol }) {
           .from('cuentas_pagar')
           .select('id, saldo_pendiente')
           .eq('proveedor_id', proveedorId)
-          .lt('saldo_pendiente', 0);
+          .lt('saldo_pendiente', 0)
+          .neq('estado', 'anulada');
         if (errSaldos) throw errSaldos;
         const creditoFresco = (saldosFavorFrescos || []).reduce((s, c) => s + Math.abs(c.saldo_pendiente), 0);
         const nuevoSaldo = total - creditoFresco;
