@@ -33,6 +33,7 @@ export default function TabFormulario104({ mobile }) {
         .in('estado', ['autorizada', 'borrador']),
       supabase.from('compras')
         .select('subtotal, iva, fecha')
+        .neq('estado', 'anulada')
         .gte('fecha', desde)
         .lte('fecha', hasta),
       // notas_debito si existen — ignorar si no hay tabla
