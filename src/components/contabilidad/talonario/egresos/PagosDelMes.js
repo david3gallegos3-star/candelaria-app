@@ -68,6 +68,7 @@ export default function PagosDelMes() {
       supabase.from('pagos_compras')
         .select('id,monto,forma_pago,fecha_pago,notas,comision,proveedores(nombre),compras(es_personal)')
         .in('forma_pago', ['transferencia','cheque','deposito'])
+        .neq('tipo', 'devolucion')
         .gte('fecha_pago', fechaDesde).lte('fecha_pago', fechaHasta)
         .order('fecha_pago'),
       supabase.from('pagos_fijos')
