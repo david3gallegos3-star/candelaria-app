@@ -193,7 +193,7 @@ function Compras({ onVolver, onVolverMenu, userRol, currentUser, navState, onCle
       />
 
       <div style={{ padding: mobile ? '12px' : '16px 20px' }}>
-        {tabActiva === 'nueva'       && <TabIngresoCompra mobile={mobile} currentUser={currentUser} />}
+        {tabActiva === 'nueva'       && <TabIngresoCompra mobile={mobile} currentUser={currentUser} userRol={userRol} />}
         {tabActiva === 'proveedores' && <TabProveedores   mobile={mobile} />}
         {tabActiva === 'pagos'       && <TabPagosUnificado mobile={mobile} currentUser={currentUser} userRol={userRol} />}
         {tabActiva === 'personales'  && (
