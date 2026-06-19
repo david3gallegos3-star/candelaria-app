@@ -26,6 +26,7 @@ export default function TabConciliacionIVA({ mobile }) {
         .in('estado', ['autorizada', 'borrador']),
       supabase.from('compras')
         .select('subtotal, iva, fecha')
+        .neq('estado', 'anulada')
         .gte('fecha', desde)
         .lte('fecha', hasta),
     ]);
