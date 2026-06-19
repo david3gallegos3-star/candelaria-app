@@ -111,6 +111,7 @@ export default function TabPagosUnificado({ mobile }) {
         .select('id,fecha,proveedor_nombre,total,comision,forma_pago,tiene_factura,numero_factura')
         .neq('forma_pago', 'credito')
         .eq('es_personal', false)
+        .neq('estado', 'anulada')
         .order('fecha', { ascending: false }),
     ]);
 
