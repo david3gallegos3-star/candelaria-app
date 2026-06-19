@@ -235,6 +235,43 @@ export default function EditarCompraModal({ compraId, userRol, currentUser, onCl
     }
   }
 
+  async function anular() {
+    if (!window.confirm('¿Anular esta compra? Esto revierte el inventario (si aplica) y deja un asiento de reversión en el Libro Diario.')) return;
+    setGuardando(true);
+    setError('');
+    try {
+      const { error: errAnular } = await supabase.from('compras').update({ estado: 'anulada' }).eq('id', compra.id);
+      if (errAnular) throw errAnular;
+
+      if (compra.forma_pago === 'credito' && cuentaPagar) {
+        const { error: errCp } = await supabase.from('cuentas_pagar').update({ estado: 'anulada' }).eq('compra_id', compra.id);
+        if (errCp) throw errCp;
+      }
+
+      if (!compra.es_personal) {
+        for (const item of detalles) {
+          await ajustarInventarioPorEdicion(item, { ...item, cantidad_kg: 0 }, {
+            proveedor_nombre: compra.proveedor_nombre,
+            usuario_nombre: userRol?.nombre || currentUser?.email || '',
+            user_id: currentUser?.id,
+          });
+        }
+      }
+
+      const { error: errAsiento } = await sincronizarAsientoCompraEditada(
+        { ...compra, subtotal: 0, iva: 0, total: 0 },
+        { forzarReversion: true }
+      );
+      if (errAsiento) throw errAsiento;
+
+      setGuardando(false);
+      onGuardado?.();
+    } catch (e) {
+      setError('Error al anular: ' + e.message);
+      setGuardando(false);
+    }
+  }
+
   return (
     <div style={overlayStyle}>
       <div style={modalStyle}>
@@ -273,11 +310,24 @@ export default function EditarCompraModal({ compraId, userRol, currentUser, onCl
         </div>
 
         <div style={{ padding: '12px 20px', borderTop: '1px solid #eee',
-          display: 'flex', gap: 10, justifyContent: 'flex-end', background: '#fdfbff' }}>
+          display: 'flex', gap: 10, justifyContent: 'flex-end', alignItems: 'center', background: '#fdfbff' }}>
+          {permiso.permitido && bloqueadaPorPago && (
+            <span style={{ fontSize: 11, color: '#888', marginRight: 'auto' }}>
+              Esta compra ya tiene pagos registrados — usa Editar para corregir el monto.
+            </span>
+          )}
           <button onClick={onClose} style={{
             padding: '9px 22px', borderRadius: 8, border: '1px solid #ddd',
             background: 'white', cursor: 'pointer', fontSize: 13
           }}>Cancelar</button>
+          {permiso.permitido && (
+            <button onClick={anular} disabled={guardando || bloqueadaPorPago} title={bloqueadaPorPago ? 'Esta compra ya tiene pagos registrados — usa Editar para corregir el monto.' : ''} style={{
+              padding: '9px 22px', borderRadius: 8, border: 'none',
+              background: bloqueadaPorPago ? '#eee' : '#fde8e8',
+              color: bloqueadaPorPago ? '#aaa' : '#c0392b',
+              cursor: (guardando || bloqueadaPorPago) ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 'bold'
+            }}>🚫 Anular</button>
+          )}
           {permiso.permitido && (
             <button onClick={guardar} disabled={guardando} style={{
               padding: '9px 22px', borderRadius: 8, border: 'none',
