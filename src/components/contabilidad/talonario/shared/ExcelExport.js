@@ -36,6 +36,7 @@ export default function ExcelExport() {
           .gte('fecha', fechaDesde).lte('fecha', fechaHasta).order('fecha'),
         supabase.from('compras')
           .select('fecha,total,tiene_factura,numero_factura,proveedor_nombre,forma_pago,proveedores(ruc)')
+          .neq('estado', 'anulada')
           .gte('fecha', fechaDesde).lte('fecha', fechaHasta).order('fecha'),
         supabase.from('talonario_pagos_banco').select('*').eq('mes', mes).eq('año', año).order('fecha'),
         supabase.from('talonario_pagos_personales').select('*').eq('mes', mes).eq('año', año).order('categoria').order('fecha'),
