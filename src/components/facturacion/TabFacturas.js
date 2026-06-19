@@ -339,48 +339,34 @@ export default function TabFacturas({ mobile, userRol }) {
         .update({ valor: String(secuencial + 1) })
         .eq('clave', 'nota_credito_secuencial');
 
-      if (tipoNC === 'total') {
-        await supabase.from('facturas').update({ estado: 'anulada' }).eq('id', f.id);
-
+      // La factura NUNCA se marca 'anulada' por una nota de credito (sea
+      // total o parcial) — ante el SRI sigue siendo un documento autorizado;
+      // lo que cambia es su valor neto. Solo se reduce/cancela lo pendiente
+      // por cobrar por el monto acreditado, y se revierte ese mismo monto
+      // (no el de toda la factura) en el libro diario. 'anulada' se reserva
+      // para registrarAnulacionManual(), que representa una anulacion real
+      // hecha en el portal del SRI, no una nota de credito.
+      const { data: cxc } = await supabase.from('cuentas_cobrar')
+        .select('id, monto_total, monto_cobrado')
+        .eq('factura_id', f.id).eq('estado', 'pendiente').maybeSingle();
+      if (cxc) {
+        const nuevoMontoTotal = Math.max(0, parseFloat(cxc.monto_total) - data.total);
+        const cobrado = parseFloat(cxc.monto_cobrado);
+        const nuevoEstado = cobrado >= nuevoMontoTotal - 0.01 ? 'cobrada' : (cobrado > 0 ? 'parcial' : 'pendiente');
         await supabase.from('cuentas_cobrar')
-          .update({ estado: 'anulada' })
-          .eq('factura_id', f.id).eq('estado', 'pendiente');
-
-        await revertirAsientoFactura({
-          id:             f.id,
-          numero:         f.numero,
-          subtotal:       parseFloat(f.subtotal || 0),
-          iva:            parseFloat(f.iva      || 0),
-          total:          parseFloat(f.total),
-          forma_pago:     f.forma_pago,
-          cliente_nombre: f.cliente_nombre || 'CONSUMIDOR FINAL',
-        });
-      } else {
-        // Parcial: la factura sigue activa (no se anula). Solo se reduce
-        // lo pendiente por cobrar por el monto acreditado, y se revierte
-        // unicamente ese monto en el libro diario — no la factura completa.
-        const { data: cxc } = await supabase.from('cuentas_cobrar')
-          .select('id, monto_total, monto_cobrado')
-          .eq('factura_id', f.id).eq('estado', 'pendiente').maybeSingle();
-        if (cxc) {
-          const nuevoMontoTotal = Math.max(0, parseFloat(cxc.monto_total) - data.total);
-          const cobrado = parseFloat(cxc.monto_cobrado);
-          const nuevoEstado = cobrado >= nuevoMontoTotal - 0.01 ? 'cobrada' : (cobrado > 0 ? 'parcial' : 'pendiente');
-          await supabase.from('cuentas_cobrar')
-            .update({ monto_total: nuevoMontoTotal, estado: nuevoEstado })
-            .eq('id', cxc.id);
-        }
-
-        await revertirAsientoFactura({
-          id:             f.id,
-          numero:         f.numero,
-          subtotal:       data.subtotal,
-          iva:            data.iva,
-          total:          data.total,
-          forma_pago:     f.forma_pago,
-          cliente_nombre: f.cliente_nombre || 'CONSUMIDOR FINAL',
-        });
+          .update({ monto_total: nuevoMontoTotal, estado: nuevoEstado })
+          .eq('id', cxc.id);
       }
+
+      await revertirAsientoFactura({
+        id:             f.id,
+        numero:         f.numero,
+        subtotal:       data.subtotal,
+        iva:            data.iva,
+        total:          data.total,
+        forma_pago:     f.forma_pago,
+        cliente_nombre: f.cliente_nombre || 'CONSUMIDOR FINAL',
+      });
 
       if (accionProdNC === 'inventario') {
         mostrarExito(`✅ Nota de crédito ${numero} autorizada por el SRI — recuerda reingresar manualmente al inventario los productos devueltos`);
