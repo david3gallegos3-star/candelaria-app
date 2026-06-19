@@ -134,6 +134,7 @@ export default function TabGraficas({ mobile }) {
         .gte('fecha', inicio).lte('fecha', finStr),
       supabase.from('compras')
         .select('fecha, total')
+        .neq('estado', 'anulada')
         .gte('fecha', inicio).lte('fecha', finStr),
       supabase.from('facturas')
         .select('fecha, total')
