@@ -739,7 +739,7 @@ export default function TabPagosUnificado({ mobile, currentUser, userRol }) {
                     background: '#f0f2f5', border: 'none', borderRadius: '8px',
                     padding: '8px 12px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold'
                   }}>✏️ Editar</button>
-                  {!pagado && (
+                  {!pagado && c.estado !== 'anulada' && (
                     <button onClick={() => abrirPago(c)} style={{
                       background: 'linear-gradient(135deg,#1a3a2a,#1e5c3a)',
                       color: 'white', border: 'none', borderRadius: '8px',
