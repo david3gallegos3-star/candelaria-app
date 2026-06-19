@@ -94,14 +94,14 @@ export default function TabFacturas({ mobile, userRol }) {
   }
 
   // ── Ver detalle ───────────────────────────────────────────
-  async function toggleDetalle(id, estado, tipo) {
+  async function toggleDetalle(id, tipo) {
     if (expandida === id) { setExpandida(null); setDetalle([]); setNotaCredito(null); return; }
     setExpandida(id);
     setDetalle([]);
     setNotaCredito(null);
     setCargandoDetalle(true);
 
-    if (estado === 'anulada' && tipo !== 'nota_venta') {
+    if (tipo !== 'nota_venta') {
       const { data: nc } = await supabase.from('notas_credito')
         .select('numero, autorizacion_sri, pdf_url, xml_url, es_manual, motivo')
         .eq('factura_id', id).order('created_at', { ascending: false }).limit(1).maybeSingle();
@@ -339,21 +339,48 @@ export default function TabFacturas({ mobile, userRol }) {
         .update({ valor: String(secuencial + 1) })
         .eq('clave', 'nota_credito_secuencial');
 
-      await supabase.from('facturas').update({ estado: 'anulada' }).eq('id', f.id);
+      if (tipoNC === 'total') {
+        await supabase.from('facturas').update({ estado: 'anulada' }).eq('id', f.id);
 
-      await supabase.from('cuentas_cobrar')
-        .update({ estado: 'anulada' })
-        .eq('factura_id', f.id).eq('estado', 'pendiente');
+        await supabase.from('cuentas_cobrar')
+          .update({ estado: 'anulada' })
+          .eq('factura_id', f.id).eq('estado', 'pendiente');
 
-      await revertirAsientoFactura({
-        id:             f.id,
-        numero:         f.numero,
-        subtotal:       parseFloat(f.subtotal || 0),
-        iva:            parseFloat(f.iva      || 0),
-        total:          parseFloat(f.total),
-        forma_pago:     f.forma_pago,
-        cliente_nombre: f.cliente_nombre || 'CONSUMIDOR FINAL',
-      });
+        await revertirAsientoFactura({
+          id:             f.id,
+          numero:         f.numero,
+          subtotal:       parseFloat(f.subtotal || 0),
+          iva:            parseFloat(f.iva      || 0),
+          total:          parseFloat(f.total),
+          forma_pago:     f.forma_pago,
+          cliente_nombre: f.cliente_nombre || 'CONSUMIDOR FINAL',
+        });
+      } else {
+        // Parcial: la factura sigue activa (no se anula). Solo se reduce
+        // lo pendiente por cobrar por el monto acreditado, y se revierte
+        // unicamente ese monto en el libro diario — no la factura completa.
+        const { data: cxc } = await supabase.from('cuentas_cobrar')
+          .select('id, monto_total, monto_cobrado')
+          .eq('factura_id', f.id).eq('estado', 'pendiente').maybeSingle();
+        if (cxc) {
+          const nuevoMontoTotal = Math.max(0, parseFloat(cxc.monto_total) - data.total);
+          const cobrado = parseFloat(cxc.monto_cobrado);
+          const nuevoEstado = cobrado >= nuevoMontoTotal - 0.01 ? 'cobrada' : (cobrado > 0 ? 'parcial' : 'pendiente');
+          await supabase.from('cuentas_cobrar')
+            .update({ monto_total: nuevoMontoTotal, estado: nuevoEstado })
+            .eq('id', cxc.id);
+        }
+
+        await revertirAsientoFactura({
+          id:             f.id,
+          numero:         f.numero,
+          subtotal:       data.subtotal,
+          iva:            data.iva,
+          total:          data.total,
+          forma_pago:     f.forma_pago,
+          cliente_nombre: f.cliente_nombre || 'CONSUMIDOR FINAL',
+        });
+      }
 
       if (accionProdNC === 'inventario') {
         mostrarExito(`✅ Nota de crédito ${numero} autorizada por el SRI — recuerda reingresar manualmente al inventario los productos devueltos`);
@@ -661,7 +688,7 @@ export default function TabFacturas({ mobile, userRol }) {
 
                   {/* Botones */}
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    <button onClick={() => toggleDetalle(f.id, f.estado, f.tipo)} style={{
+                    <button onClick={() => toggleDetalle(f.id, f.tipo)} style={{
                       background: abierta ? '#2980b9' : 'white',
                       color:      abierta ? 'white'   : '#2980b9',
                       border: '1.5px solid #2980b9',
