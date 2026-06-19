@@ -21,6 +21,7 @@ export default function ComprasTalonario() {
         .gte('fecha', fechaDesde)
         .lte('fecha', fechaHasta)
         .neq('es_personal', true)
+        .neq('estado', 'anulada')
         .order('fecha');
       setFilas(data || []);
       setCargando(false);
