@@ -320,6 +320,8 @@ export default function TabFacturas({ mobile, userRol }) {
         factura_id:       f.id,
         numero,
         motivo:           motivoLabel,
+        subtotal:         data.subtotal,
+        iva:              data.iva,
         total:            data.total,
         estado:           'emitida',
         es_manual:        false,
