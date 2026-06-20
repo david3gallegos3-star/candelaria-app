@@ -509,17 +509,20 @@ export async function revertirAsientoFactura(factura) {
 
   const fecha = new Date().toISOString().split('T')[0];
   const cuentaHaber = cuentaCashOrBank(factura.forma_pago, cuentas);
-  const descripcion = `Anulación Factura - ${factura.numero} - ${factura.cliente_nombre}`;
+  const labelHaber = factura.forma_pago === 'efectivo' ? 'Caja Chica'
+    : factura.forma_pago === 'credito' ? 'CxC Clientes'
+    : 'Banco';
+  const descripcionCab = `Anulación Factura - ${factura.numero} - ${factura.cliente_nombre}`;
 
   const lineas = [
-    { cuenta_id: cuentas.ventas_gravadas_id, descripcion, debe: factura.subtotal, haber: 0,             orden: 0 },
-    { cuenta_id: cuentas.iva_ventas_id,      descripcion, debe: factura.iva,      haber: 0,             orden: 1 },
-    { cuenta_id: cuentaHaber,                descripcion, debe: 0,                haber: factura.total, orden: 2 },
+    { cuenta_id: cuentas.ventas_gravadas_id, descripcion: `Anulación Ventas — ${factura.numero} — ${factura.cliente_nombre}`, debe: factura.subtotal, haber: 0,             orden: 0 },
+    { cuenta_id: cuentas.iva_ventas_id,      descripcion: `Anulación IVA Ventas — ${factura.numero}`,                          debe: factura.iva,      haber: 0,             orden: 1 },
+    { cuenta_id: cuentaHaber,                descripcion: `Anulación ${labelHaber} — ${factura.numero}`,                      debe: 0,                haber: factura.total, orden: 2 },
   ];
 
   return insertarAsiento({
     fecha,
-    descripcion,
+    descripcion: descripcionCab,
     tipo: 'tributario',
     origen: 'facturacion',
     origen_id: factura.id,
@@ -533,16 +536,19 @@ export async function revertirAsientoNotaVenta(factura) {
 
   const fecha = new Date().toISOString().split('T')[0];
   const cuentaDebe = cuentaCashOrBank(factura.metodo_pago, cuentas);
-  const descripcion = `Anulación NV - ${factura.numero} - ${factura.cliente_nombre}`;
+  const labelDebe = factura.metodo_pago === 'efectivo' ? 'Caja Chica'
+    : factura.metodo_pago === 'credito' ? 'CxC Clientes'
+    : 'Banco';
+  const descripcionCab = `Anulación NV - ${factura.numero} - ${factura.cliente_nombre}`;
 
   const lineas = [
-    { cuenta_id: cuentas.ventas_internas_id, descripcion, debe: factura.total, haber: 0, orden: 0 },
-    { cuenta_id: cuentaDebe,                 descripcion, debe: 0, haber: factura.total, orden: 1 },
+    { cuenta_id: cuentas.ventas_internas_id, descripcion: `Anulación Ventas — ${factura.numero} — ${factura.cliente_nombre}`, debe: factura.total, haber: 0, orden: 0 },
+    { cuenta_id: cuentaDebe,                 descripcion: `Anulación ${labelDebe} — ${factura.numero}`,                      debe: 0, haber: factura.total, orden: 1 },
   ];
 
   return insertarAsiento({
     fecha,
-    descripcion,
+    descripcion: descripcionCab,
     tipo: 'interno',
     origen: 'facturacion',
     origen_id: factura.id,
