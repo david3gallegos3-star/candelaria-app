@@ -127,7 +127,7 @@ export default function TabGraficas({ mobile }) {
     const fin    = new Date(periodos[5].anio, periodos[5].mes, 0);
     const finStr = `${periodos[5].anio}-${String(periodos[5].mes).padStart(2,'0')}-${String(fin.getDate()).padStart(2,'0')}`;
 
-    const [rProd, rCompras, rVentas] = await Promise.all([
+    const [rProd, rCompras, rVentas, rNC] = await Promise.all([
       supabase.from('produccion_diaria')
         .select('fecha, kg_producidos')
         .eq('revertida', false)
@@ -139,7 +139,10 @@ export default function TabGraficas({ mobile }) {
       supabase.from('facturas')
         .select('fecha, total')
         .gte('fecha', inicio).lte('fecha', finStr)
-        .neq('estado_cobro', 'anulado')
+        .neq('estado_cobro', 'anulado'),
+      supabase.from('notas_credito')
+        .select('created_at, total').eq('es_manual', false)
+        .gte('created_at', inicio + 'T00:00:00').lte('created_at', finStr + 'T23:59:59'),
     ]);
 
     function agrupar(rows, campoFecha, campoValor) {
@@ -154,16 +157,18 @@ export default function TabGraficas({ mobile }) {
       });
     }
 
-    const produccion = agrupar(rProd.data,     'fecha', 'kg_producidos');
-    const compras    = agrupar(rCompras.data,   'fecha', 'total');
-    const ventas     = agrupar(rVentas.data,    'fecha', 'total');
+    const produccion   = agrupar(rProd.data,     'fecha', 'kg_producidos');
+    const compras      = agrupar(rCompras.data,   'fecha', 'total');
+    const ventasBrutas = agrupar(rVentas.data,    'fecha', 'total');
+    const notasCredito = agrupar(rNC.data,        'created_at', 'total');
+    const ventas        = ventasBrutas.map((v, i) => ({ label: v.label, valor: v.valor - notasCredito[i].valor }));
 
     setDatos({ produccion, compras, ventas, periodos });
     setCargando(false);
   }, []);
 
   useEffect(() => { cargar(); }, [cargar]);
-  useRealtime(['compras', 'facturas', 'produccion_diaria'], cargar);
+  useRealtime(['compras', 'facturas', 'produccion_diaria', 'notas_credito'], cargar);
 
   if (cargando) return (
     <div style={{ textAlign: 'center', padding: '60px', color: '#888' }}>
