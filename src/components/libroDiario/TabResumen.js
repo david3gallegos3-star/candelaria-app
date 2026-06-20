@@ -8,7 +8,12 @@ const COLORES_ORIGEN = {
   caja_chica:      { border:'#22c55e', bg:'#0a1f0a', label:'💵', text:'#86efac' },
   manual:          { border:'#94a3b8', bg:'#1e293b', label:'✏️', text:'#e2e8f0' },
   asiento_inicial: { border:'#f97316', bg:'#1a0d00', label:'🏁', text:'#fdba74' },
+  anulacion:       { border:'#ef4444', bg:'#2a0a0a', label:'↩️', text:'#fca5a5' },
 };
+
+function esAnulacion(asiento) {
+  return /^(Anulación|Reversión|Nota de [Cc]rédito)/.test(asiento.descripcion || '');
+}
 
 const FILTROS = ['Todos', 'Confirmados', 'Provisionales', 'facturacion', 'compras', 'nomina', 'caja_chica'];
 
@@ -87,7 +92,7 @@ export default function TabResumen({ asientos, vistaMode, onRefresh, currentUser
         )}
 
         {filtrados.map(asiento => {
-          const col = COLORES_ORIGEN[asiento.origen] || COLORES_ORIGEN.manual;
+          const col = esAnulacion(asiento) ? COLORES_ORIGEN.anulacion : (COLORES_ORIGEN[asiento.origen] || COLORES_ORIGEN.manual);
           const lineas = asiento.libro_diario_detalle || [];
           return (
             <div key={asiento.id} style={{ borderLeft:`3px solid ${col.border}`, background:col.bg,
