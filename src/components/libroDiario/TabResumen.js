@@ -9,6 +9,8 @@ const COLORES_ORIGEN = {
   manual:          { border:'#94a3b8', bg:'#1e293b', label:'✏️', text:'#e2e8f0' },
   asiento_inicial: { border:'#f97316', bg:'#1a0d00', label:'🏁', text:'#fdba74' },
   anulacion:       { border:'#ef4444', bg:'#2a0a0a', label:'↩️', text:'#fca5a5' },
+  cobros:          { border:'#06b6d4', bg:'#062a30', label:'💰', text:'#67e8f9' },
+  pagos_compras:   { border:'#d946ef', bg:'#2a0a2e', label:'💸', text:'#f0abfc' },
 };
 
 function esAnulacion(asiento) {
