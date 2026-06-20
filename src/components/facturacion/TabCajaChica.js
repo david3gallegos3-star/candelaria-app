@@ -457,9 +457,8 @@ export default function TabCajaChica({ mobile, currentUser }) {
     </tbody></table>
 
     <div class="sec">DEPÓSITO AL BANCO</div>
-    <table><thead><tr><th>MONTO</th><th>BANCO / REFERENCIA</th><th>FIRMA</th></tr></thead><tbody>
-    ${entregas.filter(e=>e.cantidad||e.recibe).map(e=>`<tr><td class="r">${parseFloat(e.cantidad||0).toFixed(2)}</td><td>${e.recibe||''}</td><td>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</td></tr>`).join('')}
-    <tr><td class="r"><b>${tEntregas.toFixed(2)}</b></td><td colspan="2"></td></tr>
+    <table><thead><tr><th>MONTO</th><th>BANCO / REFERENCIA</th></tr></thead><tbody>
+    ${entregas.filter(e=>e.cantidad||e.recibe).map(e=>`<tr><td class="r">${parseFloat(e.cantidad||0).toFixed(2)}</td><td>${e.recibe||''}</td></tr>`).join('')}
     </tbody></table>
 
     <div class="totales">
@@ -478,6 +477,11 @@ export default function TabCajaChica({ mobile, currentUser }) {
       </div>
     </div>
     <div class="obs"><b>OBSERVACIONES:</b> ${observaciones || ''}</div>
+    <div style="margin-top:40px;display:flex;justify-content:center">
+      <div style="text-align:center;border-top:1px solid #333;padding-top:4px;width:260px;font-size:9pt">
+        Firma del responsable
+      </div>
+    </div>
     <script>window.onload=function(){window.print();}<\/script>
     </body></html>`;
 
