@@ -357,9 +357,13 @@ export default function TabCajaChica({ mobile, currentUser }) {
     });
     rows.push(['TOTAL DEPOSITADO', n(tEntregas)]);
     rows.push([]);
-    const sobrante = parseFloat(inicial||0) + tEfect - tGastos - tComprasEf - tPagosEf - tEntregas;
-    rows.push(['SOBRANTE EN CAJA', n(sobrante)]);
+    const cajaEsperada = parseFloat(inicial||0) + tEfect - tGastos - tComprasEf - tPagosEf - tEntregas;
+    rows.push(['ESPERADO EN CAJA', n(cajaEsperada)]);
     rows.push(['  (inicial + ef. - gastos - compras/pagos ef. - depósito)','']);
+    const cierreNum = parseFloat(cierre||0);
+    const descuadre = cierreNum - cajaEsperada;
+    const cuadra = cierre !== '' && Math.abs(descuadre) < 0.005;
+    rows.push(['DESCUADRE (cierre - esperado)', cierre === '' ? 'PENDIENTE' : cuadra ? 'CUADRA (0.00)' : n(descuadre)]);
     rows.push([]);
     rows.push(['OBSERVACIONES', observaciones||'']);
 
@@ -384,6 +388,10 @@ export default function TabCajaChica({ mobile, currentUser }) {
     const tEntregas= entregas.reduce((s, e) => s + parseFloat(e.cantidad || 0), 0);
     const tComprasEf = comprasEfect.reduce((s, c) => s + (parseFloat(c.total) || 0), 0);
     const tPagosEf   = pagosEfect.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0);
+    const cajaEsperada    = parseFloat(inicial||0) + tEfect - tGastos - tComprasEf - tPagosEf - tEntregas;
+    const cierreIngresado = cierre !== '' && cierre !== null && cierre !== undefined;
+    const descuadre       = parseFloat(cierre||0) - cajaEsperada;
+    const cuadra          = cierreIngresado && Math.abs(descuadre) < 0.005;
     const fmt = f => { if (!f) return ''; const [y,m,d]=f.split('-'); return `${d}/${m}/${y}`; };
 
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
@@ -462,10 +470,11 @@ export default function TabCajaChica({ mobile, currentUser }) {
       <div class="tot"><div class="tlbl">TOTAL EFECTIVO</div><div class="tval">${tEfect.toFixed(2)}</div></div>
       <div class="tot"><div class="tlbl">COMPRAS/PAGOS EFECTIVO</div><div class="tval">${(tComprasEf+tPagosEf).toFixed(2)}</div></div>
       <div class="tot"><div class="tlbl">DEPÓSITO AL BANCO</div><div class="tval">${tEntregas.toFixed(2)}</div></div>
-      <div class="tot" style="border:2px solid #27ae60;background:${(parseFloat(inicial||0)+tEfect-tGastos-tComprasEf-tPagosEf-tEntregas)>=0?'#f0fff4':'#fde8e8'}">
-        <div class="tlbl" style="color:${(parseFloat(inicial||0)+tEfect-tGastos-tComprasEf-tPagosEf-tEntregas)>=0?'#27ae60':'#e74c3c'}">SOBRANTE EN CAJA</div>
-        <div class="tval" style="color:${(parseFloat(inicial||0)+tEfect-tGastos-tComprasEf-tPagosEf-tEntregas)>=0?'#27ae60':'#e74c3c'}">${(parseFloat(inicial||0)+tEfect-tGastos-tComprasEf-tPagosEf-tEntregas).toFixed(2)}</div>
-        <div style="font-size:7pt;color:#999">inicial + ef. - gastos - compras/pagos ef. - depósito</div>
+      <div class="tot"><div class="tlbl">ESPERADO EN CAJA</div><div class="tval">${cajaEsperada.toFixed(2)}</div></div>
+      <div class="tot" style="grid-column:1 / span 2;border:2px solid ${!cierreIngresado?'#e67e22':cuadra?'#27ae60':'#e74c3c'};background:${!cierreIngresado?'#fff8f0':cuadra?'#f0fff4':'#fde8e8'}">
+        <div class="tlbl" style="color:${!cierreIngresado?'#e67e22':cuadra?'#27ae60':'#e74c3c'}">${!cierreIngresado?'⏳ PENDIENTE':cuadra?'✓ CUADRA':'DESCUADRE'}</div>
+        <div class="tval" style="font-size:14pt;color:${!cierreIngresado?'#e67e22':cuadra?'#27ae60':'#e74c3c'}">${!cierreIngresado?'$'+cajaEsperada.toFixed(2):cuadra?'$0.00':`${descuadre>0?'+':''}$${descuadre.toFixed(2)}`}</div>
+        <div style="font-size:7pt;color:#999">${!cierreIngresado?'esperado en caja':'cierre - esperado'}</div>
       </div>
     </div>
     <div class="obs"><b>OBSERVACIONES:</b> ${observaciones || ''}</div>
