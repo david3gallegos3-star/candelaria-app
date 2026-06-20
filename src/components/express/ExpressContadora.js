@@ -55,6 +55,8 @@ export default function ExpressContadora({ currentUser, onLogout }) {
       { data: factMes },
       { data: comprasMes },
       { data: nominaMes },
+      { data: ncHoy },
+      { data: ncMes },
     ] = await Promise.all([
       // Ventas de hoy
       supabase.from('facturas')
@@ -100,16 +102,24 @@ export default function ExpressContadora({ currentUser, onLogout }) {
       supabase.from('nomina')
         .select('costo_patronal, estado')
         .eq('periodo', mesISO),
+      // Notas de credito electronicas de hoy y del mes
+      supabase.from('notas_credito').select('total').eq('es_manual', false)
+        .gte('created_at', hoyISO + 'T00:00:00').lte('created_at', hoyISO + 'T23:59:59'),
+      supabase.from('notas_credito').select('subtotal, iva, total').eq('es_manual', false)
+        .gte('created_at', mesDesde + 'T00:00:00').lte('created_at', mesHasta + 'T23:59:59'),
     ]);
 
     // ── Hoy ──────────────────────────────────────────────
-    const ventasHoy   = (factHoy    || []).reduce((s, f) => s + (parseFloat(f.total)   || 0), 0);
+    const ncHoyTotal  = (ncHoy      || []).reduce((s, nc) => s + (parseFloat(nc.total)  || 0), 0);
+    const ventasHoy   = (factHoy    || []).reduce((s, f) => s + (parseFloat(f.total)   || 0), 0) - ncHoyTotal;
     const cobradoHoy  = (cobrosHoy  || []).reduce((s, c) => s + (parseFloat(c.monto)   || 0), 0);
     const comprasHoyT = (comprasHoy || []).reduce((s, c) => s + (parseFloat(c.total)   || 0), 0);
 
     // ── Mes ──────────────────────────────────────────────
-    const ventasMesT  = (factMes    || []).reduce((s, f) => s + (parseFloat(f.total)   || 0), 0);
-    const ivaVentas   = (factMes    || []).reduce((s, f) => s + (parseFloat(f.iva)     || 0), 0);
+    const ncMesTotal  = (ncMes      || []).reduce((s, nc) => s + (parseFloat(nc.total) || 0), 0);
+    const ncMesIva    = (ncMes      || []).reduce((s, nc) => s + (parseFloat(nc.iva)   || 0), 0);
+    const ventasMesT  = (factMes    || []).reduce((s, f) => s + (parseFloat(f.total)   || 0), 0) - ncMesTotal;
+    const ivaVentas   = (factMes    || []).reduce((s, f) => s + (parseFloat(f.iva)     || 0), 0) - ncMesIva;
     const comprasMesT = (comprasMes || []).reduce((s, c) => s + (parseFloat(c.total)   || 0), 0);
     const ivaCompras  = (comprasMes || []).reduce((s, c) => s + (parseFloat(c.iva)     || 0), 0);
     const ivaPagar    = ivaVentas - ivaCompras;
