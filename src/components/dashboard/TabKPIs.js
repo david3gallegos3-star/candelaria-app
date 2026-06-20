@@ -42,7 +42,7 @@ export default function TabKPIs({ mobile }) {
 
     const [
       rFacturas, rCxC, rProduccion,
-      rCompras, rCxP, rNomina, rEmpleados
+      rCompras, rCxP, rNomina, rEmpleados, rNCMes, rNCPend
     ] = await Promise.all([
       // Ventas del mes
       supabase.from('facturas')
@@ -51,7 +51,7 @@ export default function TabKPIs({ mobile }) {
         .neq('estado_cobro', 'anulado'),
       // Cuentas x cobrar pendientes
       supabase.from('facturas')
-        .select('total')
+        .select('total, id')
         .eq('estado_cobro', 'pendiente'),
       // Producción kg mes (excluye revertidas)
       supabase.from('produccion_diaria')
@@ -75,11 +75,22 @@ export default function TabKPIs({ mobile }) {
       // Empleados activos
       supabase.from('empleados')
         .select('id', { count: 'exact' })
-        .eq('activo', true)
+        .eq('activo', true),
+      // Notas de credito electronicas del mes (reducen ventas)
+      supabase.from('notas_credito').select('total').eq('es_manual', false)
+        .gte('created_at', primerDia + 'T00:00:00').lte('created_at', ultimoDiaStr + 'T23:59:59'),
+      // Notas de credito sobre facturas aun pendientes de cobro (reducen CxC)
+      supabase.from('notas_credito').select('factura_id, total').eq('es_manual', false),
     ]);
 
-    const ventas    = (rFacturas.data   || []).reduce((s, r) => s + (r.total            || 0), 0);
-    const cxc       = (rCxC.data        || []).reduce((s, r) => s + (r.total            || 0), 0);
+    const ncMesTotal = (rNCMes.data || []).reduce((s, nc) => s + (nc.total || 0), 0);
+    const ncPorFactura = {};
+    (rNCPend.data || []).forEach(nc => {
+      ncPorFactura[nc.factura_id] = (ncPorFactura[nc.factura_id] || 0) + (parseFloat(nc.total) || 0);
+    });
+
+    const ventas    = (rFacturas.data   || []).reduce((s, r) => s + (r.total            || 0), 0) - ncMesTotal;
+    const cxc       = (rCxC.data        || []).reduce((s, r) => s + (r.total - (ncPorFactura[r.id] || 0)), 0);
     const kgProd    = (rProduccion.data || []).reduce((s, r) => s + (r.kg_producidos    || 0), 0);
     const compras   = (rCompras.data    || []).reduce((s, r) => s + (r.total            || 0), 0);
     const cxp       = (rCxP.data        || []).reduce((s, r) => s + (r.saldo_pendiente  || 0), 0);
@@ -95,7 +106,7 @@ export default function TabKPIs({ mobile }) {
   }, []);
 
   useEffect(() => { cargar(); }, [cargar]);
-  useRealtime(['facturas', 'cuentas_cobrar', 'produccion_diaria', 'compras', 'cuentas_pagar', 'nomina_roles', 'empleados'], cargar);
+  useRealtime(['facturas', 'cuentas_cobrar', 'produccion_diaria', 'compras', 'cuentas_pagar', 'nomina_roles', 'empleados', 'notas_credito'], cargar);
 
   if (cargando) return (
     <div style={{ textAlign: 'center', padding: '60px', color: '#888' }}>
