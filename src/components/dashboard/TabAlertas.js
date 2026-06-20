@@ -152,10 +152,16 @@ export default function TabAlertas({ mobile }) {
     try {
       const { data: factPend } = await supabase
         .from('facturas')
-        .select('total, fecha, clientes(nombre)')
+        .select('id, total, fecha, clientes(nombre)')
         .eq('estado_cobro', 'pendiente');
       if ((factPend || []).length > 0) {
-        const totalPend = factPend.reduce((s, f) => s + (f.total || 0), 0);
+        const idsPend = factPend.map(f => f.id);
+        const { data: ncPend } = await supabase
+          .from('notas_credito')
+          .select('total').eq('es_manual', false)
+          .in('factura_id', idsPend);
+        const totalNCPend = (ncPend || []).reduce((s, nc) => s + (parseFloat(nc.total) || 0), 0);
+        const totalPend = factPend.reduce((s, f) => s + (f.total || 0), 0) - totalNCPend;
         lista.push({
           nivel: 'amarillo', icono: '🧾',
           titulo: `${factPend.length} factura(s) pendiente(s) de cobro`,
