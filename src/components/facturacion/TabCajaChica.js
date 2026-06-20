@@ -461,6 +461,7 @@ export default function TabCajaChica({ mobile, currentUser }) {
       <div class="tot"><div class="tlbl">CIERRE</div><div class="tval">${parseFloat(cierre||0).toFixed(2)}</div></div>
       <div class="tot"><div class="tlbl">TOTAL EFECTIVO</div><div class="tval">${tEfect.toFixed(2)}</div></div>
       <div class="tot"><div class="tlbl">COMPRAS/PAGOS EFECTIVO</div><div class="tval">${(tComprasEf+tPagosEf).toFixed(2)}</div></div>
+      <div class="tot"><div class="tlbl">DEPÓSITO AL BANCO</div><div class="tval">${tEntregas.toFixed(2)}</div></div>
       <div class="tot" style="border:2px solid #27ae60;background:${(parseFloat(inicial||0)+tEfect-tGastos-tComprasEf-tPagosEf-tEntregas)>=0?'#f0fff4':'#fde8e8'}">
         <div class="tlbl" style="color:${(parseFloat(inicial||0)+tEfect-tGastos-tComprasEf-tPagosEf-tEntregas)>=0?'#27ae60':'#e74c3c'}">SOBRANTE EN CAJA</div>
         <div class="tval" style="color:${(parseFloat(inicial||0)+tEfect-tGastos-tComprasEf-tPagosEf-tEntregas)>=0?'#27ae60':'#e74c3c'}">${(parseFloat(inicial||0)+tEfect-tGastos-tComprasEf-tPagosEf-tEntregas).toFixed(2)}</div>
