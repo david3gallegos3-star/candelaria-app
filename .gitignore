@@ -35,3 +35,7 @@ yarn-error.log*
 *.pdf
 *.txt
 *.txn
+
+# Llaves privadas
+*.pem
+*.key
