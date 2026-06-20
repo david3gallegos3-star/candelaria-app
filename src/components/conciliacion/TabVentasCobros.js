@@ -56,9 +56,24 @@ export default function TabVentasCobros({ mobile }) {
       };
     });
 
+    // Notas de credito electronicas del periodo, agrupadas por factura —
+    // reducen lo pendiente igual que un cobro, sin ser dinero recibido.
+    const { data: notasCredito } = await supabase
+      .from('notas_credito')
+      .select('factura_id, total')
+      .eq('es_manual', false)
+      .gte('created_at', desde + 'T00:00:00')
+      .lte('created_at', hasta + 'T23:59:59');
+
+    const ncPorFactura = {};
+    (notasCredito || []).forEach(nc => {
+      ncPorFactura[nc.factura_id] = (ncPorFactura[nc.factura_id] || 0) + (parseFloat(nc.total) || 0);
+    });
+
     const filas = (facturas || []).map(f => {
       const cobrado = cobrosPorFactura[f.id] || cxcPorFactura[f.id]?.cobrado || 0;
-      const pendiente = (parseFloat(f.total) || 0) - cobrado;
+      const nc = ncPorFactura[f.id] || 0;
+      const pendiente = (parseFloat(f.total) || 0) - cobrado - nc;
       return {
         numero:    f.numero,
         cliente:   f.clientes?.nombre || '—',
