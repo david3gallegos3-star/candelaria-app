@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import { limpiarMonto, parsearFecha, filaValida, detectarMesAnio, parseTablaSimple } from './importExcelHistorial';
+import { limpiarMonto, parsearFecha, filaValida, detectarMesAnio, parseTablaSimple, parseCobrosEfectivo, parseCobrosCheques } from './importExcelHistorial';
 
 describe('limpiarMonto', () => {
   test('limpia simbolo de moneda, comas de miles y espacios', () => {
@@ -111,5 +111,31 @@ describe('parseTablaSimple', () => {
     expect(() => parseTablaSimple(wb, 'GASTOS', {
       filaInicio: 2, colNombre: 0, colFecha: 1, colDetalle: 2, colValor: 3, formatoFecha: 'MDY',
     })).toThrow(/GASTOS.*fila 3/i);
+  });
+});
+
+describe('parseCobrosEfectivo', () => {
+  test('parsea filas con fecha DMY y columna de cliente', () => {
+    const wb = wbHoja('COBROS EFECTIVO', [
+      ['', 'COBROS EN EFECTIVO', '', '', '', ''],
+      ['forma_pago', 'nombre_cliente', 'valor_cuenta', 'valor_pago', 'fecha_pago', 'numero_venta_pedido'],
+      ['CONTADO', 'LULU SNACKS', '50', '50', "'01/12/2025", '001-002-000008756'],
+    ]);
+    expect(parseCobrosEfectivo(wb)).toEqual([
+      { nombre: 'LULU SNACKS', fecha: '2025-12-01', valor: 50, numero: '001-002-000008756' },
+    ]);
+  });
+});
+
+describe('parseCobrosCheques', () => {
+  test('parsea filas con fecha DMY y columna de cliente', () => {
+    const wb = wbHoja('COBROS CHEQUES', [
+      ['', 'COBROS EN CHEQUE', '', '', '', ''],
+      ['forma_pago', 'nombre_cliente', 'valor_cuenta', 'valor_pago', 'fecha_pago', 'numero_venta_pedido'],
+      ['CHEQUE', 'SUPER PARRILLADA CAYAMBE', '371.48', '371.48', "'09/12/2025", '001-002-000008730'],
+    ]);
+    expect(parseCobrosCheques(wb)).toEqual([
+      { nombre: 'SUPER PARRILLADA CAYAMBE', fecha: '2025-12-09', valor: 371.48, numero: '001-002-000008730' },
+    ]);
   });
 });

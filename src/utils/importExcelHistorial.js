@@ -86,3 +86,15 @@ export function parseTablaSimple(wb, nombreHoja, cfg) {
   }
   return resultado;
 }
+
+export function parseCobrosEfectivo(wb) {
+  return parseTablaSimple(wb, 'COBROS EFECTIVO', {
+    filaInicio: 2, colNombre: 1, colFecha: 4, colValor: 3, formatoFecha: 'DMY', extra: { 5: 'numero' },
+  });
+}
+
+export function parseCobrosCheques(wb) {
+  return parseTablaSimple(wb, 'COBROS CHEQUES', {
+    filaInicio: 2, colNombre: 1, colFecha: 4, colValor: 3, formatoFecha: 'DMY', extra: { 5: 'numero' },
+  });
+}
