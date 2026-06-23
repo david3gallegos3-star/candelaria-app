@@ -25,6 +25,7 @@ export function parsearFecha(valor, formatoPreferido) {
     mes = a; dia = b;
   }
   if (mes < 1 || mes > 12 || dia < 1 || dia > 31) return null;
+  if (new Date(anio, mes - 1, dia).getDate() !== dia) return null;
 
   return `${anio}-${String(mes).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
 }

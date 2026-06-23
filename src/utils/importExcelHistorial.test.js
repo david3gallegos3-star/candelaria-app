@@ -29,6 +29,10 @@ describe('parsearFecha', () => {
     expect(parsearFecha('', 'MDY')).toBeNull();
     expect(parsearFecha('no-fecha', 'MDY')).toBeNull();
   });
+  test('fecha de calendario imposible retorna null en vez de inventar una fecha', () => {
+    expect(parsearFecha('31/4/25', 'DMY')).toBeNull();
+    expect(parsearFecha('2/30/25', 'MDY')).toBeNull();
+  });
 });
 
 describe('filaValida', () => {
