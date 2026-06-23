@@ -29,6 +29,7 @@ export default function ResumenTalonario() {
       { data: pagosP },
       { data: otrosI },
       { data: cxc },
+      { data: cxp },
       { data: config },
       { data: notasCredito },
       { data: pagosCompras },
@@ -42,6 +43,7 @@ export default function ResumenTalonario() {
       supabase.from('talonario_pagos_personales').select('monto,categoria').eq('mes', mes).eq('año', año),
       supabase.from('talonario_otros_ingresos').select('id,fecha,monto,descripcion,empresa,forma_pago').eq('mes', mes).eq('año', año),
       supabase.from('cuentas_cobrar').select('monto_total,monto_cobrado').in('estado', ['pendiente', 'parcial']),
+      supabase.from('cuentas_pagar').select('saldo_pendiente').in('estado', ['pendiente', 'parcial']),
       supabase.from('config_contabilidad').select('valor').eq('clave', `saldo_banco_${año}_${mes}`).maybeSingle(),
       supabase.from('notas_credito').select('total').eq('es_manual', false)
         .gte('created_at', fechaDesde + 'T00:00:00').lte('created_at', fechaHasta + 'T23:59:59'),
@@ -84,6 +86,7 @@ export default function ResumenTalonario() {
       + (facturas||[]).filter(f => ['transferencia','tarjeta_credito'].includes(f.forma_pago)).reduce((s,f) => s+parseFloat(f.total||0), 0);
 
     const cxcPendiente = (cxc||[]).reduce((s,c) => s + parseFloat(c.monto_total||0) - parseFloat(c.monto_cobrado||0), 0);
+    const cxpPendiente = (cxp||[]).reduce((s,c) => s + parseFloat(c.saldo_pendiente||0), 0);
 
     // Movimientos banco detallados
     const cobrosTransfDet = (cobros||[]).filter(c => ['transferencia','deposito'].includes(c.forma_pago));
@@ -121,7 +124,7 @@ export default function ResumenTalonario() {
       cobroEfect, cobroCheq, cobroTransf, pagosPrestTarj, pagosGastPers,
       gastosPersonalesCaja, totalComprasPersonales, comprasPersonalesPagadas,
       comprasBancoTotal,
-      cxcPendiente, saldoCalculado, pendienteInicial, movsBanco });
+      cxcPendiente, cxpPendiente, saldoCalculado, pendienteInicial, movsBanco });
     setCargando(false);
   }
 
@@ -134,7 +137,7 @@ export default function ResumenTalonario() {
     cobroEfect, cobroCheq, cobroTransf, pagosPrestTarj, pagosGastPers,
     gastosPersonalesCaja, totalComprasPersonales, comprasPersonalesPagadas,
     comprasBancoTotal,
-    cxcPendiente, saldoCalculado, pendienteInicial, movsBanco,
+    cxcPendiente, cxpPendiente, saldoCalculado, pendienteInicial, movsBanco,
   } = datos;
 
   const { dif, cuadra, color: difColor } = calcularDiferencia(saldoBanco, saldoCalculado);
@@ -222,7 +225,7 @@ export default function ResumenTalonario() {
 
           {titulo('ACTIVOS', '#555')}
           {fila('(+) Cuentas por cobrar', cxcPendiente, '#27ae60')}
-          {fila('(-) Cuentas por pagar', 0, '#e74c3c')}
+          {fila('(-) Cuentas por pagar', cxpPendiente, '#e74c3c')}
 
           {/* Saldo banco calculado vs real */}
           <div style={{ marginTop:10, background:'#f0f2f5', borderRadius:6, overflow:'hidden', fontSize:12 }}>
