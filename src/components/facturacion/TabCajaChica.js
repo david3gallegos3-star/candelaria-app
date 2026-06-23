@@ -24,6 +24,7 @@ export default function TabCajaChica({ mobile, currentUser }) {
   const [comprasEfect,    setComprasEfect]    = useState([]);
   const [pagosEfect,      setPagosEfect]      = useState([]);
   const [guardando,       setGuardando]       = useState(false);
+  const [estadoAutosave,  setEstadoAutosave]  = useState('idle'); // idle | guardando | guardado
   const [guardadoHoy,  setGuardadoHoy]  = useState(false);
   const [mesSel,       setMesSel]       = useState(hoy.slice(0, 7));
   const [datosMes,     setDatosMes]     = useState([]);
@@ -37,20 +38,22 @@ export default function TabCajaChica({ mobile, currentUser }) {
   }
   function fEntrega() { return { cantidad:'', recibe:'' }; }
 
-  useEffect(() => { listo.current = false; cargarDia(); }, [fecha]);
+  useEffect(() => { listo.current = false; setEstadoAutosave('idle'); cargarDia(); }, [fecha]);
   useEffect(() => { cargarProveedores(); }, []);
-  useRealtime(['caja_chica', 'caja_entregas', 'caja_gastos', 'cobros', 'compras', 'facturas'], cargarDia);
+  useRealtime(['cobros', 'compras', 'facturas', 'pagos_compras'], cargarSoloLectura);
   useEffect(() => { if (vista === 'mes') cargarMes(); }, [vista, mesSel]);
 
-  // Autosave en Supabase — 1.5s después del último cambio
+  // Autosave en Supabase — 600ms después del último cambio
   useEffect(() => {
     if (!listo.current || guardadoHoy) return;
     clearTimeout(autoSaveRef.current);
-    autoSaveRef.current = setTimeout(() => autoGuardarBorrador(), 1500);
+    setEstadoAutosave('pendiente');
+    autoSaveRef.current = setTimeout(() => autoGuardarBorrador(), 600);
   }, [responsable, inicial, cierre, observaciones, gastos, entregas, guardadoHoy]);
 
   async function autoGuardarBorrador() {
     if (guardadoHoy) return;
+    setEstadoAutosave('guardando');
     let id = cajaId;
     const row = {
       fecha, responsable,
@@ -64,7 +67,7 @@ export default function TabCajaChica({ mobile, currentUser }) {
     } else {
       await supabase.from('caja_chica').update(row).eq('id', id);
     }
-    if (!id) return;
+    if (!id) { setEstadoAutosave('error'); return; }
 
     await supabase.from('caja_gastos').delete().eq('caja_id', id);
     const gastosOk = gastos.filter(g => g.proveedor || g.detalle || g.valor);
@@ -85,6 +88,7 @@ export default function TabCajaChica({ mobile, currentUser }) {
         caja_id: id, cantidad: parseFloat(e.cantidad) || 0, recibe: e.recibe, orden: i,
       })));
     }
+    setEstadoAutosave('guardado');
   }
 
   async function cargarProveedores() {
@@ -140,6 +144,15 @@ export default function TabCajaChica({ mobile, currentUser }) {
       setInicial(anterior?.caja_cierre || '');
     }
 
+    await cargarSoloLectura();
+    listo.current = true;
+  }
+
+  // Datos de solo lectura (vienen de otras pantallas: Facturación, Compras).
+  // Se refrescan en segundo plano (realtime / volver a la pestaña) sin tocar
+  // los campos editables del formulario (gastos, entregas, responsable, etc.)
+  // para no pisar cambios sin guardar.
+  async function cargarSoloLectura() {
     const { data: c } = await supabase
       .from('cobros')
       .select('*, facturas(numero), clientes(nombre)')
@@ -172,8 +185,6 @@ export default function TabCajaChica({ mobile, currentUser }) {
       .eq('forma_pago', 'efectivo')
       .neq('tipo', 'devolucion');
     setPagosEfect(pe || []);
-
-    listo.current = true;
   }
 
   async function cargarMes() {
@@ -752,6 +763,15 @@ export default function TabCajaChica({ mobile, currentUser }) {
             ? <span style={{ fontSize:'11px', color:'#27ae60', fontWeight:'bold' }}>✅ Caja registrada</span>
             : <span style={{ fontSize:'11px', color:'#e67e22', fontWeight:'bold' }}>⚠️ Sin registrar</span>
         }
+        {!guardadoHoy && estadoAutosave !== 'idle' && (
+          <span style={{ fontSize:'11px', fontWeight:'bold',
+            color: estadoAutosave === 'error' ? '#e74c3c' : estadoAutosave === 'guardado' ? '#27ae60' : '#888' }}>
+            {estadoAutosave === 'pendiente' ? '✏️ Escribiendo...'
+              : estadoAutosave === 'guardando' ? '💾 Guardando...'
+              : estadoAutosave === 'guardado' ? '✓ Guardado'
+              : '⚠️ Error al guardar'}
+          </span>
+        )}
         <button onClick={() => { setVista('mes'); cargarMes(); }}
           style={{ marginLeft:'auto', padding:'7px 16px', borderRadius:8, border:'none',
             background:'#1a2a4a', color:'white', cursor:'pointer', fontWeight:'bold', fontSize:'12px' }}>
