@@ -222,7 +222,7 @@ export default function TabCajaChica({ mobile, currentUser }) {
       ventasEfPorFecha[fecha] = (ventasEfPorFecha[fecha] || 0) + parseFloat(f.total || 0);
     });
 
-    const vacio = fecha => ({ fecha, inicial:0, cierre:0, gastos:0, deposito:0, efectivo:0, transferencia:0, cheque:0, comprasEf:0, pagosEf:0, ventasEf:0 });
+    const vacio = fecha => ({ fecha, inicial:0, cierre:0, gastos:0, deposito:0, efectivo:0, transferencia:0, cheque:0, comprasEf:0, pagosEf:0 });
 
     const dias = {};
     (cajas || []).forEach(c => {
@@ -249,7 +249,8 @@ export default function TabCajaChica({ mobile, currentUser }) {
     });
     Object.keys(ventasEfPorFecha).forEach(fecha => {
       if (!dias[fecha]) dias[fecha] = vacio(fecha);
-      dias[fecha].ventasEf = ventasEfPorFecha[fecha];
+      // Efectivo del día = cobros de CxC en efectivo + ventas de contado en efectivo
+      dias[fecha].efectivo += ventasEfPorFecha[fecha];
     });
 
     setDatosMes(Object.values(dias).sort((a, b) => a.fecha.localeCompare(b.fecha)));
@@ -367,14 +368,6 @@ export default function TabCajaChica({ mobile, currentUser }) {
     rows.push(['','TOTAL COMPRAS/PAGOS EFECTIVO', n(tComprasEf + tPagosEf)]);
     rows.push([]);
 
-    rows.push(['--- VENTAS DE CONTADO EFECTIVO ---']);
-    rows.push(['#FACTURA','CLIENTE','VALOR']);
-    ventasEfectivo.forEach(f => {
-      rows.push([f.numero||'', f.clientes?.nombre||'CONSUMIDOR FINAL', n(f.total)]);
-    });
-    rows.push(['','TOTAL VENTAS CONTADO EFECTIVO', n(tVentasEf)]);
-    rows.push([]);
-
     rows.push(['--- COBROS DEL DÍA ---']);
     rows.push(['TIPO','#FACTURA','CLIENTE','REFERENCIA','VALOR']);
     cobros.forEach(c => {
@@ -385,6 +378,9 @@ export default function TabCajaChica({ mobile, currentUser }) {
         c.observaciones||'',
         n(c.monto)
       ]);
+    });
+    ventasEfectivo.forEach(f => {
+      rows.push(['EFECTIVO', f.numero||'', f.clientes?.nombre||'CONSUMIDOR FINAL', 'Venta de contado', n(f.total)]);
     });
     rows.push(['','','','TOTAL COBROS', n(tCobros)]);
     rows.push(['','','','Transferencias', n(tTransf)]);
@@ -399,9 +395,9 @@ export default function TabCajaChica({ mobile, currentUser }) {
     });
     rows.push(['TOTAL DEPOSITADO', n(tEntregas)]);
     rows.push([]);
-    const cajaEsperada = parseFloat(inicial||0) + tEfect + tVentasEf - tGastos - tComprasEf - tPagosEf - tEntregas;
+    const cajaEsperada = parseFloat(inicial||0) + tEfect - tGastos - tComprasEf - tPagosEf - tEntregas;
     rows.push(['ESPERADO EN CAJA', n(cajaEsperada)]);
-    rows.push(['  (inicial + cobros ef. + ventas contado ef. - gastos - compras/pagos ef. - depósito)','']);
+    rows.push(['  (inicial + efectivo (cobros + ventas contado) - gastos - compras/pagos ef. - depósito)','']);
     const cierreNum = parseFloat(cierre||0);
     const descuadre = cierreNum - cajaEsperada;
     const cuadra = cierre !== '' && Math.abs(descuadre) < 0.005;
@@ -422,16 +418,25 @@ export default function TabCajaChica({ mobile, currentUser }) {
   function imprimir() {
     const transf   = cobros.filter(c => c.forma_pago === 'transferencia');
     const cheques  = cobros.filter(c => c.forma_pago === 'cheque');
-    const efectivo = cobros.filter(c => c.forma_pago === 'efectivo');
+    // Efectivo del día = cobros de CxC en efectivo + ventas de contado en efectivo
+    const efectivo = [
+      ...cobros.filter(c => c.forma_pago === 'efectivo').map(c => ({
+        numero: c.facturas?.numero, cliente: c.clientes?.nombre || c.cliente_nombre,
+        referencia: c.observaciones, monto: parseFloat(c.monto) || 0,
+      })),
+      ...ventasEfectivo.map(f => ({
+        numero: f.numero, cliente: f.clientes?.nombre || 'CONSUMIDOR FINAL',
+        referencia: 'Venta de contado', monto: parseFloat(f.total) || 0,
+      })),
+    ];
     const tTransf  = transf.reduce((s, c) => s + parseFloat(c.monto), 0);
     const tCheq    = cheques.reduce((s, c) => s + parseFloat(c.monto), 0);
-    const tEfect   = efectivo.reduce((s, c) => s + parseFloat(c.monto), 0);
+    const tEfect   = efectivo.reduce((s, c) => s + c.monto, 0);
     const tGastos  = gastos.reduce((s, g) => s + parseFloat(g.valor || 0), 0);
     const tEntregas= entregas.reduce((s, e) => s + parseFloat(e.cantidad || 0), 0);
-    const tVentasEf  = ventasEfectivo.reduce((s, f) => s + (parseFloat(f.total) || 0), 0);
     const tComprasEf = comprasEfect.reduce((s, c) => s + (parseFloat(c.total) || 0), 0);
     const tPagosEf   = pagosEfect.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0);
-    const cajaEsperada    = parseFloat(inicial||0) + tEfect + tVentasEf - tGastos - tComprasEf - tPagosEf - tEntregas;
+    const cajaEsperada    = parseFloat(inicial||0) + tEfect - tGastos - tComprasEf - tPagosEf - tEntregas;
     const cierreIngresado = cierre !== '' && cierre !== null && cierre !== undefined;
     const descuadre       = parseFloat(cierre||0) - cajaEsperada;
     const cuadra          = cierreIngresado && Math.abs(descuadre) < 0.005;
@@ -481,12 +486,6 @@ export default function TabCajaChica({ mobile, currentUser }) {
     <tr><td colspan="2" class="r"><b>TOTAL</b></td><td class="r"><b>${(tComprasEf+tPagosEf).toFixed(2)}</b></td></tr>
     </tbody></table>
 
-    <div class="sec">VENTAS DE CONTADO EFECTIVO</div>
-    <table><thead><tr><th>#FACTURA</th><th>CLIENTE</th><th>VALOR</th></tr></thead><tbody>
-    ${ventasEfectivo.map(f=>`<tr><td>${f.numero||''}</td><td>${f.clientes?.nombre||'CONSUMIDOR FINAL'}</td><td class="r">${parseFloat(f.total||0).toFixed(2)}</td></tr>`).join('')}
-    <tr><td colspan="2" class="r"><b>TOTAL</b></td><td class="r"><b>${tVentasEf.toFixed(2)}</b></td></tr>
-    </tbody></table>
-
     <div class="sec">DETALLE COBROS TRANSFERENCIAS</div>
     <table><thead><tr><th>#FACT/APLICA</th><th>FECHA FACT</th><th>NUMERO TRANSF</th><th>CLIENTE</th><th>VALOR</th></tr></thead><tbody>
     ${transf.map(c=>`<tr><td>${c.facturas?.numero||''}</td><td>${fmt(c.fecha)}</td><td>${c.observaciones||''}</td><td>${c.clientes?.nombre||c.cliente_nombre||''}</td><td class="r">${parseFloat(c.monto).toFixed(2)}</td></tr>`).join('')}
@@ -500,9 +499,9 @@ export default function TabCajaChica({ mobile, currentUser }) {
     </tbody></table>
 
     <div class="sec">DETALLE COBROS EFECTIVO</div>
-    <table><thead><tr><th>#FACT/APLICA</th><th>FECHA FACT</th><th>CLIENTE</th><th>DETALLE</th><th>VALOR</th></tr></thead><tbody>
-    ${efectivo.map(c=>`<tr><td>${c.facturas?.numero||''}</td><td>${fmt(c.fecha)}</td><td>${c.clientes?.nombre||c.cliente_nombre||''}</td><td>${c.observaciones||''}</td><td class="r">${parseFloat(c.monto).toFixed(2)}</td></tr>`).join('')}
-    <tr><td colspan="4" class="r"><b>TOTAL</b></td><td class="r"><b>${tEfect.toFixed(2)}</b></td></tr>
+    <table><thead><tr><th>#FACT/APLICA</th><th>CLIENTE</th><th>DETALLE</th><th>VALOR</th></tr></thead><tbody>
+    ${efectivo.map(c=>`<tr><td>${c.numero||''}</td><td>${c.cliente||''}</td><td>${c.referencia||''}</td><td class="r">${c.monto.toFixed(2)}</td></tr>`).join('')}
+    <tr><td colspan="3" class="r"><b>TOTAL</b></td><td class="r"><b>${tEfect.toFixed(2)}</b></td></tr>
     </tbody></table>
 
     <div class="sec">DEPÓSITO AL BANCO</div>
@@ -516,13 +515,13 @@ export default function TabCajaChica({ mobile, currentUser }) {
       <div class="tot"><div class="tlbl">TOTAL CHEQUES</div><div class="tval">${tCheq.toFixed(2)}</div></div>
       <div class="tot"><div class="tlbl">CIERRE</div><div class="tval">${parseFloat(cierre||0).toFixed(2)}</div></div>
       <div class="tot"><div class="tlbl">TOTAL EFECTIVO</div><div class="tval">${tEfect.toFixed(2)}</div></div>
-      <div class="tot"><div class="tlbl">VENTAS CONTADO EFECTIVO</div><div class="tval">${tVentasEf.toFixed(2)}</div></div>
       <div class="tot"><div class="tlbl">COMPRAS/PAGOS EFECTIVO</div><div class="tval">${(tComprasEf+tPagosEf).toFixed(2)}</div></div>
       <div class="tot"><div class="tlbl">DEPÓSITO AL BANCO</div><div class="tval">${tEntregas.toFixed(2)}</div></div>
+      <div class="tot"><div class="tlbl">ESPERADO EN CAJA</div><div class="tval">${cajaEsperada.toFixed(2)}</div></div>
       <div class="tot" style="grid-column:1 / span 2;border:2px solid ${!cierreIngresado?'#e67e22':cuadra?'#27ae60':'#e74c3c'};background:${!cierreIngresado?'#fff8f0':cuadra?'#f0fff4':'#fde8e8'}">
         <div class="tlbl" style="color:${!cierreIngresado?'#e67e22':cuadra?'#27ae60':'#e74c3c'}">${!cierreIngresado?'⏳ PENDIENTE':cuadra?'✓ CUADRA':'DESCUADRE'}</div>
         <div class="tval" style="font-size:14pt;color:${!cierreIngresado?'#e67e22':cuadra?'#27ae60':'#e74c3c'}">${!cierreIngresado?'$'+cajaEsperada.toFixed(2):cuadra?'$0.00':`${descuadre>0?'+':''}$${descuadre.toFixed(2)}`}</div>
-        <div style="font-size:7pt;color:#999">${!cierreIngresado?'esperado en caja':`cierre - esperado ($${cajaEsperada.toFixed(2)})`}</div>
+        <div style="font-size:7pt;color:#999">${!cierreIngresado?'esperado en caja':'cierre - esperado'}</div>
       </div>
     </div>
     <div class="obs"><b>OBSERVACIONES:</b> ${observaciones || ''}</div>
@@ -544,11 +543,12 @@ export default function TabCajaChica({ mobile, currentUser }) {
 
   const tGastos      = gastos.reduce((s, g) => s + (parseFloat(g.valor) || 0), 0);
   const tEntregas    = entregas.reduce((s, e) => s + (parseFloat(e.cantidad) || 0), 0);
-  const tCobros      = cobros.reduce((s, c) => s + (parseFloat(c.monto) || 0), 0);
   const tTransf      = cobros.filter(c => c.forma_pago === 'transferencia').reduce((s, c) => s + parseFloat(c.monto), 0);
   const tCheq        = cobros.filter(c => c.forma_pago === 'cheque').reduce((s, c) => s + parseFloat(c.monto), 0);
-  const tEfect       = cobros.filter(c => c.forma_pago === 'efectivo').reduce((s, c) => s + parseFloat(c.monto), 0);
   const tVentasEf    = ventasEfectivo.reduce((s, f) => s + (parseFloat(f.total) || 0), 0);
+  // Efectivo del día = cobros de CxC en efectivo + ventas de contado en efectivo (mismo origen físico: la caja)
+  const tEfect       = cobros.filter(c => c.forma_pago === 'efectivo').reduce((s, c) => s + parseFloat(c.monto), 0) + tVentasEf;
+  const tCobros      = tTransf + tCheq + tEfect;
   const tComprasEf   = comprasEfect.reduce((s, c) => s + (parseFloat(c.total) || 0), 0);
   const tPagosEf     = pagosEfect.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0);
 
@@ -558,8 +558,8 @@ export default function TabCajaChica({ mobile, currentUser }) {
 
   // ── VISTA MES ─────────────────────────────────────────────
   if (vista === 'mes') {
-    const totM = { efectivo:0, transferencia:0, cheque:0, gastos:0, deposito:0, comprasEf:0, pagosEf:0, ventasEf:0 };
-    datosMes.forEach(d => { totM.efectivo+=d.efectivo; totM.transferencia+=d.transferencia; totM.cheque+=d.cheque; totM.gastos+=d.gastos; totM.deposito+=d.deposito||0; totM.comprasEf+=d.comprasEf||0; totM.pagosEf+=d.pagosEf||0; totM.ventasEf+=d.ventasEf||0; });
+    const totM = { efectivo:0, transferencia:0, cheque:0, gastos:0, deposito:0, comprasEf:0, pagosEf:0 };
+    datosMes.forEach(d => { totM.efectivo+=d.efectivo; totM.transferencia+=d.transferencia; totM.cheque+=d.cheque; totM.gastos+=d.gastos; totM.deposito+=d.deposito||0; totM.comprasEf+=d.comprasEf||0; totM.pagosEf+=d.pagosEf||0; });
     const fmtF = f => { const [y,m,d]=f.split('-'); return `${parseInt(d)}/${parseInt(m)}/${y}`; };
 
     function imprimirMes() {
@@ -585,17 +585,16 @@ export default function TabCajaChica({ mobile, currentUser }) {
         <img src="/LOGO_CANDELARIA_1.png" class="logo" onerror="this.style.display='none'"/>
       </div>
       <table><thead><tr>
-        <th>FECHA</th><th>EFECTIVO</th><th>VENTAS CONTADO EF</th><th>TRANSFERENCIA</th><th>CHEQUE</th><th>GASTOS</th><th>COMPRAS/PAGOS EF</th><th>DEP. BANCO</th><th>INICIAL</th><th>CIERRE</th><th>DESCUADRE</th>
+        <th>FECHA</th><th>EFECTIVO</th><th>TRANSFERENCIA</th><th>CHEQUE</th><th>GASTOS</th><th>COMPRAS/PAGOS EF</th><th>DEP. BANCO</th><th>INICIAL</th><th>CIERRE</th><th>DESCUADRE</th>
       </tr></thead><tbody>
       ${datosMes.map(d=>{
-        const esperado = d.inicial + d.efectivo + (d.ventasEf||0) - d.gastos - (d.comprasEf||0) - (d.pagosEf||0) - (d.deposito||0);
+        const esperado = d.inicial + d.efectivo - d.gastos - (d.comprasEf||0) - (d.pagosEf||0) - (d.deposito||0);
         const desc = d.cierre - esperado;
         const cuadra = Math.abs(desc) < 0.005;
         const color = cuadra ? '#27ae60' : '#e74c3c';
         return `<tr>
         <td>${fmtF(d.fecha)}</td>
         <td>${d.efectivo>0?d.efectivo.toFixed(2):'—'}</td>
-        <td>${(d.ventasEf||0)>0?(d.ventasEf||0).toFixed(2):'—'}</td>
         <td>${d.transferencia>0?d.transferencia.toFixed(2):'—'}</td>
         <td>${d.cheque>0?d.cheque.toFixed(2):'—'}</td>
         <td>${d.gastos>0?d.gastos.toFixed(2):'—'}</td>
@@ -609,7 +608,6 @@ export default function TabCajaChica({ mobile, currentUser }) {
         <tr class="tot">
           <td>TOTAL</td>
           <td>${totM.efectivo.toFixed(2)}</td>
-          <td>${totM.ventasEf.toFixed(2)}</td>
           <td>${totM.transferencia.toFixed(2)}</td>
           <td>${totM.cheque.toFixed(2)}</td>
           <td>${totM.gastos.toFixed(2)}</td>
@@ -627,15 +625,14 @@ export default function TabCajaChica({ mobile, currentUser }) {
 
     function descargarMesCSV() {
       const SEP = ';';
-      const enc = ['FECHA','EFECTIVO','VENTAS CONTADO EF','TRANSFERENCIA','CHEQUE','GASTOS','COMPRAS/PAGOS EF','DEP. BANCO','INICIAL','CIERRE','DESCUADRE'];
+      const enc = ['FECHA','EFECTIVO','TRANSFERENCIA','CHEQUE','GASTOS','COMPRAS/PAGOS EF','DEP. BANCO','INICIAL','CIERRE','DESCUADRE'];
       const rows = datosMes.map(d => {
-        const esperado = d.inicial + d.efectivo + (d.ventasEf||0) - d.gastos - (d.comprasEf||0) - (d.pagosEf||0) - (d.deposito||0);
+        const esperado = d.inicial + d.efectivo - d.gastos - (d.comprasEf||0) - (d.pagosEf||0) - (d.deposito||0);
         const desc = d.cierre - esperado;
         const cuadra = Math.abs(desc) < 0.005;
         return [
           fmtF(d.fecha),
           d.efectivo.toFixed(2).replace('.',','),
-          (d.ventasEf||0).toFixed(2).replace('.',','),
           d.transferencia.toFixed(2).replace('.',','),
           d.cheque.toFixed(2).replace('.',','),
           d.gastos.toFixed(2).replace('.',','),
@@ -648,7 +645,6 @@ export default function TabCajaChica({ mobile, currentUser }) {
       });
       const totRow = ['TOTAL',
         totM.efectivo.toFixed(2).replace('.',','),
-        totM.ventasEf.toFixed(2).replace('.',','),
         totM.transferencia.toFixed(2).replace('.',','),
         totM.cheque.toFixed(2).replace('.',','),
         totM.gastos.toFixed(2).replace('.',','),
@@ -683,7 +679,7 @@ export default function TabCajaChica({ mobile, currentUser }) {
           <table style={{ width:'100%', borderCollapse:'collapse' }}>
             <thead>
               <tr style={{ background:'#1a2a4a', color:'white' }}>
-                {['FECHA','EFECTIVO','VENTAS CONTADO EF','TRANSFERENCIA','CHEQUE','GASTOS','COMPRAS/PAGOS EF','DEP. BANCO','INICIAL','CIERRE','DESCUADRE',''].map(h => (
+                {['FECHA','EFECTIVO','TRANSFERENCIA','CHEQUE','GASTOS','COMPRAS/PAGOS EF','DEP. BANCO','INICIAL','CIERRE','DESCUADRE',''].map(h => (
                   <th key={h} style={{ padding:'10px 8px', fontSize:'11px', fontWeight:'bold', textAlign: h==='FECHA'?'left':'right', borderRight:'1px solid rgba(255,255,255,0.1)' }}>{h}</th>
                 ))}
               </tr>
@@ -694,14 +690,13 @@ export default function TabCajaChica({ mobile, currentUser }) {
               ) : datosMes.map((d, i) => (
                 <tr key={d.fecha} style={{ background: i%2===0?'white':'#fafafa' }}>
                   {(() => {
-                    const esperado = d.inicial + d.efectivo + (d.ventasEf||0) - d.gastos - (d.comprasEf||0) - (d.pagosEf||0) - (d.deposito||0);
+                    const esperado = d.inicial + d.efectivo - d.gastos - (d.comprasEf||0) - (d.pagosEf||0) - (d.deposito||0);
                     const desc = d.cierre - esperado;
                     const cuadra = Math.abs(desc) < 0.005;
                     const descColor = cuadra ? '#27ae60' : '#e74c3c';
                     return (<>
                       <td style={{ ...tdS, fontWeight:'bold', color:'#1a5276' }}>{fmtF(d.fecha)}</td>
                       <td style={{ ...tdS, textAlign:'right', color:'#27ae60' }}>{d.efectivo>0 ? d.efectivo.toFixed(2) : '—'}</td>
-                      <td style={{ ...tdS, textAlign:'right', color:'#16a085' }}>{(d.ventasEf||0)>0 ? (d.ventasEf||0).toFixed(2) : '—'}</td>
                       <td style={{ ...tdS, textAlign:'right', color:'#2980b9' }}>{d.transferencia>0 ? d.transferencia.toFixed(2) : '—'}</td>
                       <td style={{ ...tdS, textAlign:'right', color:'#8e44ad' }}>{d.cheque>0 ? d.cheque.toFixed(2) : '—'}</td>
                       <td style={{ ...tdS, textAlign:'right', color:'#e74c3c' }}>{d.gastos>0 ? d.gastos.toFixed(2) : '—'}</td>
@@ -728,7 +723,6 @@ export default function TabCajaChica({ mobile, currentUser }) {
               <tr style={{ background:'#ffd700', fontWeight:'bold' }}>
                 <td style={{ ...tdS, fontWeight:'bold' }}>TOTAL</td>
                 <td style={{ ...tdS, textAlign:'right' }}>{totM.efectivo.toFixed(2)}</td>
-                <td style={{ ...tdS, textAlign:'right' }}>{totM.ventasEf.toFixed(2)}</td>
                 <td style={{ ...tdS, textAlign:'right' }}>{totM.transferencia.toFixed(2)}</td>
                 <td style={{ ...tdS, textAlign:'right' }}>{totM.cheque.toFixed(2)}</td>
                 <td style={{ ...tdS, textAlign:'right' }}>{totM.gastos.toFixed(2)}</td>
@@ -798,7 +792,7 @@ export default function TabCajaChica({ mobile, currentUser }) {
           <input type="number" value={cierre} onChange={e => setCierre(e.target.value)}
             placeholder="0.00" style={{ ...inp, width:'100%', borderColor:'#e74c3c' }} />
           <div style={{ marginTop:5, fontSize:'11px', color:'#2980b9', fontWeight:'bold' }}>
-            Esperado: ${(parseFloat(inicial||0) + tEfect + tVentasEf - tGastos - tComprasEf - tPagosEf - tEntregas).toFixed(2)}
+            Esperado: ${(parseFloat(inicial||0) + tEfect - tGastos - tComprasEf - tPagosEf - tEntregas).toFixed(2)}
           </div>
         </div>
       </div>
@@ -975,38 +969,6 @@ export default function TabCajaChica({ mobile, currentUser }) {
         </div>
       )}
 
-      {/* VENTAS DE CONTADO EFECTIVO */}
-      {ventasEfectivo.length > 0 && (
-        <div style={{ background:'white', borderRadius:12, padding:'16px', marginBottom:12, boxShadow:'0 2px 8px rgba(0,0,0,0.06)', border:'1.5px solid #16a085' }}>
-          <div style={{ fontWeight:'bold', fontSize:'13px', color:'#1a1a2e', marginBottom:10,
-            display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-            🧾 VENTAS DE CONTADO EFECTIVO
-            <span style={{ fontSize:'13px', color:'#16a085', fontWeight:'bold' }}>Total: ${tVentasEf.toFixed(2)}</span>
-          </div>
-          <div style={{ fontSize:'10px', color:'#888', marginBottom:8, fontStyle:'italic' }}>
-            Solo lectura — registrado en Facturación
-          </div>
-          <table style={{ width:'100%', borderCollapse:'collapse' }}>
-            <thead><tr>
-              <th style={thS}>#FACTURA</th>
-              <th style={thS}>CLIENTE</th>
-              <th style={{ ...thS, width:120, textAlign:'right' }}>MONTO ($)</th>
-            </tr></thead>
-            <tbody>
-              {ventasEfectivo.map(f => (
-                <tr key={f.id}>
-                  <td style={tdS}>{f.numero || '—'}</td>
-                  <td style={tdS}>{f.clientes?.nombre || 'CONSUMIDOR FINAL'}</td>
-                  <td style={{ ...tdS, textAlign:'right', fontWeight:'bold', color:'#16a085' }}>
-                    ${parseFloat(f.total||0).toFixed(2)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
       {/* COBROS DEL DÍA */}
       <div style={{ background:'white', borderRadius:12, padding:'16px', marginBottom:12, boxShadow:'0 2px 8px rgba(0,0,0,0.06)' }}>
         <div style={{ fontWeight:'bold', fontSize:'13px', color:'#1a1a2e', marginBottom:10,
@@ -1015,17 +977,26 @@ export default function TabCajaChica({ mobile, currentUser }) {
           <span style={{ fontSize:'13px', color:'#27ae60', fontWeight:'bold' }}>Total: ${tCobros.toFixed(2)}</span>
         </div>
 
-        {cobros.length === 0 ? (
+        {cobros.length === 0 && ventasEfectivo.length === 0 ? (
           <div style={{ textAlign:'center', padding:'24px', color:'#aaa', fontSize:'12px', background:'#f9f9f9', borderRadius:8 }}>
             Sin cobros registrados para este día.<br />
             <span style={{ fontSize:'11px' }}>Regístralos en <b>Por cobrar</b> y aparecerán aquí automáticamente.</span>
           </div>
         ) : (
           ['transferencia','cheque','efectivo'].map(tipo => {
-            const lista = cobros.filter(c => c.forma_pago === tipo);
+            const lista = cobros.filter(c => c.forma_pago === tipo).map(c => ({
+              id: c.id, numero: c.facturas?.numero, cliente: c.clientes?.nombre || c.cliente_nombre,
+              referencia: c.observaciones, valor: parseFloat(c.monto) || 0,
+            }));
+            if (tipo === 'efectivo') {
+              ventasEfectivo.forEach(f => lista.push({
+                id: 'v' + f.id, numero: f.numero, cliente: f.clientes?.nombre || 'CONSUMIDOR FINAL',
+                referencia: 'Venta de contado', valor: parseFloat(f.total) || 0,
+              }));
+            }
             if (!lista.length) return null;
             const iconos = { transferencia:'🏦', cheque:'📝', efectivo:'💵' };
-            const totalTipo = lista.reduce((s, c) => s + parseFloat(c.monto), 0);
+            const totalTipo = lista.reduce((s, c) => s + c.valor, 0);
             return (
               <div key={tipo} style={{ marginBottom:12 }}>
                 <div style={{ fontSize:'11px', fontWeight:'bold', color:'#555', marginBottom:4,
@@ -1043,11 +1014,11 @@ export default function TabCajaChica({ mobile, currentUser }) {
                   <tbody>
                     {lista.map(c => (
                       <tr key={c.id}>
-                        <td style={tdS}>{c.facturas?.numero || '—'}</td>
-                        <td style={tdS}>{c.clientes?.nombre || c.cliente_nombre || '—'}</td>
-                        <td style={{ ...tdS, color:'#888' }}>{c.observaciones || '—'}</td>
+                        <td style={tdS}>{c.numero || '—'}</td>
+                        <td style={tdS}>{c.cliente || '—'}</td>
+                        <td style={{ ...tdS, color:'#888' }}>{c.referencia || '—'}</td>
                         <td style={{ ...tdS, textAlign:'right', fontWeight:'bold', color:'#27ae60' }}>
-                          ${parseFloat(c.monto).toFixed(2)}
+                          ${c.valor.toFixed(2)}
                         </td>
                       </tr>
                     ))}
@@ -1117,7 +1088,7 @@ export default function TabCajaChica({ mobile, currentUser }) {
 
       {/* Resumen + Botones */}
       {(() => {
-        const cajaEsperada    = parseFloat(inicial||0) + tEfect + tVentasEf - tGastos - tComprasEf - tPagosEf - tEntregas;
+        const cajaEsperada    = parseFloat(inicial||0) + tEfect - tGastos - tComprasEf - tPagosEf - tEntregas;
         const cierreIngresado = cierre !== '' && cierre !== null;
         const descuadre       = parseFloat(cierre||0) - cajaEsperada;
         const cuadra          = cierreIngresado && Math.abs(descuadre) < 0.005;
@@ -1127,10 +1098,9 @@ export default function TabCajaChica({ mobile, currentUser }) {
         display:'flex', gap:12, flexWrap:'wrap', alignItems:'center' }}>
         <div style={{ display:'flex', gap:20, flex:1, flexWrap:'wrap' }}>
           {[
-            { label:'COBROS EFECTIVO', val: tEfect,     color:'#27ae60' },
-            { label:'VENTAS CONTADO',  val: tVentasEf,  color:'#16a085' },
-            { label:'GASTOS',          val: tGastos,    color:'#e74c3c' },
-            { label:'DEPÓSITO BANCO',  val: tEntregas,  color:'#8e44ad' },
+            { label:'EFECTIVO (COBROS + VENTAS)', val: tEfect,     color:'#27ae60' },
+            { label:'GASTOS',                     val: tGastos,    color:'#e74c3c' },
+            { label:'DEPÓSITO BANCO',              val: tEntregas,  color:'#8e44ad' },
           ].map(x => (
             <div key={x.label} style={{ textAlign:'center' }}>
               <div style={{ fontSize:'10px', color:'#888', fontWeight:700 }}>{x.label}</div>
