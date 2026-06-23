@@ -131,3 +131,39 @@ export function parseTablaDoble(wb, nombreHoja, cfg) {
     bloqueB: parseUnBloque(rows, cfg.filaInicio, cfg.bloqueB, nombreHoja),
   };
 }
+
+export function parseCobrosTransferencia(wb) {
+  const { bloqueA, bloqueB } = parseTablaDoble(wb, 'COBROS TRANSF DEPO', {
+    filaInicio: 2,
+    bloqueA: { colNombre: 0, colCliente: 1, colFecha: 4, colValor: 3, colNumero: 5, formatoFecha: 'DMY' },
+    bloqueB: { colNombre: 8, colCliente: 9, colFecha: 12, colValor: 11, colNumero: 13, formatoFecha: 'DMY' },
+  });
+  return {
+    transferencia: bloqueA.map(({ cliente, fecha, valor, numero }) => ({ cliente, fecha, valor, numero })),
+    deposito: bloqueB.map(({ nombre, cliente, fecha, valor, numero }) => ({ cliente, fecha, valor, numero, formaPago: nombre })),
+  };
+}
+
+export function parseCompras(wb) {
+  const rows = XLSX.utils.sheet_to_json(wb.Sheets['COMPRAS '], { header: 1, raw: false, defval: '' });
+  const conFactura = [];
+  const sinFactura = [];
+  for (let i = 2; i < rows.length; i++) {
+    const row = rows[i];
+    if (filaValida(row, 0)) {
+      const fecha = parsearFecha(row[0], 'DMY');
+      if (!fecha) throw new Error(`Hoja COMPRAS (con factura), fila ${i + 1}: la fecha "${row[0]}" no es valida.`);
+      const valor = limpiarMonto(row[4]);
+      if (valor <= 0) throw new Error(`Hoja COMPRAS (con factura), fila ${i + 1}: el monto "${row[4]}" no es un numero valido.`);
+      conFactura.push({ fecha, ruc: row[1], proveedor: row[2], numero: row[3], valor });
+    }
+    if (filaValida(row, 8)) {
+      const fecha = parsearFecha(row[8], 'MDY');
+      if (!fecha) throw new Error(`Hoja COMPRAS (sin factura), fila ${i + 1}: la fecha "${row[8]}" no es valida.`);
+      const valor = limpiarMonto(row[10]);
+      if (valor <= 0) throw new Error(`Hoja COMPRAS (sin factura), fila ${i + 1}: el monto "${row[10]}" no es un numero valido.`);
+      sinFactura.push({ fecha, proveedor: row[9], valor });
+    }
+  }
+  return { conFactura, sinFactura };
+}

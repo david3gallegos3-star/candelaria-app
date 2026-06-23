@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import { limpiarMonto, parsearFecha, filaValida, detectarMesAnio, parseTablaSimple, parseCobrosEfectivo, parseCobrosCheques, parseTablaDoble } from './importExcelHistorial';
+import { limpiarMonto, parsearFecha, filaValida, detectarMesAnio, parseTablaSimple, parseCobrosEfectivo, parseCobrosCheques, parseTablaDoble, parseCobrosTransferencia, parseCompras } from './importExcelHistorial';
 
 describe('limpiarMonto', () => {
   test('limpia simbolo de moneda, comas de miles y espacios', () => {
@@ -185,5 +185,31 @@ describe('parseTablaDoble', () => {
     expect(bloqueB).toEqual([
       { nombre: 'DEPOSITO', cliente: 'CLIENTE DOS', fecha: '2025-12-02', valor: 50, numero: '002' },
     ]);
+  });
+});
+
+describe('parseCobrosTransferencia', () => {
+  test('separa transferencia de deposito/tarjeta', () => {
+    const wb = wbHoja('COBROS TRANSF DEPO', [
+      ['', 'COBROS EN TRANSFERENCIA', '', '', '', '', '', '', 'COBROS EN DEPOSITO Y TARJETA', '', '', '', ''],
+      ['forma_pago', 'nombre_cliente', 'valor_cuenta', 'valor_pago', 'fecha_pago', 'numero', '', '', 'forma_pago', 'nombre_cliente', 'valor_cuenta', 'valor_pago', 'fecha_pago', 'numero'],
+      ['TRANSFERENCIA', 'LA TABLITA', '52.63', '52.63', "'02/12/2025", '001-1', '', '', 'DEPOSITO', 'PIZZERIA DUCHYS', '594.05', '210', "'08/12/2025", '001-2'],
+    ]);
+    const { transferencia, deposito } = parseCobrosTransferencia(wb);
+    expect(transferencia).toEqual([{ cliente: 'LA TABLITA', fecha: '2025-12-02', valor: 52.63, numero: '001-1' }]);
+    expect(deposito).toEqual([{ cliente: 'PIZZERIA DUCHYS', fecha: '2025-12-08', valor: 210, numero: '001-2', formaPago: 'DEPOSITO' }]);
+  });
+});
+
+describe('parseCompras', () => {
+  test('separa con factura de sin factura', () => {
+    const wb = wbHoja('COMPRAS ', [
+      ['', '', 'COMPRAS CON FACTURA', '', '', '', '', '', 'COMPRAS SIN  FACTURA', '', '', ''],
+      ['FECHA', 'RUC', 'PROVEEDOR', 'NUMERO', 'VALOR', '', '', '', 'FECHA', 'PROVEEDOR', 'VALOR', ''],
+      ['27/12/2025', '1792458935001', 'ADECAMOR CIA LTDA.', '007-005-000337181', '27.00', '', '', '', '12/3/25', 'LECHON', '232.40', ''],
+    ]);
+    const { conFactura, sinFactura } = parseCompras(wb);
+    expect(conFactura).toEqual([{ fecha: '2025-12-27', ruc: '1792458935001', proveedor: 'ADECAMOR CIA LTDA.', numero: '007-005-000337181', valor: 27.00 }]);
+    expect(sinFactura).toEqual([{ fecha: '2025-12-03', proveedor: 'LECHON', valor: 232.40 }]);
   });
 });
