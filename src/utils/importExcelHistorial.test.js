@@ -162,4 +162,28 @@ describe('parseTablaDoble', () => {
       { nombre: 'DEPOSITO', cliente: 'PIZZERIA DUCHYS', fecha: '2025-12-08', valor: 210, numero: '001-2' },
     ]);
   });
+
+  test('el TOTAL del bloque corto no descarta un dato valido del bloque largo en la misma fila', () => {
+    const wb = wbHoja('COBROS TRANSF DEPO', [
+      ['', 'COBROS EN TRANSFERENCIA', '', '', '', '', '', '', 'COBROS EN DEPOSITO Y TARJETA', '', '', '', ''],
+      ['forma_pago', 'nombre_cliente', 'valor_cuenta', 'valor_pago', 'fecha_pago', 'numero', '', '', 'forma_pago', 'nombre_cliente', 'valor_cuenta', 'valor_pago', 'fecha_pago', 'numero'],
+      ['TRANSFERENCIA', 'CLIENTE UNO', '100', '100', "'01/12/2025", '001', '', '', 'DEPOSITO', 'CLIENTE DOS', '50', '50', "'02/12/2025", '002'],
+      // bloqueB ya termino (TOTAL en col8) en esta fila, pero bloqueA SIGUE teniendo un dato valido (col0-5) en la MISMA fila:
+      ['TRANSFERENCIA', 'CLIENTE TRES', '75', '75', "'03/12/2025", '003', '', '', 'TOTAL', '', '50', '', '', ''],
+      ['', '', 'TOTAL', '175', '', '', '', '', '', '', '', '', '', ''],
+    ]);
+    const { bloqueA, bloqueB } = parseTablaDoble(wb, 'COBROS TRANSF DEPO', {
+      filaInicio: 2,
+      bloqueA: { colNombre: 0, colCliente: 1, colFecha: 4, colValor: 3, colNumero: 5, formatoFecha: 'DMY' },
+      bloqueB: { colNombre: 8, colCliente: 9, colFecha: 12, colValor: 11, colNumero: 13, formatoFecha: 'DMY' },
+    });
+    // CLIENTE TRES no debe perderse aunque este en la misma fila donde bloqueB ya puso TOTAL
+    expect(bloqueA).toEqual([
+      { nombre: 'TRANSFERENCIA', cliente: 'CLIENTE UNO', fecha: '2025-12-01', valor: 100, numero: '001' },
+      { nombre: 'TRANSFERENCIA', cliente: 'CLIENTE TRES', fecha: '2025-12-03', valor: 75, numero: '003' },
+    ]);
+    expect(bloqueB).toEqual([
+      { nombre: 'DEPOSITO', cliente: 'CLIENTE DOS', fecha: '2025-12-02', valor: 50, numero: '002' },
+    ]);
+  });
 });
