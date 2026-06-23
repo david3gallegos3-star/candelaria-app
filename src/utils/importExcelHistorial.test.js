@@ -212,4 +212,36 @@ describe('parseCompras', () => {
     expect(conFactura).toEqual([{ fecha: '2025-12-27', ruc: '1792458935001', proveedor: 'ADECAMOR CIA LTDA.', numero: '007-005-000337181', valor: 27.00 }]);
     expect(sinFactura).toEqual([{ fecha: '2025-12-03', proveedor: 'LECHON', valor: 232.40 }]);
   });
+
+  test('lanza error si una fila tiene fecha invalida (con factura o sin factura)', () => {
+    const wb = wbHoja('COMPRAS ', [
+      ['', '', 'COMPRAS CON FACTURA', '', '', '', '', '', 'COMPRAS SIN  FACTURA', '', '', ''],
+      ['FECHA', 'RUC', 'PROVEEDOR', 'NUMERO', 'VALOR', '', '', '', 'FECHA', 'PROVEEDOR', 'VALOR', ''],
+      ['fecha-mala', '1792458935001', 'ADECAMOR CIA LTDA.', '007-005-000337181', '27.00', '', '', '', '12/3/25', 'LECHON', '232.40', ''],
+    ]);
+    expect(() => parseCompras(wb)).toThrow(/COMPRAS \(con factura\).*fila 3/i);
+
+    const wb2 = wbHoja('COMPRAS ', [
+      ['', '', 'COMPRAS CON FACTURA', '', '', '', '', '', 'COMPRAS SIN  FACTURA', '', '', ''],
+      ['FECHA', 'RUC', 'PROVEEDOR', 'NUMERO', 'VALOR', '', '', '', 'FECHA', 'PROVEEDOR', 'VALOR', ''],
+      ['27/12/2025', '1792458935001', 'ADECAMOR CIA LTDA.', '007-005-000337181', '27.00', '', '', '', 'fecha-mala', 'LECHON', '232.40', ''],
+    ]);
+    expect(() => parseCompras(wb2)).toThrow(/COMPRAS \(sin factura\).*fila 3/i);
+  });
+
+  test('lanza error si una fila tiene monto invalido (con factura o sin factura)', () => {
+    const wb = wbHoja('COMPRAS ', [
+      ['', '', 'COMPRAS CON FACTURA', '', '', '', '', '', 'COMPRAS SIN  FACTURA', '', '', ''],
+      ['FECHA', 'RUC', 'PROVEEDOR', 'NUMERO', 'VALOR', '', '', '', 'FECHA', 'PROVEEDOR', 'VALOR', ''],
+      ['27/12/2025', '1792458935001', 'ADECAMOR CIA LTDA.', '007-005-000337181', 'no-es-numero', '', '', '', '12/3/25', 'LECHON', '232.40', ''],
+    ]);
+    expect(() => parseCompras(wb)).toThrow(/COMPRAS \(con factura\).*fila 3/i);
+
+    const wb2 = wbHoja('COMPRAS ', [
+      ['', '', 'COMPRAS CON FACTURA', '', '', '', '', '', 'COMPRAS SIN  FACTURA', '', '', ''],
+      ['FECHA', 'RUC', 'PROVEEDOR', 'NUMERO', 'VALOR', '', '', '', 'FECHA', 'PROVEEDOR', 'VALOR', ''],
+      ['27/12/2025', '1792458935001', 'ADECAMOR CIA LTDA.', '007-005-000337181', '27.00', '', '', '', '12/3/25', 'LECHON', 'no-es-numero', ''],
+    ]);
+    expect(() => parseCompras(wb2)).toThrow(/COMPRAS \(sin factura\).*fila 3/i);
+  });
 });

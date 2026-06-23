@@ -145,6 +145,9 @@ export function parseCobrosTransferencia(wb) {
 }
 
 export function parseCompras(wb) {
+  // El espacio final en 'COMPRAS ' es literal e intencional: es el nombre real
+  // de la hoja en el Excel de la contadora. No quitarlo — sin él wb.Sheets[...]
+  // da undefined y sheet_to_json devuelve [] en silencio (sin lanzar error).
   const rows = XLSX.utils.sheet_to_json(wb.Sheets['COMPRAS '], { header: 1, raw: false, defval: '' });
   const conFactura = [];
   const sinFactura = [];
@@ -155,7 +158,7 @@ export function parseCompras(wb) {
       if (!fecha) throw new Error(`Hoja COMPRAS (con factura), fila ${i + 1}: la fecha "${row[0]}" no es valida.`);
       const valor = limpiarMonto(row[4]);
       if (valor <= 0) throw new Error(`Hoja COMPRAS (con factura), fila ${i + 1}: el monto "${row[4]}" no es un numero valido.`);
-      conFactura.push({ fecha, ruc: row[1], proveedor: row[2], numero: row[3], valor });
+      conFactura.push({ fecha, ruc: row[1], proveedor: row[2], numero: row[3] || '', valor });
     }
     if (filaValida(row, 8)) {
       const fecha = parsearFecha(row[8], 'MDY');
