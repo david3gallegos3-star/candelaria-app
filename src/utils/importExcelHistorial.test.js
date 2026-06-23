@@ -1,4 +1,5 @@
-import { limpiarMonto, parsearFecha, filaValida } from './importExcelHistorial';
+import * as XLSX from 'xlsx';
+import { limpiarMonto, parsearFecha, filaValida, detectarMesAnio } from './importExcelHistorial';
 
 describe('limpiarMonto', () => {
   test('limpia simbolo de moneda, comas de miles y espacios', () => {
@@ -44,5 +45,25 @@ describe('filaValida', () => {
   });
   test('fila donde la columna clave dice TOTAL no es valida', () => {
     expect(filaValida(['TOTAL', '', '', '3495.14'], 0)).toBe(false);
+  });
+});
+
+function wbConResumen(celdaA1) {
+  const ws = XLSX.utils.aoa_to_sheet([[celdaA1]]);
+  return { SheetNames: ['RESUMEN'], Sheets: { RESUMEN: ws } };
+}
+
+describe('detectarMesAnio', () => {
+  test('lee mes y año de la celda A1 de RESUMEN', () => {
+    expect(detectarMesAnio(wbConResumen('DICIEMBRE DEL 2025'))).toEqual({ mes: 12, año: 2025 });
+  });
+  test('funciona con cualquier mes del año', () => {
+    expect(detectarMesAnio(wbConResumen('MARZO DEL 2026'))).toEqual({ mes: 3, año: 2026 });
+  });
+  test('lanza error si el formato no calza', () => {
+    expect(() => detectarMesAnio(wbConResumen('algo raro'))).toThrow(/No pude leer el mes\/año/);
+  });
+  test('lanza error si no existe la hoja RESUMEN', () => {
+    expect(() => detectarMesAnio({ SheetNames: [], Sheets: {} })).toThrow(/hoja RESUMEN/);
   });
 });

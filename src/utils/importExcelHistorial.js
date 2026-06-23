@@ -1,3 +1,25 @@
+import * as XLSX from 'xlsx';
+
+const MESES_ES = ['ENERO','FEBRERO','MARZO','ABRIL','MAYO','JUNIO',
+  'JULIO','AGOSTO','SEPTIEMBRE','OCTUBRE','NOVIEMBRE','DICIEMBRE'];
+
+export function detectarMesAnio(wb) {
+  if (!wb.SheetNames.includes('RESUMEN')) {
+    throw new Error('No encontré la hoja RESUMEN en el archivo.');
+  }
+  const rows = XLSX.utils.sheet_to_json(wb.Sheets['RESUMEN'], { header: 1, raw: false, defval: '' });
+  const celda = String(rows[0]?.[0] || '').toUpperCase().trim();
+  const match = celda.match(/^([A-ZÑ]+)\s+DEL\s+(\d{4})$/);
+  if (!match) {
+    throw new Error(`No pude leer el mes/año de la hoja RESUMEN — la celda A1 dice "${celda}", esperaba el formato "<MES> DEL <AÑO>".`);
+  }
+  const mes = MESES_ES.indexOf(match[1]) + 1;
+  if (mes === 0) {
+    throw new Error(`No reconozco el mes "${match[1]}" en la celda A1 de RESUMEN.`);
+  }
+  return { mes, año: parseInt(match[2], 10) };
+}
+
 export function limpiarMonto(valor) {
   if (!valor) return 0;
   const limpio = String(valor).replace(/[^0-9.\-]/g, '');
