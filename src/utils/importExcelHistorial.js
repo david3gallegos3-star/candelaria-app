@@ -170,3 +170,43 @@ export function parseCompras(wb) {
   }
   return { conFactura, sinFactura };
 }
+
+export function parseOtrosPagosPersonales(wb) {
+  const rows = XLSX.utils.sheet_to_json(wb.Sheets['OTROS PAGOS PERSONALES'], { header: 1, raw: false, defval: '' });
+
+  const prestamoTarjeta = [];
+  const gastosPersonales = [];
+  const otrosGastos = [];
+
+  // OJO: las columnas izquierda (0-2) y derecha (6-8) se procesan de forma
+  // INDEPENDIENTE en cada fila. El encabezado "PAGOS GASTOS PERSONALES" que
+  // reinicia la sub-tabla izquierda puede caer en la misma fila que un dato
+  // real de la columna derecha (pasa en el Excel real, fila 12) -- por eso
+  // NO se usa `continue` para saltar toda la fila, cada bloque se evalua aparte.
+  let seccionIzquierda = 'prestamoTarjeta'; // cambia a 'gastosPersonales' cuando aparece ese encabezado
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const col0 = String(row[0] || '').toUpperCase();
+    const col6 = String(row[6] || '').toUpperCase();
+
+    if (col0.includes('PAGOS GASTOS PERSONALES')) {
+      seccionIzquierda = 'gastosPersonales';
+    } else if (!col0.includes('PAGOS PRESTAMO Y TARJETA') && col0 !== 'NOMBRE' && filaValida(row, 0)) {
+      const fecha = parsearFecha(row[1], 'MDY');
+      if (!fecha) throw new Error(`Hoja OTROS PAGOS PERSONALES, fila ${i + 1} (columna izquierda): la fecha "${row[1]}" no es valida.`);
+      const valor = limpiarMonto(row[2]);
+      if (valor <= 0) throw new Error(`Hoja OTROS PAGOS PERSONALES, fila ${i + 1} (columna izquierda): el monto "${row[2]}" no es un numero valido.`);
+      const fila = { nombre: row[0], fecha, valor };
+      (seccionIzquierda === 'prestamoTarjeta' ? prestamoTarjeta : gastosPersonales).push(fila);
+    }
+
+    if (!col6.includes('PAGOS OTROS GASTOS PERSONALES') && col6 !== 'NOMBRE' && filaValida(row, 6)) {
+      const fecha = parsearFecha(row[7], 'MDY');
+      if (!fecha) throw new Error(`Hoja OTROS PAGOS PERSONALES, fila ${i + 1} (columna derecha): la fecha "${row[7]}" no es valida.`);
+      const valor = limpiarMonto(row[8]);
+      if (valor <= 0) throw new Error(`Hoja OTROS PAGOS PERSONALES, fila ${i + 1} (columna derecha): el monto "${row[8]}" no es un numero valido.`);
+      otrosGastos.push({ nombre: row[6], fecha, valor });
+    }
+  }
+  return { prestamoTarjeta, gastosPersonales, otrosGastos };
+}

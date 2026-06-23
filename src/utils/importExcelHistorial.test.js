@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import { limpiarMonto, parsearFecha, filaValida, detectarMesAnio, parseTablaSimple, parseCobrosEfectivo, parseCobrosCheques, parseTablaDoble, parseCobrosTransferencia, parseCompras } from './importExcelHistorial';
+import { limpiarMonto, parsearFecha, filaValida, detectarMesAnio, parseTablaSimple, parseCobrosEfectivo, parseCobrosCheques, parseTablaDoble, parseCobrosTransferencia, parseCompras, parseOtrosPagosPersonales } from './importExcelHistorial';
 
 describe('limpiarMonto', () => {
   test('limpia simbolo de moneda, comas de miles y espacios', () => {
@@ -243,5 +243,29 @@ describe('parseCompras', () => {
       ['27/12/2025', '1792458935001', 'ADECAMOR CIA LTDA.', '007-005-000337181', '27.00', '', '', '', '12/3/25', 'LECHON', 'no-es-numero', ''],
     ]);
     expect(() => parseCompras(wb2)).toThrow(/COMPRAS \(sin factura\).*fila 3/i);
+  });
+});
+
+describe('parseOtrosPagosPersonales', () => {
+  test('separa las 3 sub-tablas: prestamo/tarjeta, gastos personales (apilada abajo), otros gastos', () => {
+    const wb = wbHoja('OTROS PAGOS PERSONALES', [
+      ['PAGOS PRESTAMO Y TARJETA', '', '', '', '', '', 'PAGOS OTROS GASTOS PERSONALES', '', ''],
+      ['NOMBRE', 'FECHA', 'VALOR', '', '', '', 'NOMBRE', 'FECHA', 'VALOR'],
+      ['TARJETA PACIFICO', '12/3/25', '262.20', '', '', '', 'CHAMORRO KATHERINE', '12/1/25', '6.00'],
+      // Caso real critico: el encabezado que reinicia la columna izquierda ("PAGOS GASTOS
+      // PERSONALES") cae en la MISMA fila que un dato real de la columna derecha (GRAN AKI) --
+      // tal cual pasa en el Excel real (fila 12). No debe perderse ese dato de la derecha.
+      ['PAGOS GASTOS PERSONALES', '', '', '', '', '', 'GRAN AKI', '12/11/25', '275.80'],
+      ['NOMBRE', 'FECHA', 'VALOR', '', '', '', '', '', ''],
+      ['SALUDSA', '12/2/25', '102.66', '', '', '', '', '', ''],
+      ['', 'TOTAL', '102.66', '', '', '', '', 'TOTAL', '378.46'],
+    ]);
+    const { prestamoTarjeta, gastosPersonales, otrosGastos } = parseOtrosPagosPersonales(wb);
+    expect(prestamoTarjeta).toEqual([{ nombre: 'TARJETA PACIFICO', fecha: '2025-12-03', valor: 262.20 }]);
+    expect(gastosPersonales).toEqual([{ nombre: 'SALUDSA', fecha: '2025-12-02', valor: 102.66 }]);
+    expect(otrosGastos).toEqual([
+      { nombre: 'CHAMORRO KATHERINE', fecha: '2025-12-01', valor: 6.00 },
+      { nombre: 'GRAN AKI', fecha: '2025-12-11', valor: 275.80 },
+    ]);
   });
 });
