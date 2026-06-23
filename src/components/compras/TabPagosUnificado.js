@@ -859,9 +859,17 @@ export default function TabPagosUnificado({ mobile, currentUser, userRol }) {
               </select>
             </div>
             <div style={{ marginBottom: '14px' }}>
-              <label style={{ display: 'block', fontSize: '12px', color: '#555', marginBottom: '4px', fontWeight: '600' }}>Nota (opcional)</label>
+              <label style={{ display: 'block', fontSize: '12px', color: '#555', marginBottom: '4px', fontWeight: '600' }}>
+                {formaPago === 'cheque' ? 'Nº de Cheque (opcional)'
+                  : formaPago === 'transferencia' ? 'Nº de Transferencia (opcional)'
+                  : 'Nota (opcional)'}
+              </label>
               <input value={notaPago} onChange={e => setNotaPago(e.target.value)}
-                style={inputFull} placeholder="Ej. Transferencia Banco Pichincha" />
+                style={inputFull} placeholder={
+                  formaPago === 'cheque' ? 'Ej: 0001234'
+                    : formaPago === 'transferencia' ? 'Ej: 00123456'
+                    : 'Ej. Transferencia Banco Pichincha'
+                } />
             </div>
 
             {['transferencia', 'cheque', 'deposito'].includes(formaPago) && (

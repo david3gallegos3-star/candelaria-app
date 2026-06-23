@@ -959,13 +959,15 @@ export default function TabNuevaVenta({ mobile, currentUser, userRol }) {
         {['transferencia', 'cheque', 'deposito'].includes(formaPago) && (
           <div style={{ marginTop: 8 }}>
             <label style={{ fontSize: 12, color: '#555', display: 'block', marginBottom: 4 }}>
-              Nº Transacción / Depósito (opcional)
+              {formaPago === 'cheque' ? 'Nº de Cheque (opcional)'
+                : formaPago === 'deposito' ? 'Nº de Depósito (opcional)'
+                : 'Nº de Transferencia (opcional)'}
             </label>
             <input
               type="text"
               value={referenciaPago}
               onChange={e => setReferenciaPago(e.target.value)}
-              placeholder="Ej: 00123456"
+              placeholder={formaPago === 'cheque' ? 'Ej: 0001234' : 'Ej: 00123456'}
               style={{ width: '100%', padding: '7px 10px', borderRadius: 6,
                 border: '1px solid #ddd', fontSize: 13, boxSizing: 'border-box' }}
             />
