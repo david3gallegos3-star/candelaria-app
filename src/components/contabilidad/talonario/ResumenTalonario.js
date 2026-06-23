@@ -69,9 +69,13 @@ export default function ResumenTalonario() {
     const pagosPrestTarj = (pagosP || []).filter(p => ['prestamos','tarjetas'].includes(p.categoria)).reduce((s,p) => s + parseFloat(p.monto||0), 0);
     const pagosGastPers  = (pagosP || []).filter(p => ['gastos_personal','otros'].includes(p.categoria)).reduce((s,p) => s + parseFloat(p.monto||0), 0);
 
-    const cobroEfect = (cobros||[]).filter(c => c.forma_pago==='efectivo').reduce((s,c) => s+parseFloat(c.monto||0), 0);
-    const cobroCheq  = (cobros||[]).filter(c => c.forma_pago==='cheque').reduce((s,c) => s+parseFloat(c.monto||0), 0);
-    const cobroTransf= (cobros||[]).filter(c => ['transferencia','deposito','tarjeta_credito'].includes(c.forma_pago)).reduce((s,c) => s+parseFloat(c.monto||0), 0);
+    // Cobros reales = cobros de CxC (tabla cobros) + ventas de contado (facturas pagadas directo, nunca generan cobro)
+    const cobroEfect = (cobros||[]).filter(c => c.forma_pago==='efectivo').reduce((s,c) => s+parseFloat(c.monto||0), 0)
+      + (facturas||[]).filter(f => f.forma_pago==='efectivo').reduce((s,f) => s+parseFloat(f.total||0), 0);
+    const cobroCheq  = (cobros||[]).filter(c => c.forma_pago==='cheque').reduce((s,c) => s+parseFloat(c.monto||0), 0)
+      + (facturas||[]).filter(f => f.forma_pago==='cheque').reduce((s,f) => s+parseFloat(f.total||0), 0);
+    const cobroTransf= (cobros||[]).filter(c => ['transferencia','deposito','tarjeta_credito'].includes(c.forma_pago)).reduce((s,c) => s+parseFloat(c.monto||0), 0)
+      + (facturas||[]).filter(f => ['transferencia','tarjeta_credito'].includes(f.forma_pago)).reduce((s,f) => s+parseFloat(f.total||0), 0);
 
     const cxcPendiente = (cxc||[]).reduce((s,c) => s + parseFloat(c.monto_total||0) - parseFloat(c.monto_cobrado||0), 0);
 

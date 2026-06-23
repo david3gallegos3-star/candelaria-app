@@ -17,14 +17,23 @@ export default function CobrosTransferencia() {
   useEffect(() => {
     async function cargar() {
       setCargando(true);
-      const { data } = await supabase
-        .from('cobros')
-        .select('id, fecha, monto, forma_pago, observaciones, clientes(nombre), facturas(numero)')
-        .in('forma_pago', ['transferencia', 'deposito', 'tarjeta_credito'])
-        .gte('fecha', fechaDesde)
-        .lte('fecha', fechaHasta)
-        .order('fecha');
-      setFilas(data || []);
+      const [{ data: cobros }, { data: ventas }] = await Promise.all([
+        supabase.from('cobros')
+          .select('id, fecha, monto, forma_pago, observaciones, clientes(nombre), facturas(numero)')
+          .in('forma_pago', ['transferencia', 'deposito', 'tarjeta_credito'])
+          .gte('fecha', fechaDesde).lte('fecha', fechaHasta),
+        // Ventas de contado por transferencia/tarjeta (nunca generan fila en cobros; no hay venta "deposito")
+        supabase.from('facturas')
+          .select('id, numero, total, forma_pago, created_at, clientes(nombre)')
+          .in('forma_pago', ['transferencia', 'tarjeta_credito']).neq('estado', 'anulada')
+          .gte('created_at', fechaDesde + 'T00:00:00').lte('created_at', fechaHasta + 'T23:59:59'),
+      ]);
+      const filasVentas = (ventas || []).map(f => ({
+        id: 'v' + f.id, fecha: (f.created_at || '').split('T')[0], forma_pago: f.forma_pago,
+        monto: f.total, clientes: f.clientes, facturas: { numero: f.numero },
+        observaciones: 'Venta de contado',
+      }));
+      setFilas([...(cobros || []), ...filasVentas].sort((a, b) => (a.fecha || '').localeCompare(b.fecha || '')));
       setCargando(false);
     }
     cargar();

@@ -11,14 +11,22 @@ export default function CobrosEfectivo() {
   useEffect(() => {
     async function cargar() {
       setCargando(true);
-      const { data } = await supabase
-        .from('cobros')
-        .select('id, fecha, monto, forma_pago, observaciones, clientes(nombre)')
-        .eq('forma_pago', 'efectivo')
-        .gte('fecha', fechaDesde)
-        .lte('fecha', fechaHasta)
-        .order('fecha');
-      setFilas(data || []);
+      const [{ data: cobros }, { data: ventas }] = await Promise.all([
+        supabase.from('cobros')
+          .select('id, fecha, monto, forma_pago, observaciones, clientes(nombre)')
+          .eq('forma_pago', 'efectivo')
+          .gte('fecha', fechaDesde).lte('fecha', fechaHasta),
+        // Ventas de contado en efectivo (nunca generan fila en cobros)
+        supabase.from('facturas')
+          .select('id, numero, total, created_at, clientes(nombre)')
+          .eq('forma_pago', 'efectivo').neq('estado', 'anulada')
+          .gte('created_at', fechaDesde + 'T00:00:00').lte('created_at', fechaHasta + 'T23:59:59'),
+      ]);
+      const filasVentas = (ventas || []).map(f => ({
+        id: 'v' + f.id, fecha: (f.created_at || '').split('T')[0],
+        monto: f.total, clientes: f.clientes, observaciones: `Venta de contado — ${f.numero}`,
+      }));
+      setFilas([...(cobros || []), ...filasVentas].sort((a, b) => (a.fecha || '').localeCompare(b.fecha || '')));
       setCargando(false);
     }
     cargar();
