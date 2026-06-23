@@ -268,4 +268,36 @@ describe('parseOtrosPagosPersonales', () => {
       { nombre: 'GRAN AKI', fecha: '2025-12-11', valor: 275.80 },
     ]);
   });
+
+  test('lanza error si una fila tiene fecha invalida (columna izquierda o derecha)', () => {
+    const wb = wbHoja('OTROS PAGOS PERSONALES', [
+      ['PAGOS PRESTAMO Y TARJETA', '', '', '', '', '', 'PAGOS OTROS GASTOS PERSONALES', '', ''],
+      ['NOMBRE', 'FECHA', 'VALOR', '', '', '', 'NOMBRE', 'FECHA', 'VALOR'],
+      ['TARJETA PACIFICO', 'fecha-mala', '262.20', '', '', '', 'CHAMORRO KATHERINE', '12/1/25', '6.00'],
+    ]);
+    expect(() => parseOtrosPagosPersonales(wb)).toThrow(/fila 3.*columna izquierda/i);
+
+    const wb2 = wbHoja('OTROS PAGOS PERSONALES', [
+      ['PAGOS PRESTAMO Y TARJETA', '', '', '', '', '', 'PAGOS OTROS GASTOS PERSONALES', '', ''],
+      ['NOMBRE', 'FECHA', 'VALOR', '', '', '', 'NOMBRE', 'FECHA', 'VALOR'],
+      ['TARJETA PACIFICO', '12/3/25', '262.20', '', '', '', 'CHAMORRO KATHERINE', 'fecha-mala', '6.00'],
+    ]);
+    expect(() => parseOtrosPagosPersonales(wb2)).toThrow(/fila 3.*columna derecha/i);
+  });
+
+  test('lanza error si una fila tiene monto invalido (columna izquierda o derecha)', () => {
+    const wb = wbHoja('OTROS PAGOS PERSONALES', [
+      ['PAGOS PRESTAMO Y TARJETA', '', '', '', '', '', 'PAGOS OTROS GASTOS PERSONALES', '', ''],
+      ['NOMBRE', 'FECHA', 'VALOR', '', '', '', 'NOMBRE', 'FECHA', 'VALOR'],
+      ['TARJETA PACIFICO', '12/3/25', 'no-es-numero', '', '', '', 'CHAMORRO KATHERINE', '12/1/25', '6.00'],
+    ]);
+    expect(() => parseOtrosPagosPersonales(wb)).toThrow(/fila 3.*columna izquierda/i);
+
+    const wb2 = wbHoja('OTROS PAGOS PERSONALES', [
+      ['PAGOS PRESTAMO Y TARJETA', '', '', '', '', '', 'PAGOS OTROS GASTOS PERSONALES', '', ''],
+      ['NOMBRE', 'FECHA', 'VALOR', '', '', '', 'NOMBRE', 'FECHA', 'VALOR'],
+      ['TARJETA PACIFICO', '12/3/25', '262.20', '', '', '', 'CHAMORRO KATHERINE', '12/1/25', 'no-es-numero'],
+    ]);
+    expect(() => parseOtrosPagosPersonales(wb2)).toThrow(/fila 3.*columna derecha/i);
+  });
 });
