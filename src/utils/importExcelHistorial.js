@@ -98,3 +98,36 @@ export function parseCobrosCheques(wb) {
     filaInicio: 2, colNombre: 1, colFecha: 4, colValor: 3, formatoFecha: 'DMY', extra: { 5: 'numero' },
   });
 }
+
+function parseUnBloque(rows, filaInicio, cfg, nombreHoja) {
+  const { colNombre, colCliente, colFecha, colValor, colNumero, formatoFecha } = cfg;
+  const resultado = [];
+  for (let i = filaInicio; i < rows.length; i++) {
+    const row = rows[i];
+    if (!filaValida(row, colNombre)) continue;
+    const fecha = parsearFecha(row[colFecha], formatoFecha);
+    if (!fecha) {
+      throw new Error(`Hoja ${nombreHoja}, fila ${i + 1}: la fecha "${row[colFecha]}" no es valida.`);
+    }
+    const valor = limpiarMonto(row[colValor]);
+    if (valor <= 0) {
+      throw new Error(`Hoja ${nombreHoja}, fila ${i + 1}: el monto "${row[colValor]}" no es un numero valido.`);
+    }
+    resultado.push({
+      nombre: row[colNombre],
+      cliente: row[colCliente],
+      fecha,
+      valor,
+      numero: row[colNumero] || '',
+    });
+  }
+  return resultado;
+}
+
+export function parseTablaDoble(wb, nombreHoja, cfg) {
+  const rows = XLSX.utils.sheet_to_json(wb.Sheets[nombreHoja], { header: 1, raw: false, defval: '' });
+  return {
+    bloqueA: parseUnBloque(rows, cfg.filaInicio, cfg.bloqueA, nombreHoja),
+    bloqueB: parseUnBloque(rows, cfg.filaInicio, cfg.bloqueB, nombreHoja),
+  };
+}

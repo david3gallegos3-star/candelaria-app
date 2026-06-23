@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import { limpiarMonto, parsearFecha, filaValida, detectarMesAnio, parseTablaSimple, parseCobrosEfectivo, parseCobrosCheques } from './importExcelHistorial';
+import { limpiarMonto, parsearFecha, filaValida, detectarMesAnio, parseTablaSimple, parseCobrosEfectivo, parseCobrosCheques, parseTablaDoble } from './importExcelHistorial';
 
 describe('limpiarMonto', () => {
   test('limpia simbolo de moneda, comas de miles y espacios', () => {
@@ -136,6 +136,30 @@ describe('parseCobrosCheques', () => {
     ]);
     expect(parseCobrosCheques(wb)).toEqual([
       { nombre: 'SUPER PARRILLADA CAYAMBE', fecha: '2025-12-09', valor: 371.48, numero: '001-002-000008730' },
+    ]);
+  });
+});
+
+describe('parseTablaDoble', () => {
+  test('lee cada bloque de columnas con su propio fin de tabla, sin que uno corte al otro', () => {
+    const wb = wbHoja('COBROS TRANSF DEPO', [
+      ['', 'COBROS EN TRANSFERENCIA', '', '', '', '', '', '', 'COBROS EN DEPOSITO Y TARJETA', '', '', '', ''],
+      ['forma_pago', 'nombre_cliente', 'valor_cuenta', 'valor_pago', 'fecha_pago', 'numero', '', '', 'forma_pago', 'nombre_cliente', 'valor_cuenta', 'valor_pago', 'fecha_pago', 'numero'],
+      ['TRANSFERENCIA', 'LA TABLITA', '52.63', '52.63', "'02/12/2025", '001-1', '', '', 'DEPOSITO', 'PIZZERIA DUCHYS', '594.05', '210', "'08/12/2025", '001-2'],
+      ['TRANSFERENCIA', 'ALEJANDRA', '54.5', '54.5', "'02/12/2025", '001-3', '', '', '', '', '', '', '', ''],
+      ['', '', 'TOTAL', '107.13', '', '', '', '', 'TOTAL', '', '210', '', '', ''],
+    ]);
+    const { bloqueA, bloqueB } = parseTablaDoble(wb, 'COBROS TRANSF DEPO', {
+      filaInicio: 2,
+      bloqueA: { colNombre: 0, colCliente: 1, colFecha: 4, colValor: 3, colNumero: 5, formatoFecha: 'DMY' },
+      bloqueB: { colNombre: 8, colCliente: 9, colFecha: 12, colValor: 11, colNumero: 13, formatoFecha: 'DMY' },
+    });
+    expect(bloqueA).toEqual([
+      { nombre: 'TRANSFERENCIA', cliente: 'LA TABLITA', fecha: '2025-12-02', valor: 52.63, numero: '001-1' },
+      { nombre: 'TRANSFERENCIA', cliente: 'ALEJANDRA', fecha: '2025-12-02', valor: 54.5, numero: '001-3' },
+    ]);
+    expect(bloqueB).toEqual([
+      { nombre: 'DEPOSITO', cliente: 'PIZZERIA DUCHYS', fecha: '2025-12-08', valor: 210, numero: '001-2' },
     ]);
   });
 });
