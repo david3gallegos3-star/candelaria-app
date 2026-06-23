@@ -8,6 +8,7 @@ import { useRealtime } from '../../hooks/useRealtime';
 import { generarAsientoFactura } from '../../utils/asientosContables';
 import { get as cacheGet, set as cacheSet, makeKey as cacheMakeKey } from '../../lib/readCache';
 import { addBorrador as addOfflineBorrador } from '../../lib/offlineBorradores';
+import SelectBuscable from '../shared/SelectBuscable';
 import { imprimirTicket } from '../../utils/imprimirTicket';
 
 const CONSUMIDOR_FINAL = {
@@ -791,27 +792,17 @@ export default function TabNuevaVenta({ mobile, currentUser, userRol }) {
         <div style={{ fontWeight: 'bold', color: '#1a1a2e', marginBottom: 10, fontSize: '14px' }}>
           👤 Cliente
         </div>
-        <select
-          value={clienteId}
-          onChange={e => seleccionarCliente(e.target.value)}
-          style={{ ...inputStyle, maxWidth: 400 }}
-        >
-          <option value="consumidor_final">CONSUMIDOR FINAL</option>
-          <optgroup label="── Clientes ──">
-            {clientes.map(c => (
-              <option key={c.id} value={c.id}>{c.nombre}</option>
-            ))}
-          </optgroup>
-          {empleados.length > 0 && (
-            <optgroup label="── Empleados ──">
-              {empleados.map(e => (
-                <option key={`emp_${e.id}`} value={`emp_${e.id}`}>
-                  {e.nombre} [Empleado]
-                </option>
-              ))}
-            </optgroup>
-          )}
-        </select>
+        <SelectBuscable
+          valor={clienteId}
+          onChange={seleccionarCliente}
+          placeholder="Buscar cliente..."
+          style={{ maxWidth: 400 }}
+          opciones={[
+            { value: 'consumidor_final', label: 'CONSUMIDOR FINAL' },
+            ...clientes.map(c => ({ value: c.id, label: c.nombre })),
+            ...empleados.map(e => ({ value: `emp_${e.id}`, label: `${e.nombre} [Empleado]` })),
+          ]}
+        />
         {clienteId !== 'consumidor_final' && clienteObj.email && (
           <div style={{ fontSize: '12px', color: '#888', marginTop: 6 }}>
             📧 {clienteObj.email}

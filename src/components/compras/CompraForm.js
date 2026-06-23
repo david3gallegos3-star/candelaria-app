@@ -4,6 +4,7 @@
 // ============================================
 import React, { useState, useEffect } from 'react';
 import { calcularResumenItems } from '../../utils/comprasCalc';
+import SelectBuscable from '../shared/SelectBuscable';
 
 const itemVacioEmpresa = () => ({
   materia_prima_id: '', mp_nombre: '',
@@ -237,19 +238,15 @@ export default function CompraForm({
         }}>
           <div>
             <label style={labelStyle}>Proveedor</label>
-            <select
-              value={proveedorId}
-              onChange={e => setProveedorId(e.target.value)}
-              style={inputStyle}
-            >
-              <option value="">— seleccionar —</option>
-              {proveedores.map(p => (
-                <option key={p.id} value={p.id}>
-                  {p.nombre} {p.tipo === 'extranjero' ? '🌎' : '🇪🇨'}
-                  {p.ruc ? ` — ${p.ruc}` : ''}
-                </option>
-              ))}
-            </select>
+            <SelectBuscable
+              valor={proveedorId}
+              onChange={setProveedorId}
+              placeholder="Buscar proveedor..."
+              opciones={proveedores.map(p => ({
+                value: p.id,
+                label: `${p.nombre} ${p.tipo === 'extranjero' ? '🌎' : '🇪🇨'}${p.ruc ? ' — ' + p.ruc : ''}`,
+              }))}
+            />
           </div>
           <div>
             <label style={labelStyle}>Fecha de compra</label>
