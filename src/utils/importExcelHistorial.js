@@ -210,3 +210,14 @@ export function parseOtrosPagosPersonales(wb) {
   }
   return { prestamoTarjeta, gastosPersonales, otrosGastos };
 }
+
+export function parseComprasPersonal(wb) {
+  // colNombre y colFecha apuntan a la misma columna (la fecha es el único
+  // valor disponible para validar que la fila no está vacía en esta hoja).
+  // Se usa `extra` (agregado en la Task 3) para capturar ruc/proveedor/numero
+  // directamente en la misma pasada, sin releer la hoja por separado.
+  return parseTablaSimple(wb, 'COMPRAS -PERSONAL', {
+    filaInicio: 2, colNombre: 0, colFecha: 0, colValor: 4, formatoFecha: 'DMY',
+    extra: { 1: 'ruc', 2: 'proveedor', 3: 'numero' },
+  }).map(({ nombre, ...resto }) => resto);
+}

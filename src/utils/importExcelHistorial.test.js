@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import { limpiarMonto, parsearFecha, filaValida, detectarMesAnio, parseTablaSimple, parseCobrosEfectivo, parseCobrosCheques, parseTablaDoble, parseCobrosTransferencia, parseCompras, parseOtrosPagosPersonales } from './importExcelHistorial';
+import { limpiarMonto, parsearFecha, filaValida, detectarMesAnio, parseTablaSimple, parseCobrosEfectivo, parseCobrosCheques, parseTablaDoble, parseCobrosTransferencia, parseCompras, parseOtrosPagosPersonales, parseComprasPersonal } from './importExcelHistorial';
 
 describe('limpiarMonto', () => {
   test('limpia simbolo de moneda, comas de miles y espacios', () => {
@@ -299,5 +299,36 @@ describe('parseOtrosPagosPersonales', () => {
       ['TARJETA PACIFICO', '12/3/25', '262.20', '', '', '', 'CHAMORRO KATHERINE', '12/1/25', 'no-es-numero'],
     ]);
     expect(() => parseOtrosPagosPersonales(wb2)).toThrow(/fila 3.*columna derecha/i);
+  });
+});
+
+describe('parseComprasPersonal', () => {
+  test('parsea filas con RUC, proveedor y numero de factura', () => {
+    const wb = wbHoja('COMPRAS -PERSONAL', [
+      ['FACTURAS GASTOS  PERSONALES', '', '', '', '', ''],
+      ['FECHA', 'RUC', 'PROVEEDOR', 'NUMERO', 'VALOR', 'DETALLE'],
+      ['01/12/2025', '1792487242001', 'Hotel Otavalo', '003-003-000003252', '$66.00', 'detalle...'],
+    ]);
+    expect(parseComprasPersonal(wb)).toEqual([
+      { fecha: '2025-12-01', ruc: '1792487242001', proveedor: 'Hotel Otavalo', numero: '003-003-000003252', valor: 66.00 },
+    ]);
+  });
+
+  test('lanza error si una fila tiene fecha invalida', () => {
+    const wb = wbHoja('COMPRAS -PERSONAL', [
+      ['FACTURAS GASTOS  PERSONALES', '', '', '', '', ''],
+      ['FECHA', 'RUC', 'PROVEEDOR', 'NUMERO', 'VALOR', 'DETALLE'],
+      ['fecha-mala', '1792487242001', 'Hotel Otavalo', '003-003-000003252', '$66.00', 'detalle...'],
+    ]);
+    expect(() => parseComprasPersonal(wb)).toThrow(/COMPRAS -PERSONAL.*fila 3/i);
+  });
+
+  test('lanza error si una fila tiene monto invalido', () => {
+    const wb = wbHoja('COMPRAS -PERSONAL', [
+      ['FACTURAS GASTOS  PERSONALES', '', '', '', '', ''],
+      ['FECHA', 'RUC', 'PROVEEDOR', 'NUMERO', 'VALOR', 'DETALLE'],
+      ['01/12/2025', '1792487242001', 'Hotel Otavalo', '003-003-000003252', 'no-es-numero', 'detalle...'],
+    ]);
+    expect(() => parseComprasPersonal(wb)).toThrow(/COMPRAS -PERSONAL.*fila 3/i);
   });
 });
