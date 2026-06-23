@@ -156,6 +156,10 @@ export async function revertirAsientoCompra(compraOriginal, asientoId) {
 }
 
 export async function sincronizarAsientoCompraEditada(compraActualizada, { forzarReversion }) {
+  // Anulación (compra puesta en cero): no tiene sentido generar un asiento
+  // nuevo sin movimiento real despues de revertir el original.
+  const esAnulacion = !compraActualizada.subtotal && !compraActualizada.iva && !compraActualizada.total;
+
   const { data: asientoExistente, error: errSel } = await supabase
     .from('libro_diario')
     .select('id, estado')
@@ -168,18 +172,18 @@ export async function sincronizarAsientoCompraEditada(compraActualizada, { forza
   if (errSel) return { data: null, error: errSel };
 
   if (!asientoExistente) {
-    return generarAsientoCompra(compraActualizada);
+    return esAnulacion ? { data: null, error: null } : generarAsientoCompra(compraActualizada);
   }
 
   if (asientoExistente.estado === 'provisional' && !forzarReversion) {
     const { error: errDel } = await supabase.from('libro_diario').delete().eq('id', asientoExistente.id);
     if (errDel) return { data: null, error: errDel };
-    return generarAsientoCompra(compraActualizada);
+    return esAnulacion ? { data: null, error: null } : generarAsientoCompra(compraActualizada);
   }
 
   const { error: errRev } = await revertirAsientoCompra(compraActualizada, asientoExistente.id);
   if (errRev) return { data: null, error: errRev };
-  return generarAsientoCompra(compraActualizada);
+  return esAnulacion ? { data: null, error: null } : generarAsientoCompra(compraActualizada);
 }
 
 export async function generarAsientoPagoProveedor(pago) {
