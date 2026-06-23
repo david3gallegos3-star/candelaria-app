@@ -1,5 +1,3 @@
-import { supabase } from '../supabase';
-
 export function limpiarMonto(valor) {
   if (!valor) return 0;
   const limpio = String(valor).replace(/[^0-9.\-]/g, '');
