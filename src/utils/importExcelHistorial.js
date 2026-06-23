@@ -58,3 +58,31 @@ export function filaValida(row, colClave) {
   if (String(valor).toUpperCase().includes('TOTAL')) return false;
   return true;
 }
+
+export function parseTablaSimple(wb, nombreHoja, cfg) {
+  const { filaInicio, colNombre, colFecha, colDetalle, colValor, formatoFecha, extra } = cfg;
+  const rows = XLSX.utils.sheet_to_json(wb.Sheets[nombreHoja], { header: 1, raw: false, defval: '' });
+  const resultado = [];
+
+  for (let i = filaInicio; i < rows.length; i++) {
+    const row = rows[i];
+    if (!filaValida(row, colNombre)) continue;
+
+    const fecha = parsearFecha(row[colFecha], formatoFecha);
+    if (!fecha) {
+      throw new Error(`Hoja ${nombreHoja}, fila ${i + 1}: la fecha "${row[colFecha]}" no es valida.`);
+    }
+    const valor = limpiarMonto(row[colValor]);
+    if (valor <= 0) {
+      throw new Error(`Hoja ${nombreHoja}, fila ${i + 1}: el monto "${row[colValor]}" no es un numero valido.`);
+    }
+
+    const fila = { nombre: row[colNombre], fecha, valor };
+    if (colDetalle !== undefined) fila.detalle = row[colDetalle];
+    if (extra) {
+      for (const [col, campo] of Object.entries(extra)) fila[campo] = row[col] || '';
+    }
+    resultado.push(fila);
+  }
+  return resultado;
+}

@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import { limpiarMonto, parsearFecha, filaValida, detectarMesAnio } from './importExcelHistorial';
+import { limpiarMonto, parsearFecha, filaValida, detectarMesAnio, parseTablaSimple } from './importExcelHistorial';
 
 describe('limpiarMonto', () => {
   test('limpia simbolo de moneda, comas de miles y espacios', () => {
@@ -65,5 +65,51 @@ describe('detectarMesAnio', () => {
   });
   test('lanza error si no existe la hoja RESUMEN', () => {
     expect(() => detectarMesAnio({ SheetNames: [], Sheets: {} })).toThrow(/hoja RESUMEN/);
+  });
+});
+
+function wbHoja(nombreHoja, filas) {
+  const ws = XLSX.utils.aoa_to_sheet(filas);
+  return { SheetNames: [nombreHoja], Sheets: { [nombreHoja]: ws } };
+}
+
+describe('parseTablaSimple', () => {
+  test('parsea filas de GASTOS, ignora titulo/encabezado/total', () => {
+    const wb = wbHoja('GASTOS', [
+      ['GASTOS EN EFECTIVO', '', '', ''],
+      ['PROVEDOR', 'FECHA', 'DETALLE', 'VALOR'],
+      ['LARCORIER', '12/1/25', 'GASTO ENVIO', ' $12.50 '],
+      ['MAESTRO PATRICIO', '12/1/25', 'ARREGLOS', ' $15.00 '],
+      ['', '', 'TOTAL', ' $27.50 '],
+    ]);
+    const filas = parseTablaSimple(wb, 'GASTOS', {
+      filaInicio: 2, colNombre: 0, colFecha: 1, colDetalle: 2, colValor: 3, formatoFecha: 'MDY',
+    });
+    expect(filas).toEqual([
+      { nombre: 'LARCORIER', fecha: '2025-12-01', detalle: 'GASTO ENVIO', valor: 12.50 },
+      { nombre: 'MAESTRO PATRICIO', fecha: '2025-12-01', detalle: 'ARREGLOS', valor: 15.00 },
+    ]);
+  });
+
+  test('lanza error si una fila tiene monto invalido', () => {
+    const wb = wbHoja('GASTOS', [
+      ['GASTOS EN EFECTIVO', '', '', ''],
+      ['PROVEDOR', 'FECHA', 'DETALLE', 'VALOR'],
+      ['LARCORIER', '12/1/25', 'GASTO ENVIO', 'no-es-numero'],
+    ]);
+    expect(() => parseTablaSimple(wb, 'GASTOS', {
+      filaInicio: 2, colNombre: 0, colFecha: 1, colDetalle: 2, colValor: 3, formatoFecha: 'MDY',
+    })).toThrow(/GASTOS.*fila 3/i);
+  });
+
+  test('lanza error si una fila tiene fecha invalida', () => {
+    const wb = wbHoja('GASTOS', [
+      ['GASTOS EN EFECTIVO', '', '', ''],
+      ['PROVEDOR', 'FECHA', 'DETALLE', 'VALOR'],
+      ['LARCORIER', 'fecha-mala', 'GASTO ENVIO', '12.50'],
+    ]);
+    expect(() => parseTablaSimple(wb, 'GASTOS', {
+      filaInicio: 2, colNombre: 0, colFecha: 1, colDetalle: 2, colValor: 3, formatoFecha: 'MDY',
+    })).toThrow(/GASTOS.*fila 3/i);
   });
 });
