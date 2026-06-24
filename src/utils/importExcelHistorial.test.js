@@ -431,4 +431,23 @@ describe('parseTodasLasHojas', () => {
     expect(resultado.año).toBe(2026);
     expect(resultado.pagosDelMes).toHaveLength(1);
   });
+
+  test('ignora el pie de pagina de PAGOS DICIEMBRE (saldo bancario despues del TOTAL)', () => {
+    // Caso real: la hoja trae una fila TOTAL y, mas abajo, una fila de resumen
+    // ("SALDO AL 31 DICIEMBRE 2025 CUENTA CORRIENTE") con el saldo bancario en
+    // la columna de fecha -- no es un pago, no debe parsearse como fila de dato.
+    const wb = wbCompleto();
+    wb.Sheets['PAGOS DICIEMBRE'] = XLSX.utils.aoa_to_sheet([
+      ['PAGOS  PROVEEDORES/ BANCOS', '', '', ''],
+      ['JENNY PUGLLA', '12/1/25', '600.00', 'TRANSFERENCIA'],
+      ['', 'TOTAL', '600.00', ''],
+      ['', '', '', ''],
+      ['SALDO AL 31 DICIEMBRE 2025 CUENTA CORRIENTE ', '31224.67', '', ''],
+    ]);
+
+    const resultado = parseTodasLasHojas(wb);
+    expect(resultado.pagosDelMes).toEqual([
+      { nombre: 'JENNY PUGLLA', fecha: '2025-12-01', valor: 600.00 },
+    ]);
+  });
 });

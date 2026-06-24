@@ -234,9 +234,24 @@ function nombreHojaPagos(mes) {
 }
 
 function parsePagosDelMes(wb, nombreHoja) {
-  return parseTablaSimple(wb, nombreHoja, {
-    filaInicio: 1, colNombre: 0, colFecha: 1, colValor: 2, formatoFecha: 'MDY',
-  });
+  // No se usa parseTablaSimple porque esta hoja tiene un pie de pagina despues
+  // de la fila TOTAL (ej. "SALDO AL 31 DICIEMBRE 2025 CUENTA CORRIENTE" con el
+  // saldo bancario en la columna de fecha) que no contiene la palabra "TOTAL"
+  // en la columna de nombre, asi que filaValida no lo detecta como fin de tabla.
+  // El marcador TOTAL real de esta hoja esta en la columna de fecha (indice 1).
+  const rows = XLSX.utils.sheet_to_json(wb.Sheets[nombreHoja], { header: 1, raw: false, defval: '' });
+  const resultado = [];
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (String(row[1] || '').toUpperCase().trim() === 'TOTAL') break;
+    if (!filaValida(row, 0)) continue;
+    const fecha = parsearFecha(row[1], 'MDY');
+    if (!fecha) throw new Error(`Hoja ${nombreHoja}, fila ${i + 1}: la fecha "${row[1]}" no es valida.`);
+    const valor = limpiarMonto(row[2]);
+    if (valor <= 0) throw new Error(`Hoja ${nombreHoja}, fila ${i + 1}: el monto "${row[2]}" no es un numero valido.`);
+    resultado.push({ nombre: row[0], fecha, valor });
+  }
+  return resultado;
 }
 
 export function parseTodasLasHojas(wb) {
