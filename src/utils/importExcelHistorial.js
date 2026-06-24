@@ -311,3 +311,120 @@ export async function resolverClienteId(nombre, idsCreados) {
   idsCreados.clientes.push(nuevo.id);
   return nuevo.id;
 }
+
+async function revertirTodo(idsCreados) {
+  for (const id of idsCreados.cajaChica) await supabase.from('caja_gastos').delete().eq('caja_id', id);
+  for (const id of idsCreados.cajaChica) await supabase.from('caja_chica').delete().eq('id', id);
+  for (const id of idsCreados.cobros) await supabase.from('cobros').delete().eq('id', id);
+  for (const id of idsCreados.pagosBanco) await supabase.from('talonario_pagos_banco').delete().eq('id', id);
+  for (const id of idsCreados.pagosPersonales) await supabase.from('talonario_pagos_personales').delete().eq('id', id);
+  for (const id of idsCreados.compras) await supabase.from('compras').delete().eq('id', id);
+  for (const id of idsCreados.proveedores) await supabase.from('proveedores').delete().eq('id', id);
+  for (const id of idsCreados.clientes) await supabase.from('clientes').delete().eq('id', id);
+}
+
+export async function ejecutarImport(datos) {
+  const { mes, año } = datos;
+  const idsCreados = { cajaChica: [], cobros: [], pagosBanco: [], pagosPersonales: [], compras: [], proveedores: [], clientes: [] };
+  const conteos = {};
+
+  try {
+    // GASTOS -> caja_chica + caja_gastos (una fila de caja_chica por fecha distinta)
+    const fechasUnicas = [...new Set(datos.gastos.map(g => g.fecha))];
+    const cajaIdPorFecha = {};
+    for (const fecha of fechasUnicas) {
+      const { data: caja, error } = await supabase.from('caja_chica').insert({ fecha }).select('id').single();
+      if (error) throw new Error(`Error creando caja_chica para ${fecha}: ${error.message}`);
+      idsCreados.cajaChica.push(caja.id);
+      cajaIdPorFecha[fecha] = caja.id;
+    }
+    for (const g of datos.gastos) {
+      const { error } = await supabase.from('caja_gastos').insert({
+        caja_id: cajaIdPorFecha[g.fecha], proveedor: g.nombre, detalle: g.detalle,
+        valor: g.valor, es_personal: false,
+      });
+      if (error) throw new Error(`Error insertando gasto "${g.nombre}": ${error.message}`);
+    }
+    conteos.gastos = datos.gastos.length;
+
+    // COBROS EFECTIVO / CHEQUES / TRANSFERENCIA / DEPOSITO -> cobros
+    const cobrosAInsertar = [
+      ...datos.cobrosEfectivo.map(c => ({ ...c, forma_pago: 'efectivo' })),
+      ...datos.cobrosCheques.map(c => ({ ...c, forma_pago: 'cheque' })),
+      ...datos.cobrosTransferencia.transferencia.map(c => ({ ...c, nombre: c.cliente, forma_pago: 'transferencia' })),
+      ...datos.cobrosTransferencia.deposito.map(c => ({ ...c, nombre: c.cliente, forma_pago: c.formaPago === 'DEPOSITO' ? 'deposito' : 'tarjeta_credito' })),
+    ];
+    for (const c of cobrosAInsertar) {
+      const clienteId = await resolverClienteId(c.nombre, idsCreados);
+      const { data: cobro, error } = await supabase.from('cobros').insert({
+        fecha: c.fecha, monto: c.valor, forma_pago: c.forma_pago, cliente_id: clienteId,
+      }).select('id').single();
+      if (error) throw new Error(`Error insertando cobro de "${c.nombre}": ${error.message}`);
+      idsCreados.cobros.push(cobro.id);
+    }
+    conteos.cobros = cobrosAInsertar.length;
+
+    // PAGOS DEL MES -> talonario_pagos_banco
+    for (const p of datos.pagosDelMes) {
+      const { data: pago, error } = await supabase.from('talonario_pagos_banco').insert({
+        mes, año, fecha: p.fecha, beneficiario: p.nombre, concepto: p.nombre, monto: p.valor, forma_pago: '20',
+      }).select('id').single();
+      if (error) throw new Error(`Error insertando pago del mes "${p.nombre}": ${error.message}`);
+      idsCreados.pagosBanco.push(pago.id);
+    }
+    conteos.pagosDelMes = datos.pagosDelMes.length;
+
+    // OTROS PAGOS PERSONALES -> talonario_pagos_personales
+    const personalesAInsertar = [
+      ...datos.otrosPagosPersonales.prestamoTarjeta.map(p => ({ ...p, categoria: 'tarjetas' })),
+      ...datos.otrosPagosPersonales.gastosPersonales.map(p => ({ ...p, categoria: 'gastos_personal' })),
+      ...datos.otrosPagosPersonales.otrosGastos.map(p => ({ ...p, categoria: 'otros' })),
+    ];
+    for (const p of personalesAInsertar) {
+      const { data: pago, error } = await supabase.from('talonario_pagos_personales').insert({
+        mes, año, fecha: p.fecha, beneficiario: p.nombre, concepto: p.nombre,
+        monto: p.valor, categoria: p.categoria, forma_pago: '20',
+      }).select('id').single();
+      if (error) throw new Error(`Error insertando pago personal "${p.nombre}": ${error.message}`);
+      idsCreados.pagosPersonales.push(pago.id);
+    }
+    conteos.pagosPersonales = personalesAInsertar.length;
+
+    // COMPRAS (empresa, con y sin factura) -> compras, es_personal=false, forma_pago=credito
+    const comprasEmpresaAInsertar = [
+      ...datos.comprasEmpresa.conFactura.map(c => ({ ...c, tieneFactura: true })),
+      ...datos.comprasEmpresa.sinFactura.map(c => ({ ...c, tieneFactura: false })),
+    ];
+    for (const c of comprasEmpresaAInsertar) {
+      const proveedorId = await resolverProveedorId(c.proveedor, c.ruc, idsCreados);
+      const { data: compra, error } = await supabase.from('compras').insert({
+        fecha: c.fecha, proveedor_id: proveedorId, proveedor_nombre: c.proveedor,
+        numero_factura: c.numero || null,
+        tiene_factura: c.tieneFactura, subtotal: c.valor, total: c.valor,
+        forma_pago: 'credito', es_personal: false, estado: 'pendiente',
+      }).select('id').single();
+      if (error) throw new Error(`Error insertando compra de "${c.proveedor}": ${error.message}`);
+      idsCreados.compras.push(compra.id);
+    }
+    conteos.comprasEmpresa = comprasEmpresaAInsertar.length;
+
+    // COMPRAS-PERSONAL -> compras, es_personal=true, forma_pago=credito
+    for (const c of datos.comprasPersonal) {
+      const proveedorId = await resolverProveedorId(c.proveedor, c.ruc, idsCreados);
+      const { data: compra, error } = await supabase.from('compras').insert({
+        fecha: c.fecha, proveedor_id: proveedorId, proveedor_nombre: c.proveedor,
+        numero_factura: c.numero || null,
+        tiene_factura: true, subtotal: c.valor, total: c.valor,
+        forma_pago: 'credito', es_personal: true, estado: 'pendiente',
+      }).select('id').single();
+      if (error) throw new Error(`Error insertando factura personal de "${c.proveedor}": ${error.message}`);
+      idsCreados.compras.push(compra.id);
+    }
+    conteos.comprasPersonal = datos.comprasPersonal.length;
+
+    return conteos;
+  } catch (err) {
+    await revertirTodo(idsCreados);
+    throw err;
+  }
+}
