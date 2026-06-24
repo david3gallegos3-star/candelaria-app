@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx';
+import { supabase } from '../supabase';
 
 const MESES_ES = ['ENERO','FEBRERO','MARZO','ABRIL','MAYO','JUNIO',
   'JULIO','AGOSTO','SEPTIEMBRE','OCTUBRE','NOVIEMBRE','DICIEMBRE'];
@@ -260,4 +261,26 @@ export function parseTodasLasHojas(wb) {
     comprasEmpresa: parseCompras(wb),
     comprasPersonal: parseComprasPersonal(wb),
   };
+}
+
+export async function verificarMesNoImportado(mes, año) {
+  const fechaDesde = `${año}-${String(mes).padStart(2, '0')}-01`;
+  const ultimoDia = new Date(año, mes, 0).getDate();
+  const fechaHasta = `${año}-${String(mes).padStart(2, '0')}-${String(ultimoDia).padStart(2, '0')}`;
+
+  const checks = [
+    { tabla: 'caja_chica', label: 'Gastos (Caja Chica)', query: q => q.gte('fecha', fechaDesde).lte('fecha', fechaHasta) },
+    { tabla: 'cobros', label: 'Cobros', query: q => q.gte('fecha', fechaDesde).lte('fecha', fechaHasta) },
+    { tabla: 'talonario_pagos_banco', label: 'Pagos del Mes', query: q => q.eq('mes', mes).eq('año', año) },
+    { tabla: 'talonario_pagos_personales', label: 'Pagos Personales', query: q => q.eq('mes', mes).eq('año', año) },
+    { tabla: 'compras', label: 'Compras', query: q => q.gte('fecha', fechaDesde).lte('fecha', fechaHasta) },
+  ];
+
+  for (const check of checks) {
+    const { data, error } = await check.query(supabase.from(check.tabla).select('id').limit(1));
+    if (error) throw new Error(`Error verificando ${check.label}: ${error.message}`);
+    if (data && data.length > 0) {
+      throw new Error(`Ya existe información cargada para ${mes}/${año} en "${check.label}" — bórrala primero si quieres reimportar.`);
+    }
+  }
 }
