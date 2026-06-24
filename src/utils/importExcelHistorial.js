@@ -313,14 +313,26 @@ export async function resolverClienteId(nombre, idsCreados) {
 }
 
 async function revertirTodo(idsCreados) {
-  for (const id of idsCreados.cajaChica) await supabase.from('caja_gastos').delete().eq('caja_id', id);
-  for (const id of idsCreados.cajaChica) await supabase.from('caja_chica').delete().eq('id', id);
-  for (const id of idsCreados.cobros) await supabase.from('cobros').delete().eq('id', id);
-  for (const id of idsCreados.pagosBanco) await supabase.from('talonario_pagos_banco').delete().eq('id', id);
-  for (const id of idsCreados.pagosPersonales) await supabase.from('talonario_pagos_personales').delete().eq('id', id);
-  for (const id of idsCreados.compras) await supabase.from('compras').delete().eq('id', id);
-  for (const id of idsCreados.proveedores) await supabase.from('proveedores').delete().eq('id', id);
-  for (const id of idsCreados.clientes) await supabase.from('clientes').delete().eq('id', id);
+  const erroresRollback = [];
+  const intentarBorrar = async (tabla, columna, id) => {
+    const { error } = await supabase.from(tabla).delete().eq(columna, id);
+    if (error) erroresRollback.push(`${tabla}.${columna}=${id}: ${error.message}`);
+  };
+
+  // Borrado redundante por caja_id: ya existe ON DELETE CASCADE confirmado en la
+  // BD real, pero no hay migracion SQL versionada que lo garantice a futuro.
+  for (const id of idsCreados.cajaChica) await intentarBorrar('caja_gastos', 'caja_id', id);
+  for (const id of idsCreados.cajaChica) await intentarBorrar('caja_chica', 'id', id);
+  for (const id of idsCreados.cobros) await intentarBorrar('cobros', 'id', id);
+  for (const id of idsCreados.pagosBanco) await intentarBorrar('talonario_pagos_banco', 'id', id);
+  for (const id of idsCreados.pagosPersonales) await intentarBorrar('talonario_pagos_personales', 'id', id);
+  for (const id of idsCreados.compras) await intentarBorrar('compras', 'id', id);
+  for (const id of idsCreados.proveedores) await intentarBorrar('proveedores', 'id', id);
+  for (const id of idsCreados.clientes) await intentarBorrar('clientes', 'id', id);
+
+  if (erroresRollback.length > 0) {
+    throw new Error(`El rollback no se completo del todo, revisa manualmente: ${erroresRollback.join('; ')}`);
+  }
 }
 
 export async function ejecutarImport(datos) {
@@ -428,7 +440,11 @@ export async function ejecutarImport(datos) {
 
     return conteos;
   } catch (err) {
-    await revertirTodo(idsCreados);
+    try {
+      await revertirTodo(idsCreados);
+    } catch (errRollback) {
+      throw new Error(`${err.message} -- ADEMAS, ${errRollback.message}`);
+    }
     throw err;
   }
 }
