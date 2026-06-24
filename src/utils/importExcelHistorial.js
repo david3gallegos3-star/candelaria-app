@@ -284,3 +284,30 @@ export async function verificarMesNoImportado(mes, año) {
     }
   }
 }
+
+export async function resolverProveedorId(nombre, ruc, idsCreados) {
+  let query = supabase.from('proveedores').select('id').is('deleted_at', null);
+  query = ruc ? query.eq('ruc', ruc) : query.ilike('nombre', nombre);
+  const { data: existente, error: errSel } = await query.maybeSingle();
+  if (errSel) throw new Error(`Error buscando proveedor "${nombre}": ${errSel.message}`);
+  if (existente) return existente.id;
+
+  const { data: nuevo, error: errIns } = await supabase
+    .from('proveedores').insert({ nombre, ruc: ruc || null }).select('id').single();
+  if (errIns) throw new Error(`Error creando proveedor "${nombre}": ${errIns.message}`);
+  idsCreados.proveedores.push(nuevo.id);
+  return nuevo.id;
+}
+
+export async function resolverClienteId(nombre, idsCreados) {
+  const { data: existente, error: errSel } = await supabase
+    .from('clientes').select('id').ilike('nombre', nombre).not('eliminado', 'eq', true).maybeSingle();
+  if (errSel) throw new Error(`Error buscando cliente "${nombre}": ${errSel.message}`);
+  if (existente) return existente.id;
+
+  const { data: nuevo, error: errIns } = await supabase
+    .from('clientes').insert({ nombre }).select('id').single();
+  if (errIns) throw new Error(`Error creando cliente "${nombre}": ${errIns.message}`);
+  idsCreados.clientes.push(nuevo.id);
+  return nuevo.id;
+}
