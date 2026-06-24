@@ -83,7 +83,7 @@ export default function TabTalonario({ onVolver, onVolverMenu }) {
             <button onClick={() => setShowImport(true)}
               style={{ background: '#2980b9', color: 'white', border: 'none',
                 borderRadius: 6, padding: '5px 12px', cursor: 'pointer', fontSize: 12 }}>
-              📤 Subir Excel
+              📤 Subir Historial Excel
             </button>
           )}
         </div>
@@ -147,7 +147,15 @@ export default function TabTalonario({ onVolver, onVolverMenu }) {
         {seccion === 'facturas_personales'  && <FacturasPersonales />}
       </div>
 
-      {showImport && <ExcelImport onClose={() => setShowImport(false)} />}
+      {showImport && (
+        <ExcelImport
+          onClose={() => setShowImport(false)}
+          onImportado={(mesImportado, añoImportado) => {
+            setMes(mesImportado);
+            setAño(añoImportado);
+          }}
+        />
+      )}
     </div>
   );
 }
