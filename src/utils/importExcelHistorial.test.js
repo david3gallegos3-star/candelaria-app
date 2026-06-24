@@ -94,15 +94,17 @@ describe('parseTablaSimple', () => {
     ]);
   });
 
-  test('lanza error si una fila tiene monto invalido', () => {
+  test('omite la fila si el monto es invalido o $0 (no bloquea el import)', () => {
     const wb = wbHoja('GASTOS', [
       ['GASTOS EN EFECTIVO', '', '', ''],
       ['PROVEDOR', 'FECHA', 'DETALLE', 'VALOR'],
       ['LARCORIER', '12/1/25', 'GASTO ENVIO', 'no-es-numero'],
+      ['MAESTRO PATRICIO', '12/2/25', 'ARREGLOS', ' $- '],
     ]);
-    expect(() => parseTablaSimple(wb, 'GASTOS', {
+    const filas = parseTablaSimple(wb, 'GASTOS', {
       filaInicio: 2, colNombre: 0, colFecha: 1, colDetalle: 2, colValor: 3, formatoFecha: 'MDY',
-    })).toThrow(/GASTOS.*fila 3/i);
+    });
+    expect(filas).toEqual([]);
   });
 
   test('lanza error si una fila tiene fecha invalida', () => {
@@ -232,20 +234,20 @@ describe('parseCompras', () => {
     expect(() => parseCompras(wb2)).toThrow(/COMPRAS \(sin factura\).*fila 3/i);
   });
 
-  test('lanza error si una fila tiene monto invalido (con factura o sin factura)', () => {
+  test('omite la fila si el monto es invalido o $0, con factura o sin factura (no bloquea el import)', () => {
     const wb = wbHoja('COMPRAS ', [
       ['', '', 'COMPRAS CON FACTURA', '', '', '', '', '', 'COMPRAS SIN  FACTURA', '', '', ''],
       ['FECHA', 'RUC', 'PROVEEDOR', 'NUMERO', 'VALOR', '', '', '', 'FECHA', 'PROVEEDOR', 'VALOR', ''],
       ['27/12/2025', '1792458935001', 'ADECAMOR CIA LTDA.', '007-005-000337181', 'no-es-numero', '', '', '', '12/3/25', 'LECHON', '232.40', ''],
     ]);
-    expect(() => parseCompras(wb)).toThrow(/COMPRAS \(con factura\).*fila 3/i);
+    expect(parseCompras(wb).conFactura).toEqual([]);
 
     const wb2 = wbHoja('COMPRAS ', [
       ['', '', 'COMPRAS CON FACTURA', '', '', '', '', '', 'COMPRAS SIN  FACTURA', '', '', ''],
       ['FECHA', 'RUC', 'PROVEEDOR', 'NUMERO', 'VALOR', '', '', '', 'FECHA', 'PROVEEDOR', 'VALOR', ''],
-      ['27/12/2025', '1792458935001', 'ADECAMOR CIA LTDA.', '007-005-000337181', '27.00', '', '', '', '12/3/25', 'LECHON', 'no-es-numero', ''],
+      ['27/12/2025', '1792458935001', 'ADECAMOR CIA LTDA.', '007-005-000337181', '27.00', '', '', '', '12/3/25', 'LECHON', ' $- ', ''],
     ]);
-    expect(() => parseCompras(wb2)).toThrow(/COMPRAS \(sin factura\).*fila 3/i);
+    expect(parseCompras(wb2).sinFactura).toEqual([]);
   });
 });
 
@@ -288,20 +290,20 @@ describe('parseOtrosPagosPersonales', () => {
     expect(() => parseOtrosPagosPersonales(wb2)).toThrow(/fila 3.*columna derecha/i);
   });
 
-  test('lanza error si una fila tiene monto invalido (columna izquierda o derecha)', () => {
+  test('omite la fila si el monto es invalido o $0, columna izquierda o derecha (no bloquea el import)', () => {
     const wb = wbHoja('OTROS PAGOS PERSONALES', [
       ['PAGOS PRESTAMO Y TARJETA', '', '', '', '', '', 'PAGOS OTROS GASTOS PERSONALES', '', ''],
       ['NOMBRE', 'FECHA', 'VALOR', '', '', '', 'NOMBRE', 'FECHA', 'VALOR'],
       ['TARJETA PACIFICO', '12/3/25', 'no-es-numero', '', '', '', 'CHAMORRO KATHERINE', '12/1/25', '6.00'],
     ]);
-    expect(() => parseOtrosPagosPersonales(wb)).toThrow(/fila 3.*columna izquierda/i);
+    expect(parseOtrosPagosPersonales(wb).prestamoTarjeta).toEqual([]);
 
     const wb2 = wbHoja('OTROS PAGOS PERSONALES', [
       ['PAGOS PRESTAMO Y TARJETA', '', '', '', '', '', 'PAGOS OTROS GASTOS PERSONALES', '', ''],
       ['NOMBRE', 'FECHA', 'VALOR', '', '', '', 'NOMBRE', 'FECHA', 'VALOR'],
-      ['TARJETA PACIFICO', '12/3/25', '262.20', '', '', '', 'CHAMORRO KATHERINE', '12/1/25', 'no-es-numero'],
+      ['TARJETA PACIFICO', '12/3/25', '262.20', '', '', '', 'CHAMORRO KATHERINE', '12/1/25', ' $- '],
     ]);
-    expect(() => parseOtrosPagosPersonales(wb2)).toThrow(/fila 3.*columna derecha/i);
+    expect(parseOtrosPagosPersonales(wb2).otrosGastos).toEqual([]);
   });
 });
 
@@ -326,13 +328,13 @@ describe('parseComprasPersonal', () => {
     expect(() => parseComprasPersonal(wb)).toThrow(/COMPRAS -PERSONAL.*fila 3/i);
   });
 
-  test('lanza error si una fila tiene monto invalido', () => {
+  test('omite la fila si el monto es invalido o $0 (no bloquea el import)', () => {
     const wb = wbHoja('COMPRAS -PERSONAL', [
       ['FACTURAS GASTOS  PERSONALES', '', '', '', '', ''],
       ['FECHA', 'RUC', 'PROVEEDOR', 'NUMERO', 'VALOR', 'DETALLE'],
       ['01/12/2025', '1792487242001', 'Hotel Otavalo', '003-003-000003252', 'no-es-numero', 'detalle...'],
     ]);
-    expect(() => parseComprasPersonal(wb)).toThrow(/COMPRAS -PERSONAL.*fila 3/i);
+    expect(parseComprasPersonal(wb)).toEqual([]);
   });
 
   test('hoja real mezcla una fila con año de 2 digitos (M/D/AA) entre filas con año de 4 digitos (DD/MM/AAAA) -- formatoFecha sigue siendo DMY, la regla de seguridad de parsearFecha resuelve la fila anomala sola', () => {

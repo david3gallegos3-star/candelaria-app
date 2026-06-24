@@ -75,13 +75,14 @@ export function parseTablaSimple(wb, nombreHoja, cfg) {
     const row = rows[i];
     if (!filaValida(row, colNombre)) continue;
 
+    // Una fila con monto en $0/"$-" (la contadora marca asi "sin cargo este
+    // mes") se omite en silencio -- no bloquea el import, no se inserta nada.
+    const valor = limpiarMonto(row[colValor]);
+    if (valor <= 0) continue;
+
     const fecha = parsearFecha(row[colFecha], formatoFecha);
     if (!fecha) {
       throw new Error(`Hoja ${nombreHoja}, fila ${i + 1}: la fecha "${row[colFecha]}" no es valida.`);
-    }
-    const valor = limpiarMonto(row[colValor]);
-    if (valor <= 0) {
-      throw new Error(`Hoja ${nombreHoja}, fila ${i + 1}: el monto "${row[colValor]}" no es un numero valido.`);
     }
 
     const fila = { nombre: row[colNombre], fecha, valor };
@@ -112,13 +113,11 @@ function parseUnBloque(rows, filaInicio, cfg, nombreHoja) {
   for (let i = filaInicio; i < rows.length; i++) {
     const row = rows[i];
     if (!filaValida(row, colNombre)) continue;
+    const valor = limpiarMonto(row[colValor]);
+    if (valor <= 0) continue;
     const fecha = parsearFecha(row[colFecha], formatoFecha);
     if (!fecha) {
       throw new Error(`Hoja ${nombreHoja}, fila ${i + 1}: la fecha "${row[colFecha]}" no es valida.`);
-    }
-    const valor = limpiarMonto(row[colValor]);
-    if (valor <= 0) {
-      throw new Error(`Hoja ${nombreHoja}, fila ${i + 1}: el monto "${row[colValor]}" no es un numero valido.`);
     }
     resultado.push({
       nombre: row[colNombre],
@@ -161,18 +160,20 @@ export function parseCompras(wb) {
   for (let i = 2; i < rows.length; i++) {
     const row = rows[i];
     if (filaValida(row, 0)) {
-      const fecha = parsearFecha(row[0], 'DMY');
-      if (!fecha) throw new Error(`Hoja COMPRAS (con factura), fila ${i + 1}: la fecha "${row[0]}" no es valida.`);
       const valor = limpiarMonto(row[4]);
-      if (valor <= 0) throw new Error(`Hoja COMPRAS (con factura), fila ${i + 1}: el monto "${row[4]}" no es un numero valido.`);
-      conFactura.push({ fecha, ruc: row[1], proveedor: row[2], numero: row[3] || '', valor });
+      if (valor > 0) {
+        const fecha = parsearFecha(row[0], 'DMY');
+        if (!fecha) throw new Error(`Hoja COMPRAS (con factura), fila ${i + 1}: la fecha "${row[0]}" no es valida.`);
+        conFactura.push({ fecha, ruc: row[1], proveedor: row[2], numero: row[3] || '', valor });
+      }
     }
     if (filaValida(row, 8)) {
-      const fecha = parsearFecha(row[8], 'MDY');
-      if (!fecha) throw new Error(`Hoja COMPRAS (sin factura), fila ${i + 1}: la fecha "${row[8]}" no es valida.`);
       const valor = limpiarMonto(row[10]);
-      if (valor <= 0) throw new Error(`Hoja COMPRAS (sin factura), fila ${i + 1}: el monto "${row[10]}" no es un numero valido.`);
-      sinFactura.push({ fecha, proveedor: row[9], valor });
+      if (valor > 0) {
+        const fecha = parsearFecha(row[8], 'MDY');
+        if (!fecha) throw new Error(`Hoja COMPRAS (sin factura), fila ${i + 1}: la fecha "${row[8]}" no es valida.`);
+        sinFactura.push({ fecha, proveedor: row[9], valor });
+      }
     }
   }
   return { conFactura, sinFactura };
@@ -199,20 +200,22 @@ export function parseOtrosPagosPersonales(wb) {
     if (col0.includes('PAGOS GASTOS PERSONALES')) {
       seccionIzquierda = 'gastosPersonales';
     } else if (!col0.includes('PAGOS PRESTAMO Y TARJETA') && col0 !== 'NOMBRE' && filaValida(row, 0)) {
-      const fecha = parsearFecha(row[1], 'MDY');
-      if (!fecha) throw new Error(`Hoja OTROS PAGOS PERSONALES, fila ${i + 1} (columna izquierda): la fecha "${row[1]}" no es valida.`);
       const valor = limpiarMonto(row[2]);
-      if (valor <= 0) throw new Error(`Hoja OTROS PAGOS PERSONALES, fila ${i + 1} (columna izquierda): el monto "${row[2]}" no es un numero valido.`);
-      const fila = { nombre: row[0], fecha, valor };
-      (seccionIzquierda === 'prestamoTarjeta' ? prestamoTarjeta : gastosPersonales).push(fila);
+      if (valor > 0) {
+        const fecha = parsearFecha(row[1], 'MDY');
+        if (!fecha) throw new Error(`Hoja OTROS PAGOS PERSONALES, fila ${i + 1} (columna izquierda): la fecha "${row[1]}" no es valida.`);
+        const fila = { nombre: row[0], fecha, valor };
+        (seccionIzquierda === 'prestamoTarjeta' ? prestamoTarjeta : gastosPersonales).push(fila);
+      }
     }
 
     if (!col6.includes('PAGOS OTROS GASTOS PERSONALES') && col6 !== 'NOMBRE' && filaValida(row, 6)) {
-      const fecha = parsearFecha(row[7], 'MDY');
-      if (!fecha) throw new Error(`Hoja OTROS PAGOS PERSONALES, fila ${i + 1} (columna derecha): la fecha "${row[7]}" no es valida.`);
       const valor = limpiarMonto(row[8]);
-      if (valor <= 0) throw new Error(`Hoja OTROS PAGOS PERSONALES, fila ${i + 1} (columna derecha): el monto "${row[8]}" no es un numero valido.`);
-      otrosGastos.push({ nombre: row[6], fecha, valor });
+      if (valor > 0) {
+        const fecha = parsearFecha(row[7], 'MDY');
+        if (!fecha) throw new Error(`Hoja OTROS PAGOS PERSONALES, fila ${i + 1} (columna derecha): la fecha "${row[7]}" no es valida.`);
+        otrosGastos.push({ nombre: row[6], fecha, valor });
+      }
     }
   }
   return { prestamoTarjeta, gastosPersonales, otrosGastos };
@@ -245,10 +248,10 @@ function parsePagosDelMes(wb, nombreHoja) {
     const row = rows[i];
     if (String(row[1] || '').toUpperCase().trim() === 'TOTAL') break;
     if (!filaValida(row, 0)) continue;
+    const valor = limpiarMonto(row[2]);
+    if (valor <= 0) continue;
     const fecha = parsearFecha(row[1], 'MDY');
     if (!fecha) throw new Error(`Hoja ${nombreHoja}, fila ${i + 1}: la fecha "${row[1]}" no es valida.`);
-    const valor = limpiarMonto(row[2]);
-    if (valor <= 0) throw new Error(`Hoja ${nombreHoja}, fila ${i + 1}: el monto "${row[2]}" no es un numero valido.`);
     resultado.push({ nombre: row[0], fecha, valor });
   }
   return resultado;
