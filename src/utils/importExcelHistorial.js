@@ -306,7 +306,7 @@ export async function resolverClienteId(nombre, idsCreados) {
   if (existente) return existente.id;
 
   const { data: nuevo, error: errIns } = await supabase
-    .from('clientes').insert({ nombre }).select('id').single();
+    .from('clientes').insert({ nombre, eliminado: false, activo: true }).select('id').single();
   if (errIns) throw new Error(`Error creando cliente "${nombre}": ${errIns.message}`);
   idsCreados.clientes.push(nuevo.id);
   return nuevo.id;
