@@ -391,6 +391,9 @@ export async function ejecutarImport(datos) {
     conteos.pagosPersonales = personalesAInsertar.length;
 
     // COMPRAS (empresa, con y sin factura) -> compras, es_personal=false, forma_pago=credito
+    // estado:'pagada' aunque forma_pago sea 'credito' (combinacion que el flujo manual
+    // de la app nunca genera): son compras historicas (6+ meses), David confirmo que ya
+    // estan liquidadas y no deben aparecer como deuda pendiente en Cuentas por Pagar.
     const comprasEmpresaAInsertar = [
       ...datos.comprasEmpresa.conFactura.map(c => ({ ...c, tieneFactura: true })),
       ...datos.comprasEmpresa.sinFactura.map(c => ({ ...c, tieneFactura: false })),
@@ -401,7 +404,7 @@ export async function ejecutarImport(datos) {
         fecha: c.fecha, proveedor_id: proveedorId, proveedor_nombre: c.proveedor,
         numero_factura: c.numero || null,
         tiene_factura: c.tieneFactura, subtotal: c.valor, total: c.valor,
-        forma_pago: 'credito', es_personal: false, estado: 'pendiente',
+        forma_pago: 'credito', es_personal: false, estado: 'pagada',
       }).select('id').single();
       if (error) throw new Error(`Error insertando compra de "${c.proveedor}": ${error.message}`);
       idsCreados.compras.push(compra.id);
@@ -409,13 +412,14 @@ export async function ejecutarImport(datos) {
     conteos.comprasEmpresa = comprasEmpresaAInsertar.length;
 
     // COMPRAS-PERSONAL -> compras, es_personal=true, forma_pago=credito
+    // Mismo criterio: estado:'pagada' porque son compras historicas ya liquidadas.
     for (const c of datos.comprasPersonal) {
       const proveedorId = await resolverProveedorId(c.proveedor, c.ruc, idsCreados);
       const { data: compra, error } = await supabase.from('compras').insert({
         fecha: c.fecha, proveedor_id: proveedorId, proveedor_nombre: c.proveedor,
         numero_factura: c.numero || null,
         tiene_factura: true, subtotal: c.valor, total: c.valor,
-        forma_pago: 'credito', es_personal: true, estado: 'pendiente',
+        forma_pago: 'credito', es_personal: true, estado: 'pagada',
       }).select('id').single();
       if (error) throw new Error(`Error insertando factura personal de "${c.proveedor}": ${error.message}`);
       idsCreados.compras.push(compra.id);
