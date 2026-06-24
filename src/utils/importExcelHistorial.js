@@ -293,7 +293,7 @@ export async function resolverProveedorId(nombre, ruc, idsCreados) {
   if (existente) return existente.id;
 
   const { data: nuevo, error: errIns } = await supabase
-    .from('proveedores').insert({ nombre, ruc: ruc || null }).select('id').single();
+    .from('proveedores').insert({ nombre, ruc: ruc || null, activo: true }).select('id').single();
   if (errIns) throw new Error(`Error creando proveedor "${nombre}": ${errIns.message}`);
   idsCreados.proveedores.push(nuevo.id);
   return nuevo.id;
