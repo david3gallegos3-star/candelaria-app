@@ -26,6 +26,7 @@ export default function ExcelImport({ onClose, onImportado }) {
       setEstado('exito');
       onImportado?.(datos.mes, datos.año);
     } catch (err) {
+      console.error(err);
       setError(err.message);
       setEstado('error');
     }
@@ -39,7 +40,10 @@ export default function ExcelImport({ onClose, onImportado }) {
 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
           <h3 style={{ margin: 0, fontSize: 16 }}>📤 Subir Historial Excel</h3>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#999' }}>×</button>
+          <button onClick={estado === 'procesando' ? undefined : onClose} disabled={estado === 'procesando'}
+            style={{ background: 'none', border: 'none', fontSize: 20, color: '#999',
+              cursor: estado === 'procesando' ? 'default' : 'pointer',
+              opacity: estado === 'procesando' ? 0.4 : 1 }}>×</button>
         </div>
 
         {estado === 'upload' && (
