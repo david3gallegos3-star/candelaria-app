@@ -33,14 +33,20 @@ export function parsearFecha(valor, formatoPreferido) {
   const partes = texto.split('/');
   if (partes.length !== 3) return null;
 
+  const anioTexto = partes[2];
   let [a, b, anio] = partes.map(p => parseInt(p, 10));
   if (isNaN(a) || isNaN(b) || isNaN(anio)) return null;
   if (anio < 100) anio += 2000;
 
   // Si el primer numero no puede ser mes (>12), es DD/MM forzosamente.
+  // Si el año tiene 2 digitos (no 4), en este archivo siempre es M/D/AA (MDY),
+  // sin importar formatoPreferido -- algunas hojas (ej. COMPRAS-PERSONAL) mezclan
+  // filas DD/MM/AAAA (año largo) con alguna fila suelta M/D/AA (año corto).
   let dia, mes;
   if (a > 12) {
     dia = a; mes = b;
+  } else if (anioTexto.length !== 4) {
+    mes = a; dia = b;
   } else if (formatoPreferido === 'DMY') {
     dia = a; mes = b;
   } else {

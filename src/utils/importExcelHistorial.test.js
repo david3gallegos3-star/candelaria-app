@@ -26,6 +26,9 @@ describe('parsearFecha', () => {
   test('primer numero mayor a 12 fuerza DMY sin importar el formato pedido', () => {
     expect(parsearFecha('27/12/2025', 'MDY')).toBe('2025-12-27');
   });
+  test('año de 2 digitos fuerza MDY sin importar el formato pedido (caso real: fila anomala de COMPRAS-PERSONAL)', () => {
+    expect(parsearFecha('12/1/25', 'DMY')).toBe('2025-12-01');
+  });
   test('fecha vacia o invalida retorna null', () => {
     expect(parsearFecha('', 'MDY')).toBeNull();
     expect(parsearFecha('no-fecha', 'MDY')).toBeNull();
@@ -330,5 +333,20 @@ describe('parseComprasPersonal', () => {
       ['01/12/2025', '1792487242001', 'Hotel Otavalo', '003-003-000003252', 'no-es-numero', 'detalle...'],
     ]);
     expect(() => parseComprasPersonal(wb)).toThrow(/COMPRAS -PERSONAL.*fila 3/i);
+  });
+
+  test('hoja real mezcla una fila con año de 2 digitos (M/D/AA) entre filas con año de 4 digitos (DD/MM/AAAA) -- formatoFecha sigue siendo DMY, la regla de seguridad de parsearFecha resuelve la fila anomala sola', () => {
+    const wb = wbHoja('COMPRAS -PERSONAL', [
+      ['FACTURAS GASTOS  PERSONALES', '', '', '', '', ''],
+      ['FECHA', 'RUC', 'PROVEEDOR', 'NUMERO', 'VALOR', 'DETALLE'],
+      ['12/1/25', '1792487242001', 'Hotel Otavalo', '003-003-000003252', '$66.00', 'detalle...'],
+      ['24/12/2025', '1790000000001', 'Proveedor Dos', '001-001-000000002', '$10.00', 'detalle...'],
+      ['31/12/2025', '1790000000003', 'Proveedor Tres', '001-001-000000003', '$20.00', 'detalle...'],
+    ]);
+    expect(parseComprasPersonal(wb)).toEqual([
+      { fecha: '2025-12-01', ruc: '1792487242001', proveedor: 'Hotel Otavalo', numero: '003-003-000003252', valor: 66.00 },
+      { fecha: '2025-12-24', ruc: '1790000000001', proveedor: 'Proveedor Dos', numero: '001-001-000000002', valor: 10.00 },
+      { fecha: '2025-12-31', ruc: '1790000000003', proveedor: 'Proveedor Tres', numero: '001-001-000000003', valor: 20.00 },
+    ]);
   });
 });
