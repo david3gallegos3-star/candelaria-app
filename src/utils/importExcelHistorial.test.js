@@ -418,4 +418,17 @@ describe('parseTodasLasHojas', () => {
     delete wb.Sheets.GASTOS;
     expect(() => parseTodasLasHojas(wb)).toThrow(/GASTOS/);
   });
+
+  test('detecta el nombre de la hoja de pagos dinamicamente segun el mes (no hardcodeado a diciembre)', () => {
+    const wb = wbCompleto();
+    wb.Sheets.RESUMEN = XLSX.utils.aoa_to_sheet([['MARZO DEL 2026']]);
+    wb.SheetNames = wb.SheetNames.map(n => n === 'PAGOS DICIEMBRE' ? 'PAGOS MARZO' : n);
+    wb.Sheets['PAGOS MARZO'] = wb.Sheets['PAGOS DICIEMBRE'];
+    delete wb.Sheets['PAGOS DICIEMBRE'];
+
+    const resultado = parseTodasLasHojas(wb);
+    expect(resultado.mes).toBe(3);
+    expect(resultado.año).toBe(2026);
+    expect(resultado.pagosDelMes).toHaveLength(1);
+  });
 });

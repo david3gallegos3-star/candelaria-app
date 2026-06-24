@@ -228,22 +228,26 @@ export function parseComprasPersonal(wb) {
   }).map(({ nombre, ...resto }) => resto);
 }
 
-const HOJAS_REQUERIDAS = ['RESUMEN', 'GASTOS', 'COBROS EFECTIVO', 'COBROS TRANSF DEPO',
-  'COBROS CHEQUES', 'PAGOS DICIEMBRE', 'OTROS PAGOS PERSONALES', 'COMPRAS ', 'COMPRAS -PERSONAL'];
+function nombreHojaPagos(mes) {
+  return `PAGOS ${MESES_ES[mes - 1]}`;
+}
 
-function parsePagosDelMes(wb) {
-  return parseTablaSimple(wb, 'PAGOS DICIEMBRE', {
+function parsePagosDelMes(wb, nombreHoja) {
+  return parseTablaSimple(wb, nombreHoja, {
     filaInicio: 1, colNombre: 0, colFecha: 1, colValor: 2, formatoFecha: 'MDY',
   });
 }
 
 export function parseTodasLasHojas(wb) {
-  const faltantes = HOJAS_REQUERIDAS.filter(h => !wb.SheetNames.includes(h));
+  const { mes, año } = detectarMesAnio(wb);
+  const hojaPagos = nombreHojaPagos(mes);
+
+  const hojasRequeridas = ['RESUMEN', 'GASTOS', 'COBROS EFECTIVO', 'COBROS TRANSF DEPO',
+    'COBROS CHEQUES', hojaPagos, 'OTROS PAGOS PERSONALES', 'COMPRAS ', 'COMPRAS -PERSONAL'];
+  const faltantes = hojasRequeridas.filter(h => !wb.SheetNames.includes(h));
   if (faltantes.length > 0) {
     throw new Error(`Faltan estas hojas en el archivo: ${faltantes.join(', ')}`);
   }
-
-  const { mes, año } = detectarMesAnio(wb);
 
   return {
     mes, año,
@@ -251,7 +255,7 @@ export function parseTodasLasHojas(wb) {
     cobrosEfectivo: parseCobrosEfectivo(wb),
     cobrosCheques: parseCobrosCheques(wb),
     cobrosTransferencia: parseCobrosTransferencia(wb),
-    pagosDelMes: parsePagosDelMes(wb),
+    pagosDelMes: parsePagosDelMes(wb, hojaPagos),
     otrosPagosPersonales: parseOtrosPagosPersonales(wb),
     comprasEmpresa: parseCompras(wb),
     comprasPersonal: parseComprasPersonal(wb),
