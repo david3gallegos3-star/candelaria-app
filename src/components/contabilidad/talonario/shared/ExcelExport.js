@@ -24,6 +24,7 @@ export default function ExcelExport() {
         { data: pagosP },
         { data: otrosI },
         { data: factP },
+        { data: comprasPersonal },
         { data: nomina },
         { data: facturas },
         { data: cxc },
@@ -37,12 +38,18 @@ export default function ExcelExport() {
           .gte('fecha', fechaDesde).lte('fecha', fechaHasta).order('fecha'),
         supabase.from('compras')
           .select('fecha,total,tiene_factura,numero_factura,proveedor_nombre,forma_pago,proveedores(ruc)')
+          .eq('es_personal', false)
           .neq('estado', 'anulada')
           .gte('fecha', fechaDesde).lte('fecha', fechaHasta).order('fecha'),
         supabase.from('talonario_pagos_banco').select('*').eq('mes', mes).eq('año', año).order('fecha'),
         supabase.from('talonario_pagos_personales').select('*').eq('mes', mes).eq('año', año).order('categoria').order('fecha'),
         supabase.from('talonario_otros_ingresos').select('*').eq('mes', mes).eq('año', año).order('fecha'),
         supabase.from('talonario_facturas_personales').select('*').eq('mes', mes).eq('año', año).order('fecha'),
+        supabase.from('compras')
+          .select('fecha,total,numero_factura,proveedor_nombre,notas,proveedores(ruc)')
+          .eq('es_personal', true)
+          .neq('estado', 'anulada')
+          .gte('fecha', fechaDesde).lte('fecha', fechaHasta).order('fecha'),
         supabase.from('nomina').select('sueldo_prop,iess_patronal').eq('periodo', periodo),
         supabase.from('facturas').select('total')
           .gte('created_at', fechaDesde + 'T00:00:00').lte('created_at', fechaHasta + 'T23:59:59')
@@ -474,10 +481,21 @@ export default function ExcelExport() {
       setCols(wsCompP, [12, 16, 32, 22, 13, 55]);
       tableTitle(wsCompP, 1, 1, 6, 'FACTURAS GASTOS PERSONALES', COLOR.NAVY);
       ['FECHA', 'RUC', 'PROVEEDOR', 'NUMERO', 'VALOR', 'DETALLE'].forEach((h, i) => colHdr(wsCompP.getCell(2, i + 1), h));
-      wsCompP.getCell(3, 4).value = 'TOTAL';
-      numVal(wsCompP.getCell(3, 5), 0);
-      colorRow(wsCompP, 3, 1, 6, COLOR.YELL_BG, COLOR.YELL_FG);
-      wsCompP.getCell(3, 5).numFmt = NUM_FMT;
+      let compPRow = 3;
+      (comprasPersonal || []).forEach(r => {
+        wsCompP.getCell(compPRow, 1).value = r.fecha || '';
+        wsCompP.getCell(compPRow, 2).value = r.proveedores?.ruc || '';
+        wsCompP.getCell(compPRow, 3).value = r.proveedor_nombre || '';
+        wsCompP.getCell(compPRow, 4).value = r.numero_factura || '';
+        numVal(wsCompP.getCell(compPRow, 5), n(r.total));
+        wsCompP.getCell(compPRow, 6).value = r.notas || '';
+        compPRow++;
+      });
+      const compPTotal = n((comprasPersonal || []).reduce((t, r) => t + n(r.total), 0));
+      wsCompP.getCell(compPRow, 4).value = 'TOTAL';
+      numVal(wsCompP.getCell(compPRow, 5), compPTotal);
+      colorRow(wsCompP, compPRow, 1, 6, COLOR.YELL_BG, COLOR.YELL_FG);
+      wsCompP.getCell(compPRow, 5).numFmt = NUM_FMT;
 
       // ── Download ────────────────────────────────────────────────────────────
       const buffer = await wb.xlsx.writeBuffer();
