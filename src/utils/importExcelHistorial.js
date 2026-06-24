@@ -227,3 +227,33 @@ export function parseComprasPersonal(wb) {
     extra: { 1: 'ruc', 2: 'proveedor', 3: 'numero' },
   }).map(({ nombre, ...resto }) => resto);
 }
+
+const HOJAS_REQUERIDAS = ['RESUMEN', 'GASTOS', 'COBROS EFECTIVO', 'COBROS TRANSF DEPO',
+  'COBROS CHEQUES', 'PAGOS DICIEMBRE', 'OTROS PAGOS PERSONALES', 'COMPRAS ', 'COMPRAS -PERSONAL'];
+
+function parsePagosDelMes(wb) {
+  return parseTablaSimple(wb, 'PAGOS DICIEMBRE', {
+    filaInicio: 1, colNombre: 0, colFecha: 1, colValor: 2, formatoFecha: 'MDY',
+  });
+}
+
+export function parseTodasLasHojas(wb) {
+  const faltantes = HOJAS_REQUERIDAS.filter(h => !wb.SheetNames.includes(h));
+  if (faltantes.length > 0) {
+    throw new Error(`Faltan estas hojas en el archivo: ${faltantes.join(', ')}`);
+  }
+
+  const { mes, año } = detectarMesAnio(wb);
+
+  return {
+    mes, año,
+    gastos: parseTablaSimple(wb, 'GASTOS', { filaInicio: 2, colNombre: 0, colFecha: 1, colDetalle: 2, colValor: 3, formatoFecha: 'MDY' }),
+    cobrosEfectivo: parseCobrosEfectivo(wb),
+    cobrosCheques: parseCobrosCheques(wb),
+    cobrosTransferencia: parseCobrosTransferencia(wb),
+    pagosDelMes: parsePagosDelMes(wb),
+    otrosPagosPersonales: parseOtrosPagosPersonales(wb),
+    comprasEmpresa: parseCompras(wb),
+    comprasPersonal: parseComprasPersonal(wb),
+  };
+}

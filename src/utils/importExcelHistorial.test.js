@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import { limpiarMonto, parsearFecha, filaValida, detectarMesAnio, parseTablaSimple, parseCobrosEfectivo, parseCobrosCheques, parseTablaDoble, parseCobrosTransferencia, parseCompras, parseOtrosPagosPersonales, parseComprasPersonal } from './importExcelHistorial';
+import { limpiarMonto, parsearFecha, filaValida, detectarMesAnio, parseTablaSimple, parseCobrosEfectivo, parseCobrosCheques, parseTablaDoble, parseCobrosTransferencia, parseCompras, parseOtrosPagosPersonales, parseComprasPersonal, parseTodasLasHojas } from './importExcelHistorial';
 
 describe('limpiarMonto', () => {
   test('limpia simbolo de moneda, comas de miles y espacios', () => {
@@ -348,5 +348,74 @@ describe('parseComprasPersonal', () => {
       { fecha: '2025-12-24', ruc: '1790000000001', proveedor: 'Proveedor Dos', numero: '001-001-000000002', valor: 10.00 },
       { fecha: '2025-12-31', ruc: '1790000000003', proveedor: 'Proveedor Tres', numero: '001-001-000000003', valor: 20.00 },
     ]);
+  });
+});
+
+function wbCompleto() {
+  return {
+    SheetNames: ['RESUMEN', 'GASTOS', 'COBROS EFECTIVO', 'COBROS TRANSF DEPO', 'COBROS CHEQUES',
+      'PAGOS DICIEMBRE', 'OTROS PAGOS PERSONALES', 'COMPRAS ', 'COMPRAS -PERSONAL'],
+    Sheets: {
+      RESUMEN: XLSX.utils.aoa_to_sheet([['DICIEMBRE DEL 2025']]),
+      GASTOS: XLSX.utils.aoa_to_sheet([
+        ['T'], ['PROVEDOR', 'FECHA', 'DETALLE', 'VALOR'],
+        ['LARCORIER', '12/1/25', 'envio', '12.50'],
+      ]),
+      'COBROS EFECTIVO': XLSX.utils.aoa_to_sheet([
+        ['T'], ['fp', 'cliente', 'vc', 'vp', 'fecha', 'num'],
+        ['CONTADO', 'LULU SNACKS', '50', '50', "'01/12/2025", '001'],
+      ]),
+      'COBROS TRANSF DEPO': XLSX.utils.aoa_to_sheet([
+        ['T', '', '', '', '', '', '', '', 'T2'],
+        ['fp', 'cliente', 'vc', 'vp', 'fecha', 'num', '', '', 'fp', 'cliente', 'vc', 'vp', 'fecha', 'num'],
+        ['TRANSFERENCIA', 'LA TABLITA', '52.63', '52.63', "'02/12/2025", '001', '', '', '', '', '', '', '', ''],
+      ]),
+      'COBROS CHEQUES': XLSX.utils.aoa_to_sheet([
+        ['T'], ['fp', 'cliente', 'vc', 'vp', 'fecha', 'num'],
+        ['CHEQUE', 'SUPER PARRILLADA', '371.48', '371.48', "'09/12/2025", '001'],
+      ]),
+      'PAGOS DICIEMBRE': XLSX.utils.aoa_to_sheet([
+        ['PAGOS  PROVEEDORES/ BANCOS', '', '', ''],
+        ['JENNY PUGLLA', '12/1/25', '600.00', 'TRANSFERENCIA'],
+      ]),
+      'OTROS PAGOS PERSONALES': XLSX.utils.aoa_to_sheet([
+        ['PAGOS PRESTAMO Y TARJETA', '', '', '', '', '', 'PAGOS OTROS GASTOS PERSONALES'],
+        ['NOMBRE', 'FECHA', 'VALOR', '', '', '', 'NOMBRE', 'FECHA', 'VALOR'],
+        ['TARJETA PACIFICO', '12/3/25', '262.20', '', '', '', 'CHAMORRO KATHERINE', '12/1/25', '6.00'],
+      ]),
+      'COMPRAS ': XLSX.utils.aoa_to_sheet([
+        ['', '', 'T', '', '', '', '', '', 'T2'],
+        ['FECHA', 'RUC', 'PROVEEDOR', 'NUMERO', 'VALOR', '', '', '', 'FECHA', 'PROVEEDOR', 'VALOR'],
+        ['27/12/2025', '179...', 'ADECAMOR', '007-1', '27.00', '', '', '', '12/3/25', 'LECHON', '232.40'],
+      ]),
+      'COMPRAS -PERSONAL': XLSX.utils.aoa_to_sheet([
+        ['T'], ['FECHA', 'RUC', 'PROVEEDOR', 'NUMERO', 'VALOR', 'DETALLE'],
+        ['01/12/2025', '179...', 'Hotel Otavalo', '003-1', '66.00', 'detalle'],
+      ]),
+    },
+  };
+}
+
+describe('parseTodasLasHojas', () => {
+  test('devuelve mes/año y todas las categorias parseadas', () => {
+    const resultado = parseTodasLasHojas(wbCompleto());
+    expect(resultado.mes).toBe(12);
+    expect(resultado.año).toBe(2025);
+    expect(resultado.gastos).toHaveLength(1);
+    expect(resultado.cobrosEfectivo).toHaveLength(1);
+    expect(resultado.cobrosTransferencia.transferencia).toHaveLength(1);
+    expect(resultado.cobrosCheques).toHaveLength(1);
+    expect(resultado.pagosDelMes).toHaveLength(1);
+    expect(resultado.otrosPagosPersonales.prestamoTarjeta).toHaveLength(1);
+    expect(resultado.comprasEmpresa.conFactura).toHaveLength(1);
+    expect(resultado.comprasEmpresa.sinFactura).toHaveLength(1);
+    expect(resultado.comprasPersonal).toHaveLength(1);
+  });
+
+  test('lanza error si falta una hoja', () => {
+    const wb = wbCompleto();
+    wb.SheetNames = wb.SheetNames.filter(n => n !== 'GASTOS');
+    delete wb.Sheets.GASTOS;
+    expect(() => parseTodasLasHojas(wb)).toThrow(/GASTOS/);
   });
 });
