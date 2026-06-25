@@ -34,6 +34,7 @@ export default function ResumenTalonario() {
       { data: notasCredito },
       { data: pagosCompras },
       { data: consumoPersonal },
+      { data: creditosEmpleadosRaw },
     ] = await Promise.all([
       supabase.from('facturas').select('total,forma_pago').gte('created_at', fechaDesde + 'T00:00:00').lte('created_at', fechaHasta + 'T23:59:59').neq('estado', 'anulada'),
       supabase.from('cobros').select('id,fecha,monto,forma_pago,observaciones,clientes(nombre),facturas(numero)').gte('fecha', fechaDesde).lte('fecha', fechaHasta),
@@ -53,6 +54,9 @@ export default function ResumenTalonario() {
         .in('forma_pago', ['transferencia','cheque','deposito'])
         .gte('fecha_pago', fechaDesde).lte('fecha_pago', fechaHasta),
       supabase.from('talonario_consumo_personal').select('valor').eq('mes', mes).eq('año', año),
+      supabase.from('nomina_movimientos')
+        .select('valor, cuentas_cobrar(estado)')
+        .eq('tipo', 'compra').eq('activo', true).eq('periodo', periodo),
     ]);
 
     const cajaIds = (cajas || []).map(c => c.id);
@@ -73,6 +77,13 @@ export default function ResumenTalonario() {
     const comprasPersonalesPagadas  = suma((compras||[]).filter(c => c.es_personal && c.forma_pago !== 'credito'), 'total')
       + (pagosCompras||[]).filter(p => p.compras?.es_personal).reduce((s,p) => s + parseFloat(p.monto||0) + parseFloat(p.comision||0), 0);
     const totalConsumoPersonal = suma(consumoPersonal || [], 'valor');
+    // Solo cuenta el credito si la nomina de este periodo YA se genero y
+    // marco la cuenta por cobrar del empleado como pagada -- si la nomina
+    // de este mes aun no se genera, el movimiento existe pero no debe
+    // contarse todavia (se contaria en el mes en que SI se liquide).
+    const totalCreditosEmpleados = (creditosEmpleadosRaw || [])
+      .filter(m => m.cuentas_cobrar?.estado === 'pagada')
+      .reduce((s, m) => s + parseFloat(m.valor || 0), 0);
     const totalSueldos   = suma(nomina   || [], 'sueldo_prop');
     const totalIess      = suma(nomina   || [], 'iess_patronal');
     const totalPagosB    = suma(pagosB   || [], 'monto');
@@ -137,7 +148,7 @@ export default function ResumenTalonario() {
       cobroEfect, cobroCheq, cobroTransf, pagosPrestTarj, pagosGastPers,
       pagosPrestamos, pagosTarjetas,
       gastosPersonalesCaja, totalComprasPersonales, comprasPersonalesPagadas,
-      totalConsumoPersonal,
+      totalConsumoPersonal, totalCreditosEmpleados,
       comprasBancoTotal,
       cxcPendiente, cxpPendiente, saldoCalculado, pendienteInicial, movsBanco });
     setCargando(false);
@@ -152,7 +163,7 @@ export default function ResumenTalonario() {
     cobroEfect, cobroCheq, cobroTransf, pagosPrestTarj, pagosGastPers,
     pagosPrestamos, pagosTarjetas,
     gastosPersonalesCaja, totalComprasPersonales, comprasPersonalesPagadas,
-    totalConsumoPersonal,
+    totalConsumoPersonal, totalCreditosEmpleados,
     comprasBancoTotal,
     cxcPendiente, cxpPendiente, saldoCalculado, pendienteInicial, movsBanco,
   } = datos;
@@ -175,7 +186,7 @@ export default function ResumenTalonario() {
 
   const totalIngCons = cobroEfect + cobroCheq + cobroTransf + totalOtrosI;
   const pagosGastPersTotal = pagosGastPers + gastosPersonalesCaja + comprasPersonalesPagadas;
-  const totalEgrCons = totalGastos + totalPagosB + comprasBancoTotal + pagosPrestTarj + pagosGastPersTotal;
+  const totalEgrCons = totalGastos + totalPagosB + comprasBancoTotal + pagosPrestTarj + pagosGastPersTotal + totalCreditosEmpleados;
 
   const $ = v => `$${parseFloat(v||0).toFixed(2)}`;
   const fila = (label, valor, color) => (
@@ -250,6 +261,7 @@ export default function ResumenTalonario() {
           {fila('(-) Pagos con banco', totalPagosB + comprasBancoTotal, '#e74c3c')}
           {fila('(-) Tarjetas/préstamos', pagosPrestTarj, '#e74c3c')}
           {fila('(-) Gastos personales', pagosGastPersTotal, '#e74c3c')}
+          {fila('(-) Créditos Empleados', totalCreditosEmpleados, '#e74c3c')}
           {totalRow('TOTAL', totalEgrCons, '#e74c3c')}
 
           {titulo('ACTIVOS', '#555')}
