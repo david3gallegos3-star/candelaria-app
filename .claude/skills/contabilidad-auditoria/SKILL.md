@@ -64,6 +64,7 @@ Este agente verifica que las 4 capas estén conectadas. Si algo está desconecta
 | `nomina` (IESS patronal) | — (resumen directo) | ✅ IESS MES | ✅ IESS CONSOLIDADO | DEBE IESS Patronal / HABER IESS por Pagar |
 | `talonario_pagos_banco` | Pagos Del Mes (manual) | ❌ | ✅ Pagos banco | Sin asiento automático |
 | `talonario_facturas_personales` forma_pago=20 | — (banco) | ✅ Gastos personales | ✅ Gastos personales | Sin asiento automático |
+| `nomina_movimientos` (tipo=compra, activo=true) + `cuentas_cobrar` (estado=pagada) | — (resumen directo) | ❌ No (ya contado como venta normal al facturar) | ✅ Créditos Empleados | Sin asiento automático |
 
 ### PAGOS PERSONALES
 
@@ -72,6 +73,7 @@ Este agente verifica que las 4 capas estén conectadas. Si algo está desconecta
 | `talonario_prestamos_tarjetas` | Otros Pagos Personales | ✅ Préstamo/tarjeta | ✅ Préstamo/tarjeta |
 | `caja_gastos` (es_personal=true) | Pagos Personales | ✅ Gastos personales | ✅ Gastos personales |
 | `compras` (es_personal=true) | Facturas Personales | ✅ Compras personales | ✅ si no crédito |
+| `talonario_consumo_personal` | Pagos Personales (sección "Consumo Personal - Producto Casa") | ✅ Consumo Personal | ❌ No (sin movimiento de efectivo real) |
 
 ---
 
@@ -86,6 +88,8 @@ Este agente verifica que las 4 capas estén conectadas. Si algo está desconecta
 - `talonario_otros_ingresos` — otros ingresos
 - `talonario_facturas_personales` — facturas personales banco
 - `talonario_prestamos_tarjetas` — préstamos y tarjetas personales
+- `talonario_consumo_personal` — consumo de producto propio sin venta (sin movimiento de efectivo)
+- `nomina_movimientos`, `cuentas_cobrar` — créditos a empleados (credito_nomina) liquidados vía nómina
 
 ### Capa 2 — Pestañas Talonario
 - `src/components/contabilidad/talonario/ingresos/CobrosEfectivo.js` → `cobros` efectivo + `facturas` efectivo
@@ -95,6 +99,7 @@ Este agente verifica que las 4 capas estén conectadas. Si algo está desconecta
 - `src/components/contabilidad/talonario/egresos/GastosEfectivo.js` → `caja_gastos` !es_personal
 - `src/components/contabilidad/talonario/egresos/PagosDelMes.js` → `talonario_pagos_banco` (manual) + `pagos_compras` !es_personal banco
 - `src/components/contabilidad/talonario/egresos/PagosPersonales.js` → `caja_gastos` es_personal
+- `src/components/contabilidad/talonario/egresos/ConsumoPersonal.js` → `talonario_consumo_personal` (sección dentro de Pagos Personales)
 - `src/components/contabilidad/talonario/compras/ComprasTalonario.js` → `compras` !es_personal
 - `src/components/contabilidad/talonario/compras/FacturasPersonales.js` → `compras` es_personal
 - `src/components/contabilidad/talonario/banco/MovimientosBanco.js` → múltiples tablas, vista banco
