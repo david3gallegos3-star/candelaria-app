@@ -144,7 +144,11 @@ export default function ResumenTalonario() {
 
   const totalIngMes  = totalVentas + totalOtrosI;
   const totalPagosPersonalesTotal = totalPagosP + gastosPersonalesCaja + totalComprasPersonales;
-  const totalEgrMes  = totalGastos + comprasCon + comprasSin + totalSueldos + totalIess + totalPagosB + totalPagosPersonalesTotal;
+  // "Pagos del mes" (talonario_pagos_banco) NO va en el lado MES: casi siempre liquida
+  // una compra que ya se contó como "Proveedores con/sin factura" cuando se compró
+  // (devengado). Sumarlo aquí duplicaba el gasto. Solo cuenta en el lado CONSOLIDADO
+  // (totalEgrCons), que es base caja real -- igual que el resumen propio de la contadora.
+  const totalEgrMes  = totalGastos + comprasCon + comprasSin + totalSueldos + totalIess + totalPagosPersonalesTotal;
   const utilidadBruta= totalIngMes - totalEgrMes;
 
   const totalIngCons = cobroEfect + cobroCheq + cobroTransf + totalOtrosI;
@@ -190,7 +194,6 @@ export default function ResumenTalonario() {
           {fila('(-) Proveedores sin factura', comprasSin, '#e74c3c')}
           {fila('(-) Sueldos', totalSueldos, '#e74c3c')}
           {fila('(-) IESS patronal', totalIess, '#e74c3c')}
-          {fila('(-) Pagos del mes', totalPagosB, '#e74c3c')}
           {fila('(-) Pagos personales', totalPagosPersonalesTotal, '#e74c3c')}
           {totalRow('TOTAL EGRESOS', totalEgrMes, '#e74c3c')}
 
