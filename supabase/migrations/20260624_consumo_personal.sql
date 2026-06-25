@@ -1,3 +1,4 @@
+-- supabase/migrations/20260624_consumo_personal.sql
 -- Registro de consumo personal de producto propio de la fabrica (embutidos,
 -- jamones, etc.), sin transaccion de efectivo -- inventario que se uso sin
 -- venderse. Tabla separada de talonario_pagos_personales porque no tiene
