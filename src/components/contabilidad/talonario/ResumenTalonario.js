@@ -76,6 +76,11 @@ export default function ResumenTalonario() {
     const totalPagosP    = suma(pagosP   || [], 'monto');
     const pagosPrestTarj = (pagosP || []).filter(p => ['prestamos','tarjetas'].includes(p.categoria)).reduce((s,p) => s + parseFloat(p.monto||0), 0);
     const pagosGastPers  = (pagosP || []).filter(p => ['gastos_personal','otros'].includes(p.categoria)).reduce((s,p) => s + parseFloat(p.monto||0), 0);
+    // Solo para el lado MES (izquierdo): la contadora muestra Prestamos y Tarjetas como
+    // lineas separadas en su propio resumen. El lado CONSOLIDADO (derecho) se queda
+    // junto en "Tarjetas/préstamos" (pagosPrestTarj), sin cambios.
+    const pagosPrestamos = (pagosP || []).filter(p => p.categoria === 'prestamos').reduce((s,p) => s + parseFloat(p.monto||0), 0);
+    const pagosTarjetas  = (pagosP || []).filter(p => p.categoria === 'tarjetas').reduce((s,p) => s + parseFloat(p.monto||0), 0);
 
     // Cobros reales = cobros de CxC (tabla cobros) + ventas de contado (facturas pagadas directo, nunca generan cobro)
     const cobroEfect = (cobros||[]).filter(c => c.forma_pago==='efectivo').reduce((s,c) => s+parseFloat(c.monto||0), 0)
@@ -122,6 +127,7 @@ export default function ResumenTalonario() {
     setDatos({ totalVentas, totalOtrosI, totalGastos, comprasCon, comprasSin,
       totalSueldos, totalIess, totalPagosB, totalPagosP,
       cobroEfect, cobroCheq, cobroTransf, pagosPrestTarj, pagosGastPers,
+      pagosPrestamos, pagosTarjetas,
       gastosPersonalesCaja, totalComprasPersonales, comprasPersonalesPagadas,
       comprasBancoTotal,
       cxcPendiente, cxpPendiente, saldoCalculado, pendienteInicial, movsBanco });
@@ -135,6 +141,7 @@ export default function ResumenTalonario() {
     totalVentas, totalOtrosI, totalGastos, comprasCon, comprasSin,
     totalSueldos, totalIess, totalPagosB, totalPagosP,
     cobroEfect, cobroCheq, cobroTransf, pagosPrestTarj, pagosGastPers,
+    pagosPrestamos, pagosTarjetas,
     gastosPersonalesCaja, totalComprasPersonales, comprasPersonalesPagadas,
     comprasBancoTotal,
     cxcPendiente, cxpPendiente, saldoCalculado, pendienteInicial, movsBanco,
@@ -143,12 +150,15 @@ export default function ResumenTalonario() {
   const { dif, cuadra, color: difColor } = calcularDiferencia(saldoBanco, saldoCalculado);
 
   const totalIngMes  = totalVentas + totalOtrosI;
-  const totalPagosPersonalesTotal = totalPagosP + gastosPersonalesCaja + totalComprasPersonales;
+  // "Pagos personales" (lado MES) ya NO incluye Prestamos/Tarjetas -- esos van en sus
+  // propias lineas separadas abajo, igual que en el resumen propio de la contadora.
+  const totalPagosPersonalesTotal = pagosGastPers + gastosPersonalesCaja + totalComprasPersonales;
   // "Pagos del mes" (talonario_pagos_banco) NO va en el lado MES: casi siempre liquida
   // una compra que ya se contó como "Proveedores con/sin factura" cuando se compró
   // (devengado). Sumarlo aquí duplicaba el gasto. Solo cuenta en el lado CONSOLIDADO
   // (totalEgrCons), que es base caja real -- igual que el resumen propio de la contadora.
-  const totalEgrMes  = totalGastos + comprasCon + comprasSin + totalSueldos + totalIess + totalPagosPersonalesTotal;
+  const totalEgrMes  = totalGastos + comprasCon + comprasSin + totalSueldos + totalIess
+    + pagosPrestamos + pagosTarjetas + totalPagosPersonalesTotal;
   const utilidadBruta= totalIngMes - totalEgrMes;
 
   const totalIngCons = cobroEfect + cobroCheq + cobroTransf + totalOtrosI;
@@ -194,6 +204,8 @@ export default function ResumenTalonario() {
           {fila('(-) Proveedores sin factura', comprasSin, '#e74c3c')}
           {fila('(-) Sueldos', totalSueldos, '#e74c3c')}
           {fila('(-) IESS patronal', totalIess, '#e74c3c')}
+          {fila('(-) Préstamos', pagosPrestamos, '#e74c3c')}
+          {fila('(-) Tarjetas', pagosTarjetas, '#e74c3c')}
           {fila('(-) Pagos personales', totalPagosPersonalesTotal, '#e74c3c')}
           {totalRow('TOTAL EGRESOS', totalEgrMes, '#e74c3c')}
 

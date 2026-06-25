@@ -252,11 +252,15 @@ describe('parseCompras', () => {
 });
 
 describe('parseOtrosPagosPersonales', () => {
-  test('separa las 3 sub-tablas: prestamo/tarjeta, gastos personales (apilada abajo), otros gastos', () => {
+  test('separa las sub-tablas: prestamos, tarjetas (por nombre), gastos personales (apilada abajo), otros gastos', () => {
     const wb = wbHoja('OTROS PAGOS PERSONALES', [
       ['PAGOS PRESTAMO Y TARJETA', '', '', '', '', '', 'PAGOS OTROS GASTOS PERSONALES', '', ''],
       ['NOMBRE', 'FECHA', 'VALOR', '', '', '', 'NOMBRE', 'FECHA', 'VALOR'],
       ['TARJETA PACIFICO', '12/3/25', '262.20', '', '', '', 'CHAMORRO KATHERINE', '12/1/25', '6.00'],
+      // Caso real: dentro de la misma sub-tabla "Prestamo y Tarjeta", una fila que
+      // contiene la palabra PRESTAMO debe ir a la categoria separada "prestamos",
+      // todo lo demas (tarjetas, ahorro programado, etc.) va a "tarjetas".
+      ['PRESTAMO AUSTRO', '12/31/25', '555.00', '', '', '', '', '', ''],
       // Caso real critico: el encabezado que reinicia la columna izquierda ("PAGOS GASTOS
       // PERSONALES") cae en la MISMA fila que un dato real de la columna derecha (GRAN AKI) --
       // tal cual pasa en el Excel real (fila 12). No debe perderse ese dato de la derecha.
@@ -265,8 +269,9 @@ describe('parseOtrosPagosPersonales', () => {
       ['SALUDSA', '12/2/25', '102.66', '', '', '', '', '', ''],
       ['', 'TOTAL', '102.66', '', '', '', '', 'TOTAL', '378.46'],
     ]);
-    const { prestamoTarjeta, gastosPersonales, otrosGastos } = parseOtrosPagosPersonales(wb);
-    expect(prestamoTarjeta).toEqual([{ nombre: 'TARJETA PACIFICO', fecha: '2025-12-03', valor: 262.20 }]);
+    const { prestamos, tarjetas, gastosPersonales, otrosGastos } = parseOtrosPagosPersonales(wb);
+    expect(prestamos).toEqual([{ nombre: 'PRESTAMO AUSTRO', fecha: '2025-12-31', valor: 555.00 }]);
+    expect(tarjetas).toEqual([{ nombre: 'TARJETA PACIFICO', fecha: '2025-12-03', valor: 262.20 }]);
     expect(gastosPersonales).toEqual([{ nombre: 'SALUDSA', fecha: '2025-12-02', valor: 102.66 }]);
     expect(otrosGastos).toEqual([
       { nombre: 'CHAMORRO KATHERINE', fecha: '2025-12-01', valor: 6.00 },
@@ -296,7 +301,7 @@ describe('parseOtrosPagosPersonales', () => {
       ['NOMBRE', 'FECHA', 'VALOR', '', '', '', 'NOMBRE', 'FECHA', 'VALOR'],
       ['TARJETA PACIFICO', '12/3/25', 'no-es-numero', '', '', '', 'CHAMORRO KATHERINE', '12/1/25', '6.00'],
     ]);
-    expect(parseOtrosPagosPersonales(wb).prestamoTarjeta).toEqual([]);
+    expect(parseOtrosPagosPersonales(wb).tarjetas).toEqual([]);
 
     const wb2 = wbHoja('OTROS PAGOS PERSONALES', [
       ['PAGOS PRESTAMO Y TARJETA', '', '', '', '', '', 'PAGOS OTROS GASTOS PERSONALES', '', ''],
@@ -408,7 +413,7 @@ describe('parseTodasLasHojas', () => {
     expect(resultado.cobrosTransferencia.transferencia).toHaveLength(1);
     expect(resultado.cobrosCheques).toHaveLength(1);
     expect(resultado.pagosDelMes).toHaveLength(1);
-    expect(resultado.otrosPagosPersonales.prestamoTarjeta).toHaveLength(1);
+    expect(resultado.otrosPagosPersonales.tarjetas).toHaveLength(1);
     expect(resultado.comprasEmpresa.conFactura).toHaveLength(1);
     expect(resultado.comprasEmpresa.sinFactura).toHaveLength(1);
     expect(resultado.comprasPersonal).toHaveLength(1);

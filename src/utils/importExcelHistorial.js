@@ -182,7 +182,8 @@ export function parseCompras(wb) {
 export function parseOtrosPagosPersonales(wb) {
   const rows = XLSX.utils.sheet_to_json(wb.Sheets['OTROS PAGOS PERSONALES'], { header: 1, raw: false, defval: '' });
 
-  const prestamoTarjeta = [];
+  const prestamos = [];
+  const tarjetas = [];
   const gastosPersonales = [];
   const otrosGastos = [];
 
@@ -205,7 +206,16 @@ export function parseOtrosPagosPersonales(wb) {
         const fecha = parsearFecha(row[1], 'MDY');
         if (!fecha) throw new Error(`Hoja OTROS PAGOS PERSONALES, fila ${i + 1} (columna izquierda): la fecha "${row[1]}" no es valida.`);
         const fila = { nombre: row[0], fecha, valor };
-        (seccionIzquierda === 'prestamoTarjeta' ? prestamoTarjeta : gastosPersonales).push(fila);
+        if (seccionIzquierda === 'gastosPersonales') {
+          gastosPersonales.push(fila);
+        } else {
+          // Dentro de la sub-tabla "Préstamo y Tarjeta": si el nombre contiene
+          // la palabra PRESTAMO va a Préstamos, todo lo demás (tarjetas de
+          // crédito, ahorro programado, etc.) va a Tarjetas. Verificado contra
+          // el Excel real de diciembre 2025: separa exacto igual que la
+          // contadora ($1,035.02 Préstamos / $1,272.20 Tarjetas).
+          (col0.includes('PRESTAMO') ? prestamos : tarjetas).push(fila);
+        }
       }
     }
 
@@ -218,7 +228,7 @@ export function parseOtrosPagosPersonales(wb) {
       }
     }
   }
-  return { prestamoTarjeta, gastosPersonales, otrosGastos };
+  return { prestamos, tarjetas, gastosPersonales, otrosGastos };
 }
 
 export function parseComprasPersonal(wb) {
@@ -467,7 +477,8 @@ export async function ejecutarImport(datos) {
 
     // OTROS PAGOS PERSONALES -> talonario_pagos_personales, en lotes
     const personalesAInsertar = [
-      ...datos.otrosPagosPersonales.prestamoTarjeta.map(p => ({ ...p, categoria: 'tarjetas' })),
+      ...datos.otrosPagosPersonales.prestamos.map(p => ({ ...p, categoria: 'prestamos' })),
+      ...datos.otrosPagosPersonales.tarjetas.map(p => ({ ...p, categoria: 'tarjetas' })),
       ...datos.otrosPagosPersonales.gastosPersonales.map(p => ({ ...p, categoria: 'gastos_personal' })),
       ...datos.otrosPagosPersonales.otrosGastos.map(p => ({ ...p, categoria: 'otros' })),
     ];
