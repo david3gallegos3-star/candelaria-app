@@ -319,31 +319,64 @@ export async function verificarMesNoImportado(mes, año) {
   }
 }
 
-export async function resolverProveedorId(nombre, ruc, idsCreados) {
-  let query = supabase.from('proveedores').select('id').is('deleted_at', null);
-  query = ruc ? query.eq('ruc', ruc) : query.ilike('nombre', nombre);
-  const { data: existente, error: errSel } = await query.maybeSingle();
-  if (errSel) throw new Error(`Error buscando proveedor "${nombre}": ${errSel.message}`);
-  if (existente) return existente.id;
-
-  const { data: nuevo, error: errIns } = await supabase
-    .from('proveedores').insert({ nombre, ruc: ruc || null, activo: true }).select('id').single();
-  if (errIns) throw new Error(`Error creando proveedor "${nombre}": ${errIns.message}`);
-  idsCreados.proveedores.push(nuevo.id);
-  return nuevo.id;
+function chunk(arr, tamano) {
+  const partes = [];
+  for (let i = 0; i < arr.length; i += tamano) partes.push(arr.slice(i, i + tamano));
+  return partes;
 }
 
-export async function resolverClienteId(nombre, idsCreados) {
-  const { data: existente, error: errSel } = await supabase
-    .from('clientes').select('id').ilike('nombre', nombre).not('eliminado', 'eq', true).maybeSingle();
-  if (errSel) throw new Error(`Error buscando cliente "${nombre}": ${errSel.message}`);
-  if (existente) return existente.id;
+// Resuelve todos los clientes de una importacion en pocas consultas (en vez de
+// una por fila): carga los clientes existentes UNA vez, crea los que falten en
+// lotes, y retorna una funcion (nombre) => id para usar al armar cada fila.
+async function resolverClientesEnLote(nombres, idsCreados) {
+  const { data: existentes, error: errSel } = await supabase
+    .from('clientes').select('id, nombre').not('eliminado', 'eq', true);
+  if (errSel) throw new Error(`Error buscando clientes existentes: ${errSel.message}`);
+  const porNombre = new Map((existentes || []).map(c => [c.nombre.toUpperCase(), c.id]));
 
-  const { data: nuevo, error: errIns } = await supabase
-    .from('clientes').insert({ nombre, eliminado: false, activo: true }).select('id').single();
-  if (errIns) throw new Error(`Error creando cliente "${nombre}": ${errIns.message}`);
-  idsCreados.clientes.push(nuevo.id);
-  return nuevo.id;
+  const faltantes = [...new Set(nombres)].filter(n => !porNombre.has(n.toUpperCase()));
+  for (const grupo of chunk(faltantes, 200)) {
+    const { data: nuevos, error: errIns } = await supabase
+      .from('clientes').insert(grupo.map(nombre => ({ nombre, eliminado: false, activo: true }))).select('id, nombre');
+    if (errIns) throw new Error(`Error creando clientes nuevos: ${errIns.message}`);
+    for (const n of nuevos) {
+      idsCreados.clientes.push(n.id);
+      porNombre.set(n.nombre.toUpperCase(), n.id);
+    }
+  }
+
+  return nombre => porNombre.get(nombre.toUpperCase());
+}
+
+// Misma idea que resolverClientesEnLote, pero para proveedores: la clave de
+// busqueda es el RUC si la fila lo trae (igual que el resolver original
+// fila-por-fila), o el nombre en mayusculas si no hay RUC.
+async function resolverProveedoresEnLote(filas, idsCreados) {
+  const { data: existentes, error: errSel } = await supabase
+    .from('proveedores').select('id, nombre, ruc').is('deleted_at', null);
+  if (errSel) throw new Error(`Error buscando proveedores existentes: ${errSel.message}`);
+  const porClave = new Map();
+  for (const p of existentes || []) porClave.set(p.ruc || p.nombre.toUpperCase(), p.id);
+
+  const claveDe = f => f.ruc || f.nombre.toUpperCase();
+  const representativos = new Map();
+  for (const f of filas) {
+    const clave = claveDe(f);
+    if (!porClave.has(clave) && !representativos.has(clave)) representativos.set(clave, f);
+  }
+
+  for (const grupo of chunk([...representativos.values()], 200)) {
+    const { data: nuevos, error: errIns } = await supabase
+      .from('proveedores').insert(grupo.map(f => ({ nombre: f.nombre, ruc: f.ruc || null, activo: true })))
+      .select('id, nombre, ruc');
+    if (errIns) throw new Error(`Error creando proveedores nuevos: ${errIns.message}`);
+    for (const n of nuevos) {
+      idsCreados.proveedores.push(n.id);
+      porClave.set(n.ruc || n.nombre.toUpperCase(), n.id);
+    }
+  }
+
+  return f => porClave.get(claveDe(f));
 }
 
 async function revertirTodo(idsCreados) {
@@ -383,102 +416,95 @@ export async function ejecutarImport(datos) {
   const conteos = {};
 
   try {
-    // GASTOS -> caja_chica + caja_gastos (una fila de caja_chica por fecha distinta)
+    // GASTOS -> caja_chica (1 fila por fecha distinta) + caja_gastos, en lotes
+    // en vez de fila por fila (un Excel real puede traer ~190 gastos en ~27
+    // fechas distintas -- de ~217 idas y vueltas de red bajamos a ~2).
     const fechasUnicas = [...new Set(datos.gastos.map(g => g.fecha))];
     const cajaIdPorFecha = {};
-    for (const fecha of fechasUnicas) {
-      const { data: caja, error } = await supabase.from('caja_chica').insert({ fecha }).select('id').single();
-      if (error) throw new Error(`Error creando caja_chica para ${fecha}: ${error.message}`);
-      idsCreados.cajaChica.push(caja.id);
-      cajaIdPorFecha[fecha] = caja.id;
+    for (const grupo of chunk(fechasUnicas, 200)) {
+      const { data: cajas, error } = await supabase.from('caja_chica')
+        .insert(grupo.map(fecha => ({ fecha }))).select('id, fecha');
+      if (error) throw new Error(`Error creando caja_chica: ${error.message}`);
+      for (const c of cajas) { idsCreados.cajaChica.push(c.id); cajaIdPorFecha[c.fecha] = c.id; }
     }
-    for (const g of datos.gastos) {
-      const { error } = await supabase.from('caja_gastos').insert({
+    for (const grupo of chunk(datos.gastos, 200)) {
+      const { error } = await supabase.from('caja_gastos').insert(grupo.map(g => ({
         caja_id: cajaIdPorFecha[g.fecha], proveedor: g.nombre, detalle: g.detalle,
         valor: g.valor, es_personal: false,
-      });
-      if (error) throw new Error(`Error insertando gasto "${g.nombre}": ${error.message}`);
+      })));
+      if (error) throw new Error(`Error insertando gastos: ${error.message}`);
     }
     conteos.gastos = datos.gastos.length;
 
-    // COBROS EFECTIVO / CHEQUES / TRANSFERENCIA / DEPOSITO -> cobros
+    // COBROS EFECTIVO / CHEQUES / TRANSFERENCIA / DEPOSITO -> cobros, en lotes.
+    // Los clientes se resuelven todos de una vez (resolverClientesEnLote), no
+    // uno por fila -- un Excel real puede traer ~700 cobros.
     const cobrosAInsertar = [
       ...datos.cobrosEfectivo.map(c => ({ ...c, forma_pago: 'efectivo' })),
       ...datos.cobrosCheques.map(c => ({ ...c, forma_pago: 'cheque' })),
       ...datos.cobrosTransferencia.transferencia.map(c => ({ ...c, nombre: c.cliente, forma_pago: 'transferencia' })),
       ...datos.cobrosTransferencia.deposito.map(c => ({ ...c, nombre: c.cliente, forma_pago: c.formaPago === 'DEPOSITO' ? 'deposito' : 'tarjeta_credito' })),
     ];
-    for (const c of cobrosAInsertar) {
-      const clienteId = await resolverClienteId(c.nombre, idsCreados);
-      const { data: cobro, error } = await supabase.from('cobros').insert({
-        fecha: c.fecha, monto: c.valor, forma_pago: c.forma_pago, cliente_id: clienteId,
-      }).select('id').single();
-      if (error) throw new Error(`Error insertando cobro de "${c.nombre}": ${error.message}`);
-      idsCreados.cobros.push(cobro.id);
+    const resolverCliente = await resolverClientesEnLote(cobrosAInsertar.map(c => c.nombre), idsCreados);
+    for (const grupo of chunk(cobrosAInsertar, 200)) {
+      const { data: cobrosNuevos, error } = await supabase.from('cobros').insert(grupo.map(c => ({
+        fecha: c.fecha, monto: c.valor, forma_pago: c.forma_pago, cliente_id: resolverCliente(c.nombre),
+      }))).select('id');
+      if (error) throw new Error(`Error insertando cobros: ${error.message}`);
+      for (const c of cobrosNuevos) idsCreados.cobros.push(c.id);
     }
     conteos.cobros = cobrosAInsertar.length;
 
-    // PAGOS DEL MES -> talonario_pagos_banco
-    for (const p of datos.pagosDelMes) {
-      const { data: pago, error } = await supabase.from('talonario_pagos_banco').insert({
+    // PAGOS DEL MES -> talonario_pagos_banco, en lotes
+    for (const grupo of chunk(datos.pagosDelMes, 200)) {
+      const { data: pagosNuevos, error } = await supabase.from('talonario_pagos_banco').insert(grupo.map(p => ({
         mes, año, fecha: p.fecha, beneficiario: p.nombre, concepto: p.nombre, monto: p.valor, forma_pago: '20',
-      }).select('id').single();
-      if (error) throw new Error(`Error insertando pago del mes "${p.nombre}": ${error.message}`);
-      idsCreados.pagosBanco.push(pago.id);
+      }))).select('id');
+      if (error) throw new Error(`Error insertando pagos del mes: ${error.message}`);
+      for (const p of pagosNuevos) idsCreados.pagosBanco.push(p.id);
     }
     conteos.pagosDelMes = datos.pagosDelMes.length;
 
-    // OTROS PAGOS PERSONALES -> talonario_pagos_personales
+    // OTROS PAGOS PERSONALES -> talonario_pagos_personales, en lotes
     const personalesAInsertar = [
       ...datos.otrosPagosPersonales.prestamoTarjeta.map(p => ({ ...p, categoria: 'tarjetas' })),
       ...datos.otrosPagosPersonales.gastosPersonales.map(p => ({ ...p, categoria: 'gastos_personal' })),
       ...datos.otrosPagosPersonales.otrosGastos.map(p => ({ ...p, categoria: 'otros' })),
     ];
-    for (const p of personalesAInsertar) {
-      const { data: pago, error } = await supabase.from('talonario_pagos_personales').insert({
+    for (const grupo of chunk(personalesAInsertar, 200)) {
+      const { data: pagosNuevos, error } = await supabase.from('talonario_pagos_personales').insert(grupo.map(p => ({
         mes, año, fecha: p.fecha, beneficiario: p.nombre, concepto: p.nombre,
         monto: p.valor, categoria: p.categoria, forma_pago: '20',
-      }).select('id').single();
-      if (error) throw new Error(`Error insertando pago personal "${p.nombre}": ${error.message}`);
-      idsCreados.pagosPersonales.push(pago.id);
+      }))).select('id');
+      if (error) throw new Error(`Error insertando pagos personales: ${error.message}`);
+      for (const p of pagosNuevos) idsCreados.pagosPersonales.push(p.id);
     }
     conteos.pagosPersonales = personalesAInsertar.length;
 
-    // COMPRAS (empresa, con y sin factura) -> compras, es_personal=false, forma_pago=credito
+    // COMPRAS (empresa con/sin factura + personal) -> compras, en lotes.
     // estado:'pagada' aunque forma_pago sea 'credito' (combinacion que el flujo manual
     // de la app nunca genera): son compras historicas (6+ meses), David confirmo que ya
     // estan liquidadas y no deben aparecer como deuda pendiente en Cuentas por Pagar.
     const comprasEmpresaAInsertar = [
-      ...datos.comprasEmpresa.conFactura.map(c => ({ ...c, tieneFactura: true })),
-      ...datos.comprasEmpresa.sinFactura.map(c => ({ ...c, tieneFactura: false })),
+      ...datos.comprasEmpresa.conFactura.map(c => ({ ...c, tieneFactura: true, esPersonal: false })),
+      ...datos.comprasEmpresa.sinFactura.map(c => ({ ...c, tieneFactura: false, esPersonal: false })),
     ];
-    for (const c of comprasEmpresaAInsertar) {
-      const proveedorId = await resolverProveedorId(c.proveedor, c.ruc, idsCreados);
-      const { data: compra, error } = await supabase.from('compras').insert({
-        fecha: c.fecha, proveedor_id: proveedorId, proveedor_nombre: c.proveedor,
-        numero_factura: c.numero || null,
-        tiene_factura: c.tieneFactura, subtotal: c.valor, total: c.valor,
-        forma_pago: 'credito', es_personal: false, estado: 'pagada',
-      }).select('id').single();
-      if (error) throw new Error(`Error insertando compra de "${c.proveedor}": ${error.message}`);
-      idsCreados.compras.push(compra.id);
+    const comprasPersonalAInsertar = datos.comprasPersonal.map(c => ({ ...c, tieneFactura: true, esPersonal: true }));
+    const todasLasCompras = [...comprasEmpresaAInsertar, ...comprasPersonalAInsertar];
+
+    const resolverProveedor = await resolverProveedoresEnLote(
+      todasLasCompras.map(c => ({ nombre: c.proveedor, ruc: c.ruc })), idsCreados);
+    for (const grupo of chunk(todasLasCompras, 200)) {
+      const { data: comprasNuevas, error } = await supabase.from('compras').insert(grupo.map(c => ({
+        fecha: c.fecha, proveedor_id: resolverProveedor({ nombre: c.proveedor, ruc: c.ruc }), proveedor_nombre: c.proveedor,
+        numero_factura: c.numero || null, tiene_factura: c.tieneFactura, subtotal: c.valor, total: c.valor,
+        forma_pago: 'credito', es_personal: c.esPersonal, estado: 'pagada',
+      }))).select('id');
+      if (error) throw new Error(`Error insertando compras: ${error.message}`);
+      for (const c of comprasNuevas) idsCreados.compras.push(c.id);
     }
     conteos.comprasEmpresa = comprasEmpresaAInsertar.length;
-
-    // COMPRAS-PERSONAL -> compras, es_personal=true, forma_pago=credito
-    // Mismo criterio: estado:'pagada' porque son compras historicas ya liquidadas.
-    for (const c of datos.comprasPersonal) {
-      const proveedorId = await resolverProveedorId(c.proveedor, c.ruc, idsCreados);
-      const { data: compra, error } = await supabase.from('compras').insert({
-        fecha: c.fecha, proveedor_id: proveedorId, proveedor_nombre: c.proveedor,
-        numero_factura: c.numero || null,
-        tiene_factura: true, subtotal: c.valor, total: c.valor,
-        forma_pago: 'credito', es_personal: true, estado: 'pagada',
-      }).select('id').single();
-      if (error) throw new Error(`Error insertando factura personal de "${c.proveedor}": ${error.message}`);
-      idsCreados.compras.push(compra.id);
-    }
-    conteos.comprasPersonal = datos.comprasPersonal.length;
+    conteos.comprasPersonal = comprasPersonalAInsertar.length;
 
     // SALDO BANCO REAL -> config_contabilidad (mismo lugar donde el usuario lo
     // ingresa a mano en Movimientos Banco). Se guarda el valor previo (si habia)
