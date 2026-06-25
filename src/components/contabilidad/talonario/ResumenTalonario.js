@@ -33,6 +33,7 @@ export default function ResumenTalonario() {
       { data: config },
       { data: notasCredito },
       { data: pagosCompras },
+      { data: consumoPersonal },
     ] = await Promise.all([
       supabase.from('facturas').select('total,forma_pago').gte('created_at', fechaDesde + 'T00:00:00').lte('created_at', fechaHasta + 'T23:59:59').neq('estado', 'anulada'),
       supabase.from('cobros').select('id,fecha,monto,forma_pago,observaciones,clientes(nombre),facturas(numero)').gte('fecha', fechaDesde).lte('fecha', fechaHasta),
@@ -51,6 +52,7 @@ export default function ResumenTalonario() {
       supabase.from('pagos_compras').select('monto,comision,forma_pago,compras(es_personal)')
         .in('forma_pago', ['transferencia','cheque','deposito'])
         .gte('fecha_pago', fechaDesde).lte('fecha_pago', fechaHasta),
+      supabase.from('talonario_consumo_personal').select('valor').eq('mes', mes).eq('año', año),
     ]);
 
     const cajaIds = (cajas || []).map(c => c.id);
@@ -70,6 +72,7 @@ export default function ResumenTalonario() {
     const totalComprasPersonales    = suma((compras||[]).filter(c => c.es_personal), 'total');
     const comprasPersonalesPagadas  = suma((compras||[]).filter(c => c.es_personal && c.forma_pago !== 'credito'), 'total')
       + (pagosCompras||[]).filter(p => p.compras?.es_personal).reduce((s,p) => s + parseFloat(p.monto||0) + parseFloat(p.comision||0), 0);
+    const totalConsumoPersonal = suma(consumoPersonal || [], 'valor');
     const totalSueldos   = suma(nomina   || [], 'sueldo_prop');
     const totalIess      = suma(nomina   || [], 'iess_patronal');
     const totalPagosB    = suma(pagosB   || [], 'monto');
@@ -134,6 +137,7 @@ export default function ResumenTalonario() {
       cobroEfect, cobroCheq, cobroTransf, pagosPrestTarj, pagosGastPers,
       pagosPrestamos, pagosTarjetas,
       gastosPersonalesCaja, totalComprasPersonales, comprasPersonalesPagadas,
+      totalConsumoPersonal,
       comprasBancoTotal,
       cxcPendiente, cxpPendiente, saldoCalculado, pendienteInicial, movsBanco });
     setCargando(false);
@@ -148,6 +152,7 @@ export default function ResumenTalonario() {
     cobroEfect, cobroCheq, cobroTransf, pagosPrestTarj, pagosGastPers,
     pagosPrestamos, pagosTarjetas,
     gastosPersonalesCaja, totalComprasPersonales, comprasPersonalesPagadas,
+    totalConsumoPersonal,
     comprasBancoTotal,
     cxcPendiente, cxpPendiente, saldoCalculado, pendienteInicial, movsBanco,
   } = datos;
@@ -165,7 +170,7 @@ export default function ResumenTalonario() {
   // servicios básicos, contadora, etc., con pago_fijo_id) SÍ son gasto nuevo genuino
   // del mes -- igual que el resumen propio de la contadora.
   const totalEgrMes  = totalGastos + comprasCon + comprasSin + totalSueldos + totalIess
-    + totalPagosFijos + pagosPrestamos + pagosTarjetas + totalPagosPersonalesTotal;
+    + totalPagosFijos + pagosPrestamos + pagosTarjetas + totalPagosPersonalesTotal + totalConsumoPersonal;
   const utilidadBruta= totalIngMes - totalEgrMes;
 
   const totalIngCons = cobroEfect + cobroCheq + cobroTransf + totalOtrosI;
@@ -215,6 +220,7 @@ export default function ResumenTalonario() {
           {fila('(-) Préstamos', pagosPrestamos, '#e74c3c')}
           {fila('(-) Tarjetas', pagosTarjetas, '#e74c3c')}
           {fila('(-) Pagos personales', totalPagosPersonalesTotal, '#e74c3c')}
+          {fila('(-) Consumo Personal', totalConsumoPersonal, '#e74c3c')}
           {totalRow('TOTAL EGRESOS', totalEgrMes, '#e74c3c')}
 
           <div style={{ marginTop:12, background:'#ffd700', padding:'8px 10px',
