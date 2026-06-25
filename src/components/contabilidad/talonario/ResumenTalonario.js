@@ -39,7 +39,7 @@ export default function ResumenTalonario() {
       supabase.from('caja_chica').select('id').gte('fecha', fechaDesde).lte('fecha', fechaHasta),
       supabase.from('compras').select('total,comision,tiene_factura,forma_pago,es_personal').gte('fecha', fechaDesde).lte('fecha', fechaHasta).neq('estado', 'anulada'),
       supabase.from('nomina').select('sueldo_prop,iess_patronal').eq('periodo', periodo),
-      supabase.from('talonario_pagos_banco').select('id,fecha,monto,concepto,beneficiario').eq('mes', mes).eq('año', año),
+      supabase.from('talonario_pagos_banco').select('id,fecha,monto,concepto,beneficiario,pago_fijo_id').eq('mes', mes).eq('año', año),
       supabase.from('talonario_pagos_personales').select('monto,categoria').eq('mes', mes).eq('año', año),
       supabase.from('talonario_otros_ingresos').select('id,fecha,monto,descripcion,empresa,forma_pago').eq('mes', mes).eq('año', año),
       supabase.from('cuentas_cobrar').select('monto_total,monto_cobrado').in('estado', ['pendiente', 'parcial']),
@@ -73,6 +73,11 @@ export default function ResumenTalonario() {
     const totalSueldos   = suma(nomina   || [], 'sueldo_prop');
     const totalIess      = suma(nomina   || [], 'iess_patronal');
     const totalPagosB    = suma(pagosB   || [], 'monto');
+    // Pagos Fijos (sistema, servicios basicos, contadora, arriendo, etc.) son gastos
+    // nuevos genuinos del mes, distintos de un pago generico que liquida una compra ya
+    // contada en Proveedores -- se distinguen por tener pago_fijo_id. Solo estos cuentan
+    // en el lado MES; los pagos genericos a proveedores NO (ver totalEgrMes mas abajo).
+    const totalPagosFijos = (pagosB || []).filter(p => p.pago_fijo_id).reduce((s,p) => s + parseFloat(p.monto||0), 0);
     const totalPagosP    = suma(pagosP   || [], 'monto');
     const pagosPrestTarj = (pagosP || []).filter(p => ['prestamos','tarjetas'].includes(p.categoria)).reduce((s,p) => s + parseFloat(p.monto||0), 0);
     const pagosGastPers  = (pagosP || []).filter(p => ['gastos_personal','otros'].includes(p.categoria)).reduce((s,p) => s + parseFloat(p.monto||0), 0);
@@ -125,7 +130,7 @@ export default function ResumenTalonario() {
 
     setSaldoBanco(config?.valor?.saldo || '');
     setDatos({ totalVentas, totalOtrosI, totalGastos, comprasCon, comprasSin,
-      totalSueldos, totalIess, totalPagosB, totalPagosP,
+      totalSueldos, totalIess, totalPagosB, totalPagosFijos, totalPagosP,
       cobroEfect, cobroCheq, cobroTransf, pagosPrestTarj, pagosGastPers,
       pagosPrestamos, pagosTarjetas,
       gastosPersonalesCaja, totalComprasPersonales, comprasPersonalesPagadas,
@@ -139,7 +144,7 @@ export default function ResumenTalonario() {
 
   const {
     totalVentas, totalOtrosI, totalGastos, comprasCon, comprasSin,
-    totalSueldos, totalIess, totalPagosB, totalPagosP,
+    totalSueldos, totalIess, totalPagosB, totalPagosFijos, totalPagosP,
     cobroEfect, cobroCheq, cobroTransf, pagosPrestTarj, pagosGastPers,
     pagosPrestamos, pagosTarjetas,
     gastosPersonalesCaja, totalComprasPersonales, comprasPersonalesPagadas,
@@ -153,12 +158,14 @@ export default function ResumenTalonario() {
   // "Pagos personales" (lado MES) ya NO incluye Prestamos/Tarjetas -- esos van en sus
   // propias lineas separadas abajo, igual que en el resumen propio de la contadora.
   const totalPagosPersonalesTotal = pagosGastPers + gastosPersonalesCaja + totalComprasPersonales;
-  // "Pagos del mes" (talonario_pagos_banco) NO va en el lado MES: casi siempre liquida
-  // una compra que ya se contó como "Proveedores con/sin factura" cuando se compró
-  // (devengado). Sumarlo aquí duplicaba el gasto. Solo cuenta en el lado CONSOLIDADO
-  // (totalEgrCons), que es base caja real -- igual que el resumen propio de la contadora.
+  // "Pagos del mes" GENERICOS (sin pago_fijo_id) NO van en el lado MES: casi siempre
+  // liquidan una compra que ya se contó como "Proveedores con/sin factura" cuando se
+  // compró (devengado). Sumarlos aquí duplicaba el gasto. Solo cuentan en el lado
+  // CONSOLIDADO (totalEgrCons), que es base caja real. Los Pagos FIJOS (sistema,
+  // servicios básicos, contadora, etc., con pago_fijo_id) SÍ son gasto nuevo genuino
+  // del mes -- igual que el resumen propio de la contadora.
   const totalEgrMes  = totalGastos + comprasCon + comprasSin + totalSueldos + totalIess
-    + pagosPrestamos + pagosTarjetas + totalPagosPersonalesTotal;
+    + totalPagosFijos + pagosPrestamos + pagosTarjetas + totalPagosPersonalesTotal;
   const utilidadBruta= totalIngMes - totalEgrMes;
 
   const totalIngCons = cobroEfect + cobroCheq + cobroTransf + totalOtrosI;
@@ -204,6 +211,7 @@ export default function ResumenTalonario() {
           {fila('(-) Proveedores sin factura', comprasSin, '#e74c3c')}
           {fila('(-) Sueldos', totalSueldos, '#e74c3c')}
           {fila('(-) IESS patronal', totalIess, '#e74c3c')}
+          {fila('(-) Pagos Fijos (sistema, servicios, contadora, etc.)', totalPagosFijos, '#e74c3c')}
           {fila('(-) Préstamos', pagosPrestamos, '#e74c3c')}
           {fila('(-) Tarjetas', pagosTarjetas, '#e74c3c')}
           {fila('(-) Pagos personales', totalPagosPersonalesTotal, '#e74c3c')}
