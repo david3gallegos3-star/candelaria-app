@@ -236,6 +236,21 @@ function nombreHojaPagos(mes) {
   return `PAGOS ${MESES_ES[mes - 1]}`;
 }
 
+function parseSaldoBancoReal(wb, nombreHoja) {
+  // El pie de pagina de esta hoja (DESPUES de la fila TOTAL) tiene una fila
+  // "SALDO AL <dia> <MES> <AÑO> CUENTA CORRIENTE" con el saldo bancario real
+  // en la columna de fecha (1). Buscar "SALDO" solo despues del TOTAL es
+  // necesario porque puede haber un pago real ANTES del TOTAL cuyo nombre
+  // tambien contenga la palabra "SALDO" (ej. "GROOT ARTE (SALDO CORTESIAS
+  // CLIENTES)" en el Excel real) -- ese NO es el pie de pagina.
+  const rows = XLSX.utils.sheet_to_json(wb.Sheets[nombreHoja], { header: 1, raw: false, defval: '' });
+  const indiceTotal = rows.findIndex(row => String(row[1] || '').toUpperCase().trim() === 'TOTAL');
+  if (indiceTotal === -1) return null;
+  const filaSaldo = rows.slice(indiceTotal + 1).find(row => String(row[0] || '').toUpperCase().includes('SALDO'));
+  if (!filaSaldo) return null;
+  return limpiarMonto(filaSaldo[1]);
+}
+
 function parsePagosDelMes(wb, nombreHoja) {
   // No se usa parseTablaSimple porque esta hoja tiene un pie de pagina despues
   // de la fila TOTAL (ej. "SALDO AL 31 DICIEMBRE 2025 CUENTA CORRIENTE" con el
@@ -275,6 +290,7 @@ export function parseTodasLasHojas(wb) {
     cobrosCheques: parseCobrosCheques(wb),
     cobrosTransferencia: parseCobrosTransferencia(wb),
     pagosDelMes: parsePagosDelMes(wb, hojaPagos),
+    saldoBancoReal: parseSaldoBancoReal(wb, hojaPagos),
     otrosPagosPersonales: parseOtrosPagosPersonales(wb),
     comprasEmpresa: parseCompras(wb),
     comprasPersonal: parseComprasPersonal(wb),
@@ -348,6 +364,14 @@ async function revertirTodo(idsCreados) {
   for (const id of idsCreados.proveedores) await intentarBorrar('proveedores', 'id', id);
   for (const id of idsCreados.clientes) await intentarBorrar('clientes', 'id', id);
 
+  if (idsCreados.saldoBanco) {
+    const { clave, valorAnterior } = idsCreados.saldoBanco;
+    const { error } = valorAnterior === null
+      ? await supabase.from('config_contabilidad').delete().eq('clave', clave)
+      : await supabase.from('config_contabilidad').upsert({ clave, valor: valorAnterior }, { onConflict: 'clave' });
+    if (error) erroresRollback.push(`config_contabilidad.clave=${clave}: ${error.message}`);
+  }
+
   if (erroresRollback.length > 0) {
     throw new Error(`El rollback no se completo del todo, revisa manualmente: ${erroresRollback.join('; ')}`);
   }
@@ -355,7 +379,7 @@ async function revertirTodo(idsCreados) {
 
 export async function ejecutarImport(datos) {
   const { mes, año } = datos;
-  const idsCreados = { cajaChica: [], cobros: [], pagosBanco: [], pagosPersonales: [], compras: [], proveedores: [], clientes: [] };
+  const idsCreados = { cajaChica: [], cobros: [], pagosBanco: [], pagosPersonales: [], compras: [], proveedores: [], clientes: [], saldoBanco: null };
   const conteos = {};
 
   try {
@@ -455,6 +479,21 @@ export async function ejecutarImport(datos) {
       idsCreados.compras.push(compra.id);
     }
     conteos.comprasPersonal = datos.comprasPersonal.length;
+
+    // SALDO BANCO REAL -> config_contabilidad (mismo lugar donde el usuario lo
+    // ingresa a mano en Movimientos Banco). Se guarda el valor previo (si habia)
+    // para poder restaurarlo en el rollback en vez de solo borrar la fila.
+    if (datos.saldoBancoReal !== null) {
+      const clave = `saldo_banco_${año}_${mes}`;
+      const { data: anterior, error: errSel } = await supabase
+        .from('config_contabilidad').select('valor').eq('clave', clave).maybeSingle();
+      if (errSel) throw new Error(`Error leyendo el saldo banco real previo: ${errSel.message}`);
+      idsCreados.saldoBanco = { clave, valorAnterior: anterior ? anterior.valor : null };
+      const { error } = await supabase.from('config_contabilidad')
+        .upsert({ clave, valor: { saldo: String(datos.saldoBancoReal) } }, { onConflict: 'clave' });
+      if (error) throw new Error(`Error guardando el saldo banco real: ${error.message}`);
+      conteos.saldoBancoReal = datos.saldoBancoReal;
+    }
 
     return conteos;
   } catch (err) {

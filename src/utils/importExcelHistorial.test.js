@@ -438,11 +438,15 @@ describe('parseTodasLasHojas', () => {
     // Caso real: la hoja trae una fila TOTAL y, mas abajo, una fila de resumen
     // ("SALDO AL 31 DICIEMBRE 2025 CUENTA CORRIENTE") con el saldo bancario en
     // la columna de fecha -- no es un pago, no debe parsearse como fila de dato.
+    // Tambien hay un pago real ANTES del TOTAL cuyo nombre contiene la palabra
+    // "SALDO" ("GROOT ARTE (SALDO CORTESIAS CLIENTES)", caso real del Excel) --
+    // no debe confundirse con el pie de pagina.
     const wb = wbCompleto();
     wb.Sheets['PAGOS DICIEMBRE'] = XLSX.utils.aoa_to_sheet([
       ['PAGOS  PROVEEDORES/ BANCOS', '', '', ''],
       ['JENNY PUGLLA', '12/1/25', '600.00', 'TRANSFERENCIA'],
-      ['', 'TOTAL', '600.00', ''],
+      ['GROOT ARTE (SALDO CORTESIAS CLIENTES)', '12/22/25', '262.75', 'TRANSFERENCIA'],
+      ['', 'TOTAL', '862.75', ''],
       ['', '', '', ''],
       ['SALDO AL 31 DICIEMBRE 2025 CUENTA CORRIENTE ', '31224.67', '', ''],
     ]);
@@ -450,6 +454,13 @@ describe('parseTodasLasHojas', () => {
     const resultado = parseTodasLasHojas(wb);
     expect(resultado.pagosDelMes).toEqual([
       { nombre: 'JENNY PUGLLA', fecha: '2025-12-01', valor: 600.00 },
+      { nombre: 'GROOT ARTE (SALDO CORTESIAS CLIENTES)', fecha: '2025-12-22', valor: 262.75 },
     ]);
+    expect(resultado.saldoBancoReal).toBe(31224.67);
+  });
+
+  test('saldoBancoReal es null si la hoja no trae la fila de saldo bancario', () => {
+    const resultado = parseTodasLasHojas(wbCompleto());
+    expect(resultado.saldoBancoReal).toBeNull();
   });
 });

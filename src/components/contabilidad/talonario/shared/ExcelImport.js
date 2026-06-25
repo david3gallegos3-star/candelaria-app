@@ -87,6 +87,9 @@ export default function ExcelImport({ onClose, onImportado }) {
               <div>Pagos personales: {resultado.conteos.pagosPersonales}</div>
               <div>Compras empresa: {resultado.conteos.comprasEmpresa}</div>
               <div>Facturas personales: {resultado.conteos.comprasPersonal}</div>
+              {resultado.conteos.saldoBancoReal !== undefined && (
+                <div>Saldo banco real: ${resultado.conteos.saldoBancoReal.toFixed(2)}</div>
+              )}
             </div>
             <button onClick={onClose} style={{ padding: '10px 24px', borderRadius: 6, border: 'none',
               background: '#27ae60', color: 'white', cursor: 'pointer', fontSize: 14 }}>
