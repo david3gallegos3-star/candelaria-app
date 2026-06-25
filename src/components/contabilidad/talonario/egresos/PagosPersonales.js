@@ -3,6 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { supabase } from '../../../../supabase';
 import { useTalonario } from '../TalonarioContext';
 import { TablaCrud, FORMAS_PAGO } from '../shared/TablaCrud';
+import ConsumoPersonal from './ConsumoPersonal';
 
 const CATEGORIAS = [
   { value: 'prestamos',       label: '🏦 Préstamos' },
@@ -427,6 +428,8 @@ export default function PagosPersonales() {
           onToggleTodos={toggleTodos}
         />
       ))}
+
+      <ConsumoPersonal />
 
       {form && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
