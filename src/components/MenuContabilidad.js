@@ -146,6 +146,8 @@ export default function MenuContabilidad({ navegarA, onVolver }) {
       await supabase.from('config_contabilidad')
         .update({ valor: { completado: false, fecha: null, banco: 0, caja: 0, inventario: 0, patrimonio: 0 } })
         .eq('clave', 'asiento_inicial');
+      // Saldos bancarios guardados por mes (manual o por "Subir Historial Excel")
+      await supabase.from('config_contabilidad').delete().like('clave', 'saldo_banco_%');
       setMsgTodo('✓ Todos los datos de prueba borrados');
     } catch (e) {
       setMsgTodo('Error: ' + e.message);
