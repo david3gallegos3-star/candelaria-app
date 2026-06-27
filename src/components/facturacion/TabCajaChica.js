@@ -569,11 +569,11 @@ export default function TabCajaChica({ mobile, currentUser }) {
   function verificarServicioBasico(texto) {
     if (!texto) return;
     const textoLower = texto.toLowerCase();
-    const match = serviciosBasicosCatalogo.find(sb =>
-      (sb.nombre && textoLower.includes(sb.nombre.toLowerCase())) ||
-      (sb.concepto && textoLower.includes(sb.concepto.toLowerCase())) ||
-      (sb.empresa && textoLower.includes(sb.empresa.toLowerCase()))
-    );
+    const match = serviciosBasicosCatalogo.find(sb => {
+      if (sb.empresa) return textoLower.includes(sb.empresa.toLowerCase());
+      return (sb.nombre && textoLower.includes(sb.nombre.toLowerCase())) ||
+             (sb.concepto && textoLower.includes(sb.concepto.toLowerCase()));
+    });
     if (match) {
       alert(`"${texto}" parece ser un pago de Servicio Básico (${match.nombre}). Regístralo en Pagos Personales en vez de aquí, para evitar contarlo dos veces.`);
     }
