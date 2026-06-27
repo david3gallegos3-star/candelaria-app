@@ -306,6 +306,8 @@ export default function TabNomina({ mobile }) {
   }
 
   async function eliminarMov(id) {
+    await supabase.from('caja_gastos').delete().eq('origen_nomina_movimiento_id', id);
+    await supabase.from('talonario_pagos_banco').delete().eq('origen_nomina_movimiento_id', id);
     await supabase.from('nomina_movimientos').delete().eq('id', id);
     await cargar();
   }
