@@ -24,7 +24,8 @@ const VACIO = { fecha: '', beneficiario: '', concepto: '', monto: '',
   categoria: 'prestamos', forma_pago: '20', comentario: '' };
 
 const VACIO_FIJO = { nombre: '', categoria: 'gastos_personal', beneficiario: '',
-  concepto: '', monto_default: '', forma_pago: '20', orden: 0 };
+  concepto: '', monto_default: '', forma_pago: '20', orden: 0,
+  es_servicio_basico: false, empresa: '' };
 
 function SeccionPagos({ titulo, color, filas, busqueda, columnas, cargando,
   esAdminContador, onAgregar, onEditar, onEliminar, seleccionados, onToggleTodos }) {
@@ -247,6 +248,8 @@ export default function PagosPersonales() {
       monto_default: parseFloat(formFijo.monto_default) || 0,
       forma_pago:    formFijo.forma_pago || '20',
       orden:         parseInt(formFijo.orden) || 0,
+      es_servicio_basico: !!formFijo.es_servicio_basico,
+      empresa:       formFijo.empresa?.trim() || null,
     };
     if (formFijo.id) {
       await supabase.from('pagos_fijos_personales').update(payload).eq('id', formFijo.id);
@@ -570,6 +573,24 @@ export default function PagosPersonales() {
                       style={{ width: '100%', padding: '7px 10px', borderRadius: 6,
                         border: '1px solid #ddd', fontSize: 12, boxSizing: 'border-box' }} />
                   </div>
+                  <div>
+                    <label style={{ fontSize: 11, color: '#555', display: 'block', marginBottom: 3 }}>
+                      <input type="checkbox" checked={!!formFijo.es_servicio_basico}
+                        onChange={e => setFormFijo(p => ({ ...p, es_servicio_basico: e.target.checked }))}
+                        style={{ marginRight: 6, cursor: 'pointer' }} />
+                      Es Servicio Básico (luz, agua, etc.)
+                    </label>
+                  </div>
+                  {formFijo.es_servicio_basico && (
+                    <div>
+                      <label style={{ fontSize: 11, color: '#555', display: 'block', marginBottom: 3 }}>Empresa</label>
+                      <input type="text" value={formFijo.empresa}
+                        onChange={e => setFormFijo(p => ({ ...p, empresa: e.target.value }))}
+                        placeholder="Ej: EMELNORTE, EMAPA"
+                        style={{ width: '100%', padding: '7px 10px', borderRadius: 6,
+                          border: '1px solid #ddd', fontSize: 12, boxSizing: 'border-box' }} />
+                    </div>
+                  )}
                 </div>
                 <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 14 }}>
                   <button onClick={() => setFormFijo(null)}
