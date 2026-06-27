@@ -31,6 +31,7 @@ export default function TabCajaChica({ mobile, currentUser }) {
   const [mesSel,       setMesSel]       = useState(hoy.slice(0, 7));
   const [datosMes,     setDatosMes]     = useState([]);
   const [provSugs,     setProvSugs]     = useState([]);
+  const [serviciosBasicosCatalogo, setServiciosBasicosCatalogo] = useState([]);
   const [provFoco,     setProvFoco]     = useState(null);
   const listo       = useRef(false);
   const autoSaveRef = useRef(null);
@@ -42,6 +43,7 @@ export default function TabCajaChica({ mobile, currentUser }) {
 
   useEffect(() => { listo.current = false; setEstadoAutosave('idle'); cargarDia(); }, [fecha]);
   useEffect(() => { cargarProveedores(); }, []);
+  useEffect(() => { cargarServiciosBasicos(); }, []);
   useRealtime(['cobros', 'compras', 'facturas', 'pagos_compras'], cargarSoloLectura);
   useEffect(() => { if (vista === 'mes') cargarMes(); }, [vista, mesSel]);
 
@@ -92,6 +94,12 @@ export default function TabCajaChica({ mobile, currentUser }) {
       })));
     }
     setEstadoAutosave('guardado');
+  }
+
+  async function cargarServiciosBasicos() {
+    const { data } = await supabase
+      .from('pagos_fijos_personales').select('nombre, concepto, empresa').eq('es_servicio_basico', true);
+    setServiciosBasicosCatalogo(data || []);
   }
 
   async function cargarProveedores() {
@@ -558,6 +566,19 @@ export default function TabCajaChica({ mobile, currentUser }) {
   const updG = (i, f, v) => setGastos(g => g.map((x, idx) => idx === i ? { ...x, [f]: v } : x));
   const updE = (i, f, v) => setEntregas(e => e.map((x, idx) => idx === i ? { ...x, [f]: v } : x));
 
+  function verificarServicioBasico(texto) {
+    if (!texto) return;
+    const textoLower = texto.toLowerCase();
+    const match = serviciosBasicosCatalogo.find(sb =>
+      (sb.nombre && textoLower.includes(sb.nombre.toLowerCase())) ||
+      (sb.concepto && textoLower.includes(sb.concepto.toLowerCase())) ||
+      (sb.empresa && textoLower.includes(sb.empresa.toLowerCase()))
+    );
+    if (match) {
+      alert(`"${texto}" parece ser un pago de Servicio Básico (${match.nombre}). Regístralo en Pagos Personales en vez de aquí, para evitar contarlo dos veces.`);
+    }
+  }
+
   const tGastos      = gastos.reduce((s, g) => s + (parseFloat(g.valor) || 0), 0);
   const tEntregas    = entregas.reduce((s, e) => s + (parseFloat(e.cantidad) || 0), 0);
   const tTransf      = cobros.filter(c => c.forma_pago === 'transferencia').reduce((s, c) => s + parseFloat(c.monto), 0);
@@ -841,7 +862,7 @@ export default function TabCajaChica({ mobile, currentUser }) {
                       value={g.proveedor}
                       onChange={e => { updG(i,'proveedor',e.target.value); setProvFoco(i); }}
                       onFocus={() => setProvFoco(i)}
-                      onBlur={() => setTimeout(() => setProvFoco(null), 150)}
+                      onBlur={() => { setTimeout(() => setProvFoco(null), 150); verificarServicioBasico(g.proveedor); }}
                       placeholder="Proveedor"
                       style={{ ...inp, width:'100%', padding:'4px 8px' }}
                       autoComplete="off"
@@ -878,6 +899,7 @@ export default function TabCajaChica({ mobile, currentUser }) {
                   </td>
                   <td style={tdS}>
                     <input value={g.detalle} onChange={e => updG(i,'detalle',e.target.value)}
+                      onBlur={() => verificarServicioBasico(g.detalle)}
                       placeholder="Detalle gasto" style={{ ...inp, width:'100%', padding:'4px 8px' }} />
                   </td>
                   <td style={tdS}>
