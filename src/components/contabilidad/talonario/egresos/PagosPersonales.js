@@ -12,6 +12,8 @@ const CATEGORIAS = [
   { value: 'otros',           label: '📋 Otros' },
 ];
 
+const FORMA_SRI = { efectivo: '01', transferencia: '20', cheque: '20', deposito: '20', credito: '19', tarjeta: '19' };
+
 const SECCIONES = [
   { titulo: '🏦 Pagos Préstamo y Tarjeta', cats: ['prestamos', 'tarjetas'], color: '#1a5276' },
   { titulo: '👤 Pagos Gastos Personales',  cats: ['gastos_personal'],       color: '#6c3483' },
@@ -150,7 +152,7 @@ export default function PagosPersonales() {
       concepto:     c.numero_factura ? `Factura ${c.numero_factura}` : 'Compra personal',
       monto:        parseFloat(c.total || 0),
       categoria:    'gastos_personal',
-      forma_pago:   c.forma_pago || '20',
+      forma_pago:   FORMA_SRI[c.forma_pago] || '20',
       comentario:   'Registrada en módulo Compras',
       _readOnly:    true,
     }));
