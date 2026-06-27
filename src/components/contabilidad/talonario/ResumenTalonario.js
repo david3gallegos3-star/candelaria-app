@@ -64,7 +64,7 @@ export default function ResumenTalonario() {
     const cajaIds = (cajas || []).map(c => c.id);
     const [{ data: gastos }, { data: entregas }] = cajaIds.length > 0
       ? await Promise.all([
-          supabase.from('caja_gastos').select('valor,es_personal').in('caja_id', cajaIds),
+          supabase.from('caja_gastos').select('valor,es_personal,origen_pago_personal_id').in('caja_id', cajaIds),
           supabase.from('caja_entregas').select('cantidad').in('caja_id', cajaIds),
         ])
       : [{ data: [] }, { data: [] }];
@@ -72,6 +72,14 @@ export default function ResumenTalonario() {
     const totalVentas    = suma(facturas || [], 'total') - suma(notasCredito || [], 'total');
     const totalOtrosI    = suma(otrosI   || [], 'monto');
     const totalGastos    = suma((gastos||[]).filter(g => !g.es_personal), 'valor');
+    // Un servicio basico pagado en efectivo ya se cuenta en MES via totalServicioBasico
+    // (dentro de totalPagosFijos, mas abajo) -- si tambien se dejara en totalGastos, se
+    // contaria dos veces SOLO en el lado MES. CONSOLIDADO si debe seguir usando totalGastos
+    // tal cual (sin excluir), porque ahi es la unica via por la que se cuenta ese gasto.
+    const totalServicioBasicoEfectivo = (gastos || [])
+      .filter(g => g.origen_pago_personal_id)
+      .reduce((s,g) => s + parseFloat(g.valor || 0), 0);
+    const totalGastosMes = totalGastos - totalServicioBasicoEfectivo;
     const gastosPersonalesCaja = suma((gastos||[]).filter(g => g.es_personal), 'valor');
     const comprasCon     = (compras || []).filter(c =>  c.tiene_factura && !c.es_personal).reduce((s,c) => s + parseFloat(c.total||0), 0);
     const comprasSin     = (compras || []).filter(c => !c.tiene_factura && !c.es_personal).reduce((s,c) => s + parseFloat(c.total||0), 0);
@@ -165,7 +173,7 @@ export default function ResumenTalonario() {
     ].sort((a,b) => (a.fecha||'').localeCompare(b.fecha||''));
 
     setSaldoBanco(config?.valor?.saldo || '');
-    setDatos({ totalVentas, totalOtrosI, totalGastos, comprasCon, comprasSin,
+    setDatos({ totalVentas, totalOtrosI, totalGastos, totalGastosMes, comprasCon, comprasSin,
       totalSueldos, totalIess, totalPagosB, totalPagosFijos, totalPagosP,
       cobroEfect, cobroCheq, cobroTransf, pagosPrestTarj, pagosGastPers,
       pagosPrestamos, pagosTarjetas,
@@ -180,7 +188,7 @@ export default function ResumenTalonario() {
   if (cargando || !datos) return <div style={{ padding: 40, textAlign: 'center', color: '#888' }}>Calculando resumen...</div>;
 
   const {
-    totalVentas, totalOtrosI, totalGastos, comprasCon, comprasSin,
+    totalVentas, totalOtrosI, totalGastos, totalGastosMes, comprasCon, comprasSin,
     totalSueldos, totalIess, totalPagosB, totalPagosFijos, totalPagosP,
     cobroEfect, cobroCheq, cobroTransf, pagosPrestTarj, pagosGastPers,
     pagosPrestamos, pagosTarjetas,
@@ -202,7 +210,7 @@ export default function ResumenTalonario() {
   // CONSOLIDADO (totalEgrCons), que es base caja real. Los Pagos FIJOS (sistema,
   // servicios básicos, contadora, etc., con pago_fijo_id) SÍ son gasto nuevo genuino
   // del mes -- igual que el resumen propio de la contadora.
-  const totalEgrMes  = totalGastos + comprasCon + comprasSin + totalSueldos + totalIess
+  const totalEgrMes  = totalGastosMes + comprasCon + comprasSin + totalSueldos + totalIess
     + totalPagosFijos + pagosPrestamos + pagosTarjetas + totalPagosPersonalesTotal + totalConsumoPersonal;
   const utilidadBruta= totalIngMes - totalEgrMes;
 
@@ -244,7 +252,7 @@ export default function ResumenTalonario() {
           {totalRow('TOTAL INGRESOS', totalIngMes, '#27ae60')}
 
           {titulo('EGRESOS', '#e74c3c')}
-          {fila('(-) Gastos efectivo', totalGastos, '#e74c3c')}
+          {fila('(-) Gastos efectivo', totalGastosMes, '#e74c3c')}
           {fila('(-) Proveedores con factura', comprasCon, '#e74c3c')}
           {fila('(-) Proveedores sin factura', comprasSin, '#e74c3c')}
           {fila('(-) Sueldos', totalSueldos, '#e74c3c')}
