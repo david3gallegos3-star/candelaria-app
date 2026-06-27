@@ -35,6 +35,7 @@ export default function ResumenTalonario() {
       { data: pagosCompras },
       { data: consumoPersonal },
       { data: creditosEmpleadosRaw },
+      { data: serviciosBasicosFijos },
     ] = await Promise.all([
       supabase.from('facturas').select('total,forma_pago').gte('created_at', fechaDesde + 'T00:00:00').lte('created_at', fechaHasta + 'T23:59:59').neq('estado', 'anulada'),
       supabase.from('cobros').select('id,fecha,monto,forma_pago,observaciones,clientes(nombre),facturas(numero)').gte('fecha', fechaDesde).lte('fecha', fechaHasta),
@@ -42,7 +43,7 @@ export default function ResumenTalonario() {
       supabase.from('compras').select('total,comision,tiene_factura,forma_pago,es_personal').gte('fecha', fechaDesde).lte('fecha', fechaHasta).neq('estado', 'anulada'),
       supabase.from('nomina').select('sueldo_prop,sueldo_neto,iess_patronal,estado').eq('periodo', periodo),
       supabase.from('talonario_pagos_banco').select('id,fecha,monto,concepto,beneficiario,pago_fijo_id').eq('mes', mes).eq('año', año),
-      supabase.from('talonario_pagos_personales').select('monto,categoria').eq('mes', mes).eq('año', año),
+      supabase.from('talonario_pagos_personales').select('monto,categoria,pago_fijo_personal_id').eq('mes', mes).eq('año', año),
       supabase.from('talonario_otros_ingresos').select('id,fecha,monto,descripcion,empresa,forma_pago').eq('mes', mes).eq('año', año),
       supabase.from('cuentas_cobrar').select('monto_total,monto_cobrado').in('estado', ['pendiente', 'parcial']),
       supabase.from('cuentas_pagar').select('saldo_pendiente').in('estado', ['pendiente', 'parcial']),
@@ -57,6 +58,7 @@ export default function ResumenTalonario() {
       supabase.from('nomina_movimientos')
         .select('valor, cuentas_cobrar(estado)')
         .eq('tipo', 'compra').eq('activo', true).eq('periodo', periodo),
+      supabase.from('pagos_fijos_personales').select('id').eq('es_servicio_basico', true),
     ]);
 
     const cajaIds = (cajas || []).map(c => c.id);
@@ -105,10 +107,16 @@ export default function ResumenTalonario() {
     // nuevos genuinos del mes, distintos de un pago generico que liquida una compra ya
     // contada en Proveedores -- se distinguen por tener pago_fijo_id. Solo estos cuentan
     // en el lado MES; los pagos genericos a proveedores NO (ver totalEgrMes mas abajo).
-    const totalPagosFijos = (pagosB || []).filter(p => p.pago_fijo_id).reduce((s,p) => s + parseFloat(p.monto||0), 0);
+    const idsServicioBasico = new Set((serviciosBasicosFijos || []).map(s => s.id));
+    const totalServicioBasico = (pagosP || [])
+      .filter(p => idsServicioBasico.has(p.pago_fijo_personal_id))
+      .reduce((s,p) => s + parseFloat(p.monto||0), 0);
+    const totalPagosFijos = (pagosB || []).filter(p => p.pago_fijo_id).reduce((s,p) => s + parseFloat(p.monto||0), 0) + totalServicioBasico;
     const totalPagosP    = suma(pagosP   || [], 'monto');
     const pagosPrestTarj = (pagosP || []).filter(p => ['prestamos','tarjetas'].includes(p.categoria)).reduce((s,p) => s + parseFloat(p.monto||0), 0);
-    const pagosGastPers  = (pagosP || []).filter(p => ['gastos_personal','otros'].includes(p.categoria)).reduce((s,p) => s + parseFloat(p.monto||0), 0);
+    const pagosGastPers  = (pagosP || [])
+      .filter(p => ['gastos_personal','otros'].includes(p.categoria) && !idsServicioBasico.has(p.pago_fijo_personal_id))
+      .reduce((s,p) => s + parseFloat(p.monto||0), 0);
     // Solo para el lado MES (izquierdo): la contadora muestra Prestamos y Tarjetas como
     // lineas separadas en su propio resumen. El lado CONSOLIDADO (derecho) se queda
     // junto en "Tarjetas/préstamos" (pagosPrestTarj), sin cambios.
