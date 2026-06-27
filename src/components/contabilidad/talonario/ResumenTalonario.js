@@ -272,10 +272,9 @@ export default function ResumenTalonario() {
 
           {titulo('EGRESOS (pagos reales)', '#e74c3c')}
           {fila('(-) Gastos efectivo', totalGastos, '#e74c3c')}
-          {fila('(-) Pagos con banco', totalPagosB + comprasBancoTotal, '#e74c3c')}
+          {fila('(-) Pagos con banco', totalPagosB + comprasBancoTotal + totalSueldosPagados, '#e74c3c')}
           {fila('(-) Tarjetas/préstamos', pagosPrestTarj, '#e74c3c')}
           {fila('(-) Gastos personales', pagosGastPersTotal, '#e74c3c')}
-          {fila('(-) Sueldos', totalSueldosPagados, '#e74c3c')}
           {fila('(-) Créditos Empleados', totalCreditosEmpleados, '#e74c3c')}
           {totalRow('TOTAL', totalEgrCons, '#e74c3c')}
 
