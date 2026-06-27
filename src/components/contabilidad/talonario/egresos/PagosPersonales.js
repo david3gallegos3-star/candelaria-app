@@ -91,6 +91,7 @@ export default function PagosPersonales() {
   const [eliminando,    setEliminando]    = useState(false);
   const [pagosFijos,    setPagosFijos]    = useState([]);
   const [montosEdit,    setMontosEdit]    = useState({});
+  const [facturaEdit,   setFacturaEdit]   = useState({});
   const [registrando,   setRegistrando]   = useState({});
   const [modalFijos,    setModalFijos]    = useState(false);
   const [formFijo,      setFormFijo]      = useState(null);
@@ -214,16 +215,49 @@ export default function PagosPersonales() {
   }
 
   async function eliminar(id) {
-    if (String(id).startsWith('caja_')) return;
+    if (String(id).startsWith('caja_') || String(id).startsWith('compra_')) return;
+    await supabase.from('caja_gastos').delete().eq('origen_pago_personal_id', id);
+    await supabase.from('talonario_pagos_banco').delete().eq('origen_pago_personal_id', id);
     await supabase.from('talonario_pagos_personales').delete().eq('id', id);
     cargar();
+  }
+
+  async function vincularServicioBasicoEfectivo(mov, fijo) {
+    let { data: caja } = await supabase
+      .from('caja_chica').select('id').eq('fecha', mov.fecha).maybeSingle();
+    if (!caja) {
+      const { data: nuevaCaja } = await supabase
+        .from('caja_chica')
+        .insert({ fecha: mov.fecha, responsable: '', caja_inicial: 0, caja_cierre: 0 })
+        .select().single();
+      caja = nuevaCaja;
+    }
+    await supabase.from('caja_gastos').insert({
+      caja_id:    caja.id,
+      proveedor:  fijo.empresa || fijo.nombre,
+      detalle:    `Servicio Básico — ${fijo.nombre}`,
+      valor:      mov.monto,
+      es_personal: false,
+      origen_pago_personal_id: mov.id,
+    });
+  }
+
+  async function vincularServicioBasicoBanco(mov, fijo) {
+    await supabase.from('talonario_pagos_banco').insert({
+      mes, año,
+      fecha:        mov.fecha,
+      concepto:     `Servicio Básico — ${fijo.nombre}`,
+      beneficiario: fijo.empresa || fijo.nombre,
+      monto:        mov.monto,
+      origen_pago_personal_id: mov.id,
+    });
   }
 
   async function registrarPagoFijo(fijo) {
     const monto = parseFloat(montosEdit[fijo.id]) || 0;
     if (!monto) return alert('Ingresa un monto mayor a $0');
     setRegistrando(r => ({ ...r, [fijo.id]: true }));
-    await supabase.from('talonario_pagos_personales').insert({
+    const { data: movInsertado } = await supabase.from('talonario_pagos_personales').insert({
       mes, año,
       fecha:        new Date().toISOString().split('T')[0],
       beneficiario: fijo.beneficiario || fijo.nombre,
@@ -232,7 +266,17 @@ export default function PagosPersonales() {
       categoria:    fijo.categoria,
       forma_pago:   fijo.forma_pago,
       pago_fijo_personal_id: fijo.id,
-    });
+      numero_factura: fijo.es_servicio_basico ? (facturaEdit[fijo.id] || null) : null,
+    }).select().single();
+
+    if (fijo.es_servicio_basico && movInsertado) {
+      if (fijo.forma_pago === '01') {
+        await vincularServicioBasicoEfectivo(movInsertado, fijo);
+      } else {
+        await vincularServicioBasicoBanco(movInsertado, fijo);
+      }
+    }
+
     setRegistrando(r => ({ ...r, [fijo.id]: false }));
     cargar();
   }
@@ -346,7 +390,7 @@ export default function PagosPersonales() {
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
               <tr style={{ background: '#f5f7f5' }}>
-                {['Nombre','Categoría','Monto','Estado'].map(h => (
+                {['Nombre','Categoría','Monto','Nº Factura','Estado'].map(h => (
                   <th key={h} style={{ padding: '7px 12px', textAlign: h === 'Monto' ? 'right' : 'left',
                     fontSize: 11, fontWeight: 700, color: '#555', borderBottom: '1px solid #eee' }}>{h}</th>
                 ))}
@@ -367,6 +411,16 @@ export default function PagosPersonales() {
                       style={{ width: 90, padding: '4px 8px', borderRadius: 6,
                         border: '1px solid #ddd', fontSize: 12, textAlign: 'right' }}
                     />
+                  </td>
+                  <td style={{ padding: '8px 12px' }}>
+                    {fijo.es_servicio_basico && (
+                      <input type="text"
+                        value={facturaEdit[fijo.id] || ''}
+                        onChange={e => setFacturaEdit(f => ({ ...f, [fijo.id]: e.target.value }))}
+                        placeholder="001-001-000000001"
+                        style={{ width: 130, padding: '4px 8px', borderRadius: 6,
+                          border: '1px solid #ddd', fontSize: 12 }} />
+                    )}
                   </td>
                   <td style={{ padding: '8px 12px' }}>
                     <button onClick={() => registrarPagoFijo(fijo)}
