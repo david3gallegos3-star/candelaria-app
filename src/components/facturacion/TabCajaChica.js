@@ -24,6 +24,7 @@ export default function TabCajaChica({ mobile, currentUser }) {
   const [comprasEfect,    setComprasEfect]    = useState([]);
   const [pagosEfect,      setPagosEfect]      = useState([]);
   const [adelantosNomina, setAdelantosNomina] = useState([]);
+  const [serviciosBasicosCaja, setServiciosBasicosCaja] = useState([]);
   const [guardando,       setGuardando]       = useState(false);
   const [estadoAutosave,  setEstadoAutosave]  = useState('idle'); // idle | guardando | guardado
   const [guardadoHoy,  setGuardadoHoy]  = useState(false);
@@ -70,7 +71,8 @@ export default function TabCajaChica({ mobile, currentUser }) {
     }
     if (!id) { setEstadoAutosave('error'); return; }
 
-    await supabase.from('caja_gastos').delete().eq('caja_id', id).is('origen_nomina_movimiento_id', null);
+    await supabase.from('caja_gastos').delete().eq('caja_id', id)
+      .is('origen_nomina_movimiento_id', null).is('origen_pago_personal_id', null);
     const gastosOk = gastos.filter(g => g.proveedor || g.detalle || g.valor);
     if (gastosOk.length) {
       await supabase.from('caja_gastos').insert(gastosOk.map((g, i) => ({
@@ -119,7 +121,8 @@ export default function TabCajaChica({ mobile, currentUser }) {
       setGuardadoHoy(false);
 
       const { data: g } = await supabase
-        .from('caja_gastos').select('*').eq('caja_id', caja.id).is('origen_nomina_movimiento_id', null).order('orden');
+        .from('caja_gastos').select('*').eq('caja_id', caja.id)
+        .is('origen_nomina_movimiento_id', null).is('origen_pago_personal_id', null).order('orden');
       setGastos(g?.length
         ? g.map(x => ({ ...x, expandido: !!(x.ruc || x.numero_factura) }))
         : [fGasto()]);
@@ -127,6 +130,10 @@ export default function TabCajaChica({ mobile, currentUser }) {
       const { data: an } = await supabase
         .from('caja_gastos').select('*').eq('caja_id', caja.id).not('origen_nomina_movimiento_id', 'is', null).order('orden');
       setAdelantosNomina(an || []);
+
+      const { data: sb } = await supabase
+        .from('caja_gastos').select('*').eq('caja_id', caja.id).not('origen_pago_personal_id', 'is', null).order('orden');
+      setServiciosBasicosCaja(sb || []);
 
       const { data: e } = await supabase
         .from('caja_entregas').select('*').eq('caja_id', caja.id).order('orden');
@@ -140,6 +147,7 @@ export default function TabCajaChica({ mobile, currentUser }) {
       setGastos([fGasto()]);
       setEntregas([fEntrega()]);
       setAdelantosNomina([]);
+      setServiciosBasicosCaja([]);
       const { data: anterior } = await supabase
         .from('caja_chica')
         .select('caja_cierre')
@@ -281,7 +289,8 @@ export default function TabCajaChica({ mobile, currentUser }) {
     }
 
     // Gastos
-    await supabase.from('caja_gastos').delete().eq('caja_id', id).is('origen_nomina_movimiento_id', null);
+    await supabase.from('caja_gastos').delete().eq('caja_id', id)
+      .is('origen_nomina_movimiento_id', null).is('origen_pago_personal_id', null);
     const gastosOk = gastos.filter(g => g.proveedor || g.detalle || g.valor);
     if (gastosOk.length) {
       await supabase.from('caja_gastos').insert(gastosOk.map((g, i) => ({
