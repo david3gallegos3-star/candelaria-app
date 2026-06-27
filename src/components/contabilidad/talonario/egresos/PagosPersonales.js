@@ -80,7 +80,7 @@ function SeccionPagos({ titulo, color, filas, busqueda, columnas, cargando,
 }
 
 export default function PagosPersonales() {
-  const { mes, año, esAdminContador } = useTalonario();
+  const { mes, año, esAdminContador, onEditarCompraPersonal } = useTalonario();
   const [filas,         setFilas]         = useState([]);
   const [cargando,      setCargando]      = useState(false);
   const [form,          setForm]          = useState(null);
@@ -392,7 +392,13 @@ export default function PagosPersonales() {
           cargando={cargando}
           esAdminContador={esAdminContador}
           onAgregar={() => setForm({ ...VACIO, categoria: sec.cats[0] })}
-          onEditar={f => setForm({ ...f })}
+          onEditar={f => {
+            if (typeof f.id === 'string' && f.id.startsWith('compra_')) {
+              onEditarCompraPersonal(f.id.replace('compra_', ''));
+              return;
+            }
+            setForm({ ...f });
+          }}
           onEliminar={eliminar}
           seleccionados={seleccionados}
           onToggleTodos={toggleTodos}
