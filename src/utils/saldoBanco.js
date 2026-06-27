@@ -30,7 +30,6 @@ export async function calcularNetoBancoMes(año, mes) {
     { data: cobros },
     { data: pagosB },
     { data: otrosI },
-    { data: factsP },
     { data: ventasBanco },
     { data: comprasBanco },
     { data: cajasMes },
@@ -48,10 +47,6 @@ export async function calcularNetoBancoMes(año, mes) {
       .select('monto,forma_pago')
       .eq('mes', mes).eq('año', año)
       .neq('forma_pago', '01'),
-    supabase.from('talonario_facturas_personales')
-      .select('monto')
-      .eq('mes', mes).eq('año', año)
-      .eq('forma_pago', '20'),
     supabase.from('facturas')
       .select('total,forma_pago')
       .in('forma_pago', ['transferencia','cheque','tarjeta_credito'])
@@ -84,7 +79,6 @@ export async function calcularNetoBancoMes(año, mes) {
   const comisiones       = (cobros||[]).reduce((s,c) => s + parseFloat(c.comision||0), 0);
   const entradasOtrosI   = (otrosI||[]).reduce((s,o) => s + parseFloat(o.monto||0), 0);
   const salidasPagosB    = (pagosB||[]).reduce((s,p) => s + parseFloat(p.monto||0), 0);
-  const salidasFactsP    = (factsP||[]).reduce((s,f) => s + parseFloat(f.monto||0), 0);
   const salidasNCBanco   = (notasCreditoBanco||[])
     .filter(nc => ['transferencia','cheque','tarjeta_credito'].includes(nc.facturas?.forma_pago))
     .reduce((s,nc) => s + parseFloat(nc.total||0), 0);
@@ -94,7 +88,7 @@ export async function calcularNetoBancoMes(año, mes) {
   const entradasEntregas = (entregas||[]).reduce((s,e) => s + parseFloat(e.cantidad||0), 0);
 
   const totalEntradas = entradasCobros + entradasOtrosI + entradasVentas + entradasEntregas;
-  const totalSalidas  = comisiones + salidasPagosB + salidasFactsP + salidasCompras;
+  const totalSalidas  = comisiones + salidasPagosB + salidasCompras;
 
   return { totalEntradas, totalSalidas, neto: totalEntradas - totalSalidas };
 }
