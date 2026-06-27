@@ -40,7 +40,7 @@ export default function ResumenTalonario() {
       supabase.from('cobros').select('id,fecha,monto,forma_pago,observaciones,clientes(nombre),facturas(numero)').gte('fecha', fechaDesde).lte('fecha', fechaHasta),
       supabase.from('caja_chica').select('id').gte('fecha', fechaDesde).lte('fecha', fechaHasta),
       supabase.from('compras').select('total,comision,tiene_factura,forma_pago,es_personal').gte('fecha', fechaDesde).lte('fecha', fechaHasta).neq('estado', 'anulada'),
-      supabase.from('nomina').select('sueldo_prop,iess_patronal').eq('periodo', periodo),
+      supabase.from('nomina').select('sueldo_prop,sueldo_neto,iess_patronal,estado').eq('periodo', periodo),
       supabase.from('talonario_pagos_banco').select('id,fecha,monto,concepto,beneficiario,pago_fijo_id').eq('mes', mes).eq('año', año),
       supabase.from('talonario_pagos_personales').select('monto,categoria').eq('mes', mes).eq('año', año),
       supabase.from('talonario_otros_ingresos').select('id,fecha,monto,descripcion,empresa,forma_pago').eq('mes', mes).eq('año', año),
@@ -84,7 +84,11 @@ export default function ResumenTalonario() {
     const totalCreditosEmpleados = (creditosEmpleadosRaw || [])
       .filter(m => m.cuentas_cobrar?.estado === 'pagada')
       .reduce((s, m) => s + parseFloat(m.valor || 0), 0);
-    const totalSueldos   = suma(nomina   || [], 'sueldo_prop');
+    const totalSueldos   = suma(nomina   || [], 'sueldo_neto');
+    // Solo cuenta como pago real de caja si la nomina de ese empleado ya se
+    // marco 'pagado' este mes -- si solo esta 'generado', el dinero todavia
+    // no salio del banco/caja.
+    const totalSueldosPagados = suma((nomina || []).filter(n => n.estado === 'pagado'), 'sueldo_neto');
     const totalIess      = suma(nomina   || [], 'iess_patronal');
     const totalPagosB    = suma(pagosB   || [], 'monto');
     // Pagos Fijos (sistema, servicios basicos, contadora, arriendo, etc.) son gastos
@@ -148,7 +152,7 @@ export default function ResumenTalonario() {
       cobroEfect, cobroCheq, cobroTransf, pagosPrestTarj, pagosGastPers,
       pagosPrestamos, pagosTarjetas,
       gastosPersonalesCaja, totalComprasPersonales, comprasPersonalesPagadas,
-      totalConsumoPersonal, totalCreditosEmpleados,
+      totalConsumoPersonal, totalCreditosEmpleados, totalSueldosPagados,
       comprasBancoTotal,
       cxcPendiente, cxpPendiente, saldoCalculado, pendienteInicial, movsBanco });
     setCargando(false);
@@ -163,7 +167,7 @@ export default function ResumenTalonario() {
     cobroEfect, cobroCheq, cobroTransf, pagosPrestTarj, pagosGastPers,
     pagosPrestamos, pagosTarjetas,
     gastosPersonalesCaja, totalComprasPersonales, comprasPersonalesPagadas,
-    totalConsumoPersonal, totalCreditosEmpleados,
+    totalConsumoPersonal, totalCreditosEmpleados, totalSueldosPagados,
     comprasBancoTotal,
     cxcPendiente, cxpPendiente, saldoCalculado, pendienteInicial, movsBanco,
   } = datos;
@@ -186,7 +190,7 @@ export default function ResumenTalonario() {
 
   const totalIngCons = cobroEfect + cobroCheq + cobroTransf + totalOtrosI;
   const pagosGastPersTotal = pagosGastPers + gastosPersonalesCaja + comprasPersonalesPagadas;
-  const totalEgrCons = totalGastos + totalPagosB + comprasBancoTotal + pagosPrestTarj + pagosGastPersTotal + totalCreditosEmpleados;
+  const totalEgrCons = totalGastos + totalPagosB + comprasBancoTotal + pagosPrestTarj + pagosGastPersTotal + totalCreditosEmpleados + totalSueldosPagados;
 
   const $ = v => `$${parseFloat(v||0).toFixed(2)}`;
   const fila = (label, valor, color) => (
@@ -261,6 +265,7 @@ export default function ResumenTalonario() {
           {fila('(-) Pagos con banco', totalPagosB + comprasBancoTotal, '#e74c3c')}
           {fila('(-) Tarjetas/préstamos', pagosPrestTarj, '#e74c3c')}
           {fila('(-) Gastos personales', pagosGastPersTotal, '#e74c3c')}
+          {fila('(-) Sueldos', totalSueldosPagados, '#e74c3c')}
           {fila('(-) Créditos Empleados', totalCreditosEmpleados, '#e74c3c')}
           {totalRow('TOTAL', totalEgrCons, '#e74c3c')}
 
