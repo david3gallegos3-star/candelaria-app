@@ -88,6 +88,16 @@ export default function ResumenTalonario() {
     // Solo cuenta como pago real de caja si la nomina de ese empleado ya se
     // marco 'pagado' este mes -- si solo esta 'generado', el dinero todavia
     // no salio del banco/caja.
+    // OJO -- esto NO es doble conteo con totalCreditosEmpleados, aunque
+    // sueldo_neto ya resta internamente los mismos creditos_nomina que
+    // totalCreditosEmpleados suma por separado. Es intencional, confirmado
+    // explicitamente con David con un ejemplo numerico: sueldo $485, credito
+    // $50, neto real $435 -- el Total Egresos CONSOLIDADO debe mostrar $485
+    // ($435 Sueldos + $50 Creditos Empleados), no $435. La linea "Sueldos"
+    // mide solo el efectivo/banco que de verdad salio; "Creditos Empleados"
+    // mide el valor de producto que salio sin cobro de caja (se "cobro" via
+    // descuento de nomina en vez de dinero). Juntas reconstruyen el costo
+    // total del empleado ese mes -- no se pisan, cada una mide algo distinto.
     const totalSueldosPagados = suma((nomina || []).filter(n => n.estado === 'pagado'), 'sueldo_neto');
     const totalIess      = suma(nomina   || [], 'iess_patronal');
     const totalPagosB    = suma(pagosB   || [], 'monto');
