@@ -98,7 +98,7 @@ export default function PagosPersonales() {
     const fechaDesde = `${año}-${String(mes).padStart(2,'0')}-01`;
     const fechaHasta = `${año}-${String(mes).padStart(2,'0')}-${new Date(año, mes, 0).getDate()}`;
 
-    const [{ data }, { data: cajas }, { data: fijos }] = await Promise.all([
+    const [{ data }, { data: cajas }, { data: fijos }, { data: comprasPersonales }] = await Promise.all([
       supabase.from('talonario_pagos_personales')
         .select('*').eq('mes', mes).eq('año', año).order('categoria').order('fecha'),
       supabase.from('caja_chica')
@@ -106,6 +106,10 @@ export default function PagosPersonales() {
         .gte('fecha', fechaDesde).lte('fecha', fechaHasta),
       supabase.from('pagos_fijos_personales')
         .select('*').order('orden').order('nombre'),
+      supabase.from('compras')
+        .select('id, fecha, proveedor_nombre, total, numero_factura, forma_pago')
+        .eq('es_personal', true).neq('estado', 'anulada')
+        .gte('fecha', fechaDesde).lte('fecha', fechaHasta),
     ]);
 
     setPagosFijos(fijos || []);
@@ -139,7 +143,19 @@ export default function PagosPersonales() {
       }));
     }
 
-    setFilas([...(data || []), ...gastosPersonales]);
+    const comprasPersonalesNorm = (comprasPersonales || []).map(c => ({
+      id:           `compra_${c.id}`,
+      fecha:        c.fecha,
+      beneficiario: c.proveedor_nombre,
+      concepto:     c.numero_factura ? `Factura ${c.numero_factura}` : 'Compra personal',
+      monto:        parseFloat(c.total || 0),
+      categoria:    'gastos_personal',
+      forma_pago:   c.forma_pago || '20',
+      comentario:   'Registrada en módulo Compras',
+      _readOnly:    true,
+    }));
+
+    setFilas([...(data || []), ...gastosPersonales, ...comprasPersonalesNorm]);
     setSeleccionados(new Set());
     setCargando(false);
   }
