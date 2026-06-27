@@ -442,7 +442,8 @@ export default function TabCajaChica({ mobile, currentUser }) {
     const tEntregas= entregas.reduce((s, e) => s + parseFloat(e.cantidad || 0), 0);
     const tComprasEf = comprasEfect.reduce((s, c) => s + (parseFloat(c.total) || 0), 0);
     const tPagosEf   = pagosEfect.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0);
-    const cajaEsperada    = parseFloat(inicial||0) + tEfect - tGastos - tComprasEf - tPagosEf - tEntregas;
+    const tAdelantosEf = adelantosNomina.reduce((s, a) => s + (parseFloat(a.valor) || 0), 0);
+    const cajaEsperada    = parseFloat(inicial||0) + tEfect - tGastos - tComprasEf - tPagosEf - tAdelantosEf - tEntregas;
     const cierreIngresado = cierre !== '' && cierre !== null && cierre !== undefined;
     const descuadre       = parseFloat(cierre||0) - cajaEsperada;
     const cuadra          = cierreIngresado && Math.abs(descuadre) < 0.005;
@@ -557,6 +558,7 @@ export default function TabCajaChica({ mobile, currentUser }) {
   const tCobros      = tTransf + tCheq + tEfect;
   const tComprasEf   = comprasEfect.reduce((s, c) => s + (parseFloat(c.total) || 0), 0);
   const tPagosEf     = pagosEfect.reduce((s, p) => s + (parseFloat(p.monto) || 0), 0);
+  const tAdelantosEf = adelantosNomina.reduce((s, a) => s + (parseFloat(a.valor) || 0), 0);
 
   const inp = { padding:'7px 10px', borderRadius:7, border:'1.5px solid #ddd', fontSize:'13px', outline:'none', boxSizing:'border-box' };
   const thS = { background:'#f0f2f5', padding:'6px 8px', fontWeight:'bold', fontSize:'10px', color:'#555', textAlign:'left', borderBottom:'2px solid #ddd' };
@@ -798,7 +800,7 @@ export default function TabCajaChica({ mobile, currentUser }) {
           <input type="number" value={cierre} onChange={e => setCierre(e.target.value)}
             placeholder="0.00" style={{ ...inp, width:'100%', borderColor:'#e74c3c' }} />
           <div style={{ marginTop:5, fontSize:'11px', color:'#2980b9', fontWeight:'bold' }}>
-            Esperado: ${(parseFloat(inicial||0) + tEfect - tGastos - tComprasEf - tPagosEf - tEntregas).toFixed(2)}
+            Esperado: ${(parseFloat(inicial||0) + tEfect - tGastos - tComprasEf - tPagosEf - tAdelantosEf - tEntregas).toFixed(2)}
           </div>
         </div>
       </div>
@@ -927,6 +929,36 @@ export default function TabCajaChica({ mobile, currentUser }) {
           + Agregar gasto
         </button>
       </div>
+
+      {/* ADELANTOS DE NÓMINA (efectivo) */}
+      {adelantosNomina.length > 0 && (
+        <div style={{ background:'white', borderRadius:12, padding:'16px', marginBottom:12, boxShadow:'0 2px 8px rgba(0,0,0,0.06)', border:'1.5px solid #8e44ad' }}>
+          <div style={{ fontWeight:'bold', fontSize:'13px', color:'#1a1a2e', marginBottom:10,
+            display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+            💰 ADELANTOS DE NÓMINA (efectivo)
+            <span style={{ fontSize:'13px', color:'#8e44ad', fontWeight:'bold' }}>
+              Total: ${tAdelantosEf.toFixed(2)}
+            </span>
+          </div>
+          <div style={{ fontSize:'10px', color:'#888', marginBottom:8, fontStyle:'italic' }}>
+            Solo lectura — registrado en Nómina
+          </div>
+          <table style={{ width:'100%', borderCollapse:'collapse' }}>
+            <thead><tr>
+              <th style={thS}>CONCEPTO</th>
+              <th style={{ ...thS, width:100 }}>VALOR ($)</th>
+            </tr></thead>
+            <tbody>
+              {adelantosNomina.map(a => (
+                <tr key={a.id}>
+                  <td style={tdS}>{a.proveedor || a.detalle}</td>
+                  <td style={tdS}>${parseFloat(a.valor||0).toFixed(2)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {/* COMPRAS / PAGOS EN EFECTIVO */}
       {(comprasEfect.length > 0 || pagosEfect.length > 0) && (
