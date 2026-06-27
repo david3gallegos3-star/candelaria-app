@@ -20,6 +20,7 @@ export function TablaCrud({
   onAgregar,
   onEditar,
   onEliminar,
+  filaStyle,
 }) {
   const total = filas.reduce((s, f) => s + parseFloat(f[campoMonto] || 0), 0);
 
@@ -63,7 +64,7 @@ export function TablaCrud({
             </thead>
             <tbody>
               {filas.map((f, i) => (
-                <tr key={f.id || i} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                <tr key={f.id || i} style={{ borderBottom: '1px solid #f0f0f0', ...(filaStyle ? filaStyle(f) : {}) }}>
                   {columnas.map(c => (
                     <td key={c.key} style={{ padding: '7px 10px', textAlign: c.align || 'left' }}>
                       {c.render ? c.render(f) : (f[c.key] || '—')}

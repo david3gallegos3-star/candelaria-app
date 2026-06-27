@@ -70,6 +70,7 @@ function SeccionPagos({ titulo, color, filas, busqueda, columnas, cargando,
           onAgregar={onAgregar}
           onEditar={onEditar}
           onEliminar={onEliminar}
+          filaStyle={f => f.pago_fijo_personal_id ? { background: '#fff8e1' } : {}}
         />
       </div>
     </div>
@@ -288,7 +289,7 @@ export default function PagosPersonales() {
   ];
 
   const totalGeneral = filas.reduce((s, f) => s + parseFloat(f.monto || 0), 0);
-  const fijosFiltrados = pagosFijos.filter(f => f.activo);
+  const fijosFiltrados = pagosFijos.filter(f => f.activo && !filas.some(x => x.pago_fijo_personal_id === f.id));
 
   return (
     <>
