@@ -87,7 +87,7 @@ async function verificarDuplicado(numeroFactura, esPersonal) {
 
   const [{ data: enCompras }, { data: enPersonales }] = await Promise.all([
     supabase.from('compras').select('id, fecha').eq('numero_factura', numeroFactura).maybeSingle(),
-    supabase.from('talonario_facturas_personales').select('id, fecha').eq('comentario', numeroFactura).maybeSingle(),
+    supabase.from('talonario_registro_facturas_dueno').select('id, fecha').eq('numero_factura', numeroFactura).maybeSingle(),
   ]);
 
   const encontrado = enCompras || enPersonales;
@@ -153,15 +153,14 @@ export default function SubirFacturas({ onClose, esPersonal = false }) {
       const año   = fecha ? parseInt(fecha.split('-')[0]) : new Date().getFullYear();
 
       if (esPersonal) {
-        await supabase.from('talonario_facturas_personales').insert({
+        await supabase.from('talonario_registro_facturas_dueno').insert({
           mes, año,
           fecha,
-          proveedor:     datos.proveedor_nombre || '',
-          descripcion:   datos.items?.[0]?.descripcion || 'Factura personal',
-          monto:         datos.total || 0,
-          tiene_factura: datos.tiene_factura !== false,
-          forma_pago:    '20',
-          comentario:    datos.numero_factura || null,
+          ruc:            datos.proveedor_ruc || null,
+          proveedor:      datos.proveedor_nombre || '',
+          numero_factura: datos.numero_factura || null,
+          valor:          datos.total || 0,
+          detalle:        datos.items?.[0]?.descripcion || null,
         });
       } else {
         await supabase.from('compras').insert({
