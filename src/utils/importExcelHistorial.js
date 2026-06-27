@@ -234,10 +234,11 @@ export function parseOtrosPagosPersonales(wb) {
 export function parseComprasPersonal(wb) {
   // colNombre y colFecha apuntan a la misma columna (la fecha es el único
   // valor disponible para validar que la fila no está vacía en esta hoja).
-  // Se usa `extra` (agregado en la Task 3) para capturar ruc/proveedor/numero
-  // directamente en la misma pasada, sin releer la hoja por separado.
+  // Se usa `extra` para capturar ruc/proveedor/numero directamente en la
+  // misma pasada, sin releer la hoja por separado. colDetalle captura el
+  // detalle de la factura (columna F), usado en talonario_registro_facturas_dueno.
   return parseTablaSimple(wb, 'COMPRAS -PERSONAL', {
-    filaInicio: 2, colNombre: 0, colFecha: 0, colValor: 4, formatoFecha: 'DMY',
+    filaInicio: 2, colNombre: 0, colFecha: 0, colValor: 4, colDetalle: 5, formatoFecha: 'DMY',
     extra: { 1: 'ruc', 2: 'proveedor', 3: 'numero' },
   }).map(({ nombre, ...resto }) => resto);
 }
@@ -404,6 +405,7 @@ async function revertirTodo(idsCreados) {
   for (const id of idsCreados.pagosBanco) await intentarBorrar('talonario_pagos_banco', 'id', id);
   for (const id of idsCreados.pagosPersonales) await intentarBorrar('talonario_pagos_personales', 'id', id);
   for (const id of idsCreados.compras) await intentarBorrar('compras', 'id', id);
+  for (const id of idsCreados.facturasDueno) await intentarBorrar('talonario_registro_facturas_dueno', 'id', id);
   for (const id of idsCreados.proveedores) await intentarBorrar('proveedores', 'id', id);
   for (const id of idsCreados.clientes) await intentarBorrar('clientes', 'id', id);
 
@@ -422,7 +424,7 @@ async function revertirTodo(idsCreados) {
 
 export async function ejecutarImport(datos) {
   const { mes, año } = datos;
-  const idsCreados = { cajaChica: [], cobros: [], pagosBanco: [], pagosPersonales: [], compras: [], proveedores: [], clientes: [], saldoBanco: null };
+  const idsCreados = { cajaChica: [], cobros: [], pagosBanco: [], pagosPersonales: [], compras: [], facturasDueno: [], proveedores: [], clientes: [], saldoBanco: null };
   const conteos = {};
 
   try {
@@ -492,7 +494,7 @@ export async function ejecutarImport(datos) {
     }
     conteos.pagosPersonales = personalesAInsertar.length;
 
-    // COMPRAS (empresa con/sin factura + personal) -> compras, en lotes.
+    // COMPRAS DE EMPRESA (con/sin factura) -> compras, en lotes.
     // estado:'pagada' aunque forma_pago sea 'credito' (combinacion que el flujo manual
     // de la app nunca genera): son compras historicas (6+ meses), David confirmo que ya
     // estan liquidadas y no deben aparecer como deuda pendiente en Cuentas por Pagar.
@@ -500,12 +502,10 @@ export async function ejecutarImport(datos) {
       ...datos.comprasEmpresa.conFactura.map(c => ({ ...c, tieneFactura: true, esPersonal: false })),
       ...datos.comprasEmpresa.sinFactura.map(c => ({ ...c, tieneFactura: false, esPersonal: false })),
     ];
-    const comprasPersonalAInsertar = datos.comprasPersonal.map(c => ({ ...c, tieneFactura: true, esPersonal: true }));
-    const todasLasCompras = [...comprasEmpresaAInsertar, ...comprasPersonalAInsertar];
 
     const resolverProveedor = await resolverProveedoresEnLote(
-      todasLasCompras.map(c => ({ nombre: c.proveedor, ruc: c.ruc })), idsCreados);
-    for (const grupo of chunk(todasLasCompras, 200)) {
+      comprasEmpresaAInsertar.map(c => ({ nombre: c.proveedor, ruc: c.ruc })), idsCreados);
+    for (const grupo of chunk(comprasEmpresaAInsertar, 200)) {
       const { data: comprasNuevas, error } = await supabase.from('compras').insert(grupo.map(c => ({
         fecha: c.fecha, proveedor_id: resolverProveedor({ nombre: c.proveedor, ruc: c.ruc }), proveedor_nombre: c.proveedor,
         numero_factura: c.numero || null, tiene_factura: c.tieneFactura, subtotal: c.valor, total: c.valor,
@@ -515,7 +515,18 @@ export async function ejecutarImport(datos) {
       for (const c of comprasNuevas) idsCreados.compras.push(c.id);
     }
     conteos.comprasEmpresa = comprasEmpresaAInsertar.length;
-    conteos.comprasPersonal = comprasPersonalAInsertar.length;
+
+    // FACTURAS A NOMBRE DEL DUEÑO (hoja COMPRAS -PERSONAL) -> talonario_registro_facturas_dueno.
+    // Puro registro -- no toca la tabla compras ni el Resumen.
+    for (const grupo of chunk(datos.comprasPersonal, 200)) {
+      const { data: facturasNuevas, error } = await supabase.from('talonario_registro_facturas_dueno').insert(grupo.map(c => ({
+        mes, año, fecha: c.fecha, ruc: c.ruc || null, proveedor: c.proveedor,
+        numero_factura: c.numero || null, valor: c.valor, detalle: c.detalle || null,
+      }))).select('id');
+      if (error) throw new Error(`Error insertando facturas del dueño: ${error.message}`);
+      for (const f of facturasNuevas) idsCreados.facturasDueno.push(f.id);
+    }
+    conteos.comprasPersonal = datos.comprasPersonal.length;
 
     // SALDO BANCO REAL -> config_contabilidad (mismo lugar donde el usuario lo
     // ingresa a mano en Movimientos Banco). Se guarda el valor previo (si habia)

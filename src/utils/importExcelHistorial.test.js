@@ -320,7 +320,7 @@ describe('parseComprasPersonal', () => {
       ['01/12/2025', '1792487242001', 'Hotel Otavalo', '003-003-000003252', '$66.00', 'detalle...'],
     ]);
     expect(parseComprasPersonal(wb)).toEqual([
-      { fecha: '2025-12-01', ruc: '1792487242001', proveedor: 'Hotel Otavalo', numero: '003-003-000003252', valor: 66.00 },
+      { fecha: '2025-12-01', ruc: '1792487242001', proveedor: 'Hotel Otavalo', numero: '003-003-000003252', valor: 66.00, detalle: 'detalle...' },
     ]);
   });
 
@@ -351,9 +351,9 @@ describe('parseComprasPersonal', () => {
       ['31/12/2025', '1790000000003', 'Proveedor Tres', '001-001-000000003', '$20.00', 'detalle...'],
     ]);
     expect(parseComprasPersonal(wb)).toEqual([
-      { fecha: '2025-12-01', ruc: '1792487242001', proveedor: 'Hotel Otavalo', numero: '003-003-000003252', valor: 66.00 },
-      { fecha: '2025-12-24', ruc: '1790000000001', proveedor: 'Proveedor Dos', numero: '001-001-000000002', valor: 10.00 },
-      { fecha: '2025-12-31', ruc: '1790000000003', proveedor: 'Proveedor Tres', numero: '001-001-000000003', valor: 20.00 },
+      { fecha: '2025-12-01', ruc: '1792487242001', proveedor: 'Hotel Otavalo', numero: '003-003-000003252', valor: 66.00, detalle: 'detalle...' },
+      { fecha: '2025-12-24', ruc: '1790000000001', proveedor: 'Proveedor Dos', numero: '001-001-000000002', valor: 10.00, detalle: 'detalle...' },
+      { fecha: '2025-12-31', ruc: '1790000000003', proveedor: 'Proveedor Tres', numero: '001-001-000000003', valor: 20.00, detalle: 'detalle...' },
     ]);
   });
 });
