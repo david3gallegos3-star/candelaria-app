@@ -89,7 +89,6 @@ export default function PagosPersonales() {
   const [pagosFijos,    setPagosFijos]    = useState([]);
   const [montosEdit,    setMontosEdit]    = useState({});
   const [registrando,   setRegistrando]   = useState({});
-  const [editandoFijo,  setEditandoFijo]  = useState(null);
   const [modalFijos,    setModalFijos]    = useState(false);
   const [formFijo,      setFormFijo]      = useState(null);
   const [guardandoFijo, setGuardandoFijo] = useState(false);
@@ -219,16 +218,6 @@ export default function PagosPersonales() {
     cargar();
   }
 
-  async function guardarEdicionFijo(fijo, filaExistente) {
-    const monto = parseFloat(montosEdit[fijo.id]) || 0;
-    if (!monto) return alert('Ingresa un monto mayor a $0');
-    setRegistrando(r => ({ ...r, [fijo.id]: true }));
-    await supabase.from('talonario_pagos_personales').update({ monto }).eq('id', filaExistente.id);
-    setRegistrando(r => ({ ...r, [fijo.id]: false }));
-    setEditandoFijo(null);
-    cargar();
-  }
-
   async function guardarFijo() {
     if (!formFijo.nombre) return alert('El nombre es requerido');
     setGuardandoFijo(true);
@@ -343,70 +332,32 @@ export default function PagosPersonales() {
               </tr>
             </thead>
             <tbody>
-              {fijosFiltrados.map(fijo => {
-                const filaReg = filas.find(f => f.pago_fijo_personal_id === fijo.id);
-                const estaEditando = editandoFijo === fijo.id;
-                return (
-                  <tr key={fijo.id} style={{ borderBottom: '1px solid #f0f0f0',
-                    background: filaReg ? '#f0fff4' : 'white' }}>
-                    <td style={{ padding: '8px 12px', fontWeight: 'bold', color: '#1a3a2a' }}>{fijo.nombre}</td>
-                    <td style={{ padding: '8px 12px', color: '#666', fontSize: 11 }}>
-                      {CATEGORIAS.find(c => c.value === fijo.categoria)?.label || fijo.categoria}
-                    </td>
-                    <td style={{ padding: '8px 12px', textAlign: 'right' }}>
-                      {filaReg && !estaEditando ? (
-                        <span style={{ fontWeight: 'bold', color: '#27ae60' }}>
-                          ${parseFloat(filaReg.monto||0).toFixed(2)}
-                        </span>
-                      ) : (
-                        <input
-                          type="number" min="0" step="0.01"
-                          value={montosEdit[fijo.id] ?? String(fijo.monto_default || '')}
-                          onChange={e => setMontosEdit(m => ({ ...m, [fijo.id]: e.target.value }))}
-                          style={{ width: 90, padding: '4px 8px', borderRadius: 6,
-                            border: '1px solid #ddd', fontSize: 12, textAlign: 'right' }}
-                        />
-                      )}
-                    </td>
-                    <td style={{ padding: '8px 12px' }}>
-                      {filaReg && !estaEditando ? (
-                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                          <span style={{ color: '#27ae60', fontWeight: 'bold' }}>✅ Registrado</span>
-                          {esAdminContador && (
-                            <button onClick={() => {
-                              setEditandoFijo(fijo.id);
-                              setMontosEdit(m => ({ ...m, [fijo.id]: String(filaReg.monto || '') }));
-                            }} style={{ background: 'none', border: 'none', cursor: 'pointer',
-                              fontSize: 11, color: '#2980b9' }}>✏️ Editar</button>
-                          )}
-                        </div>
-                      ) : estaEditando ? (
-                        <div style={{ display: 'flex', gap: 6 }}>
-                          <button onClick={() => guardarEdicionFijo(fijo, filaReg)}
-                            disabled={registrando[fijo.id]}
-                            style={{ background: '#27ae60', color: 'white', border: 'none',
-                              borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontSize: 11 }}>
-                            {registrando[fijo.id] ? '...' : '✓ Guardar'}
-                          </button>
-                          <button onClick={() => setEditandoFijo(null)}
-                            style={{ background: '#f0f2f5', color: '#555', border: 'none',
-                              borderRadius: 6, padding: '4px 8px', cursor: 'pointer', fontSize: 11 }}>
-                            Cancelar
-                          </button>
-                        </div>
-                      ) : (
-                        <button onClick={() => registrarPagoFijo(fijo)}
-                          disabled={registrando[fijo.id]}
-                          style={{ background: '#2c3e50', color: 'white', border: 'none',
-                            borderRadius: 6, padding: '5px 12px', cursor: 'pointer',
-                            fontSize: 11, fontWeight: 'bold' }}>
-                          {registrando[fijo.id] ? '...' : '▶ Registrar'}
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
+              {fijosFiltrados.map(fijo => (
+                <tr key={fijo.id} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                  <td style={{ padding: '8px 12px', fontWeight: 'bold', color: '#1a3a2a' }}>{fijo.nombre}</td>
+                  <td style={{ padding: '8px 12px', color: '#666', fontSize: 11 }}>
+                    {CATEGORIAS.find(c => c.value === fijo.categoria)?.label || fijo.categoria}
+                  </td>
+                  <td style={{ padding: '8px 12px', textAlign: 'right' }}>
+                    <input
+                      type="number" min="0" step="0.01"
+                      value={montosEdit[fijo.id] ?? String(fijo.monto_default || '')}
+                      onChange={e => setMontosEdit(m => ({ ...m, [fijo.id]: e.target.value }))}
+                      style={{ width: 90, padding: '4px 8px', borderRadius: 6,
+                        border: '1px solid #ddd', fontSize: 12, textAlign: 'right' }}
+                    />
+                  </td>
+                  <td style={{ padding: '8px 12px' }}>
+                    <button onClick={() => registrarPagoFijo(fijo)}
+                      disabled={registrando[fijo.id]}
+                      style={{ background: '#2c3e50', color: 'white', border: 'none',
+                        borderRadius: 6, padding: '5px 12px', cursor: 'pointer',
+                        fontSize: 11, fontWeight: 'bold' }}>
+                      {registrando[fijo.id] ? '...' : '▶ Registrar'}
+                    </button>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
