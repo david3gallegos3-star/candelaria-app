@@ -281,7 +281,7 @@ export default function TabCajaChica({ mobile, currentUser }) {
     }
 
     // Gastos
-    await supabase.from('caja_gastos').delete().eq('caja_id', id);
+    await supabase.from('caja_gastos').delete().eq('caja_id', id).is('origen_nomina_movimiento_id', null);
     const gastosOk = gastos.filter(g => g.proveedor || g.detalle || g.valor);
     if (gastosOk.length) {
       await supabase.from('caja_gastos').insert(gastosOk.map((g, i) => ({
