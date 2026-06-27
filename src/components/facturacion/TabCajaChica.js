@@ -401,9 +401,9 @@ export default function TabCajaChica({ mobile, currentUser }) {
     });
     rows.push(['TOTAL DEPOSITADO', n(tEntregas)]);
     rows.push([]);
-    const cajaEsperada = parseFloat(inicial||0) + tEfect - tGastos - tComprasEf - tPagosEf - tEntregas;
+    const cajaEsperada = parseFloat(inicial||0) + tEfect - tGastos - tComprasEf - tPagosEf - tAdelantosEf - tEntregas;
     rows.push(['ESPERADO EN CAJA', n(cajaEsperada)]);
-    rows.push(['  (inicial + efectivo (cobros + ventas contado) - gastos - compras/pagos ef. - depósito)','']);
+    rows.push(['  (inicial + efectivo (cobros + ventas contado) - gastos - compras/pagos ef. - adelantos nomina - depósito)','']);
     const cierreNum = parseFloat(cierre||0);
     const descuadre = cierreNum - cajaEsperada;
     const cuadra = cierre !== '' && Math.abs(descuadre) < 0.005;
@@ -1126,7 +1126,7 @@ export default function TabCajaChica({ mobile, currentUser }) {
 
       {/* Resumen + Botones */}
       {(() => {
-        const cajaEsperada    = parseFloat(inicial||0) + tEfect - tGastos - tComprasEf - tPagosEf - tEntregas;
+        const cajaEsperada    = parseFloat(inicial||0) + tEfect - tGastos - tComprasEf - tPagosEf - tAdelantosEf - tEntregas;
         const cierreIngresado = cierre !== '' && cierre !== null;
         const descuadre       = parseFloat(cierre||0) - cajaEsperada;
         const cuadra          = cierreIngresado && Math.abs(descuadre) < 0.005;
