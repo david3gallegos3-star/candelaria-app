@@ -206,7 +206,7 @@ export default function TabNomina({ mobile }) {
   const [diasMap,      setDiasMap]      = useState({});
 
   // Form movimiento
-  const formVacio = { tipo: 'anticipo', descripcion: '', valor: '', horas: '', valor_hora: '', fecha: now.toISOString().slice(0, 10) };
+  const formVacio = { tipo: 'anticipo', descripcion: '', valor: '', horas: '', valor_hora: '', fecha: now.toISOString().slice(0, 10), forma_pago: 'efectivo' };
   const [formMov,     setFormMov]     = useState(formVacio);
   const [guardandoMov,setGuardandoMov]= useState(false);
 
@@ -245,10 +245,42 @@ export default function TabNomina({ mobile }) {
     .reduce((s, m) => s + parseFloat(m.valor || 0), 0);
 
   // ── Agregar movimiento ───────────────────────────────────
+  async function registrarAdelantoEfectivo(mov, empleado) {
+    let { data: caja } = await supabase
+      .from('caja_chica').select('id').eq('fecha', mov.fecha).maybeSingle();
+    if (!caja) {
+      const { data: nuevaCaja } = await supabase
+        .from('caja_chica')
+        .insert({ fecha: mov.fecha, responsable: '', caja_inicial: 0, caja_cierre: 0 })
+        .select().single();
+      caja = nuevaCaja;
+    }
+    await supabase.from('caja_gastos').insert({
+      caja_id:    caja.id,
+      proveedor:  `Adelanto nómina — ${empleado.nombre}`,
+      detalle:    mov.descripcion || 'Adelanto de sueldo',
+      valor:      mov.valor,
+      es_personal: false,
+      origen_nomina_movimiento_id: mov.id,
+    });
+  }
+
+  async function registrarAdelantoBanco(mov, empleado) {
+    await supabase.from('talonario_pagos_banco').insert({
+      mes:          mes + 1,
+      año:          anio,
+      fecha:        mov.fecha,
+      concepto:     'Adelanto nómina',
+      beneficiario: empleado.nombre,
+      monto:        mov.valor,
+      origen_nomina_movimiento_id: mov.id,
+    });
+  }
+
   async function agregarMovimiento() {
     if (!formMov.valor || parseFloat(formMov.valor) <= 0) return;
     setGuardandoMov(true);
-    await supabase.from('nomina_movimientos').insert({
+    const { data: movInsertado } = await supabase.from('nomina_movimientos').insert({
       empleado_id:  modalMov.id,
       periodo:      periodoStr,
       tipo:         formMov.tipo,
@@ -256,8 +288,18 @@ export default function TabNomina({ mobile }) {
       valor:        parseFloat(formMov.valor),
       horas:        formMov.horas      ? parseFloat(formMov.horas)      : null,
       valor_hora:   formMov.valor_hora ? parseFloat(formMov.valor_hora) : null,
-      fecha:        formMov.fecha
-    });
+      fecha:        formMov.fecha,
+      forma_pago:   formMov.tipo === 'anticipo' ? formMov.forma_pago : null,
+    }).select().single();
+
+    if (formMov.tipo === 'anticipo' && movInsertado) {
+      if (formMov.forma_pago === 'banco') {
+        await registrarAdelantoBanco(movInsertado, modalMov);
+      } else {
+        await registrarAdelantoEfectivo(movInsertado, modalMov);
+      }
+    }
+
     setFormMov(formVacio);
     await cargar();
     setGuardandoMov(false);
@@ -629,6 +671,17 @@ export default function TabNomina({ mobile }) {
                     {TIPOS_MOV.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                   </select>
                 </div>
+                {formMov.tipo === 'anticipo' && (
+                  <div>
+                    <label style={lbl(tipoMov.color)}>Forma de pago</label>
+                    <select value={formMov.forma_pago || 'efectivo'}
+                      onChange={e => setFormMov(f => ({ ...f, forma_pago: e.target.value }))}
+                      style={field(tipoMov.color)}>
+                      <option value="efectivo">💵 Efectivo</option>
+                      <option value="banco">🏦 Banco</option>
+                    </select>
+                  </div>
+                )}
                 <div>
                   <label style={lbl()}>Fecha</label>
                   <input type="date" value={formMov.fecha}
