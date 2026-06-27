@@ -132,7 +132,7 @@ export default function PagosPersonales() {
         beneficiario: g.proveedor || null,
         concepto:     g.detalle || 'Gasto personal efectivo',
         monto:        parseFloat(g.valor || 0),
-        categoria:    'gastos_personal',
+        categoria:    'otros',
         forma_pago:   '01',
         comentario:   'Registrado en Caja Chica',
         _readOnly:    true,
@@ -416,7 +416,7 @@ export default function PagosPersonales() {
           key={sec.titulo}
           titulo={sec.titulo}
           color={sec.color}
-          filas={filas.filter(f => sec.cats.includes(f.categoria) && !f.pago_fijo_personal_id)}
+          filas={filas.filter(f => sec.cats.includes(f.categoria))}
           busqueda={busqueda}
           columnas={columnas}
           cargando={cargando}
