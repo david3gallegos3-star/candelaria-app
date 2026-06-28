@@ -105,9 +105,9 @@ export default function PagosDelMes() {
   }, [modalFijos]);
 
   async function guardar() {
-    if (form.origen_pago_personal_id) {
+    if (form.origen_pago_personal_id || form.origen_servicio_basico_id) {
       setForm(null);
-      return alert('Este pago viene de un Servicio Básico registrado en Pagos Personales. Edítalo desde ahí.');
+      return alert('Este pago viene de un Servicio Básico registrado en Servicios Básicos. Edítalo desde ahí.');
     }
     if (!form.concepto || !form.monto) return alert('Concepto y monto son requeridos');
     setGuardando(true);
@@ -126,8 +126,8 @@ export default function PagosDelMes() {
 
   async function eliminar(id) {
     const fila = filas.find(f => f.id === id);
-    if (fila?.origen_pago_personal_id) {
-      return alert('Este pago viene de un Servicio Básico registrado en Pagos Personales. Bórralo desde ahí.');
+    if (fila?.origen_pago_personal_id || fila?.origen_servicio_basico_id) {
+      return alert('Este pago viene de un Servicio Básico registrado en Servicios Básicos. Bórralo desde ahí.');
     }
     await supabase.from('talonario_pagos_banco').delete().eq('id', id);
     cargar();
