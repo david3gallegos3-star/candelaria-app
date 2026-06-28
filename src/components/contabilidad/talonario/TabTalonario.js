@@ -9,6 +9,7 @@ import OtrosIngresos         from './ingresos/OtrosIngresos';
 import GastosEfectivo        from './egresos/GastosEfectivo';
 import PagosDelMes           from './egresos/PagosDelMes';
 import PagosPersonales       from './egresos/PagosPersonales';
+import ServiciosBasicos      from './egresos/ServiciosBasicos';
 import ComprasTalonario      from './compras/ComprasTalonario';
 import FacturasPersonales    from './compras/FacturasPersonales';
 import ExcelExport           from './shared/ExcelExport';
@@ -25,9 +26,10 @@ const GRUPOS = [
     { id: 'otros_ingresos',        label: 'Otros Ingresos' },
   ]},
   { id: 'egresos',  label: '💸 EGRESOS',   subs: [
-    { id: 'gastos_efectivo', label: 'Gastos Efectivo' },
-    { id: 'pagos_mes',       label: 'Pagos del Mes' },
-    { id: 'pagos_personales',label: 'Pagos Personales' },
+    { id: 'gastos_efectivo',    label: 'Gastos Efectivo' },
+    { id: 'pagos_mes',          label: 'Pagos del Mes' },
+    { id: 'pagos_personales',   label: 'Pagos Personales' },
+    { id: 'servicios_basicos',  label: 'Servicios Básicos' },
   ]},
   { id: 'compras',  label: '🛒 COMPRAS',   subs: [
     { id: 'compras_tab',        label: 'Compras' },
@@ -143,6 +145,7 @@ export default function TabTalonario({ onVolver, onVolverMenu }) {
         {seccion === 'gastos_efectivo'      && <GastosEfectivo />}
         {seccion === 'pagos_mes'            && <PagosDelMes />}
         {seccion === 'pagos_personales'     && <PagosPersonales />}
+        {seccion === 'servicios_basicos'    && <ServiciosBasicos />}
         {seccion === 'compras_tab'          && <ComprasTalonario />}
         {seccion === 'facturas_personales'  && <FacturasPersonales />}
       </div>
