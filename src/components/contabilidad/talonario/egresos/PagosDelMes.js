@@ -364,7 +364,7 @@ export default function PagosDelMes() {
 
       <TablaCrud
         titulo="🏧 Pagos del Mes"
-        filas={filas.filter(f => !f.pago_fijo_id)}
+        filas={filas.filter(f => !f.pago_fijo_id && !f.origen_servicio_basico_id && !f.origen_pago_personal_id)}
         columnas={columnas}
         campoMonto="monto"
         cargando={cargando}

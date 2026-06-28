@@ -175,6 +175,7 @@ export default function ServiciosBasicos() {
     if (!window.confirm('¿Eliminar este registro del mes?')) return;
     const esEfectivo = fijo.forma_pago === '01';
     const tabla = esEfectivo ? 'caja_gastos' : 'talonario_pagos_banco';
+    await supabase.from('libro_diario').delete().eq('origen', tabla).eq('origen_id', registro.id);
     await supabase.from(tabla).delete().eq('id', registro.id);
     cargar();
   }
