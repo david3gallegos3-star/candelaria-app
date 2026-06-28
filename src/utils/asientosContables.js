@@ -240,24 +240,25 @@ export async function generarAsientoDevolucionProveedor(devolucion) {
 
 const MESES_CORTOS = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
 
-export async function generarAsientoPagoFijo({ id, monto, codigo, cuenta_debe_key, mes, año }) {
+export async function generarAsientoPagoFijo({ id, monto, codigo, cuenta_debe_key, mes, año, formaPago, origen }) {
   const { cuentas, error: errCfg } = await getCuentasModulos();
   if (errCfg) return { data: null, error: errCfg };
 
   const cuentaDebe = cuentas[cuenta_debe_key];
   if (!cuentaDebe) return { data: null, error: `Cuenta ${cuenta_debe_key} no configurada` };
 
+  const cuentaHaber = formaPago === '01' ? cuentas.caja_chica_id : cuentas.banco_id;
   const descripcion = `${codigo} — ${MESES_CORTOS[mes - 1]} ${año}`;
 
   return insertarAsiento({
     fecha:       new Date().toISOString().split('T')[0],
     descripcion,
     tipo:        'tributario',
-    origen:      'talonario_pagos_banco',
+    origen:      origen || 'talonario_pagos_banco',
     origen_id:   id,
     lineas: [
-      { cuenta_id: cuentaDebe,       descripcion, debe: monto, haber: 0,     orden: 0 },
-      { cuenta_id: cuentas.banco_id, descripcion, debe: 0,     haber: monto, orden: 1 },
+      { cuenta_id: cuentaDebe,   descripcion, debe: monto, haber: 0,     orden: 0 },
+      { cuenta_id: cuentaHaber, descripcion, debe: 0,     haber: monto, orden: 1 },
     ],
   });
 }
