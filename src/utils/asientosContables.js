@@ -247,6 +247,8 @@ export async function generarAsientoPagoFijo({ id, monto, codigo, cuenta_debe_ke
   const cuentaDebe = cuentas[cuenta_debe_key];
   if (!cuentaDebe) return { data: null, error: `Cuenta ${cuenta_debe_key} no configurada` };
 
+  // formaPago aqui es codigo SRI ('01' = Efectivo), no el texto plano que usan
+  // otras funciones de este archivo (cuentaCashOrBank, generarAsientoNomina, etc.)
   const cuentaHaber = formaPago === '01' ? cuentas.caja_chica_id : cuentas.banco_id;
   const descripcion = `${codigo} — ${MESES_CORTOS[mes - 1]} ${año}`;
 
@@ -257,7 +259,7 @@ export async function generarAsientoPagoFijo({ id, monto, codigo, cuenta_debe_ke
     origen:      origen || 'talonario_pagos_banco',
     origen_id:   id,
     lineas: [
-      { cuenta_id: cuentaDebe,   descripcion, debe: monto, haber: 0,     orden: 0 },
+      { cuenta_id: cuentaDebe,  descripcion, debe: monto, haber: 0,     orden: 0 },
       { cuenta_id: cuentaHaber, descripcion, debe: 0,     haber: monto, orden: 1 },
     ],
   });
