@@ -44,9 +44,13 @@ Componente nuevo `ServiciosBasicos.js`, agregado al menú EGRESOS (junto a Gasto
 - **Asiento contable:** llama a `generarAsientoPagoFijo()` (extendida, ver sección 4) pasándole la forma de pago.
 - **MOD/CIF:** llama a `syncModCifRow(fijo, monto)` (función ya existente, sin cambios).
 
-### Nota sobre `caja_gastos`/`talonario_pagos_banco`: campo `numero_factura`
+### Nota sobre `numero_factura`
 
-`caja_gastos` no tiene hoy un campo `numero_factura` — se agrega (text, nullable) como parte de la migración de esta tarea. `talonario_pagos_banco` tampoco lo tiene — se agrega igual.
+`caja_gastos` ya tiene un campo `numero_factura` (usado por gastos normales) — se reutiliza tal cual. `talonario_pagos_banco` no lo tiene — se agrega (text, nullable) en la migración de esta tarea.
+
+### Nota sobre la cuenta DEBE del asiento contable
+
+A diferencia de `pagos_fijos` (empresa), que permite elegir la cuenta DEBE por catálogo (`cuenta_debe_key`), Servicios Básicos siempre usa `gasto_caja_id` ("Gastos Generales") — no se agrega selector. Confirmado con David: los servicios básicos (luz, agua, internet) siempre son gasto general.
 
 ## 4. Extender `generarAsientoPagoFijo()` para soportar efectivo
 
@@ -80,7 +84,7 @@ Fuera de alcance — el Excel histórico no tiene una hoja específica de "Servi
 
 ## Resumen de cambios por archivo
 
-- **Nueva migración SQL:** tabla `pagos_fijos_servicios_basicos`; columnas `origen_servicio_basico_id` en `caja_gastos` y `talonario_pagos_banco`; columna `numero_factura` en `caja_gastos` y `talonario_pagos_banco`.
+- **Nueva migración SQL:** tabla `pagos_fijos_servicios_basicos`; columnas `origen_servicio_basico_id` en `caja_gastos` y `talonario_pagos_banco`; columna `numero_factura` en `talonario_pagos_banco` (`caja_gastos` ya la tiene).
 - **Nuevo componente:** `src/components/contabilidad/talonario/egresos/ServiciosBasicos.js`.
 - **`TabTalonario.js`:** nueva entrada de menú "Servicios Básicos" dentro de EGRESOS.
 - **`asientosContables.js`:** `generarAsientoPagoFijo()` acepta `formaPago` opcional, elige cuenta HABER (caja chica vs banco).
