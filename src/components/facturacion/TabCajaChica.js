@@ -74,7 +74,7 @@ export default function TabCajaChica({ mobile, currentUser }) {
     if (!id) { setEstadoAutosave('error'); return; }
 
     await supabase.from('caja_gastos').delete().eq('caja_id', id)
-      .is('origen_nomina_movimiento_id', null).is('origen_pago_personal_id', null);
+      .is('origen_nomina_movimiento_id', null).is('origen_servicio_basico_id', null);
     const gastosOk = gastos.filter(g => g.proveedor || g.detalle || g.valor);
     if (gastosOk.length) {
       await supabase.from('caja_gastos').insert(gastosOk.map((g, i) => ({
@@ -98,7 +98,7 @@ export default function TabCajaChica({ mobile, currentUser }) {
 
   async function cargarServiciosBasicos() {
     const { data } = await supabase
-      .from('pagos_fijos_personales').select('nombre, concepto, empresa').eq('es_servicio_basico', true);
+      .from('pagos_fijos_servicios_basicos').select('nombre, empresa');
     setServiciosBasicosCatalogo(data || []);
   }
 
@@ -130,7 +130,7 @@ export default function TabCajaChica({ mobile, currentUser }) {
 
       const { data: g } = await supabase
         .from('caja_gastos').select('*').eq('caja_id', caja.id)
-        .is('origen_nomina_movimiento_id', null).is('origen_pago_personal_id', null).order('orden');
+        .is('origen_nomina_movimiento_id', null).is('origen_servicio_basico_id', null).order('orden');
       setGastos(g?.length
         ? g.map(x => ({ ...x, expandido: !!(x.ruc || x.numero_factura) }))
         : [fGasto()]);
@@ -140,7 +140,7 @@ export default function TabCajaChica({ mobile, currentUser }) {
       setAdelantosNomina(an || []);
 
       const { data: sb } = await supabase
-        .from('caja_gastos').select('*').eq('caja_id', caja.id).not('origen_pago_personal_id', 'is', null).order('orden');
+        .from('caja_gastos').select('*').eq('caja_id', caja.id).not('origen_servicio_basico_id', 'is', null).order('orden');
       setServiciosBasicosCaja(sb || []);
 
       const { data: e } = await supabase
@@ -298,7 +298,7 @@ export default function TabCajaChica({ mobile, currentUser }) {
 
     // Gastos
     await supabase.from('caja_gastos').delete().eq('caja_id', id)
-      .is('origen_nomina_movimiento_id', null).is('origen_pago_personal_id', null);
+      .is('origen_nomina_movimiento_id', null).is('origen_servicio_basico_id', null);
     const gastosOk = gastos.filter(g => g.proveedor || g.detalle || g.valor);
     if (gastosOk.length) {
       await supabase.from('caja_gastos').insert(gastosOk.map((g, i) => ({
@@ -571,11 +571,10 @@ export default function TabCajaChica({ mobile, currentUser }) {
     const textoLower = texto.toLowerCase();
     const match = serviciosBasicosCatalogo.find(sb => {
       if (sb.empresa) return textoLower.includes(sb.empresa.toLowerCase());
-      return (sb.nombre && textoLower.includes(sb.nombre.toLowerCase())) ||
-             (sb.concepto && textoLower.includes(sb.concepto.toLowerCase()));
+      return sb.nombre && textoLower.includes(sb.nombre.toLowerCase());
     });
     if (match) {
-      alert(`"${texto}" parece ser un pago de Servicio Básico (${match.nombre}). Regístralo en Pagos Personales en vez de aquí, para evitar contarlo dos veces.`);
+      alert(`"${texto}" parece ser un pago de Servicio Básico (${match.nombre}). Regístralo en Servicios Básicos en vez de aquí, para evitar contarlo dos veces.`);
     }
   }
 
@@ -1004,7 +1003,7 @@ export default function TabCajaChica({ mobile, currentUser }) {
             </span>
           </div>
           <div style={{ fontSize:'10px', color:'#888', marginBottom:8, fontStyle:'italic' }}>
-            Solo lectura — registrado en Pagos Personales
+            Solo lectura — registrado en Servicios Básicos
           </div>
           <table style={{ width:'100%', borderCollapse:'collapse' }}>
             <thead><tr>
