@@ -1,5 +1,6 @@
 import * as queue from './offlineQueue';
 import * as cache from './readCache';
+import * as connectionStatus from './connectionStatus';
 
 // Estado de conexión sincronizado (no React — módulo puro)
 let _online = true;
@@ -80,7 +81,14 @@ function trackCall(prop, args, state) {
 
 async function execute(realBuilder, table, state) {
   if (_online) {
-    const result = await realBuilder;
+    let result;
+    try {
+      result = await realBuilder;
+    } catch (err) {
+      connectionStatus.reportError();
+      throw err;
+    }
+    connectionStatus.reportSuccess();
     // Cachear resultado de lecturas
     if (state.type === 'read' && result?.data) {
       const key = cache.makeKey(table, state.filters);
