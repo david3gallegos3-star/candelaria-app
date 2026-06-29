@@ -120,7 +120,10 @@ export default function TabNuevaVenta({ mobile, currentUser, userRol }) {
     } else {
       setClienteEsEmpleado(false);
       setEmpleadoSeleccionado(null);
-      if (formaPago === 'credito_nomina') setFormaPago('efectivo');
+      const esConsumidorFinal = valor === 'consumidor_final';
+      if (formaPago === 'credito_nomina' || (esConsumidorFinal && (formaPago === 'credito' || formaPago === 'credito_nomina'))) {
+        setFormaPago('efectivo');
+      }
       setClienteId(valor);
     }
   }
@@ -933,9 +936,11 @@ export default function TabNuevaVenta({ mobile, currentUser, userRol }) {
           💳 Forma de pago
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
-          {FORMAS_PAGO.filter(f =>
-            f.value !== 'credito_nomina' || clienteEsEmpleado
-          ).map(f => (
+          {FORMAS_PAGO.filter(f => {
+            if (f.value === 'credito_nomina') return clienteEsEmpleado;
+            if (f.value === 'credito') return clienteId !== 'consumidor_final';
+            return true;
+          }).map(f => (
             <button key={f.value}
               onClick={() => setFormaPago(f.value)}
               style={{

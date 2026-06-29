@@ -35,6 +35,14 @@ const ESTADO_INFO = {
 
 const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 
+function colorEstadoCuenta(estado, dias) {
+  if (estado === 'cobrada')  return '#27ae60';
+  if (estado === 'anulada')  return '#95a5a6';
+  if (dias !== null && dias < 0)  return '#e74c3c';
+  if (dias !== null && dias <= 5) return '#f39c12';
+  return '#2980b9';
+}
+
 export default function TabCobrar({ mobile, currentUser }) {
   const [cuentas,          setCuentas]          = useState([]);
   const [cargando,         setCargando]         = useState(true);
@@ -58,12 +66,13 @@ export default function TabCobrar({ mobile, currentUser }) {
     setCargando(true);
     const { data } = await supabase
       .from('cuentas_cobrar')
-      .select('*, facturas(numero, cliente_id, forma_pago), cobros(fecha, monto, forma_pago), clientes(nombre)')
+      .select('*, facturas(numero, cliente_id, forma_pago), cobros(fecha, monto, forma_pago), clientes(nombre, ruc)')
       .is('deleted_at', null)
       .order('fecha_vencimiento', { ascending: true });
     const datosConCliente = (data || []).map(c => ({
       ...c,
       cliente_nombre: c.clientes?.nombre || c.cliente_nombre || '—',
+      cliente_ruc:    c.clientes?.ruc    || c.cliente_ruc    || null,
     }));
     setCuentas(datosConCliente);
     setCargando(false);
@@ -268,42 +277,64 @@ export default function TabCobrar({ mobile, currentUser }) {
             const pendiente = parseFloat(c.monto_total) - parseFloat(c.monto_cobrado);
             const hayPendiente = c.estado === 'pendiente' || c.estado === 'parcial';
 
+            const color = colorEstadoCuenta(c.estado, dias);
+            const inicial = (c.cliente_nombre || '?')[0].toUpperCase();
+
             return (
               <div key={c.id} style={{
                 background: 'white', borderRadius: 10,
-                border: `1.5px solid ${badge && dias < 0 ? '#e74c3c' : '#e0e0e0'}`,
+                borderTop: '1.5px solid #e0e0e0',
+                borderRight: '1.5px solid #e0e0e0',
+                borderBottom: '1.5px solid #e0e0e0',
+                borderLeft: `5px solid ${color}`,
                 padding: '14px 16px',
                 boxShadow: '0 1px 6px rgba(0,0,0,0.06)',
               }}>
                 {/* Fila superior */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 8 }}>
-                  <div style={{ flex: 1 }}>
-                    {/* Número factura + badges */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>
-                      <span style={{ fontWeight: 'bold', fontSize: 14, color: '#1a2a4a' }}>
-                        {c.facturas?.numero || '—'}
-                      </span>
-                      <span style={{ fontSize: 10, background: est.bg, color: est.color,
-                        padding: '2px 8px', borderRadius: 6, fontWeight: 'bold' }}>
-                        {est.label}
-                      </span>
-                      {badge && (
-                        <span style={{ fontSize: 10, background: badge.bg, color: badge.color,
-                          padding: '2px 8px', borderRadius: 6, fontWeight: 'bold' }}>
-                          {badge.label}
+                  <div style={{ flex: 1, display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                    {/* Avatar */}
+                    <div style={{
+                      width: 42, height: 42, borderRadius: '50%', flexShrink: 0,
+                      background: color, color: 'white',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: 18, fontWeight: 'bold',
+                    }}>{inicial}</div>
+
+                    <div style={{ flex: 1 }}>
+                      {/* Nombre cliente */}
+                      <div style={{ fontWeight: 'bold', fontSize: 15, color: '#1a2a4a', marginBottom: 2 }}>
+                        {c.cliente_nombre || '—'}
+                      </div>
+                      {/* RUC */}
+                      {c.cliente_ruc && (
+                        <div style={{ fontSize: 11, color: '#888', marginBottom: 4 }}>
+                          RUC: {c.cliente_ruc}
+                        </div>
+                      )}
+                      {/* Número factura + badges */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>
+                        <span style={{ fontWeight: 'bold', fontSize: 12, color: '#555' }}>
+                          {c.facturas?.numero || '—'}
                         </span>
-                      )}
-                    </div>
-                    {/* Cliente */}
-                    <div style={{ fontSize: 13, color: '#444', marginBottom: 2 }}>
-                      👤 {c.cliente_nombre || '—'}
-                    </div>
-                    {/* Vencimiento */}
-                    <div style={{ fontSize: 11, color: '#888' }}>
-                      Vence: {c.fecha_vencimiento || '—'}
-                      {dias !== null && !badge && (
-                        <span style={{ color: dias <= 5 ? '#f39c12' : '#aaa' }}> · {dias}d restantes</span>
-                      )}
+                        <span style={{ fontSize: 10, background: est.bg, color: est.color,
+                          padding: '2px 8px', borderRadius: 6, fontWeight: 'bold' }}>
+                          {est.label}
+                        </span>
+                        {badge && (
+                          <span style={{ fontSize: 10, background: badge.bg, color: badge.color,
+                            padding: '2px 8px', borderRadius: 6, fontWeight: 'bold' }}>
+                            {badge.label}
+                          </span>
+                        )}
+                      </div>
+                      {/* Vencimiento */}
+                      <div style={{ fontSize: 11, color: '#888' }}>
+                        Vence: {c.fecha_vencimiento || '—'}
+                        {dias !== null && !badge && (
+                          <span style={{ color: dias <= 5 ? '#f39c12' : '#aaa' }}> · {dias}d restantes</span>
+                        )}
+                      </div>
                     </div>
                   </div>
 
