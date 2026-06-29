@@ -251,6 +251,8 @@ export default function TabNuevaVenta({ mobile, currentUser, userRol }) {
       // 2. Guardar factura en Supabase
       const { data: factura, error: errF } = await supabase.from('facturas').insert({
         cliente_id:      clienteObj.id,
+        cliente_nombre:  clienteObj.nombre,
+        cliente_ruc:     clienteObj.ruc,
         numero,
         autorizacion_sri: data.autorizacion,
         datil_id:         data.datil_id,
@@ -361,6 +363,8 @@ export default function TabNuevaVenta({ mobile, currentUser, userRol }) {
 
     const facturaPayload = {
       cliente_id:       clienteObj.id,
+      cliente_nombre:   clienteObj.nombre,
+      cliente_ruc:      clienteObj.ruc,
       numero,
       autorizacion_sri: null, datil_id: null, pdf_url: null, xml_url: null,
       estado:           'borrador',
@@ -511,6 +515,8 @@ export default function TabNuevaVenta({ mobile, currentUser, userRol }) {
 
     const facturaPayload = {
       cliente_id:       clienteObj.id,
+      cliente_nombre:   clienteObj.nombre,
+      cliente_ruc:      clienteObj.ruc,
       numero,
       autorizacion_sri: null, datil_id: null, pdf_url: null, xml_url: null,
       estado:           'autorizada',

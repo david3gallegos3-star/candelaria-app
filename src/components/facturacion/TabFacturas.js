@@ -72,9 +72,14 @@ export default function TabFacturas({ mobile, userRol }) {
   async function cargarFacturas() {
     setCargando(true);
     const { data } = await supabase.from('facturas')
-      .select('*')
+      .select('*, clientes(nombre)')
       .is('deleted_at', null)
       .order('created_at', { ascending: false });
+
+    const datosConCliente = (data || []).map(f => ({
+      ...f,
+      cliente_nombre: f.cliente_nombre || f.clientes?.nombre || 'CONSUMIDOR FINAL',
+    }));
 
     const locales = getLocalBorradores().map(b => ({
       ...b.facturaPayload,
@@ -86,10 +91,10 @@ export default function TabFacturas({ mobile, userRol }) {
       _detalle:       b.detallePayload,
     }));
 
-    const numerosEnSupabase = new Set((data || []).map(f => f.numero));
+    const numerosEnSupabase = new Set(datosConCliente.map(f => f.numero));
     const localesFiltrados = locales.filter(l => !numerosEnSupabase.has(l.numero));
 
-    setFacturas([...localesFiltrados, ...(data || [])]);
+    setFacturas([...localesFiltrados, ...datosConCliente]);
     setCargando(false);
   }
 

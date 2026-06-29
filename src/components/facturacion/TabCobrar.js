@@ -58,10 +58,14 @@ export default function TabCobrar({ mobile, currentUser }) {
     setCargando(true);
     const { data } = await supabase
       .from('cuentas_cobrar')
-      .select('*, facturas(numero, cliente_id, forma_pago), cobros(fecha, monto, forma_pago)')
+      .select('*, facturas(numero, cliente_id, forma_pago), cobros(fecha, monto, forma_pago), clientes(nombre)')
       .is('deleted_at', null)
       .order('fecha_vencimiento', { ascending: true });
-    setCuentas(data || []);
+    const datosConCliente = (data || []).map(c => ({
+      ...c,
+      cliente_nombre: c.clientes?.nombre || c.cliente_nombre || '—',
+    }));
+    setCuentas(datosConCliente);
     setCargando(false);
   }
 
