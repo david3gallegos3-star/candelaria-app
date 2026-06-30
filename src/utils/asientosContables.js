@@ -70,8 +70,10 @@ export async function generarAsientoFactura(factura, tipo) {
     lineas = [
       { cuenta_id: cuentaDebe, descripcion: `${labelCobro} — ${factura.numero}`, debe: factura.total, haber: 0, orden: 0 },
       { cuenta_id: cuentas.ventas_gravadas_id, descripcion: `Ventas — ${factura.numero} — ${factura.cliente_nombre}`, debe: 0, haber: factura.subtotal, orden: 1 },
-      { cuenta_id: cuentas.iva_ventas_id, descripcion: `IVA Ventas — ${factura.numero}`, debe: 0, haber: factura.iva, orden: 2 },
     ];
+    if (factura.iva > 0) {
+      lineas.push({ cuenta_id: cuentas.iva_ventas_id, descripcion: `IVA Ventas — ${factura.numero}`, debe: 0, haber: factura.iva, orden: 2 });
+    }
   }
 
   return insertarAsiento({
@@ -517,15 +519,17 @@ export async function revertirAsientoFactura(factura) {
   const fecha = new Date().toISOString().split('T')[0];
   const cuentaHaber = cuentaCashOrBank(factura.forma_pago, cuentas);
   const labelHaber = factura.forma_pago === 'efectivo' ? 'Caja Chica'
-    : factura.forma_pago === 'credito' ? 'CxC Clientes'
+    : factura.forma_pago === 'credito' || factura.forma_pago === 'credito_nomina' ? 'CxC Clientes'
     : 'Banco';
   const descripcionCab = `Anulación Factura - ${factura.numero} - ${factura.cliente_nombre}`;
 
   const lineas = [
     { cuenta_id: cuentas.ventas_gravadas_id, descripcion: `Anulación Ventas — ${factura.numero} — ${factura.cliente_nombre}`, debe: factura.subtotal, haber: 0,             orden: 0 },
-    { cuenta_id: cuentas.iva_ventas_id,      descripcion: `Anulación IVA Ventas — ${factura.numero}`,                          debe: factura.iva,      haber: 0,             orden: 1 },
-    { cuenta_id: cuentaHaber,                descripcion: `Anulación ${labelHaber} — ${factura.numero}`,                      debe: 0,                haber: factura.total, orden: 2 },
   ];
+  if (factura.iva > 0) {
+    lineas.push({ cuenta_id: cuentas.iva_ventas_id, descripcion: `Anulación IVA Ventas — ${factura.numero}`, debe: factura.iva, haber: 0, orden: 1 });
+  }
+  lineas.push({ cuenta_id: cuentaHaber, descripcion: `Anulación ${labelHaber} — ${factura.numero}`, debe: 0, haber: factura.total, orden: lineas.length });
 
   return insertarAsiento({
     fecha,

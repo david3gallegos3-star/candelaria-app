@@ -169,7 +169,7 @@ export default function TabNuevaVenta({ mobile, currentUser, userRol }) {
 
   // ── Totales ───────────────────────────────────────────────
   const subtotal       = items.reduce((s, i) => s + (parseFloat(i.subtotal) || 0), 0);
-  const iva            = parseFloat((subtotal * 0.15).toFixed(2));
+  const iva            = 0; // Exento de IVA (artesano calificado)
   const total          = parseFloat((subtotal + iva).toFixed(2));
   const articulosCount = items.filter(i => i.producto_nombre && parseFloat(i.cantidad) > 0).length;
 
@@ -265,7 +265,7 @@ export default function TabNuevaVenta({ mobile, currentUser, userRol }) {
         subtotal,
         iva,
         total,
-        porcentaje_iva:   15,
+        porcentaje_iva:   0,
         forma_pago:       formaPago,
         dias_credito:     formaPago === 'credito' ? diasCredito : 0,
         observaciones,
@@ -371,7 +371,7 @@ export default function TabNuevaVenta({ mobile, currentUser, userRol }) {
       numero,
       autorizacion_sri: null, datil_id: null, pdf_url: null, xml_url: null,
       estado:           'borrador',
-      subtotal, iva, total, porcentaje_iva: 15,
+      subtotal, iva, total, porcentaje_iva: 0,
       forma_pago:       formaPago,
       dias_credito:     formaPago === 'credito' ? diasCredito : 0,
       observaciones,
@@ -524,7 +524,7 @@ export default function TabNuevaVenta({ mobile, currentUser, userRol }) {
       autorizacion_sri: null, datil_id: null, pdf_url: null, xml_url: null,
       estado:           'autorizada',
       tipo:             'nota_venta',
-      subtotal, iva, total, porcentaje_iva: 15,
+      subtotal, iva, total, porcentaje_iva: 0,
       forma_pago:       formaPago,
       dias_credito:     formaPago === 'credito' ? diasCredito : 0,
       observaciones,
@@ -1017,7 +1017,7 @@ export default function TabNuevaVenta({ mobile, currentUser, userRol }) {
             </div>
           </div>
           <div style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: '9px', color: '#aaa', fontWeight: 700 }}>IVA 15%</div>
+            <div style={{ fontSize: '9px', color: '#aaa', fontWeight: 700 }}>EXENTO IVA</div>
             <div style={{ fontSize: mobile ? '13px' : '15px', fontWeight: 'bold', color: '#f9e79f' }}>
               ${iva.toFixed(2)}
             </div>

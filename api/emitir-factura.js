@@ -28,9 +28,9 @@ module.exports = async function handler(req, res) {
   if (!items || items.length === 0)
     return res.status(400).json({ error: 'Sin productos en la factura' });
 
-  // Totales
+  // Totales — empresa exenta de IVA (artesano calificado)
   const subtotal    = parseFloat(items.reduce((s, i) => s + parseFloat(i.subtotal || 0), 0).toFixed(2));
-  const iva         = parseFloat((subtotal * 0.15).toFixed(2));
+  const iva         = 0;
   const total       = parseFloat((subtotal + iva).toFixed(2));
 
   // Fecha y secuencial
@@ -67,7 +67,7 @@ module.exports = async function handler(req, res) {
       total_sin_impuestos: subtotal,
       impuestos: [{
         codigo:            '2',
-        codigo_porcentaje: '4',   // 15% IVA (desde mayo 2024)
+        codigo_porcentaje: '7',   // Exento de IVA (artesano calificado)
         base_imponible:    subtotal,
         valor:             iva
       }],
@@ -86,8 +86,7 @@ module.exports = async function handler(req, res) {
     },
 
     items: items.map((item, idx) => {
-      const sub   = parseFloat(parseFloat(item.subtotal || 0).toFixed(2));
-      const ivaIt = parseFloat((sub * 0.15).toFixed(2));
+      const sub = parseFloat(parseFloat(item.subtotal || 0).toFixed(2));
       return {
         cantidad:                   parseFloat(item.cantidad),
         codigo_principal:           String(idx + 1).padStart(3, '0'),
@@ -96,10 +95,10 @@ module.exports = async function handler(req, res) {
         precio_total_sin_impuestos: sub,
         impuestos: [{
           codigo:            '2',
-          codigo_porcentaje: '4',
-          tarifa:            15,
+          codigo_porcentaje: '7',
+          tarifa:            0,
           base_imponible:    sub,
-          valor:             ivaIt
+          valor:             0
         }],
         descuento: 0
       };

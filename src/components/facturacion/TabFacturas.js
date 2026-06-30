@@ -870,7 +870,7 @@ export default function TabFacturas({ mobile, userRol }) {
                     </table>
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 16, marginTop: 8, fontSize: '13px' }}>
                       <span style={{ color: '#555' }}>Subtotal: <b>${parseFloat(f.subtotal).toFixed(2)}</b></span>
-                      <span style={{ color: '#555' }}>IVA 15%: <b>${parseFloat(f.iva).toFixed(2)}</b></span>
+                      <span style={{ color: '#555' }}>IVA {parseFloat(f.porcentaje_iva || 0)}%: <b>${parseFloat(f.iva).toFixed(2)}</b></span>
                       <span style={{ color: '#1a5276', fontWeight: 'bold', fontSize: '14px' }}>
                         TOTAL: ${parseFloat(f.total).toFixed(2)}
                       </span>

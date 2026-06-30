@@ -88,7 +88,7 @@ function cuerpoTicket(f, detalle) {
   out += filasProductos(detalle);
   out += linea + '\n';
   out += filaTotal('Subtotal:', f.subtotal) + '\n';
-  out += filaTotal('IVA 15%:', f.iva) + '\n';
+  out += filaTotal(`IVA ${parseFloat(f.porcentaje_iva || 0)}%:`, f.iva) + '\n';
   out += filaTotal('TOTAL:', f.total) + '\n';
   if (f.autorizacion_sri) {
     out += linea + '\n';
