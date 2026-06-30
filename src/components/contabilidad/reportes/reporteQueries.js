@@ -37,7 +37,8 @@ export async function getDetallesConFechaPorAsientos(asientoIds) {
     .from('libro_diario_detalle')
     .select(`id, cuenta_id, debe, haber, descripcion, orden, asiento:libro_diario(fecha, descripcion, origen)`)
     .in('asiento_id', asientoIds)
-    .order('asiento_id');
+    .order('asiento_id')
+    .order('orden');
   if (error) throw error;
   return data || [];
 }

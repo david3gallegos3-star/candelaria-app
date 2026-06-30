@@ -37,7 +37,8 @@ export default function LibroDiario({ onVolver, onVolverMenu, userRol, currentUs
       const { data: detallesData } = await supabase
         .from('libro_diario_detalle')
         .select('*')
-        .in('asiento_id', asientoIds);
+        .in('asiento_id', asientoIds)
+        .order('orden');
 
       const cuentaIds = [...new Set((detallesData || []).map(d => d.cuenta_id))];
       let cuentasMap = {};
