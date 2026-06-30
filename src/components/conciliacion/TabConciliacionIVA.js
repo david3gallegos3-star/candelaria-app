@@ -1,6 +1,6 @@
 // ============================================
 // TabConciliacionIVA.js
-// Cruza IVA en ventas facturadas vs IVA en compras
+// Informe de IVA: ventas (negocio exento) y costo de IVA en compras
 // ============================================
 import React, { useState, useCallback } from 'react';
 import { supabase } from '../../supabase';
@@ -34,27 +34,19 @@ export default function TabConciliacionIVA({ mobile }) {
         .gte('created_at', desde + 'T00:00:00').lte('created_at', hasta + 'T23:59:59'),
     ]);
 
-    // IVA en ventas (neto de notas de credito electronicas)
+    // IVA en ventas (neto de notas de credito electronicas) — negocio exento, normalmente $0
     const ventasSubtotal = (facturas || []).reduce((s, f) => s + (parseFloat(f.subtotal) || 0), 0)
       - (notasCredito || []).reduce((s, nc) => s + (parseFloat(nc.subtotal) || 0), 0);
     const ivaVentas      = (facturas || []).reduce((s, f) => s + (parseFloat(f.iva)      || 0), 0)
       - (notasCredito || []).reduce((s, nc) => s + (parseFloat(nc.iva)      || 0), 0);
-    const ivaVentasCalc  = parseFloat((ventasSubtotal * 0.15).toFixed(2));
 
-    // IVA en compras
+    // IVA en compras — costo (no es credito tributario recuperable: el negocio esta exento de IVA en ventas)
     const comprasSubtotal = (compras || []).reduce((s, c) => s + (parseFloat(c.subtotal) || 0), 0);
     const ivaCompras      = (compras || []).reduce((s, c) => s + (parseFloat(c.iva)      || 0), 0);
 
-    // IVA a pagar al SRI = IVA cobrado en ventas − IVA pagado en compras
-    const ivaPagar = ivaVentas - ivaCompras;
-
-    // Diferencia entre IVA registrado y calculado al 15%
-    const diffVentas  = Math.abs(ivaVentas  - ivaVentasCalc);
-
     setResultado({
-      ventasSubtotal, ivaVentas, ivaVentasCalc, diffVentas,
+      ventasSubtotal, ivaVentas,
       comprasSubtotal, ivaCompras,
-      ivaPagar,
       nFacturas: (facturas || []).length,
       nCompras:  (compras  || []).length,
     });
@@ -96,25 +88,6 @@ export default function TabConciliacionIVA({ mobile }) {
       {/* Resultado */}
       {resultado && (
         <>
-          {/* IVA a pagar */}
-          <div style={{
-            ...card,
-            background: resultado.ivaPagar > 0
-              ? 'linear-gradient(135deg,#e74c3c,#c0392b)'
-              : 'linear-gradient(135deg,#27ae60,#1e8449)',
-            color: 'white', textAlign: 'center', padding: '20px'
-          }}>
-            <div style={{ fontSize: '12px', opacity: 0.85, marginBottom: 6 }}>
-              IVA A PAGAR AL SRI (período)
-            </div>
-            <div style={{ fontSize: mobile ? '28px' : '36px', fontWeight: 'bold' }}>
-              ${resultado.ivaPagar.toFixed(2)}
-            </div>
-            <div style={{ fontSize: '12px', opacity: 0.75, marginTop: 4 }}>
-              IVA ventas ${resultado.ivaVentas.toFixed(2)} − IVA compras ${resultado.ivaCompras.toFixed(2)}
-            </div>
-          </div>
-
           {/* Detalle ventas */}
           <div style={card}>
             <div style={{ fontWeight: 'bold', fontSize: '13px', color: '#1a2a3a', marginBottom: '12px' }}>
@@ -122,36 +95,31 @@ export default function TabConciliacionIVA({ mobile }) {
             </div>
             {[
               { label: 'Base imponible (subtotal)',  valor: resultado.ventasSubtotal, color: '#333' },
-              { label: 'IVA 15% calculado',          valor: resultado.ivaVentasCalc,  color: '#555' },
               { label: 'IVA registrado en facturas', valor: resultado.ivaVentas,      color: '#2980b9', bold: true },
-              { label: 'Diferencia (registro vs cálculo)', valor: resultado.diffVentas,
-                color: resultado.diffVentas > 0.01 ? '#e74c3c' : '#27ae60', bold: true },
             ].map((r, i) => (
               <div key={i} style={{
                 display: 'flex', justifyContent: 'space-between',
                 padding: '6px 0', fontSize: r.bold ? '14px' : '13px',
                 fontWeight: r.bold ? 'bold' : 'normal',
                 color: r.color,
-                borderBottom: i < 3 ? '1px solid #f0f0f0' : 'none'
+                borderBottom: i < 1 ? '1px solid #f0f0f0' : 'none'
               }}>
                 <span>{r.label}</span>
                 <span>${r.valor.toFixed(2)}</span>
               </div>
             ))}
-            {resultado.diffVentas > 0.01 && (
-              <div style={{
-                marginTop: 10, background: '#fde8e8', borderRadius: 8,
-                padding: '8px 12px', fontSize: '12px', color: '#c0392b'
-              }}>
-                ⚠️ Diferencia detectada entre IVA calculado y registrado. Revisar facturas del período.
-              </div>
-            )}
+            <div style={{
+              marginTop: 10, background: '#eaf4fb', borderRadius: 8,
+              padding: '8px 12px', fontSize: '12px', color: '#1a5276'
+            }}>
+              ℹ️ Negocio exento de IVA — el IVA en ventas debe ser $0.00. Si aparece un valor aquí, revisa esas facturas.
+            </div>
           </div>
 
           {/* Detalle compras */}
           <div style={card}>
             <div style={{ fontWeight: 'bold', fontSize: '13px', color: '#1a2a3a', marginBottom: '12px' }}>
-              📦 IVA en compras ({resultado.nCompras} compras)
+              📦 IVA en compras ({resultado.nCompras} compras) — costo, no crédito tributario
             </div>
             {[
               { label: 'Base imponible (subtotal)',  valor: resultado.comprasSubtotal, color: '#333' },
@@ -168,6 +136,12 @@ export default function TabConciliacionIVA({ mobile }) {
                 <span>${r.valor.toFixed(2)}</span>
               </div>
             ))}
+            <div style={{
+              marginTop: 10, background: '#fff8e1', borderRadius: 8,
+              padding: '8px 12px', fontSize: '12px', color: '#7d5f00'
+            }}>
+              ⚠️ Al ser un negocio exento de IVA en ventas, este IVA no se puede usar como crédito tributario — es parte del costo de la compra.
+            </div>
           </div>
         </>
       )}
