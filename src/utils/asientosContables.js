@@ -20,8 +20,8 @@ function validarPartidaDoble(lineas) {
 }
 
 function cuentaCashOrBank(formaPago, cuentas) {
-  if (!formaPago || formaPago === 'efectivo') return cuentas.caja_chica_id;
-  if (formaPago === 'credito')               return cuentas.cxc_id;
+  if (!formaPago || formaPago === 'efectivo')          return cuentas.caja_chica_id;
+  if (formaPago === 'credito' || formaPago === 'credito_nomina') return cuentas.cxc_id;
   return cuentas.banco_id; // transferencia, cheque, deposito
 }
 
@@ -56,7 +56,7 @@ export async function generarAsientoFactura(factura, tipo) {
   const cuentaDebe = cuentaCashOrBank(factura.metodo_pago, cuentas);
   const descripcionCab = `Venta - ${factura.numero} - ${factura.cliente_nombre}`;
   const labelCobro = factura.metodo_pago === 'efectivo' ? 'Caja Chica'
-    : factura.metodo_pago === 'credito' ? 'CxC Clientes'
+    : factura.metodo_pago === 'credito' || factura.metodo_pago === 'credito_nomina' ? 'CxC Clientes'
     : 'Banco';
 
   let lineas;
