@@ -336,7 +336,7 @@ export default function TabNuevaVenta({ mobile, currentUser, userRol }) {
         vendedor_nombre: userRol?.nombre || '',
         forma_pago:      formaPago,
       };
-      imprimirTicket(facturaParaTicket, itemsValidos, { copiaExtra: true });
+      imprimirTicket(facturaParaTicket, itemsValidos, { copiaExtra: false });
       setFacturaEmitida({ ...data, numero, cliente: clienteObj.nombre, total });
       generarAsientoFactura({
         id: factura.id, numero, subtotal, iva, total,
@@ -497,7 +497,7 @@ export default function TabNuevaVenta({ mobile, currentUser, userRol }) {
       forma_pago: formaPago, subtotal, iva, total,
       created_at: new Date().toISOString(),
     };
-    imprimirTicket(facturaParaTicketB, items.filter(i => i.producto_nombre && parseFloat(i.cantidad) > 0), { copiaExtra: true });
+    imprimirTicket(facturaParaTicketB, items.filter(i => i.producto_nombre && parseFloat(i.cantidad) > 0), { copiaExtra: false });
     setFacturaEmitida({ numero, cliente: clienteObj.nombre, total, autorizacion: null, esBorrador: true });
     setEmitiendo(false);
   }
@@ -570,7 +570,7 @@ export default function TabNuevaVenta({ mobile, currentUser, userRol }) {
           forma_pago: formaPago, subtotal, iva, total,
           created_at: new Date().toISOString(),
         };
-        imprimirTicket(facturaParaTicketNVOff, itemsValidos, { copiaExtra: true });
+        imprimirTicket(facturaParaTicketNVOff, itemsValidos, { copiaExtra: false });
         setFacturaEmitida({ numero, cliente: clienteObj.nombre, total, esBorrador: true, tipo: 'nota_venta' });
       } catch (e) {
         setError('Error al guardar nota de venta offline: ' + e.message);
@@ -634,7 +634,7 @@ export default function TabNuevaVenta({ mobile, currentUser, userRol }) {
         forma_pago: formaPago, subtotal, iva, total,
         created_at: new Date().toISOString(),
       };
-      imprimirTicket(facturaParaTicketNV, itemsValidos, { copiaExtra: true });
+      imprimirTicket(facturaParaTicketNV, itemsValidos, { copiaExtra: false });
       setFacturaEmitida({ numero, cliente: clienteObj.nombre, total, tipo: 'nota_venta' });
 
     } catch (e) {
