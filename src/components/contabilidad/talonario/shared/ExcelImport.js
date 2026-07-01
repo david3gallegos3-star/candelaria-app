@@ -98,10 +98,8 @@ export default function ExcelImport({ onClose, onImportado }) {
                   ⚠️ {resultado.conteos.pagosOmitidos.length} fila(s) en PAGOS sin nombre — no se importaron:
                 </div>
                 {resultado.conteos.pagosOmitidos.map((o, i) => (
-                  <div key={i}>
-                    Fila {o.fila}{o.nombre ? ` — ${o.nombre}` : ' (sin nombre)'}
-                    {o.monto > 0 ? ` — $${o.monto.toFixed(2)} (col C era: "${o.raw}")` : ` — monto $0 (col C: "${o.raw}")`}
-                    {o.fecha ? ` — ${o.fecha}` : ''}
+                  <div key={i} style={{ marginTop: 3 }}>
+                    • Fila {o.fila}: <strong>SIN NOMBRE</strong> — ${o.monto.toFixed(2)}{o.tipo ? ` — ${o.tipo}` : ''}{o.fecha ? ` — ${o.fecha}` : ''}
                   </div>
                 ))}
                 <div style={{ marginTop: 6, fontSize: 12, color: '#6d4c00' }}>

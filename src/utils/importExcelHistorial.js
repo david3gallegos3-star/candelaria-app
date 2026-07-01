@@ -274,22 +274,18 @@ function parsePagosDelMes(wb, nombreHoja) {
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
     if (String(row[1] || '').toUpperCase().trim() === 'TOTAL') break;
+    const nombre = String(row[0] || '').trim();
     const valor = limpiarMonto(row[2]);
-    if (!filaValida(row, 0)) {
-      if (valor > 0) omitidas.push({ fila: i + 1, monto: valor, fecha: String(row[1] || '') });
+    if (!nombre) {
+      if (valor > 0) {
+        omitidas.push({ fila: i + 1, nombre: '', monto: valor, fecha: String(row[1] || ''), tipo: String(row[3] || '') });
+      }
       continue;
     }
-    if (valor <= 0) {
-      // Capturar si hay montos en otras columnas (ayuda a detectar desalineacion de columnas)
-      const v3 = limpiarMonto(row[3]);
-      const v4 = limpiarMonto(row[4]);
-      const montoAlternativo = v3 > 0 ? v3 : v4 > 0 ? v4 : 0;
-      omitidas.push({ fila: i + 1, nombre: String(row[0]), monto: montoAlternativo, fecha: String(row[1] || ''), raw: String(row[2] || '') });
-      continue;
-    }
+    if (valor <= 0) continue;
     const fecha = parsearFecha(row[1], 'MDY');
     if (!fecha) throw new Error(`Hoja ${nombreHoja}, fila ${i + 1}: la fecha "${row[1]}" no es valida.`);
-    resultado.push({ nombre: row[0], fecha, valor });
+    resultado.push({ nombre, fecha, valor });
   }
   return { pagos: resultado, omitidas };
 }
