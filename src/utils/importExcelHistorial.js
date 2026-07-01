@@ -279,7 +279,14 @@ function parsePagosDelMes(wb, nombreHoja) {
       if (valor > 0) omitidas.push({ fila: i + 1, monto: valor, fecha: String(row[1] || '') });
       continue;
     }
-    if (valor <= 0) continue;
+    if (valor <= 0) {
+      // Capturar si hay montos en otras columnas (ayuda a detectar desalineacion de columnas)
+      const v3 = limpiarMonto(row[3]);
+      const v4 = limpiarMonto(row[4]);
+      const montoAlternativo = v3 > 0 ? v3 : v4 > 0 ? v4 : 0;
+      omitidas.push({ fila: i + 1, nombre: String(row[0]), monto: montoAlternativo, fecha: String(row[1] || ''), raw: String(row[2] || '') });
+      continue;
+    }
     const fecha = parsearFecha(row[1], 'MDY');
     if (!fecha) throw new Error(`Hoja ${nombreHoja}, fila ${i + 1}: la fecha "${row[1]}" no es valida.`);
     resultado.push({ nombre: row[0], fecha, valor });
