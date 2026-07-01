@@ -270,17 +270,21 @@ function parsePagosDelMes(wb, nombreHoja) {
   // El marcador TOTAL real de esta hoja esta en la columna de fecha (indice 1).
   const rows = XLSX.utils.sheet_to_json(wb.Sheets[nombreHoja], { header: 1, raw: false, defval: '' });
   const resultado = [];
+  const omitidas = [];
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
     if (String(row[1] || '').toUpperCase().trim() === 'TOTAL') break;
-    if (!filaValida(row, 0)) continue;
     const valor = limpiarMonto(row[2]);
+    if (!filaValida(row, 0)) {
+      if (valor > 0) omitidas.push({ fila: i + 1, monto: valor, fecha: String(row[1] || '') });
+      continue;
+    }
     if (valor <= 0) continue;
     const fecha = parsearFecha(row[1], 'MDY');
     if (!fecha) throw new Error(`Hoja ${nombreHoja}, fila ${i + 1}: la fecha "${row[1]}" no es valida.`);
     resultado.push({ nombre: row[0], fecha, valor });
   }
-  return resultado;
+  return { pagos: resultado, omitidas };
 }
 
 export function parseTodasLasHojas(wb) {
@@ -294,13 +298,15 @@ export function parseTodasLasHojas(wb) {
     throw new Error(`Faltan estas hojas en el archivo: ${faltantes.join(', ')}`);
   }
 
+  const { pagos: pagosDelMes, omitidas: pagosOmitidos } = parsePagosDelMes(wb, hojaPagos);
+
   return {
     mes, año,
     gastos: parseTablaSimple(wb, 'GASTOS', { filaInicio: 2, colNombre: 0, colFecha: 1, colDetalle: 2, colValor: 3, formatoFecha: 'MDY' }),
     cobrosEfectivo: parseCobrosEfectivo(wb),
     cobrosCheques: parseCobrosCheques(wb),
     cobrosTransferencia: parseCobrosTransferencia(wb),
-    pagosDelMes: parsePagosDelMes(wb, hojaPagos),
+    pagosDelMes, pagosOmitidos,
     saldoBancoReal: parseSaldoBancoReal(wb, hojaPagos),
     otrosPagosPersonales: parseOtrosPagosPersonales(wb),
     comprasEmpresa: parseCompras(wb),
@@ -476,6 +482,7 @@ export async function ejecutarImport(datos) {
       for (const p of pagosNuevos) idsCreados.pagosBanco.push(p.id);
     }
     conteos.pagosDelMes = datos.pagosDelMes.length;
+    conteos.pagosOmitidos = datos.pagosOmitidos || [];
 
     // OTROS PAGOS PERSONALES -> talonario_pagos_personales, en lotes
     const personalesAInsertar = [

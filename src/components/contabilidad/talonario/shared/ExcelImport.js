@@ -91,6 +91,20 @@ export default function ExcelImport({ onClose, onImportado }) {
                 <div>Saldo banco real: ${resultado.conteos.saldoBancoReal.toFixed(2)}</div>
               )}
             </div>
+            {resultado.conteos.pagosOmitidos?.length > 0 && (
+              <div style={{ textAlign: 'left', background: '#fff3cd', border: '1px solid #ffc107',
+                borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 13, color: '#856404' }}>
+                <div style={{ fontWeight: 'bold', marginBottom: 6 }}>
+                  ⚠️ {resultado.conteos.pagosOmitidos.length} fila(s) en PAGOS sin nombre — no se importaron:
+                </div>
+                {resultado.conteos.pagosOmitidos.map((o, i) => (
+                  <div key={i}>Fila {o.fila}: ${o.monto.toFixed(2)} (fecha: {o.fecha})</div>
+                ))}
+                <div style={{ marginTop: 6, fontSize: 12, color: '#6d4c00' }}>
+                  Agrega el nombre del beneficiario en la columna A del Excel y vuelve a importar, o ingresa esos pagos manualmente.
+                </div>
+              </div>
+            )}
             <button onClick={onClose} style={{ padding: '10px 24px', borderRadius: 6, border: 'none',
               background: '#27ae60', color: 'white', cursor: 'pointer', fontSize: 14 }}>
               Cerrar y revisar el mes
