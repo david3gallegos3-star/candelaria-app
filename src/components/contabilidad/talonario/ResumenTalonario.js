@@ -283,14 +283,8 @@ export default function ResumenTalonario() {
   // "Pagos personales" (lado MES) ya NO incluye Prestamos/Tarjetas -- esos van en sus
   // propias lineas separadas abajo, igual que en el resumen propio de la contadora.
   const totalPagosPersonalesTotal = pagosGastPers + gastosPersonalesCaja + totalComprasPersonales;
-  // "Pagos del mes" GENERICOS (sin pago_fijo_id) NO van en el lado MES: casi siempre
-  // liquidan una compra que ya se contó como "Proveedores con/sin factura" cuando se
-  // compró (devengado). Sumarlos aquí duplicaba el gasto. Solo cuentan en el lado
-  // CONSOLIDADO (totalEgrCons), que es base caja real. Los Pagos FIJOS (sistema,
-  // servicios básicos, contadora, etc., con pago_fijo_id) SÍ son gasto nuevo genuino
-  // del mes -- igual que el resumen propio de la contadora.
   const totalEgrMes  = totalGastosMes + comprasCon + comprasSin + totalSueldos + totalIess
-    + totalPagosFijos + pagosPrestamos + pagosTarjetas + totalPagosPersonalesTotal + totalConsumoPersonal;
+    + totalPagosB + pagosPrestamos + pagosTarjetas + totalPagosPersonalesTotal + totalConsumoPersonal;
   const utilidadBruta= totalIngMes - totalEgrMes;
 
   const totalIngCons = cobroEfect + cobroCheq + cobroTransf + totalOtrosI;
@@ -368,23 +362,11 @@ export default function ResumenTalonario() {
     monto:  parseFloat(n.iess_patronal || 0),
   }));
 
-  const regPagosFijos = [
-    ...raw.pagosB.filter(p => p.pago_fijo_id).map(p => ({
-      nombre: p.concepto || p.beneficiario || 'Pago fijo',
-      fecha:  p.fecha,
-      monto:  parseFloat(p.monto || 0),
-    })),
-    ...raw.pagosB.filter(p => p.origen_servicio_basico_id).map(p => ({
-      nombre: p.concepto || p.beneficiario || 'Servicio básico',
-      fecha:  p.fecha,
-      monto:  parseFloat(p.monto || 0),
-    })),
-    ...raw.gastos.filter(g => g.origen_servicio_basico_id).map(g => ({
-      nombre: g.detalle || g.proveedor || 'Servicio básico efectivo',
-      fecha:  raw.cajaFechasMap[g.caja_id] || '',
-      monto:  parseFloat(g.valor || 0),
-    })),
-  ];
+  const regPagosDelMes = raw.pagosB.map(p => ({
+    nombre: p.concepto || p.beneficiario || 'Pago banco',
+    fecha:  p.fecha,
+    monto:  parseFloat(p.monto || 0),
+  }));
 
   const regPrestamos = raw.pagosP
     .filter(p => p.categoria === 'prestamos')
@@ -499,7 +481,7 @@ export default function ResumenTalonario() {
           <FilaDetalle label="(-) Proveedores sin factura" valor={comprasSin} color="#e74c3c" registros={regComprasSin} />
           <FilaDetalle label="(-) Sueldos" valor={totalSueldos} color="#e74c3c" registros={regSueldos} />
           <FilaDetalle label="(-) IESS patronal" valor={totalIess} color="#e74c3c" registros={regIess} />
-          <FilaDetalle label="(-) Pagos Fijos (sistema, servicios, contadora, etc.)" valor={totalPagosFijos} color="#e74c3c" registros={regPagosFijos} />
+          <FilaDetalle label="(-) Pagos del Mes" valor={totalPagosB} color="#e74c3c" registros={regPagosDelMes} />
           <FilaDetalle label="(-) Préstamos" valor={pagosPrestamos} color="#e74c3c" registros={regPrestamos} />
           <FilaDetalle label="(-) Tarjetas" valor={pagosTarjetas} color="#e74c3c" registros={regTarjetas} />
           <FilaDetalle label="(-) Pagos personales" valor={totalPagosPersonalesTotal} color="#e74c3c" registros={regPagosPersonales} />
