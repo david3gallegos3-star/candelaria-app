@@ -183,6 +183,7 @@ export default function ResumenTalonario() {
       .filter(p => p.origen_servicio_basico_id)
       .reduce((s,p) => s + parseFloat(p.monto||0), 0);
     const totalServicioBasico = totalServicioBasicoBanco + totalServicioBasicoEfectivo;
+    const totalPagosBNoSB = totalPagosB - totalServicioBasicoBanco;
     const totalPagosFijos = (pagosB || []).filter(p => p.pago_fijo_id).reduce((s,p) => s + parseFloat(p.monto||0), 0) + totalServicioBasico;
     const totalPagosP    = suma(pagosP   || [], 'monto');
     const pagosPrestTarj = (pagosP || []).filter(p => ['prestamos','tarjetas'].includes(p.categoria)).reduce((s,p) => s + parseFloat(p.monto||0), 0);
@@ -244,7 +245,7 @@ export default function ResumenTalonario() {
       pagosPrestamos, pagosTarjetas,
       gastosPersonalesCaja, totalComprasPersonales, comprasPersonalesPagadas,
       totalConsumoPersonal, totalCreditosEmpleados, totalSueldosPagados,
-      comprasBancoTotal,
+      comprasBancoTotal, totalServicioBasico, totalPagosBNoSB,
       cxcPendiente, cxpPendiente, saldoCalculado, pendienteInicial, movsBanco,
       raw: {
         facturas:          facturas          || [],
@@ -272,7 +273,7 @@ export default function ResumenTalonario() {
     pagosPrestamos, pagosTarjetas,
     gastosPersonalesCaja, totalComprasPersonales, comprasPersonalesPagadas,
     totalConsumoPersonal, totalCreditosEmpleados, totalSueldosPagados,
-    comprasBancoTotal,
+    comprasBancoTotal, totalServicioBasico, totalPagosBNoSB,
     cxcPendiente, cxpPendiente, saldoCalculado, pendienteInicial, movsBanco,
     raw,
   } = datos;
@@ -284,12 +285,12 @@ export default function ResumenTalonario() {
   // propias lineas separadas abajo, igual que en el resumen propio de la contadora.
   const totalPagosPersonalesTotal = pagosGastPers + gastosPersonalesCaja + totalComprasPersonales;
   const totalEgrMes  = totalGastosMes + comprasCon + comprasSin + totalSueldos + totalIess
-    + totalPagosB + pagosPrestamos + pagosTarjetas + totalPagosPersonalesTotal + totalConsumoPersonal;
+    + totalPagosBNoSB + totalServicioBasico + pagosPrestamos + pagosTarjetas + totalPagosPersonalesTotal + totalConsumoPersonal;
   const utilidadBruta= totalIngMes - totalEgrMes;
 
   const totalIngCons = cobroEfect + cobroCheq + cobroTransf + totalOtrosI;
   const pagosGastPersTotal = pagosGastPers + gastosPersonalesCaja + comprasPersonalesPagadas;
-  const totalEgrCons = totalGastos + totalPagosB + comprasBancoTotal + pagosPrestTarj + pagosGastPersTotal + totalCreditosEmpleados + totalSueldosPagados;
+  const totalEgrCons = totalGastosMes + totalPagosBNoSB + comprasBancoTotal + totalServicioBasico + pagosPrestTarj + pagosGastPersTotal + totalCreditosEmpleados + totalSueldosPagados;
 
   const $ = v => `$${parseFloat(v||0).toFixed(2)}`;
   const totalRow = (label, valor, bg) => (
@@ -362,11 +363,30 @@ export default function ResumenTalonario() {
     monto:  parseFloat(n.iess_patronal || 0),
   }));
 
-  const regPagosDelMes = raw.pagosB.map(p => ({
-    nombre: p.concepto || p.beneficiario || 'Pago banco',
-    fecha:  p.fecha,
-    monto:  parseFloat(p.monto || 0),
-  }));
+  const regPagosDelMes = raw.pagosB
+    .filter(p => !p.origen_servicio_basico_id)
+    .map(p => ({
+      nombre: p.concepto || p.beneficiario || 'Pago banco',
+      fecha:  p.fecha,
+      monto:  parseFloat(p.monto || 0),
+    }));
+
+  const regServiciosBasicos = [
+    ...raw.gastos
+      .filter(g => g.origen_servicio_basico_id && !g.es_personal)
+      .map(g => ({
+        nombre: g.detalle || g.proveedor || 'Servicio básico',
+        fecha:  raw.cajaFechasMap[g.caja_id] || '',
+        monto:  parseFloat(g.valor || 0),
+      })),
+    ...raw.pagosB
+      .filter(p => p.origen_servicio_basico_id)
+      .map(p => ({
+        nombre: p.beneficiario || p.concepto || 'Servicio básico',
+        fecha:  p.fecha,
+        monto:  parseFloat(p.monto || 0),
+      })),
+  ].sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''));
 
   const regPrestamos = raw.pagosP
     .filter(p => p.categoria === 'prestamos')
@@ -420,7 +440,7 @@ export default function ResumenTalonario() {
   ].sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''));
 
   const regGastosCons = raw.gastos
-    .filter(g => !g.es_personal)
+    .filter(g => !g.es_personal && !g.origen_servicio_basico_id)
     .map(g => ({
       nombre: g.detalle || g.proveedor || 'Gasto efectivo',
       fecha:  raw.cajaFechasMap[g.caja_id] || '',
@@ -428,10 +448,12 @@ export default function ResumenTalonario() {
     }));
 
   const regPagosConBanco = [
-    ...raw.pagosB.map(p => ({
-      nombre: p.concepto || p.beneficiario || 'Pago banco',
-      fecha: p.fecha, monto: parseFloat(p.monto || 0),
-    })),
+    ...raw.pagosB
+      .filter(p => !p.origen_servicio_basico_id)
+      .map(p => ({
+        nombre: p.concepto || p.beneficiario || 'Pago banco',
+        fecha: p.fecha, monto: parseFloat(p.monto || 0),
+      })),
     ...raw.compras
       .filter(c => ['transferencia','cheque','deposito'].includes(c.forma_pago) && !c.es_personal)
       .map(c => ({ nombre: c.proveedores?.nombre || c.proveedor_nombre || 'Compra banco', fecha: c.fecha, monto: parseFloat(c.total || 0) + parseFloat(c.comision || 0) })),
@@ -481,7 +503,8 @@ export default function ResumenTalonario() {
           <FilaDetalle label="(-) Proveedores sin factura" valor={comprasSin} color="#e74c3c" registros={regComprasSin} />
           <FilaDetalle label="(-) Sueldos" valor={totalSueldos} color="#e74c3c" registros={regSueldos} />
           <FilaDetalle label="(-) IESS patronal" valor={totalIess} color="#e74c3c" registros={regIess} />
-          <FilaDetalle label="(-) Pagos del Mes" valor={totalPagosB} color="#e74c3c" registros={regPagosDelMes} />
+          <FilaDetalle label="(-) Pagos del Mes" valor={totalPagosBNoSB} color="#e74c3c" registros={regPagosDelMes} />
+          <FilaDetalle label="(-) Servicios Básicos" valor={totalServicioBasico} color="#e74c3c" registros={regServiciosBasicos} />
           <FilaDetalle label="(-) Préstamos" valor={pagosPrestamos} color="#e74c3c" registros={regPrestamos} />
           <FilaDetalle label="(-) Tarjetas" valor={pagosTarjetas} color="#e74c3c" registros={regTarjetas} />
           <FilaDetalle label="(-) Pagos personales" valor={totalPagosPersonalesTotal} color="#e74c3c" registros={regPagosPersonales} />
@@ -511,8 +534,9 @@ export default function ResumenTalonario() {
           {totalRow('TOTAL', totalIngCons, '#27ae60')}
 
           {titulo('EGRESOS (pagos reales)', '#e74c3c')}
-          <FilaDetalle label="(-) Gastos efectivo" valor={totalGastos} color="#e74c3c" registros={regGastosCons} />
-          <FilaDetalle label="(-) Pagos con banco" valor={totalPagosB + comprasBancoTotal + totalSueldosPagados} color="#e74c3c" registros={regPagosConBanco} />
+          <FilaDetalle label="(-) Gastos efectivo" valor={totalGastosMes} color="#e74c3c" registros={regGastosCons} />
+          <FilaDetalle label="(-) Pagos con banco" valor={totalPagosBNoSB + comprasBancoTotal + totalSueldosPagados} color="#e74c3c" registros={regPagosConBanco} />
+          <FilaDetalle label="(-) Servicios Básicos" valor={totalServicioBasico} color="#e74c3c" registros={regServiciosBasicos} />
           <FilaDetalle label="(-) Tarjetas/préstamos" valor={pagosPrestTarj} color="#e74c3c" registros={regPrestTarjCons} />
           <FilaDetalle label="(-) Gastos personales" valor={pagosGastPersTotal} color="#e74c3c" registros={regGastPersonalesCons} />
           <FilaDetalle label="(-) Créditos Empleados" valor={totalCreditosEmpleados} color="#e74c3c" registros={regCreditosEmps} />
