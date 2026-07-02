@@ -136,7 +136,7 @@ export default function MenuContabilidad({ navegarA, onVolver }) {
         'cobros', 'facturas_detalle', 'cuentas_cobrar', 'perdidas', 'notas_credito', 'facturas',
         'pagos_compras', 'compras_detalle', 'cuentas_pagar', 'compras',
         'caja_gastos', 'caja_entregas', 'caja_chica',
-        'talonario_pagos_banco', 'talonario_pagos_personales', 'talonario_otros_ingresos',
+        'talonario_pagos_banco', 'talonario_pagos_personales', 'talonario_otros_ingresos', 'talonario_registro_facturas_dueno',
         'clientes', 'empleados', 'proveedores',
       ];
       for (const t of tablas) {
