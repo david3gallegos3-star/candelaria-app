@@ -23,7 +23,6 @@ export default function ExcelExport() {
         { data: pagosB },
         { data: pagosP },
         { data: otrosI },
-        { data: factP },
         { data: comprasPersonal },
         { data: nomina },
         { data: facturas },
@@ -44,12 +43,9 @@ export default function ExcelExport() {
         supabase.from('talonario_pagos_banco').select('*').eq('mes', mes).eq('año', año).order('fecha'),
         supabase.from('talonario_pagos_personales').select('*').eq('mes', mes).eq('año', año).order('categoria').order('fecha'),
         supabase.from('talonario_otros_ingresos').select('*').eq('mes', mes).eq('año', año).order('fecha'),
-        supabase.from('talonario_facturas_personales').select('*').eq('mes', mes).eq('año', año).order('fecha'),
-        supabase.from('compras')
-          .select('fecha,total,numero_factura,proveedor_nombre,notas,proveedores(ruc)')
-          .eq('es_personal', true)
-          .neq('estado', 'anulada')
-          .gte('fecha', fechaDesde).lte('fecha', fechaHasta).order('fecha'),
+        supabase.from('talonario_registro_facturas_dueno')
+          .select('fecha,ruc,proveedor,numero_factura,valor,detalle')
+          .eq('mes', mes).eq('año', año).order('fecha'),
         supabase.from('nomina').select('sueldo_prop,iess_patronal').eq('periodo', periodo),
         supabase.from('facturas').select('total')
           .gte('created_at', fechaDesde + 'T00:00:00').lte('created_at', fechaHasta + 'T23:59:59')
@@ -484,14 +480,14 @@ export default function ExcelExport() {
       let compPRow = 3;
       (comprasPersonal || []).forEach(r => {
         wsCompP.getCell(compPRow, 1).value = r.fecha || '';
-        wsCompP.getCell(compPRow, 2).value = r.proveedores?.ruc || '';
-        wsCompP.getCell(compPRow, 3).value = r.proveedor_nombre || '';
+        wsCompP.getCell(compPRow, 2).value = r.ruc || '';
+        wsCompP.getCell(compPRow, 3).value = r.proveedor || '';
         wsCompP.getCell(compPRow, 4).value = r.numero_factura || '';
-        numVal(wsCompP.getCell(compPRow, 5), n(r.total));
-        wsCompP.getCell(compPRow, 6).value = r.notas || '';
+        numVal(wsCompP.getCell(compPRow, 5), n(r.valor));
+        wsCompP.getCell(compPRow, 6).value = r.detalle || '';
         compPRow++;
       });
-      const compPTotal = n((comprasPersonal || []).reduce((t, r) => t + n(r.total), 0));
+      const compPTotal = n((comprasPersonal || []).reduce((t, r) => t + n(r.valor), 0));
       wsCompP.getCell(compPRow, 4).value = 'TOTAL';
       numVal(wsCompP.getCell(compPRow, 5), compPTotal);
       colorRow(wsCompP, compPRow, 1, 6, COLOR.YELL_BG, COLOR.YELL_FG);
