@@ -47,7 +47,7 @@ export default function ExcelExport() {
           .select('fecha,ruc,proveedor,numero_factura,valor,detalle')
           .eq('mes', mes).eq('año', año).order('fecha'),
         supabase.from('nomina').select('sueldo_prop,iess_patronal').eq('periodo', periodo),
-        supabase.from('facturas').select('total')
+        supabase.from('facturas').select('total,forma_pago')
           .gte('created_at', fechaDesde + 'T00:00:00').lte('created_at', fechaHasta + 'T23:59:59')
           .neq('estado', 'anulada'),
         supabase.from('cuentas_cobrar').select('monto_total,monto_cobrado').in('estado', ['pendiente', 'parcial']),
@@ -84,7 +84,10 @@ export default function ExcelExport() {
       const totalPagosP  = sum(pagosP, 'monto');
       const cobroEfect   = n((cobros || []).filter(c => c.forma_pago === 'efectivo').reduce((t, r) => t + n(r.monto), 0));
       const cobroCheq    = n((cobros || []).filter(c => c.forma_pago === 'cheque').reduce((t, r) => t + n(r.monto), 0));
-      const cobroTransf  = n((cobros || []).filter(c => ['transferencia', 'deposito'].includes(c.forma_pago)).reduce((t, r) => t + n(r.monto), 0));
+      const cobroTransf  = n(
+        (cobros || []).filter(c => ['transferencia', 'deposito', 'tarjeta_credito'].includes(c.forma_pago)).reduce((t, r) => t + n(r.monto), 0)
+        + (facturas || []).filter(f => ['transferencia', 'tarjeta_credito'].includes(f.forma_pago)).reduce((t, f) => t + n(f.total), 0)
+      );
       const cxcPend      = n((cxc || []).reduce((t, r) => t + n(r.monto_total) - n(r.monto_cobrado), 0));
       const pagosPT        = n((pagosP || []).filter(p => ['prestamos', 'tarjetas'].includes(p.categoria)).reduce((t, r) => t + n(r.monto), 0));
       const pagosGP        = n((pagosP || []).filter(p => p.categoria === 'gastos_personal').reduce((t, r) => t + n(r.monto), 0));
