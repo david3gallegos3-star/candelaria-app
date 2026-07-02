@@ -8,6 +8,70 @@ function suma(arr, campo) {
   return arr.reduce((s, r) => s + parseFloat(r[campo] || 0), 0);
 }
 
+function fmtFecha(f) {
+  if (!f) return '';
+  const s = String(f).slice(0, 10);
+  const [, m, d] = s.split('-');
+  return `${d}/${m}`;
+}
+
+const MAX_DETALLE = 200;
+
+function FilaDetalle({ label, valor, color, registros }) {
+  const [abierto, setAbierto] = useState(false);
+  const tiene = registros && registros.length > 0;
+
+  return (
+    <>
+      <div
+        onClick={() => tiene && setAbierto(a => !a)}
+        style={{
+          display: 'flex', justifyContent: 'space-between',
+          padding: '3px 0', fontSize: 12,
+          cursor: tiene ? 'pointer' : 'default',
+          userSelect: 'none',
+        }}
+      >
+        <span style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+          {label}
+          {tiene && <span style={{ fontSize: 9, color: '#aaa' }}>{abierto ? '▲' : '▼'}</span>}
+        </span>
+        <span style={{ color: color || '#333', fontWeight: color ? 'bold' : 'normal' }}>
+          ${parseFloat(valor || 0).toFixed(2)}
+        </span>
+      </div>
+      {abierto && registros && (
+        <div style={{
+          background: '#f8f9fa', borderLeft: '3px solid #ddd',
+          marginLeft: 8, marginBottom: 4,
+          padding: '4px 8px', fontSize: 11, borderRadius: '0 4px 4px 0',
+        }}>
+          {registros.slice(0, MAX_DETALLE).map((r, i) => (
+            <div key={i} style={{
+              display: 'flex', justifyContent: 'space-between', gap: 8,
+              padding: '2px 0',
+              borderBottom: i < Math.min(registros.length, MAX_DETALLE) - 1 ? '1px solid #eee' : 'none',
+            }}>
+              <span style={{ color: '#555', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {r.nombre || '—'}
+              </span>
+              <span style={{ color: '#888', whiteSpace: 'nowrap' }}>{fmtFecha(r.fecha)}</span>
+              <span style={{ fontWeight: 'bold', whiteSpace: 'nowrap' }}>
+                ${parseFloat(r.monto || 0).toFixed(2)}
+              </span>
+            </div>
+          ))}
+          {registros.length > MAX_DETALLE && (
+            <div style={{ color: '#888', padding: '4px 0', fontStyle: 'italic' }}>
+              ... y {registros.length - MAX_DETALLE} más
+            </div>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
 export default function ResumenTalonario() {
   const { mes, año, fechaDesde, fechaHasta, MESES, esAdminContador } = useTalonario();
   const [datos, setDatos] = useState(null);
@@ -36,13 +100,13 @@ export default function ResumenTalonario() {
       { data: consumoPersonal },
       { data: creditosEmpleadosRaw },
     ] = await Promise.all([
-      supabase.from('facturas').select('total,forma_pago').gte('created_at', fechaDesde + 'T00:00:00').lte('created_at', fechaHasta + 'T23:59:59').neq('estado', 'anulada'),
+      supabase.from('facturas').select('total,forma_pago,numero,cliente_nombre,created_at').gte('created_at', fechaDesde + 'T00:00:00').lte('created_at', fechaHasta + 'T23:59:59').neq('estado', 'anulada'),
       supabase.from('cobros').select('id,fecha,monto,forma_pago,observaciones,clientes(nombre),facturas(numero)').gte('fecha', fechaDesde).lte('fecha', fechaHasta),
-      supabase.from('caja_chica').select('id').gte('fecha', fechaDesde).lte('fecha', fechaHasta),
-      supabase.from('compras').select('total,comision,tiene_factura,forma_pago,es_personal').gte('fecha', fechaDesde).lte('fecha', fechaHasta).neq('estado', 'anulada'),
-      supabase.from('nomina').select('sueldo_prop,sueldo_neto,iess_patronal,estado').eq('periodo', periodo),
+      supabase.from('caja_chica').select('id,fecha').gte('fecha', fechaDesde).lte('fecha', fechaHasta),
+      supabase.from('compras').select('total,comision,tiene_factura,forma_pago,es_personal,fecha,proveedor_nombre,proveedores(nombre)').gte('fecha', fechaDesde).lte('fecha', fechaHasta).neq('estado', 'anulada'),
+      supabase.from('nomina').select('sueldo_prop,sueldo_neto,iess_patronal,estado,empleados(nombre)').eq('periodo', periodo),
       supabase.from('talonario_pagos_banco').select('id,fecha,monto,concepto,beneficiario,pago_fijo_id,origen_servicio_basico_id').eq('mes', mes).eq('año', año),
-      supabase.from('talonario_pagos_personales').select('monto,categoria').eq('mes', mes).eq('año', año),
+      supabase.from('talonario_pagos_personales').select('monto,categoria,beneficiario,fecha').eq('mes', mes).eq('año', año),
       supabase.from('talonario_otros_ingresos').select('id,fecha,monto,descripcion,empresa,forma_pago').eq('mes', mes).eq('año', año),
       supabase.from('cuentas_cobrar').select('monto_total,monto_cobrado').in('estado', ['pendiente', 'parcial']),
       supabase.from('cuentas_pagar').select('saldo_pendiente').in('estado', ['pendiente', 'parcial']),
@@ -55,14 +119,15 @@ export default function ResumenTalonario() {
         .gte('fecha_pago', fechaDesde).lte('fecha_pago', fechaHasta),
       supabase.from('talonario_consumo_personal').select('valor').eq('mes', mes).eq('año', año),
       supabase.from('nomina_movimientos')
-        .select('valor, cuentas_cobrar(estado)')
+        .select('valor, cuentas_cobrar(estado), empleados(nombre)')
         .eq('tipo', 'compra').eq('activo', true).eq('periodo', periodo),
     ]);
 
     const cajaIds = (cajas || []).map(c => c.id);
+    const cajaFechasMap = Object.fromEntries((cajas || []).map(c => [c.id, c.fecha]));
     const [{ data: gastos }, { data: entregas }] = cajaIds.length > 0
       ? await Promise.all([
-          supabase.from('caja_gastos').select('valor,es_personal,origen_servicio_basico_id').in('caja_id', cajaIds),
+          supabase.from('caja_gastos').select('valor,es_personal,origen_servicio_basico_id,detalle,proveedor,caja_id').in('caja_id', cajaIds),
           supabase.from('caja_entregas').select('cantidad').in('caja_id', cajaIds),
         ])
       : [{ data: [] }, { data: [] }];
@@ -172,14 +237,28 @@ export default function ResumenTalonario() {
     ].sort((a,b) => (a.fecha||'').localeCompare(b.fecha||''));
 
     setSaldoBanco(config?.valor?.saldo || '');
-    setDatos({ totalVentas, totalOtrosI, totalGastos, totalGastosMes, comprasCon, comprasSin,
+    setDatos({
+      totalVentas, totalOtrosI, totalGastos, totalGastosMes, comprasCon, comprasSin,
       totalSueldos, totalIess, totalPagosB, totalPagosFijos, totalPagosP,
       cobroEfect, cobroCheq, cobroTransf, pagosPrestTarj, pagosGastPers,
       pagosPrestamos, pagosTarjetas,
       gastosPersonalesCaja, totalComprasPersonales, comprasPersonalesPagadas,
       totalConsumoPersonal, totalCreditosEmpleados, totalSueldosPagados,
       comprasBancoTotal,
-      cxcPendiente, cxpPendiente, saldoCalculado, pendienteInicial, movsBanco });
+      cxcPendiente, cxpPendiente, saldoCalculado, pendienteInicial, movsBanco,
+      raw: {
+        facturas:          facturas          || [],
+        cobros:            cobros            || [],
+        gastos:            gastos            || [],
+        cajaFechasMap,
+        compras:           compras           || [],
+        nomina:            nomina            || [],
+        pagosB:            pagosB            || [],
+        pagosP:            pagosP            || [],
+        otrosI:            otrosI            || [],
+        creditosEmpleados: creditosEmpleadosRaw || [],
+      },
+    });
     setCargando(false);
   }
 
@@ -195,6 +274,7 @@ export default function ResumenTalonario() {
     totalConsumoPersonal, totalCreditosEmpleados, totalSueldosPagados,
     comprasBancoTotal,
     cxcPendiente, cxpPendiente, saldoCalculado, pendienteInicial, movsBanco,
+    raw,
   } = datos;
 
   const { dif, cuadra, color: difColor } = calcularDiferencia(saldoBanco, saldoCalculado);
@@ -218,12 +298,6 @@ export default function ResumenTalonario() {
   const totalEgrCons = totalGastos + totalPagosB + comprasBancoTotal + pagosPrestTarj + pagosGastPersTotal + totalCreditosEmpleados + totalSueldosPagados;
 
   const $ = v => `$${parseFloat(v||0).toFixed(2)}`;
-  const fila = (label, valor, color) => (
-    <div style={{ display:'flex', justifyContent:'space-between', padding:'3px 0', fontSize:12 }}>
-      <span>{label}</span>
-      <span style={{ color: color || '#333', fontWeight: color ? 'bold' : 'normal' }}>{$(valor)}</span>
-    </div>
-  );
   const totalRow = (label, valor, bg) => (
     <div style={{ display:'flex', justifyContent:'space-between', padding:'5px 0',
       borderTop:'1px solid #eee', marginTop:4, fontWeight:'bold', fontSize:12 }}>
@@ -234,6 +308,175 @@ export default function ResumenTalonario() {
   const titulo = (label, color) => (
     <div style={{ fontWeight:'bold', color, margin:'10px 0 4px', fontSize:12 }}>{label}</div>
   );
+
+  // ── Arrays de registros para drill-down ───────────────────────────────
+
+  const regVentas = [
+    ...raw.facturas.map(f => ({
+      nombre: f.cliente_nombre || f.numero || 'Factura',
+      fecha:  f.created_at,
+      monto:  parseFloat(f.total || 0),
+    })),
+    ...raw.cobros
+      .filter(c => c.forma_pago === 'credito' || c.forma_pago === 'credito_nomina')
+      .map(c => ({
+        nombre: c.clientes?.nombre || c.facturas?.numero || 'Cobro crédito',
+        fecha:  c.fecha,
+        monto:  parseFloat(c.monto || 0),
+      })),
+  ].sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''));
+
+  const regOtrosI = raw.otrosI.map(o => ({
+    nombre: o.descripcion || o.empresa || 'Otro ingreso',
+    fecha:  o.fecha,
+    monto:  parseFloat(o.monto || 0),
+  }));
+
+  const regGastosMes = raw.gastos
+    .filter(g => !g.es_personal && !g.origen_servicio_basico_id)
+    .map(g => ({
+      nombre: g.detalle || g.proveedor || 'Gasto efectivo',
+      fecha:  raw.cajaFechasMap[g.caja_id] || '',
+      monto:  parseFloat(g.valor || 0),
+    }));
+
+  const regComprasCon = raw.compras
+    .filter(c => c.tiene_factura && !c.es_personal)
+    .map(c => ({
+      nombre: c.proveedores?.nombre || c.proveedor_nombre || 'Proveedor',
+      fecha:  c.fecha,
+      monto:  parseFloat(c.total || 0),
+    }));
+
+  const regComprasSin = raw.compras
+    .filter(c => !c.tiene_factura && !c.es_personal)
+    .map(c => ({
+      nombre: c.proveedores?.nombre || c.proveedor_nombre || 'Proveedor',
+      fecha:  c.fecha,
+      monto:  parseFloat(c.total || 0),
+    }));
+
+  const regSueldos = raw.nomina.map(n => ({
+    nombre: n.empleados?.nombre || 'Empleado',
+    fecha:  '',
+    monto:  parseFloat(n.sueldo_neto || 0),
+  }));
+
+  const regIess = raw.nomina.map(n => ({
+    nombre: n.empleados?.nombre || 'Empleado',
+    fecha:  '',
+    monto:  parseFloat(n.iess_patronal || 0),
+  }));
+
+  const regPagosFijos = [
+    ...raw.pagosB.filter(p => p.pago_fijo_id).map(p => ({
+      nombre: p.concepto || p.beneficiario || 'Pago fijo',
+      fecha:  p.fecha,
+      monto:  parseFloat(p.monto || 0),
+    })),
+    ...raw.pagosB.filter(p => p.origen_servicio_basico_id).map(p => ({
+      nombre: p.concepto || p.beneficiario || 'Servicio básico',
+      fecha:  p.fecha,
+      monto:  parseFloat(p.monto || 0),
+    })),
+    ...raw.gastos.filter(g => g.origen_servicio_basico_id).map(g => ({
+      nombre: g.detalle || g.proveedor || 'Servicio básico efectivo',
+      fecha:  raw.cajaFechasMap[g.caja_id] || '',
+      monto:  parseFloat(g.valor || 0),
+    })),
+  ];
+
+  const regPrestamos = raw.pagosP
+    .filter(p => p.categoria === 'prestamos')
+    .map(p => ({ nombre: p.beneficiario || 'Préstamo', fecha: p.fecha, monto: parseFloat(p.monto || 0) }));
+
+  const regTarjetas = raw.pagosP
+    .filter(p => p.categoria === 'tarjetas')
+    .map(p => ({ nombre: p.beneficiario || 'Tarjeta', fecha: p.fecha, monto: parseFloat(p.monto || 0) }));
+
+  const regPagosPersonales = [
+    ...raw.pagosP
+      .filter(p => ['gastos_personal','otros'].includes(p.categoria))
+      .map(p => ({ nombre: p.beneficiario || 'Gasto personal', fecha: p.fecha, monto: parseFloat(p.monto || 0) })),
+    ...raw.gastos
+      .filter(g => g.es_personal)
+      .map(g => ({ nombre: g.detalle || g.proveedor || 'Gasto personal caja', fecha: raw.cajaFechasMap[g.caja_id] || '', monto: parseFloat(g.valor || 0) })),
+    ...raw.compras
+      .filter(c => c.es_personal)
+      .map(c => ({ nombre: c.proveedores?.nombre || c.proveedor_nombre || 'Compra personal', fecha: c.fecha, monto: parseFloat(c.total || 0) })),
+  ];
+
+  const regCobroEfect = [
+    ...raw.cobros.filter(c => c.forma_pago === 'efectivo').map(c => ({
+      nombre: c.clientes?.nombre || c.facturas?.numero || 'Cobro',
+      fecha: c.fecha, monto: parseFloat(c.monto || 0),
+    })),
+    ...raw.facturas.filter(f => f.forma_pago === 'efectivo').map(f => ({
+      nombre: f.cliente_nombre || f.numero || 'Venta efectivo',
+      fecha: f.created_at, monto: parseFloat(f.total || 0),
+    })),
+  ].sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''));
+
+  const regCobroCheq = [
+    ...raw.cobros.filter(c => c.forma_pago === 'cheque').map(c => ({
+      nombre: c.clientes?.nombre || c.facturas?.numero || 'Cobro',
+      fecha: c.fecha, monto: parseFloat(c.monto || 0),
+    })),
+    ...raw.facturas.filter(f => f.forma_pago === 'cheque').map(f => ({
+      nombre: f.cliente_nombre || f.numero || 'Venta cheque',
+      fecha: f.created_at, monto: parseFloat(f.total || 0),
+    })),
+  ].sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''));
+
+  const regCobroTransf = [
+    ...raw.cobros
+      .filter(c => ['transferencia','deposito','tarjeta_credito'].includes(c.forma_pago))
+      .map(c => ({ nombre: c.clientes?.nombre || c.facturas?.numero || 'Cobro', fecha: c.fecha, monto: parseFloat(c.monto || 0) })),
+    ...raw.facturas
+      .filter(f => ['transferencia','tarjeta_credito'].includes(f.forma_pago))
+      .map(f => ({ nombre: f.cliente_nombre || f.numero || 'Venta transf', fecha: f.created_at, monto: parseFloat(f.total || 0) })),
+  ].sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''));
+
+  const regGastosCons = raw.gastos
+    .filter(g => !g.es_personal)
+    .map(g => ({
+      nombre: g.detalle || g.proveedor || 'Gasto efectivo',
+      fecha:  raw.cajaFechasMap[g.caja_id] || '',
+      monto:  parseFloat(g.valor || 0),
+    }));
+
+  const regPagosConBanco = [
+    ...raw.pagosB.map(p => ({
+      nombre: p.concepto || p.beneficiario || 'Pago banco',
+      fecha: p.fecha, monto: parseFloat(p.monto || 0),
+    })),
+    ...raw.compras
+      .filter(c => ['transferencia','cheque','deposito'].includes(c.forma_pago) && !c.es_personal)
+      .map(c => ({ nombre: c.proveedores?.nombre || c.proveedor_nombre || 'Compra banco', fecha: c.fecha, monto: parseFloat(c.total || 0) + parseFloat(c.comision || 0) })),
+    ...raw.nomina
+      .filter(n => n.estado === 'pagado')
+      .map(n => ({ nombre: `Sueldo — ${n.empleados?.nombre || 'Empleado'}`, fecha: '', monto: parseFloat(n.sueldo_neto || 0) })),
+  ].sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''));
+
+  const regPrestTarjCons = raw.pagosP
+    .filter(p => ['prestamos','tarjetas'].includes(p.categoria))
+    .map(p => ({ nombre: p.beneficiario || p.categoria, fecha: p.fecha, monto: parseFloat(p.monto || 0) }));
+
+  const regGastPersonalesCons = [
+    ...raw.pagosP
+      .filter(p => ['gastos_personal','otros'].includes(p.categoria))
+      .map(p => ({ nombre: p.beneficiario || 'Gasto personal', fecha: p.fecha, monto: parseFloat(p.monto || 0) })),
+    ...raw.gastos
+      .filter(g => g.es_personal)
+      .map(g => ({ nombre: g.detalle || g.proveedor || 'Gasto personal caja', fecha: raw.cajaFechasMap[g.caja_id] || '', monto: parseFloat(g.valor || 0) })),
+    ...raw.compras
+      .filter(c => c.es_personal && c.forma_pago !== 'credito')
+      .map(c => ({ nombre: c.proveedores?.nombre || c.proveedor_nombre || 'Compra personal', fecha: c.fecha, monto: parseFloat(c.total || 0) })),
+  ];
+
+  const regCreditosEmps = raw.creditosEmpleados
+    .filter(m => m.cuentas_cobrar?.estado === 'pagada')
+    .map(m => ({ nombre: m.empleados?.nombre || 'Empleado', fecha: '', monto: parseFloat(m.valor || 0) }));
 
   return (
     <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }}>
@@ -246,21 +489,21 @@ export default function ResumenTalonario() {
         </div>
         <div style={{ padding:14 }}>
           {titulo('INGRESOS', '#27ae60')}
-          {fila('(+) Total ventas del mes', totalVentas, '#27ae60')}
-          {fila('(+) Otros ingresos', totalOtrosI, '#27ae60')}
+          <FilaDetalle label="(+) Total ventas del mes" valor={totalVentas} color="#27ae60" registros={regVentas} />
+          <FilaDetalle label="(+) Otros ingresos" valor={totalOtrosI} color="#27ae60" registros={regOtrosI} />
           {totalRow('TOTAL INGRESOS', totalIngMes, '#27ae60')}
 
           {titulo('EGRESOS', '#e74c3c')}
-          {fila('(-) Gastos efectivo', totalGastosMes, '#e74c3c')}
-          {fila('(-) Proveedores con factura', comprasCon, '#e74c3c')}
-          {fila('(-) Proveedores sin factura', comprasSin, '#e74c3c')}
-          {fila('(-) Sueldos', totalSueldos, '#e74c3c')}
-          {fila('(-) IESS patronal', totalIess, '#e74c3c')}
-          {fila('(-) Pagos Fijos (sistema, servicios, contadora, etc.)', totalPagosFijos, '#e74c3c')}
-          {fila('(-) Préstamos', pagosPrestamos, '#e74c3c')}
-          {fila('(-) Tarjetas', pagosTarjetas, '#e74c3c')}
-          {fila('(-) Pagos personales', totalPagosPersonalesTotal, '#e74c3c')}
-          {fila('(-) Consumo Personal', totalConsumoPersonal, '#e74c3c')}
+          <FilaDetalle label="(-) Gastos efectivo" valor={totalGastosMes} color="#e74c3c" registros={regGastosMes} />
+          <FilaDetalle label="(-) Proveedores con factura" valor={comprasCon} color="#e74c3c" registros={regComprasCon} />
+          <FilaDetalle label="(-) Proveedores sin factura" valor={comprasSin} color="#e74c3c" registros={regComprasSin} />
+          <FilaDetalle label="(-) Sueldos" valor={totalSueldos} color="#e74c3c" registros={regSueldos} />
+          <FilaDetalle label="(-) IESS patronal" valor={totalIess} color="#e74c3c" registros={regIess} />
+          <FilaDetalle label="(-) Pagos Fijos (sistema, servicios, contadora, etc.)" valor={totalPagosFijos} color="#e74c3c" registros={regPagosFijos} />
+          <FilaDetalle label="(-) Préstamos" valor={pagosPrestamos} color="#e74c3c" registros={regPrestamos} />
+          <FilaDetalle label="(-) Tarjetas" valor={pagosTarjetas} color="#e74c3c" registros={regTarjetas} />
+          <FilaDetalle label="(-) Pagos personales" valor={totalPagosPersonalesTotal} color="#e74c3c" registros={regPagosPersonales} />
+          <FilaDetalle label="(-) Consumo Personal" valor={totalConsumoPersonal} color="#e74c3c" registros={[]} />
           {totalRow('TOTAL EGRESOS', totalEgrMes, '#e74c3c')}
 
           <div style={{ marginTop:12, background:'#ffd700', padding:'8px 10px',
@@ -279,23 +522,23 @@ export default function ResumenTalonario() {
         </div>
         <div style={{ padding:14 }}>
           {titulo('INGRESOS (cobros reales)', '#27ae60')}
-          {fila('(+) Cobros efectivo', cobroEfect, '#27ae60')}
-          {fila('(+) Cobros cheque', cobroCheq, '#27ae60')}
-          {fila('(+) Cobros transf./depósito', cobroTransf, '#27ae60')}
-          {fila('(+) Otros ingresos', totalOtrosI, '#27ae60')}
+          <FilaDetalle label="(+) Cobros efectivo" valor={cobroEfect} color="#27ae60" registros={regCobroEfect} />
+          <FilaDetalle label="(+) Cobros cheque" valor={cobroCheq} color="#27ae60" registros={regCobroCheq} />
+          <FilaDetalle label="(+) Cobros transf./depósito" valor={cobroTransf} color="#27ae60" registros={regCobroTransf} />
+          <FilaDetalle label="(+) Otros ingresos" valor={totalOtrosI} color="#27ae60" registros={regOtrosI} />
           {totalRow('TOTAL', totalIngCons, '#27ae60')}
 
           {titulo('EGRESOS (pagos reales)', '#e74c3c')}
-          {fila('(-) Gastos efectivo', totalGastos, '#e74c3c')}
-          {fila('(-) Pagos con banco', totalPagosB + comprasBancoTotal + totalSueldosPagados, '#e74c3c')}
-          {fila('(-) Tarjetas/préstamos', pagosPrestTarj, '#e74c3c')}
-          {fila('(-) Gastos personales', pagosGastPersTotal, '#e74c3c')}
-          {fila('(-) Créditos Empleados', totalCreditosEmpleados, '#e74c3c')}
+          <FilaDetalle label="(-) Gastos efectivo" valor={totalGastos} color="#e74c3c" registros={regGastosCons} />
+          <FilaDetalle label="(-) Pagos con banco" valor={totalPagosB + comprasBancoTotal + totalSueldosPagados} color="#e74c3c" registros={regPagosConBanco} />
+          <FilaDetalle label="(-) Tarjetas/préstamos" valor={pagosPrestTarj} color="#e74c3c" registros={regPrestTarjCons} />
+          <FilaDetalle label="(-) Gastos personales" valor={pagosGastPersTotal} color="#e74c3c" registros={regGastPersonalesCons} />
+          <FilaDetalle label="(-) Créditos Empleados" valor={totalCreditosEmpleados} color="#e74c3c" registros={regCreditosEmps} />
           {totalRow('TOTAL', totalEgrCons, '#e74c3c')}
 
           {titulo('ACTIVOS', '#555')}
-          {fila('(+) Cuentas por cobrar', cxcPendiente, '#27ae60')}
-          {fila('(-) Cuentas por pagar', cxpPendiente, '#e74c3c')}
+          <FilaDetalle label="(+) Cuentas por cobrar" valor={cxcPendiente} color="#27ae60" registros={[]} />
+          <FilaDetalle label="(-) Cuentas por pagar" valor={cxpPendiente} color="#e74c3c" registros={[]} />
 
           {/* Saldo banco calculado vs real */}
           <div style={{ marginTop:10, background:'#f0f2f5', borderRadius:6, overflow:'hidden', fontSize:12 }}>
