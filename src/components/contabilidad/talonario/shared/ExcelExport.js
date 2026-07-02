@@ -29,14 +29,17 @@ export default function ExcelExport() {
         { data: cxc },
         { data: saldoConfig },
         { data: notasCredito },
+        { data: consumoPersonal },
+        { data: sbCatalogo },
+        { data: pagosCompras },
       ] = await Promise.all([
         supabase.from('cobros')
-          .select('fecha,monto,forma_pago,observaciones,clientes(nombre),cuentas_cobrar(monto_total),facturas(numero)')
+          .select('fecha,monto,comision,forma_pago,observaciones,clientes(nombre),cuentas_cobrar(monto_total),facturas(numero)')
           .gte('fecha', fechaDesde).lte('fecha', fechaHasta).order('fecha'),
         supabase.from('caja_chica').select('id,fecha')
           .gte('fecha', fechaDesde).lte('fecha', fechaHasta).order('fecha'),
         supabase.from('compras')
-          .select('fecha,total,tiene_factura,numero_factura,proveedor_nombre,forma_pago,proveedores(ruc)')
+          .select('fecha,total,comision,tiene_factura,numero_factura,proveedor_nombre,forma_pago,proveedores(ruc)')
           .eq('es_personal', false)
           .neq('estado', 'anulada')
           .gte('fecha', fechaDesde).lte('fecha', fechaHasta).order('fecha'),
@@ -47,56 +50,80 @@ export default function ExcelExport() {
           .select('fecha,ruc,proveedor,numero_factura,valor,detalle')
           .eq('mes', mes).eq('año', año).order('fecha'),
         supabase.from('nomina').select('sueldo_prop,iess_patronal').eq('periodo', periodo),
-        supabase.from('facturas').select('total,forma_pago')
+        supabase.from('facturas').select('total,forma_pago,created_at,numero,cliente_nombre')
           .gte('created_at', fechaDesde + 'T00:00:00').lte('created_at', fechaHasta + 'T23:59:59')
           .neq('estado', 'anulada'),
         supabase.from('cuentas_cobrar').select('monto_total,monto_cobrado').in('estado', ['pendiente', 'parcial']),
         supabase.from('config_contabilidad').select('valor')
           .eq('clave', `saldo_banco_${año}_${mes}`).maybeSingle(),
-        supabase.from('notas_credito').select('total').eq('es_manual', false)
+        supabase.from('notas_credito').select('total,facturas(forma_pago)').eq('es_manual', false)
           .gte('created_at', fechaDesde + 'T00:00:00').lte('created_at', fechaHasta + 'T23:59:59'),
+        supabase.from('talonario_consumo_personal').select('fecha,producto_nombre,cantidad,valor,detalle')
+          .eq('mes', mes).eq('año', año).order('fecha'),
+        supabase.from('pagos_fijos_servicios_basicos').select('id,nombre').order('nombre'),
+        supabase.from('pagos_compras')
+          .select('fecha_pago,monto,comision,forma_pago,compras(proveedor_nombre)')
+          .in('forma_pago', ['transferencia','cheque','deposito'])
+          .gte('fecha_pago', fechaDesde).lte('fecha_pago', fechaHasta).order('fecha_pago'),
       ]);
 
       const sum = (arr, campo) => parseFloat(((arr || []).reduce((t, r) => t + parseFloat(r[campo] || 0), 0)).toFixed(2));
       const n = v => parseFloat((v || 0).toFixed(2));
 
       const cajaIds = (cajas || []).map(c => c.id);
-      const { data: gastos } = cajaIds.length > 0
-        ? await supabase.from('caja_gastos').select('valor,detalle,proveedor,caja_id').in('caja_id', cajaIds)
-        : { data: [] };
       const cajaFechaMap = Object.fromEntries((cajas || []).map(c => [c.id, c.fecha]));
+
+      const [{ data: gastos }, { data: entregas }] = await Promise.all([
+        cajaIds.length > 0
+          ? supabase.from('caja_gastos').select('valor,detalle,proveedor,caja_id,origen_servicio_basico_id').in('caja_id', cajaIds)
+          : { data: [] },
+        cajaIds.length > 0
+          ? supabase.from('caja_entregas').select('caja_id,cantidad').in('caja_id', cajaIds)
+          : { data: [] },
+      ]);
 
       const { neto: netoBancoMes } = await calcularNetoBancoMes(año, mes);
       const { saldoCalculado } = await calcularSaldoCalculado(año, mes, netoBancoMes);
       const saldoReal = saldoConfig?.valor?.saldo ? parseFloat(saldoConfig.valor.saldo) : null;
       const diferencia = saldoReal !== null ? n(saldoReal - saldoCalculado) : null;
 
+      // ── SB catalog map ─────────────────────────────────────────────────────
+      const sbCatMap = Object.fromEntries((sbCatalogo || []).map(s => [String(s.id), s.nombre]));
+
+      // ── SB splits ──────────────────────────────────────────────────────────
+      const gastosNoSB   = (gastos || []).filter(r => !r.origen_servicio_basico_id);
+      const gastosConSB  = (gastos || []).filter(r =>  r.origen_servicio_basico_id);
+      const pagosB_noSB  = (pagosB || []).filter(r => !r.origen_servicio_basico_id);
+      const pagosB_withSB = (pagosB || []).filter(r =>  r.origen_servicio_basico_id);
+
       // ── Totales calculados ─────────────────────────────────────────────────
-      const totalVentas  = n(sum(facturas, 'total') - sum(notasCredito, 'total'));
-      const totalOtrosI  = sum(otrosI, 'monto');
-      const totalGastos  = sum(gastos, 'valor');
-      const comprasCon   = n((compras || []).filter(c => c.tiene_factura).reduce((t, r) => t + n(r.total), 0));
-      const comprasSin   = n((compras || []).filter(c => !c.tiene_factura).reduce((t, r) => t + n(r.total), 0));
-      const totalSueldos = sum(nomina, 'sueldo_prop');
-      const totalIess    = sum(nomina, 'iess_patronal');
-      const totalPagosB  = sum(pagosB, 'monto');
-      const totalPagosP  = sum(pagosP, 'monto');
-      const cobroEfect   = n((cobros || []).filter(c => c.forma_pago === 'efectivo').reduce((t, r) => t + n(r.monto), 0));
-      const cobroCheq    = n((cobros || []).filter(c => c.forma_pago === 'cheque').reduce((t, r) => t + n(r.monto), 0));
-      const cobroTransf  = n(
-        (cobros || []).filter(c => ['transferencia', 'deposito', 'tarjeta_credito'].includes(c.forma_pago)).reduce((t, r) => t + n(r.monto), 0)
-        + (facturas || []).filter(f => ['transferencia', 'tarjeta_credito'].includes(f.forma_pago)).reduce((t, f) => t + n(f.total), 0)
+      const totalVentas     = n(sum(facturas, 'total') - sum(notasCredito, 'total'));
+      const totalOtrosI     = sum(otrosI, 'monto');
+      const totalGastosNoSB = sum(gastosNoSB, 'valor');
+      const totalSBEfect    = sum(gastosConSB, 'valor');
+      const totalSBBanco    = sum(pagosB_withSB, 'monto');
+      const totalSB         = n(totalSBEfect + totalSBBanco);
+      const comprasCon      = n((compras || []).filter(c => c.tiene_factura).reduce((t, r) => t + n(r.total), 0));
+      const comprasSin      = n((compras || []).filter(c => !c.tiene_factura).reduce((t, r) => t + n(r.total), 0));
+      const totalSueldos    = sum(nomina, 'sueldo_prop');
+      const totalIess       = sum(nomina, 'iess_patronal');
+      const totalPagosBNoSB = sum(pagosB_noSB, 'monto');
+      const cobroEfect      = n((cobros || []).filter(c => c.forma_pago === 'efectivo').reduce((t, r) => t + n(r.monto), 0));
+      const cobroCheq       = n((cobros || []).filter(c => c.forma_pago === 'cheque').reduce((t, r) => t + n(r.monto), 0));
+      const cobroTransf     = n(
+        (cobros || []).filter(c => ['transferencia','deposito','tarjeta_credito'].includes(c.forma_pago)).reduce((t, r) => t + n(r.monto), 0)
+        + (facturas || []).filter(f => ['transferencia','tarjeta_credito'].includes(f.forma_pago)).reduce((t, f) => t + n(f.total), 0)
       );
-      const cxcPend        = n((cxc || []).reduce((t, r) => t + n(r.monto_total) - n(r.monto_cobrado), 0));
-      const pagosPT        = n((pagosP || []).filter(p => ['prestamos', 'tarjetas'].includes(p.categoria)).reduce((t, r) => t + n(r.monto), 0));
-      const pagosGP        = n((pagosP || []).filter(p => p.categoria === 'gastos_personal').reduce((t, r) => t + n(r.monto), 0));
-      const pagosOtros     = n((pagosP || []).filter(p => p.categoria === 'otros').reduce((t, r) => t + n(r.monto), 0));
-      const pagosPrestamos = n((pagosP || []).filter(p => p.categoria === 'prestamos').reduce((t, r) => t + n(r.monto), 0));
-      const pagosTarjetas  = n((pagosP || []).filter(p => p.categoria === 'tarjetas').reduce((t, r) => t + n(r.monto), 0));
-      const ingMes         = n(totalVentas + totalOtrosI);
-      const egrMes         = n(totalGastos + comprasCon + comprasSin + totalSueldos + totalIess + totalPagosB + totalPagosP);
-      const ingCons        = n(cobroEfect + cobroCheq + cobroTransf + totalOtrosI);
-      const egrCons        = n(totalGastos + totalPagosB + pagosPT + pagosGP + pagosOtros);
+      const cxcPend         = n((cxc || []).reduce((t, r) => t + n(r.monto_total) - n(r.monto_cobrado), 0));
+      const pagosPT         = n((pagosP || []).filter(p => ['prestamos','tarjetas'].includes(p.categoria)).reduce((t, r) => t + n(r.monto), 0));
+      const pagosGP         = n((pagosP || []).filter(p => p.categoria === 'gastos_personal').reduce((t, r) => t + n(r.monto), 0));
+      const pagosOtros      = n((pagosP || []).filter(p => p.categoria === 'otros').reduce((t, r) => t + n(r.monto), 0));
+      const pagosPrestamos  = n((pagosP || []).filter(p => p.categoria === 'prestamos').reduce((t, r) => t + n(r.monto), 0));
+      const pagosTarjetas   = n((pagosP || []).filter(p => p.categoria === 'tarjetas').reduce((t, r) => t + n(r.monto), 0));
+      const ingMes          = n(totalVentas + totalOtrosI);
+      const egrMes          = n(totalGastosNoSB + comprasCon + comprasSin + totalSueldos + totalIess + totalPagosBNoSB + totalSB + pagosPrestamos + pagosTarjetas + pagosGP + pagosOtros);
+      const ingCons         = n(cobroEfect + cobroCheq + cobroTransf + totalOtrosI);
+      const egrCons         = n(totalGastosNoSB + totalPagosBNoSB + totalSB + pagosPT + pagosGP + pagosOtros);
 
       // ── ExcelJS helpers ────────────────────────────────────────────────────
       const COLOR = {
@@ -105,6 +132,7 @@ export default function ExcelExport() {
         RED_BG:   'FFFFC7CE', RED_FG:   'FF9B2335',
         YELL_BG:  'FFFFFF00', YELL_FG:  'FF7D6608',
         COL_HDR:  'FFBDD7EE',
+        TEAL:     'FF006B6B',
       };
       const NUM_FMT = '$#,##0.00';
 
@@ -165,7 +193,7 @@ export default function ExcelExport() {
       const wsRes = wb.addWorksheet('RESUMEN');
       setCols(wsRes, [42, 14, 4, 4, 42, 14]);
 
-      // ── GASTOS ─────────────────────────────────────────────────────────────
+      // ── GASTOS (solo no-SB) ────────────────────────────────────────────────
       const wsGastos = wb.addWorksheet('GASTOS');
       setCols(wsGastos, [25, 12, 45, 13]);
 
@@ -174,7 +202,7 @@ export default function ExcelExport() {
       ['PROVEEDOR', 'FECHA', 'DETALLE', 'VALOR'].forEach((h, i) => colHdr(wsGastos.getCell(2, i + 1), h));
 
       let gastRow = 3;
-      (gastos || []).forEach(r => {
+      gastosNoSB.forEach(r => {
         wsGastos.getCell(gastRow, 1).value = r.proveedor || '';
         wsGastos.getCell(gastRow, 2).value = cajaFechaMap[r.caja_id] || '';
         wsGastos.getCell(gastRow, 3).value = r.detalle || '';
@@ -184,7 +212,7 @@ export default function ExcelExport() {
       const gastTotalRow = gastRow;
       wsGastos.getCell(gastRow, 3).value = 'TOTAL';
       if (gastRow > 3)
-        formulaVal(wsGastos.getCell(gastRow, 4), `SUM(D3:D${gastRow - 1})`, sum(gastos, 'valor'));
+        formulaVal(wsGastos.getCell(gastRow, 4), `SUM(D3:D${gastRow - 1})`, totalGastosNoSB);
       else
         numVal(wsGastos.getCell(gastRow, 4), 0);
       colorRow(wsGastos, gastRow, 1, 4, COLOR.YELL_BG, COLOR.YELL_FG);
@@ -228,7 +256,7 @@ export default function ExcelExport() {
       setCols(wsCobTr, [16, 30, 14, 14, 14, 26, 4, 16, 30, 14, 14, 14, 26]);
 
       const cobTrList  = (cobros || []).filter(c => c.forma_pago === 'transferencia');
-      const cobDepList = (cobros || []).filter(c => ['deposito', 'tarjeta_credito', 'tarjeta'].includes(c.forma_pago));
+      const cobDepList = (cobros || []).filter(c => ['deposito','tarjeta_credito','tarjeta'].includes(c.forma_pago));
 
       function buildCobSide(ws, list, titulo, startCol) {
         tableTitle(ws, 1, startCol, startCol + 5, titulo, COLOR.NAVY);
@@ -262,13 +290,13 @@ export default function ExcelExport() {
         'COBROS CHEQUES', (cobros || []).filter(c => c.forma_pago === 'cheque'), 'COBROS EN CHEQUE'
       );
 
-      // ── PAGOS MES ──────────────────────────────────────────────────────────
+      // ── PAGOS MES (solo no-SB) ─────────────────────────────────────────────
       const wsPagos = wb.addWorksheet('PAGOS MES');
       setCols(wsPagos, [42, 14, 14, 22]);
       tableTitle(wsPagos, 1, 1, 4, 'PAGOS PROVEEDORES/ BANCOS', COLOR.NAVY);
 
       let pagRow = 2;
-      (pagosB || []).forEach(r => {
+      pagosB_noSB.forEach(r => {
         wsPagos.getCell(pagRow, 1).value = r.beneficiario || r.concepto || '';
         wsPagos.getCell(pagRow, 2).value = r.fecha || '';
         numVal(wsPagos.getCell(pagRow, 3), n(r.monto));
@@ -278,7 +306,7 @@ export default function ExcelExport() {
       const pagosTotalRow = pagRow;
       wsPagos.getCell(pagRow, 2).value = 'TOTAL';
       if (pagRow > 2)
-        formulaVal(wsPagos.getCell(pagRow, 3), `SUM(C2:C${pagRow - 1})`, sum(pagosB, 'monto'));
+        formulaVal(wsPagos.getCell(pagRow, 3), `SUM(C2:C${pagRow - 1})`, totalPagosBNoSB);
       else
         numVal(wsPagos.getCell(pagRow, 3), 0);
       colorRow(wsPagos, pagRow, 1, 4, COLOR.YELL_BG, COLOR.YELL_FG);
@@ -294,7 +322,7 @@ export default function ExcelExport() {
       setCols(wsOtros, [34, 14, 14]);
 
       const secsPP = [
-        { titulo: 'PAGOS PRESTAMO Y TARJETA',     lista: (pagosP || []).filter(p => ['prestamos', 'tarjetas'].includes(p.categoria)) },
+        { titulo: 'PAGOS PRESTAMO Y TARJETA',     lista: (pagosP || []).filter(p => ['prestamos','tarjetas'].includes(p.categoria)) },
         { titulo: 'PAGOS GASTOS PERSONALES',       lista: (pagosP || []).filter(p => p.categoria === 'gastos_personal') },
         { titulo: 'PAGOS OTROS GASTOS PERSONALES', lista: (pagosP || []).filter(p => p.categoria === 'otros') },
       ];
@@ -319,7 +347,7 @@ export default function ExcelExport() {
           numVal(wsOtros.getCell(otrosRow, 3), 0);
         colorRow(wsOtros, otrosRow, 1, 3, COLOR.YELL_BG, COLOR.YELL_FG);
         wsOtros.getCell(otrosRow, 3).numFmt = NUM_FMT;
-        if (idx === 0) pagosPTotalRow  = otrosRow;
+        if (idx === 0) pagosPTotalRow       = otrosRow;
         else if (idx === 1) pagosGPTotalRow  = otrosRow;
         else                pagosOtrosTotalRow = otrosRow;
         otrosRow += 3;
@@ -372,7 +400,7 @@ export default function ExcelExport() {
       colorRow(wsComp, compSinRow, 7, 9, COLOR.YELL_BG, COLOR.YELL_FG);
       wsComp.getCell(compSinRow, 9).numFmt = NUM_FMT;
 
-      // ── COMPRAS -PERSONAL ─────────────────────────────────────────────────
+      // ── COMPRAS -PERSONAL ──────────────────────────────────────────────────
       const wsCompP = wb.addWorksheet('COMPRAS -PERSONAL');
       setCols(wsCompP, [12, 16, 32, 22, 13, 55]);
       tableTitle(wsCompP, 1, 1, 6, 'FACTURAS GASTOS PERSONALES', COLOR.NAVY);
@@ -396,7 +424,234 @@ export default function ExcelExport() {
       colorRow(wsCompP, compPRow, 1, 6, COLOR.YELL_BG, COLOR.YELL_FG);
       wsCompP.getCell(compPRow, 5).numFmt = NUM_FMT;
 
-      // ── FILL RESUMEN (todas las referencias de hojas ya están disponibles) ──
+      // ── SERVICIOS BÁSICOS ─────────────────────────────────────────────────
+      const wsSB = wb.addWorksheet('SERVICIOS BASICOS');
+      setCols(wsSB, [12, 38, 12, 14]);
+      tableTitle(wsSB, 1, 1, 4, 'SERVICIOS BÁSICOS', COLOR.TEAL);
+      ['FECHA', 'SERVICIO', 'TIPO', 'VALOR'].forEach((h, i) => colHdr(wsSB.getCell(2, i + 1), h));
+
+      const sbRows = [
+        ...gastosConSB.map(r => ({
+          fecha: cajaFechaMap[r.caja_id] || '',
+          nombre: sbCatMap[String(r.origen_servicio_basico_id)] || 'Servicio básico',
+          tipo: 'Efectivo',
+          valor: n(r.valor),
+        })),
+        ...pagosB_withSB.map(r => ({
+          fecha: r.fecha || '',
+          nombre: sbCatMap[String(r.origen_servicio_basico_id)] || r.beneficiario || r.concepto || 'Servicio básico',
+          tipo: 'Banco',
+          valor: n(r.monto),
+        })),
+      ].sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''));
+
+      let sbRow = 3;
+      sbRows.forEach(r => {
+        wsSB.getCell(sbRow, 1).value = r.fecha;
+        wsSB.getCell(sbRow, 2).value = r.nombre;
+        wsSB.getCell(sbRow, 3).value = r.tipo;
+        numVal(wsSB.getCell(sbRow, 4), r.valor);
+        sbRow++;
+      });
+      const sbTotalRow = sbRow;
+      wsSB.getCell(sbRow, 3).value = 'TOTAL';
+      if (sbRow > 3)
+        formulaVal(wsSB.getCell(sbRow, 4), `SUM(D3:D${sbRow - 1})`, totalSB);
+      else
+        numVal(wsSB.getCell(sbRow, 4), 0);
+      colorRow(wsSB, sbRow, 1, 4, COLOR.YELL_BG, COLOR.YELL_FG);
+      wsSB.getCell(sbRow, 4).numFmt = NUM_FMT;
+
+      // ── BANCO ─────────────────────────────────────────────────────────────
+      const wsBanco = wb.addWorksheet('BANCO');
+      setCols(wsBanco, [12, 48, 14, 14]);
+      tableTitle(wsBanco, 1, 1, 4, `MOVIMIENTOS BANCO — ${mesNombre} ${año}`, COLOR.NAVY);
+      ['FECHA', 'DESCRIPCIÓN', 'ENTRADA', 'SALIDA'].forEach((h, i) => colHdr(wsBanco.getCell(2, i + 1), h));
+
+      // Recolectar movimientos
+      const bancMovs = [];
+
+      // Entradas: cobros banco
+      (cobros || [])
+        .filter(c => ['transferencia','deposito','cheque','tarjeta_credito'].includes(c.forma_pago))
+        .forEach(r => bancMovs.push({
+          fecha: r.fecha || '',
+          desc: r.clientes?.nombre || r.observaciones || 'Cobro',
+          entrada: n(r.monto),
+          salida: 0,
+        }));
+
+      // Salidas: comisiones cobros
+      (cobros || [])
+        .filter(c => parseFloat(c.comision || 0) > 0)
+        .forEach(r => bancMovs.push({
+          fecha: r.fecha || '',
+          desc: 'Comisión cobro',
+          entrada: 0,
+          salida: n(r.comision),
+        }));
+
+      // Entradas: facturas banco directas
+      (facturas || [])
+        .filter(f => ['transferencia','cheque','tarjeta_credito'].includes(f.forma_pago))
+        .forEach(r => bancMovs.push({
+          fecha: r.created_at?.substring(0, 10) || '',
+          desc: [r.cliente_nombre, r.numero ? `(${r.numero})` : ''].filter(Boolean).join(' ') || 'Venta directa',
+          entrada: n(r.total),
+          salida: 0,
+        }));
+
+      // Salidas: notas crédito banco
+      (notasCredito || [])
+        .filter(nc => ['transferencia','cheque','tarjeta_credito'].includes(nc.facturas?.forma_pago))
+        .forEach(r => bancMovs.push({
+          fecha: '',
+          desc: 'Nota de crédito',
+          entrada: 0,
+          salida: n(r.total),
+        }));
+
+      // Entradas: otros ingresos banco
+      (otrosI || [])
+        .filter(o => o.forma_pago !== '01')
+        .forEach(r => bancMovs.push({
+          fecha: r.fecha || '',
+          desc: r.descripcion || r.empresa || 'Otro ingreso',
+          entrada: n(r.monto),
+          salida: 0,
+        }));
+
+      // Entradas: entregas de caja a banco
+      (entregas || []).forEach(r => bancMovs.push({
+        fecha: cajaFechaMap[r.caja_id] || '',
+        desc: 'Entrega caja efectivo',
+        entrada: n(r.cantidad),
+        salida: 0,
+      }));
+
+      // Salidas: pagos banco (talonario)
+      (pagosB || []).forEach(r => bancMovs.push({
+        fecha: r.fecha || '',
+        desc: r.beneficiario || r.concepto || '',
+        entrada: 0,
+        salida: n(r.monto),
+      }));
+
+      // Salidas: compras banco inmediatas
+      (compras || [])
+        .filter(c => ['transferencia','cheque','deposito'].includes(c.forma_pago))
+        .forEach(r => bancMovs.push({
+          fecha: r.fecha || '',
+          desc: r.proveedor_nombre || 'Compra',
+          entrada: 0,
+          salida: n(n(r.total) + n(r.comision)),
+        }));
+
+      // Salidas: pagos de compras a crédito
+      (pagosCompras || []).forEach(r => bancMovs.push({
+        fecha: r.fecha_pago || '',
+        desc: r.compras?.proveedor_nombre || 'Pago proveedor',
+        entrada: 0,
+        salida: n(n(r.monto) + n(r.comision)),
+      }));
+
+      bancMovs.sort((a, b) => (a.fecha || '').localeCompare(b.fecha || ''));
+
+      let bancRow = 3;
+      bancMovs.forEach(m => {
+        wsBanco.getCell(bancRow, 1).value = m.fecha;
+        wsBanco.getCell(bancRow, 2).value = m.desc;
+        if (m.entrada > 0) numVal(wsBanco.getCell(bancRow, 3), m.entrada);
+        if (m.salida  > 0) numVal(wsBanco.getCell(bancRow, 4), m.salida);
+        bancRow++;
+      });
+
+      const bancDataEnd   = Math.max(bancRow - 1, 3);
+      const bancSumStart  = bancRow + 1;
+
+      const bancTotalEntRow  = bancSumStart;
+      const bancTotalSalRow  = bancSumStart + 1;
+      const bancNetoRow      = bancSumStart + 2;
+      const bancSaldoCalcRow = bancSumStart + 4;
+      const bancSaldoRealRow = bancSumStart + 5;
+      const bancDifRow       = bancSumStart + 6;
+
+      const bancTotalEnt = bancMovs.reduce((t, m) => t + m.entrada, 0);
+      const bancTotalSal = bancMovs.reduce((t, m) => t + m.salida, 0);
+
+      wsBanco.getCell(bancTotalEntRow, 2).value = 'TOTAL ENTRADAS';
+      bold(wsBanco.getCell(bancTotalEntRow, 2));
+      if (bancRow > 3)
+        formulaVal(wsBanco.getCell(bancTotalEntRow, 3), `SUM(C3:C${bancDataEnd})`, n(bancTotalEnt));
+      else
+        numVal(wsBanco.getCell(bancTotalEntRow, 3), 0);
+
+      wsBanco.getCell(bancTotalSalRow, 2).value = 'TOTAL SALIDAS';
+      bold(wsBanco.getCell(bancTotalSalRow, 2));
+      if (bancRow > 3)
+        formulaVal(wsBanco.getCell(bancTotalSalRow, 4), `SUM(D3:D${bancDataEnd})`, n(bancTotalSal));
+      else
+        numVal(wsBanco.getCell(bancTotalSalRow, 4), 0);
+
+      wsBanco.getCell(bancNetoRow, 2).value = 'NETO DEL MES';
+      bold(wsBanco.getCell(bancNetoRow, 2));
+      formulaVal(wsBanco.getCell(bancNetoRow, 3), `C${bancTotalEntRow}-D${bancTotalSalRow}`, n(bancTotalEnt - bancTotalSal));
+
+      colorRow(wsBanco, bancTotalEntRow, 1, 4, COLOR.GREEN_BG, COLOR.GREEN_FG);
+      wsBanco.getCell(bancTotalEntRow, 3).numFmt = NUM_FMT;
+      colorRow(wsBanco, bancTotalSalRow, 1, 4, COLOR.RED_BG, COLOR.RED_FG);
+      wsBanco.getCell(bancTotalSalRow, 4).numFmt = NUM_FMT;
+      colorRow(wsBanco, bancNetoRow, 1, 4, COLOR.YELL_BG, COLOR.YELL_FG);
+      wsBanco.getCell(bancNetoRow, 3).numFmt = NUM_FMT;
+
+      wsBanco.getCell(bancSaldoCalcRow, 2).value = 'SALDO CALCULADO';
+      bold(wsBanco.getCell(bancSaldoCalcRow, 2));
+      numVal(wsBanco.getCell(bancSaldoCalcRow, 3), n(saldoCalculado));
+
+      wsBanco.getCell(bancSaldoRealRow, 2).value = 'SALDO REAL';
+      bold(wsBanco.getCell(bancSaldoRealRow, 2));
+      if (saldoReal !== null)
+        numVal(wsBanco.getCell(bancSaldoRealRow, 3), saldoReal);
+      else
+        wsBanco.getCell(bancSaldoRealRow, 3).value = '—';
+
+      wsBanco.getCell(bancDifRow, 2).value = 'DIFERENCIA';
+      bold(wsBanco.getCell(bancDifRow, 2));
+      if (diferencia !== null) {
+        formulaVal(wsBanco.getCell(bancDifRow, 3), `C${bancSaldoRealRow}-C${bancSaldoCalcRow}`, diferencia);
+        const cuadra = Math.abs(diferencia) < 0.01;
+        colorRow(wsBanco, bancDifRow, 1, 4,
+          cuadra ? COLOR.GREEN_BG : (diferencia < 0 ? COLOR.RED_BG : 'FFFDE8A0'),
+          cuadra ? COLOR.GREEN_FG : (diferencia < 0 ? COLOR.RED_FG : COLOR.YELL_FG)
+        );
+        wsBanco.getCell(bancDifRow, 3).numFmt = NUM_FMT;
+      }
+
+      // ── CONSUMO PERSONAL ──────────────────────────────────────────────────
+      const wsConsumo = wb.addWorksheet('CONSUMO PERSONAL');
+      setCols(wsConsumo, [12, 32, 10, 13, 45]);
+      tableTitle(wsConsumo, 1, 1, 5, 'CONSUMO PERSONAL — PRODUCTOS CANDELARIA', COLOR.TEAL);
+      ['FECHA', 'PRODUCTO', 'CANTIDAD', 'VALOR', 'DETALLE'].forEach((h, i) => colHdr(wsConsumo.getCell(2, i + 1), h));
+
+      let conRow = 3;
+      (consumoPersonal || []).forEach(r => {
+        wsConsumo.getCell(conRow, 1).value = r.fecha || '';
+        wsConsumo.getCell(conRow, 2).value = r.producto_nombre || '';
+        wsConsumo.getCell(conRow, 3).value = r.cantidad ?? '';
+        numVal(wsConsumo.getCell(conRow, 4), n(r.valor));
+        wsConsumo.getCell(conRow, 5).value = r.detalle || '';
+        conRow++;
+      });
+      const conTotal = n((consumoPersonal || []).reduce((t, r) => t + n(r.valor), 0));
+      wsConsumo.getCell(conRow, 3).value = 'TOTAL';
+      if (conRow > 3)
+        formulaVal(wsConsumo.getCell(conRow, 4), `SUM(D3:D${conRow - 1})`, conTotal);
+      else
+        numVal(wsConsumo.getCell(conRow, 4), 0);
+      colorRow(wsConsumo, conRow, 1, 5, COLOR.YELL_BG, COLOR.YELL_FG);
+      wsConsumo.getCell(conRow, 4).numFmt = NUM_FMT;
+
+      // ── FILL RESUMEN ───────────────────────────────────────────────────────
       tableTitle(wsRes, 2, 1, 2, `${mesNombre} ${año}`, COLOR.NAVY, 26);
       tableTitle(wsRes, 2, 5, 6, 'CONSOLIDADO', COLOR.BLUE, 26);
 
@@ -443,17 +698,18 @@ export default function ExcelExport() {
       wsRes.getCell(12, 1).value = 'EGRESOS'; bold(wsRes.getCell(12, 1));
       wsRes.getCell(12, 5).value = 'EGRESOS'; bold(wsRes.getCell(12, 5));
 
-      // Egresos izquierda (MES) — fórmula donde hay hoja fuente, estático donde no
+      // Egresos izquierda (MES) — fila 19 = SERVICIOS BÁSICOS (nueva)
       const egresosIzq = [
-        [13, '(-) GASTOS EFECTIVO',     `'GASTOS'!D${gastTotalRow}`,   totalGastos],
-        [14, '(-) PROVEEDORES CON FACT', `'COMPRAS'!E${compConTotalRow}`, comprasCon],
-        [15, '(-) PROVEEDORES SIN FACT', `'COMPRAS'!I${compSinTotalRow}`, comprasSin],
-        [16, '(-) SUELDOS',              null,                           totalSueldos],
-        [17, '(-) IESS',                 null,                           totalIess],
-        [18, '(-) PAGOS DEL MES',        `'PAGOS MES'!C${pagosTotalRow}`, totalPagosB],
-        [19, '(-) PRÉSTAMOS',            null,                           pagosPrestamos],
-        [20, '(-) TARJETAS',             null,                           pagosTarjetas],
-        [21, '(-) PAGOS PERSONALES',
+        [13, '(-) GASTOS EFECTIVO',      `'GASTOS'!D${gastTotalRow}`,     totalGastosNoSB],
+        [14, '(-) PROVEEDORES CON FACT',  `'COMPRAS'!E${compConTotalRow}`, comprasCon],
+        [15, '(-) PROVEEDORES SIN FACT',  `'COMPRAS'!I${compSinTotalRow}`, comprasSin],
+        [16, '(-) SUELDOS',               null,                            totalSueldos],
+        [17, '(-) IESS',                  null,                            totalIess],
+        [18, '(-) PAGOS DEL MES',         `'PAGOS MES'!C${pagosTotalRow}`, totalPagosBNoSB],
+        [19, '(-) SERVICIOS BÁSICOS',     `'SERVICIOS BASICOS'!D${sbTotalRow}`, totalSB],
+        [20, '(-) PRÉSTAMOS',             null,                            pagosPrestamos],
+        [21, '(-) TARJETAS',              null,                            pagosTarjetas],
+        [22, '(-) PAGOS PERSONALES',
           `'OTROS PAGOS PERSONALES'!C${pagosGPTotalRow}+'OTROS PAGOS PERSONALES'!C${pagosOtrosTotalRow}`,
           n(pagosGP + pagosOtros)],
       ];
@@ -463,25 +719,26 @@ export default function ExcelExport() {
         else numVal(wsRes.getCell(row, 2), val);
       });
 
-      wsRes.getCell(23, 1).value = 'TOTAL EGRESOS';
-      formulaVal(wsRes.getCell(23, 2), 'B13+B14+B15+B16+B17+B18+B19+B20+B21', egrMes);
-      colorRow(wsRes, 23, 1, 2, COLOR.RED_BG, COLOR.RED_FG);
-      wsRes.getCell(23, 2).numFmt = NUM_FMT;
+      wsRes.getCell(24, 1).value = 'TOTAL EGRESOS';
+      formulaVal(wsRes.getCell(24, 2), 'B13+B14+B15+B16+B17+B18+B19+B20+B21+B22', egrMes);
+      colorRow(wsRes, 24, 1, 2, COLOR.RED_BG, COLOR.RED_FG);
+      wsRes.getCell(24, 2).numFmt = NUM_FMT;
 
-      wsRes.getCell(25, 1).value = '(UTILIDAD BRUTA) INGRESOS - EGRESOS';
-      formulaVal(wsRes.getCell(25, 2), 'B8-B23', n(ingMes - egrMes));
-      colorRow(wsRes, 25, 1, 2, COLOR.YELL_BG, COLOR.YELL_FG);
-      wsRes.getCell(25, 2).numFmt = NUM_FMT;
+      wsRes.getCell(26, 1).value = '(UTILIDAD BRUTA) INGRESOS - EGRESOS';
+      formulaVal(wsRes.getCell(26, 2), 'B8-B24', n(ingMes - egrMes));
+      colorRow(wsRes, 26, 1, 2, COLOR.YELL_BG, COLOR.YELL_FG);
+      wsRes.getCell(26, 2).numFmt = NUM_FMT;
 
-      // Egresos derecha (CONSOLIDADO)
+      // Egresos derecha (CONSOLIDADO) — fila 15 = SERVICIOS BÁSICOS (nueva)
       const egresosDer = [
-        [13, '(-) GASTOS EN EFECTIVO',                      `'GASTOS'!D${gastTotalRow}`,        totalGastos],
-        [14, '(-) PAGOS CON BANCOS (PROVEEDORES, SUELDOS)', `'PAGOS MES'!C${pagosTotalRow}`,     totalPagosB],
-        [15, '(-) TARJETAS, PRESTAMOS, AHORRO',             `'OTROS PAGOS PERSONALES'!C${pagosPTotalRow}`, pagosPT],
-        [16, '(-) GASTOS PERSONALES',
+        [13, '(-) GASTOS EN EFECTIVO',                      `'GASTOS'!D${gastTotalRow}`,        totalGastosNoSB],
+        [14, '(-) PAGOS CON BANCOS (PROVEEDORES, SUELDOS)', `'PAGOS MES'!C${pagosTotalRow}`,     totalPagosBNoSB],
+        [15, '(-) SERVICIOS BÁSICOS',                       `'SERVICIOS BASICOS'!D${sbTotalRow}`, totalSB],
+        [16, '(-) TARJETAS, PRESTAMOS, AHORRO',             `'OTROS PAGOS PERSONALES'!C${pagosPTotalRow}`, pagosPT],
+        [17, '(-) GASTOS PERSONALES',
           `'OTROS PAGOS PERSONALES'!C${pagosGPTotalRow}+'OTROS PAGOS PERSONALES'!C${pagosOtrosTotalRow}`,
           n(pagosGP + pagosOtros)],
-        [17, '(-) CRÉDITOS EMPLEADOS', null, 0],
+        [18, '(-) CRÉDITOS EMPLEADOS', null, 0],
       ];
       egresosDer.forEach(([row, lbl, formula, val]) => {
         wsRes.getCell(row, 5).value = lbl;
@@ -489,47 +746,46 @@ export default function ExcelExport() {
         else numVal(wsRes.getCell(row, 6), val);
       });
 
-      wsRes.getCell(21, 5).value = 'TOTAL';
-      formulaVal(wsRes.getCell(21, 6), 'F13+F14+F15+F16+F17', egrCons);
-      colorRow(wsRes, 21, 5, 6, COLOR.RED_BG, COLOR.RED_FG);
-      wsRes.getCell(21, 6).numFmt = NUM_FMT;
+      wsRes.getCell(22, 5).value = 'TOTAL';
+      formulaVal(wsRes.getCell(22, 6), 'F13+F14+F15+F16+F17+F18', egrCons);
+      colorRow(wsRes, 22, 5, 6, COLOR.RED_BG, COLOR.RED_FG);
+      wsRes.getCell(22, 6).numFmt = NUM_FMT;
 
       // Activos / CxC / CxP
-      wsRes.getCell(23, 5).value = 'ACTIVOS'; bold(wsRes.getCell(23, 5));
-      wsRes.getCell(24, 5).value = '(+) CUENTAS POR COBRAR';
-      numVal(wsRes.getCell(24, 6), cxcPend);
-      wsRes.getCell(25, 5).value = '(-) CUENTAS POR PAGAR';
-      numVal(wsRes.getCell(25, 6), 0);
+      wsRes.getCell(24, 5).value = 'ACTIVOS'; bold(wsRes.getCell(24, 5));
+      wsRes.getCell(25, 5).value = '(+) CUENTAS POR COBRAR';
+      numVal(wsRes.getCell(25, 6), cxcPend);
+      wsRes.getCell(26, 5).value = '(-) CUENTAS POR PAGAR';
+      numVal(wsRes.getCell(26, 6), 0);
 
-      wsRes.getCell(26, 5).value = 'TOTAL';
-      formulaVal(wsRes.getCell(26, 6), 'F24-F25', cxcPend);
-      colorRow(wsRes, 26, 5, 6, COLOR.GREEN_BG, COLOR.GREEN_FG);
-      wsRes.getCell(26, 6).numFmt = NUM_FMT;
+      wsRes.getCell(27, 5).value = 'TOTAL';
+      formulaVal(wsRes.getCell(27, 6), 'F25-F26', cxcPend);
+      colorRow(wsRes, 27, 5, 6, COLOR.GREEN_BG, COLOR.GREEN_FG);
+      wsRes.getCell(27, 6).numFmt = NUM_FMT;
 
-      // Saldo banco
-      wsRes.getCell(28, 5).value = 'SALDO BANCO CALCULADO'; bold(wsRes.getCell(28, 5));
-      numVal(wsRes.getCell(28, 6), n(saldoCalculado));
+      // Saldo banco — cruzado a hoja BANCO
+      wsRes.getCell(29, 5).value = 'SALDO BANCO CALCULADO'; bold(wsRes.getCell(29, 5));
+      formulaVal(wsRes.getCell(29, 6), `'BANCO'!C${bancSaldoCalcRow}`, n(saldoCalculado));
 
-      wsRes.getCell(29, 5).value = 'SALDO BANCO REAL'; bold(wsRes.getCell(29, 5));
-      if (saldoReal !== null) {
-        numVal(wsRes.getCell(29, 6), saldoReal);
-      } else {
-        wsRes.getCell(29, 6).value = '—';
-      }
+      wsRes.getCell(30, 5).value = 'SALDO BANCO REAL'; bold(wsRes.getCell(30, 5));
+      if (saldoReal !== null)
+        formulaVal(wsRes.getCell(30, 6), `'BANCO'!C${bancSaldoRealRow}`, saldoReal);
+      else
+        wsRes.getCell(30, 6).value = '—';
 
       if (diferencia !== null) {
-        wsRes.getCell(30, 5).value = 'DIFERENCIA'; bold(wsRes.getCell(30, 5));
-        formulaVal(wsRes.getCell(30, 6), 'F29-F28', diferencia);
+        wsRes.getCell(31, 5).value = 'DIFERENCIA'; bold(wsRes.getCell(31, 5));
+        formulaVal(wsRes.getCell(31, 6), `'BANCO'!C${bancDifRow}`, diferencia);
         const cuadra = Math.abs(diferencia) < 0.01;
-        colorRow(wsRes, 30, 5, 6,
+        colorRow(wsRes, 31, 5, 6,
           cuadra ? COLOR.GREEN_BG : (diferencia < 0 ? COLOR.RED_BG : 'FFFDE8A0'),
           cuadra ? COLOR.GREEN_FG : (diferencia < 0 ? COLOR.RED_FG : COLOR.YELL_FG)
         );
-        wsRes.getCell(30, 6).numFmt = NUM_FMT;
+        wsRes.getCell(31, 6).numFmt = NUM_FMT;
       }
 
-      boxBorder(wsRes, 2, 25, 1, 2);
-      boxBorder(wsRes, 2, diferencia !== null ? 30 : 29, 5, 6);
+      boxBorder(wsRes, 2, 26, 1, 2);
+      boxBorder(wsRes, 2, diferencia !== null ? 31 : 30, 5, 6);
 
       // ── Download ────────────────────────────────────────────────────────────
       const buffer = await wb.xlsx.writeBuffer();
