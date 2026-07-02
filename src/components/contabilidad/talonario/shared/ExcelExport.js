@@ -313,6 +313,7 @@ export default function ExcelExport() {
       wsPagos.getCell(pagRow, 3).numFmt = NUM_FMT;
       pagRow += 4;
 
+      const pagosSaldoRow = pagRow;
       wsPagos.getCell(pagRow, 1).value = `SALDO AL ${ultimoDia} ${mesNombre} ${año} CUENTA CORRIENTE`;
       bold(wsPagos.getCell(pagRow, 1));
       if (saldoReal !== null) numVal(wsPagos.getCell(pagRow, 3), saldoReal);
@@ -611,7 +612,7 @@ export default function ExcelExport() {
       wsBanco.getCell(bancSaldoRealRow, 2).value = 'SALDO REAL';
       bold(wsBanco.getCell(bancSaldoRealRow, 2));
       if (saldoReal !== null)
-        numVal(wsBanco.getCell(bancSaldoRealRow, 3), saldoReal);
+        formulaVal(wsBanco.getCell(bancSaldoRealRow, 3), `'PAGOS MES'!C${pagosSaldoRow}`, saldoReal);
       else
         wsBanco.getCell(bancSaldoRealRow, 3).value = '—';
 
