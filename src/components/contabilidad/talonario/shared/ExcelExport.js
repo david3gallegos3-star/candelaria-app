@@ -86,9 +86,11 @@ export default function ExcelExport() {
       const cobroCheq    = n((cobros || []).filter(c => c.forma_pago === 'cheque').reduce((t, r) => t + n(r.monto), 0));
       const cobroTransf  = n((cobros || []).filter(c => ['transferencia', 'deposito'].includes(c.forma_pago)).reduce((t, r) => t + n(r.monto), 0));
       const cxcPend      = n((cxc || []).reduce((t, r) => t + n(r.monto_total) - n(r.monto_cobrado), 0));
-      const pagosPT      = n((pagosP || []).filter(p => ['prestamos', 'tarjetas'].includes(p.categoria)).reduce((t, r) => t + n(r.monto), 0));
-      const pagosGP      = n((pagosP || []).filter(p => p.categoria === 'gastos_personal').reduce((t, r) => t + n(r.monto), 0));
-      const pagosOtros   = n((pagosP || []).filter(p => p.categoria === 'otros').reduce((t, r) => t + n(r.monto), 0));
+      const pagosPT        = n((pagosP || []).filter(p => ['prestamos', 'tarjetas'].includes(p.categoria)).reduce((t, r) => t + n(r.monto), 0));
+      const pagosGP        = n((pagosP || []).filter(p => p.categoria === 'gastos_personal').reduce((t, r) => t + n(r.monto), 0));
+      const pagosOtros     = n((pagosP || []).filter(p => p.categoria === 'otros').reduce((t, r) => t + n(r.monto), 0));
+      const pagosPrestamos = n((pagosP || []).filter(p => p.categoria === 'prestamos').reduce((t, r) => t + n(r.monto), 0));
+      const pagosTarjetas  = n((pagosP || []).filter(p => p.categoria === 'tarjetas').reduce((t, r) => t + n(r.monto), 0));
       const ingMes       = n(totalVentas + totalOtrosI);
       const egrMes       = n(totalGastos + comprasCon + comprasSin + totalSueldos + totalIess + totalPagosB + totalPagosP);
       const ingCons      = n(cobroEfect + cobroCheq + cobroTransf + totalOtrosI);
@@ -215,50 +217,52 @@ export default function ExcelExport() {
       wsRes.getCell(12, 1).value = 'EGRESOS'; bold(wsRes.getCell(12, 1));
       wsRes.getCell(12, 5).value = 'EGRESOS'; bold(wsRes.getCell(12, 5));
 
-      // Left egreso rows 13-19
+      // Left egreso rows 13-21 (igual desglose que la app)
       const egresosIzq = [
-        [13, '(-) GASTOS EFECTIVO',       totalGastos],
-        [14, '(-) PROVEEDORES CON FACT',   comprasCon],
-        [15, '(-) PROVEEDORES SIN FACT',   comprasSin],
-        [16, '(-) SUELDOS',               totalSueldos],
-        [17, '(-) IESS',                  totalIess],
-        [18, '(-) PAGOS DEL MES',          totalPagosB],
-        [19, '(-) PAGOS PERSONALES',       totalPagosP],
+        [13, '(-) GASTOS EFECTIVO',        totalGastos],
+        [14, '(-) PROVEEDORES CON FACT',    comprasCon],
+        [15, '(-) PROVEEDORES SIN FACT',    comprasSin],
+        [16, '(-) SUELDOS',                totalSueldos],
+        [17, '(-) IESS',                   totalIess],
+        [18, '(-) PAGOS DEL MES',           totalPagosB],
+        [19, '(-) PRÉSTAMOS',               pagosPrestamos],
+        [20, '(-) TARJETAS',                pagosTarjetas],
+        [21, '(-) PAGOS PERSONALES',        n(pagosGP + pagosOtros)],
       ];
       egresosIzq.forEach(([row, lbl, val]) => {
         wsRes.getCell(row, 1).value = lbl;
         numVal(wsRes.getCell(row, 2), val);
       });
 
-      // Right egreso rows 13-17
+      // Right egreso rows 13-17 (igual desglose que la app)
       const egresosDer = [
-        [13, '(-) GASTOS EN EFECTIVO',                    totalGastos],
-        [14, '(-) PAGOS CON BANCOS (PROVEEDORES, SUELDOS)', totalPagosB],
-        [15, '(-) TARJETAS, PRESTAMOS, AHORRO',             pagosPT],
-        [16, '(-) GASTOS PERSONALES',                       pagosGP],
-        [17, '(-) OTROS GASTOS PERSONALES',                 pagosOtros],
+        [13, '(-) GASTOS EN EFECTIVO',                      totalGastos],
+        [14, '(-) PAGOS CON BANCOS (PROVEEDORES, SUELDOS)',  totalPagosB],
+        [15, '(-) TARJETAS, PRESTAMOS, AHORRO',              pagosPT],
+        [16, '(-) GASTOS PERSONALES',                        n(pagosGP + pagosOtros)],
+        [17, '(-) CRÉDITOS EMPLEADOS',                       0],
       ];
       egresosDer.forEach(([row, lbl, val]) => {
         wsRes.getCell(row, 5).value = lbl;
         numVal(wsRes.getCell(row, 6), val);
       });
 
-      // Row 21: TOTAL EGRESOS
-      wsRes.getCell(21, 1).value = 'TOTAL EGRESOS';
-      numVal(wsRes.getCell(21, 2), egrMes);
-      colorRow(wsRes, 21, 1, 2, COLOR.RED_BG, COLOR.RED_FG);
-      wsRes.getCell(21, 2).numFmt = NUM_FMT;
+      // Row 23: TOTAL EGRESOS izquierdo (derecho en row 21, cols independientes)
+      wsRes.getCell(23, 1).value = 'TOTAL EGRESOS';
+      numVal(wsRes.getCell(23, 2), egrMes);
+      colorRow(wsRes, 23, 1, 2, COLOR.RED_BG, COLOR.RED_FG);
+      wsRes.getCell(23, 2).numFmt = NUM_FMT;
 
       wsRes.getCell(21, 5).value = 'TOTAL';
       numVal(wsRes.getCell(21, 6), egrCons);
       colorRow(wsRes, 21, 5, 6, COLOR.RED_BG, COLOR.RED_FG);
       wsRes.getCell(21, 6).numFmt = NUM_FMT;
 
-      // Row 23: UTILIDAD BRUTA (left) + ACTIVOS section (right)
-      wsRes.getCell(23, 1).value = '(UTILIDAD BRUTA) INGRESOS - EGRESOS';
-      numVal(wsRes.getCell(23, 2), n(ingMes - egrMes));
-      colorRow(wsRes, 23, 1, 2, COLOR.YELL_BG, COLOR.YELL_FG);
-      wsRes.getCell(23, 2).numFmt = NUM_FMT;
+      // Row 25: UTILIDAD BRUTA (left) + ACTIVOS section (right) en row 23
+      wsRes.getCell(25, 1).value = '(UTILIDAD BRUTA) INGRESOS - EGRESOS';
+      numVal(wsRes.getCell(25, 2), n(ingMes - egrMes));
+      colorRow(wsRes, 25, 1, 2, COLOR.YELL_BG, COLOR.YELL_FG);
+      wsRes.getCell(25, 2).numFmt = NUM_FMT;
 
       wsRes.getCell(23, 5).value = 'ACTIVOS'; bold(wsRes.getCell(23, 5));
       wsRes.getCell(24, 5).value = '(+) CUENTAS POR COBRAR';
@@ -294,7 +298,7 @@ export default function ExcelExport() {
       }
 
       // Box borders
-      boxBorder(wsRes, 2, 23, 1, 2);
+      boxBorder(wsRes, 2, 25, 1, 2);
       boxBorder(wsRes, 2, diferencia !== null ? 30 : 29, 5, 6);
 
       // ── GASTOS ─────────────────────────────────────────────────────────────
