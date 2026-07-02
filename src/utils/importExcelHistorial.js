@@ -328,6 +328,7 @@ export async function verificarMesNoImportado(mes, año) {
     { tabla: 'talonario_pagos_banco', label: 'Pagos del Mes', query: q => q.eq('mes', mes).eq('año', año) },
     { tabla: 'talonario_pagos_personales', label: 'Pagos Personales', query: q => q.eq('mes', mes).eq('año', año) },
     { tabla: 'compras', label: 'Compras', query: q => q.gte('fecha', fechaDesde).lte('fecha', fechaHasta) },
+    { tabla: 'talonario_registro_facturas_dueno', label: 'Facturas Personales', query: q => q.eq('mes', mes).eq('año', año) },
   ];
 
   for (const check of checks) {
